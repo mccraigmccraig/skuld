@@ -266,7 +266,7 @@ defmodule Skuld.CompTest do
 
       assert %ThrowStruct{error: error} = result
       assert is_list(error.stacktrace)
-      assert length(error.stacktrace) > 0
+      assert error.stacktrace != []
       # Stacktrace entries are tuples {module, function, arity_or_args, location}
       assert Enum.all?(error.stacktrace, &is_tuple/1)
     end
