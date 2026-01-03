@@ -262,4 +262,54 @@ defmodule Skuld.Effects.TaggedWriterTest do
       assert ["msg2"] = result
     end
   end
+
+  describe "with_handler result_transform" do
+    test "includes final log in result" do
+      comp =
+        Comp.bind(TaggedWriter.tell(:audit, "step 1"), fn _ ->
+          Comp.bind(TaggedWriter.tell(:audit, "step 2"), fn _ ->
+            Comp.pure(:done)
+          end)
+        end)
+        |> TaggedWriter.with_handler(:audit, [],
+          result_transform: fn result, log -> {result, log} end
+        )
+
+      {result, _env} = Comp.run(comp)
+
+      assert {:done, ["step 2", "step 1"]} = result
+    end
+
+    test "with custom transformation" do
+      comp =
+        Comp.bind(TaggedWriter.tell(:log, "a"), fn _ ->
+          Comp.bind(TaggedWriter.tell(:log, "b"), fn _ ->
+            Comp.bind(TaggedWriter.tell(:log, "c"), fn _ ->
+              Comp.pure(42)
+            end)
+          end)
+        end)
+        |> TaggedWriter.with_handler(:log, [],
+          result_transform: fn result, log -> %{value: result, count: length(log)} end
+        )
+
+      {result, _env} = Comp.run(comp)
+
+      assert %{value: 42, count: 3} = result
+    end
+
+    test "with initial log entries" do
+      comp =
+        Comp.bind(TaggedWriter.tell(:log, "new"), fn _ ->
+          Comp.pure(:ok)
+        end)
+        |> TaggedWriter.with_handler(:log, ["existing"],
+          result_transform: fn result, log -> {result, log} end
+        )
+
+      {result, _env} = Comp.run(comp)
+
+      assert {:ok, ["new", "existing"]} = result
+    end
+  end
 end

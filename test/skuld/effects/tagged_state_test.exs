@@ -241,5 +241,37 @@ defmodule Skuld.Effects.TaggedStateTest do
 
       assert {42, "alice", :config} = result
     end
+
+    test "result_transform includes final state in result" do
+      comp =
+        Comp.bind(TaggedState.put(:counter, 10), fn _ ->
+          Comp.bind(TaggedState.modify(:counter, &(&1 * 2)), fn _ ->
+            Comp.pure(:done)
+          end)
+        end)
+        |> TaggedState.with_handler(:counter, 0,
+          result_transform: fn result, state -> {result, state} end
+        )
+
+      {result, _env} = Comp.run(comp)
+
+      assert {:done, 20} = result
+    end
+
+    test "result_transform with custom transformation" do
+      comp =
+        Comp.bind(TaggedState.modify(:cnt, &(&1 + 1)), fn _ ->
+          Comp.bind(TaggedState.modify(:cnt, &(&1 + 1)), fn _ ->
+            TaggedState.get(:cnt)
+          end)
+        end)
+        |> TaggedState.with_handler(:cnt, 0,
+          result_transform: fn result, state -> %{result: result, final: state} end
+        )
+
+      {result, _env} = Comp.run(comp)
+
+      assert %{result: 2, final: 2} = result
+    end
   end
 end

@@ -126,6 +126,12 @@ defmodule Skuld.Effects.TaggedWriter do
 
   Multiple TaggedWriter handlers with different tags can be installed simultaneously.
 
+  ## Options
+
+  - `result_transform` - optional function `(result, final_log) -> new_result`
+    to transform the result before returning. Useful for including the final
+    log in the output.
+
   ## Example
 
       comp do
@@ -136,10 +142,21 @@ defmodule Skuld.Effects.TaggedWriter do
       |> TaggedWriter.with_handler(:foo)
       |> TaggedWriter.with_handler(:bar)
       |> Comp.run()
+
+      # Include final log in result
+      comp do
+        _ <- TaggedWriter.tell(:audit, "action 1")
+        _ <- TaggedWriter.tell(:audit, "action 2")
+        return(:done)
+      end
+      |> TaggedWriter.with_handler(:audit, [], result_transform: fn r, log -> {r, log} end)
+      |> Comp.run!()
+      # => {:done, ["action 2", "action 1"]}
   """
-  @spec with_handler(Types.computation(), atom(), list()) :: Types.computation()
-  def with_handler(comp, tag, initial \\ []) do
+  @spec with_handler(Types.computation(), atom(), list(), keyword()) :: Types.computation()
+  def with_handler(comp, tag, initial \\ [], opts \\ []) do
     state_key = state_key(tag)
+    result_transform = Keyword.get(opts, :result_transform)
 
     comp
     |> Comp.scoped(fn env ->
@@ -147,13 +164,22 @@ defmodule Skuld.Effects.TaggedWriter do
       modified = Env.put_state(env, state_key, initial)
 
       finally_k = fn value, e ->
+        final_log = Env.get_state(e, state_key, [])
+
         restored_env =
           case previous_log do
             nil -> %{e | state: Map.delete(e.state, state_key)}
             log -> Env.put_state(e, state_key, log)
           end
 
-        {value, restored_env}
+        transformed_value =
+          if result_transform do
+            result_transform.(value, final_log)
+          else
+            value
+          end
+
+        {transformed_value, restored_env}
       end
 
       {modified, finally_k}

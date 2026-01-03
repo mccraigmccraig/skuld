@@ -66,6 +66,12 @@ defmodule Skuld.Effects.State do
 
   The argument order is pipe-friendly.
 
+  ## Options
+
+  - `result_transform` - optional function `(result, final_state) -> new_result`
+    to transform the result before returning. Useful for including the final
+    state in the output.
+
   ## Example
 
       # Wrap a computation with its own State
@@ -90,22 +96,43 @@ defmodule Skuld.Effects.State do
       |> Reader.with_handler(:config)
       |> State.with_handler(0)
       |> Comp.run(Env.new())
+
+      # Include final state in result
+      comp do
+        _ <- State.modify(&(&1 + 1))
+        _ <- State.modify(&(&1 * 2))
+        return(:done)
+      end
+      |> State.with_handler(5, result_transform: fn result, state -> {result, state} end)
+      |> Comp.run!()
+      # => {:done, 12}
   """
-  @spec with_handler(Types.computation(), term()) :: Types.computation()
-  def with_handler(comp, initial) do
+  @spec with_handler(Types.computation(), term(), keyword()) :: Types.computation()
+  def with_handler(comp, initial, opts \\ []) do
+    result_transform = Keyword.get(opts, :result_transform)
+
     comp
     |> Comp.scoped(fn env ->
       previous = Env.get_state(env, @sig)
       modified = Env.put_state(env, @sig, initial)
 
       finally_k = fn value, e ->
+        final_state = Env.get_state(e, @sig)
+
         restored_env =
           case previous do
             nil -> %{e | state: Map.delete(e.state, @sig)}
             val -> Env.put_state(e, @sig, val)
           end
 
-        {value, restored_env}
+        transformed_value =
+          if result_transform do
+            result_transform.(value, final_state)
+          else
+            value
+          end
+
+        {transformed_value, restored_env}
       end
 
       {modified, finally_k}

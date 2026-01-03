@@ -181,5 +181,35 @@ defmodule Skuld.Effects.StateTest do
 
       assert {42, :config} = result
     end
+
+    test "result_transform includes final state in result" do
+      comp =
+        Comp.bind(State.put(10), fn _ ->
+          Comp.bind(State.modify(&(&1 * 2)), fn _ ->
+            Comp.pure(:done)
+          end)
+        end)
+        |> State.with_handler(0, result_transform: fn result, state -> {result, state} end)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {:done, 20} = result
+    end
+
+    test "result_transform with custom transformation" do
+      comp =
+        Comp.bind(State.modify(&(&1 + 1)), fn _ ->
+          Comp.bind(State.modify(&(&1 + 1)), fn _ ->
+            State.get()
+          end)
+        end)
+        |> State.with_handler(0,
+          result_transform: fn result, state -> %{result: result, final_state: state} end
+        )
+
+      {result, _env} = Comp.run(comp)
+
+      assert %{result: 2, final_state: 2} = result
+    end
   end
 end

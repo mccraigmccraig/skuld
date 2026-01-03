@@ -162,6 +162,12 @@ defmodule Skuld.Effects.Writer do
 
   The argument order is pipe-friendly.
 
+  ## Options
+
+  - `result_transform` - optional function `(result, final_log) -> new_result`
+    to transform the result before returning. Useful for including the final
+    log in the output.
+
   ## Example
 
       # Wrap a computation with its own Writer log
@@ -183,22 +189,43 @@ defmodule Skuld.Effects.Writer do
       |> Writer.with_handler()
       |> State.with_handler(0)
       |> Comp.run(Env.new())
+
+      # Include final log in result
+      comp do
+        _ <- Writer.tell("step 1")
+        _ <- Writer.tell("step 2")
+        return(:done)
+      end
+      |> Writer.with_handler([], result_transform: fn result, log -> {result, log} end)
+      |> Comp.run!()
+      # => {:done, ["step 2", "step 1"]}
   """
-  @spec with_handler(Types.computation(), list()) :: Types.computation()
-  def with_handler(comp, initial \\ []) do
+  @spec with_handler(Types.computation(), list(), keyword()) :: Types.computation()
+  def with_handler(comp, initial \\ [], opts \\ []) do
+    result_transform = Keyword.get(opts, :result_transform)
+
     comp
     |> Comp.scoped(fn env ->
       previous_log = Env.get_state(env, @state_key)
       modified = Env.put_state(env, @state_key, initial)
 
       finally_k = fn value, e ->
+        final_log = Env.get_state(e, @state_key, [])
+
         restored_env =
           case previous_log do
             nil -> %{e | state: Map.delete(e.state, @state_key)}
             log -> Env.put_state(e, @state_key, log)
           end
 
-        {value, restored_env}
+        transformed_value =
+          if result_transform do
+            result_transform.(value, final_log)
+          else
+            value
+          end
+
+        {transformed_value, restored_env}
       end
 
       {modified, finally_k}

@@ -83,6 +83,12 @@ defmodule Skuld.Effects.TaggedState do
 
   Multiple TaggedState handlers with different tags can be installed simultaneously.
 
+  ## Options
+
+  - `result_transform` - optional function `(result, final_state) -> new_result`
+    to transform the result before returning. Useful for including the final
+    state in the output.
+
   ## Example
 
       comp do
@@ -94,10 +100,20 @@ defmodule Skuld.Effects.TaggedState do
       |> TaggedState.with_handler(:counter, 0)
       |> TaggedState.with_handler(:name, "")
       |> Comp.run()
+
+      # Include final state in result
+      comp do
+        _ <- TaggedState.modify(:counter, &(&1 + 1))
+        return(:done)
+      end
+      |> TaggedState.with_handler(:counter, 0, result_transform: fn r, s -> {r, s} end)
+      |> Comp.run!()
+      # => {:done, 1}
   """
-  @spec with_handler(Types.computation(), atom(), term()) :: Types.computation()
-  def with_handler(comp, tag, initial) do
+  @spec with_handler(Types.computation(), atom(), term(), keyword()) :: Types.computation()
+  def with_handler(comp, tag, initial, opts \\ []) do
     state_key = state_key(tag)
+    result_transform = Keyword.get(opts, :result_transform)
 
     comp
     |> Comp.scoped(fn env ->
@@ -105,13 +121,22 @@ defmodule Skuld.Effects.TaggedState do
       modified = Env.put_state(env, state_key, initial)
 
       finally_k = fn value, e ->
+        final_state = Env.get_state(e, state_key)
+
         restored_env =
           case previous do
             nil -> %{e | state: Map.delete(e.state, state_key)}
             val -> Env.put_state(e, state_key, val)
           end
 
-        {value, restored_env}
+        transformed_value =
+          if result_transform do
+            result_transform.(value, final_state)
+          else
+            value
+          end
+
+        {transformed_value, restored_env}
       end
 
       {modified, finally_k}
