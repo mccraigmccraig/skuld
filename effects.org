@@ -47,24 +47,21 @@
       write as the slow N+1 pattern code
 
 * Aliases
-- use these aliassa to run all the code examples in IEx
+- use these aliases to run all the code examples in IEx
 
 #+begin_src elixir
-alias Freyja.Freer
-alias Freyja.Hefty
-alias Freyja.Run
-alias Freyja.Effects.Reader
-alias Freyja.Effects.Writer
-alias Freyja.Effects.State
-alias Freyja.Effects.TaggedWriter
-alias Freyja.Effects.Lift
-alias Freyja.Effects.FxList
-alias Freyja.Effects.Throw
-alias Freyja.Effects.Catch
-alias Freyja.Effects.Else
-alias Freyja.Effects.EffectLogger
+alias Skuld.Comp
+alias Skuld.Effects.Reader
+alias Skuld.Effects.Writer
+alias Skuld.Effects.State
+alias Skuld.Effects.TaggedReader
+alias Skuld.Effects.TaggedWriter
+alias Skuld.Effects.TaggedState
+alias Skuld.Effects.FxList
+alias Skuld.Effects.Throw
+alias Skuld.Effects.EffectLogger
 require Integer
-use Freyja.Syntax
+use Skuld.Syntax
 #+end_src
 
 * Effect signatures
@@ -72,8 +69,8 @@ use Freyja.Syntax
 - each Effect signature defines one or more operations in the effect,
   and each operation signifies a request for some value without
   specfying how that value is to be obtained.
-- in Freyja, each operation function creates a simple data structure,
-  detailing the request, and wraps it in a Freer structure...
+- in Skuld, each operation function creates a simple data structure,
+  detailing the request, and wraps it in a computation using `Comp.effect`...
 
 ** Reader
 pure functions can ask for a value anywhere in the call stack without
@@ -81,9 +78,12 @@ additional params
   - values can be system-wide config, or operation-specific config
 
 #+begin_src elixir
-defmodule Freyja.Effects.Reader do
-  defstruct Ask
-  def ask, do: %Ask{} |> Freer.send_effect()
+defmodule Skuld.Effects.Reader do
+  import Skuld.Comp.DefOp
+  def_op(Ask)
+
+  @sig __MODULE__
+  def ask, do: Comp.effect(@sig, %Ask{})
 end
 #+end_src
 
@@ -93,9 +93,12 @@ without accumulator params
  - capture changes from deep within a call stack
 
 #+begin_src elixir
-defmodule Freyja.Effects.Writer do
-  defstruct Tell, val: nil
-  def tell(v), do: %Tell{val: v} |> Freer.send_effect()
+defmodule Skuld.Effects.Writer do
+  import Skuld.Comp.DefOp
+  def_op(Tell, [:msg])
+
+  @sig __MODULE__
+  def tell(msg), do: Comp.effect(@sig, %Tell{msg: msg})
 end
 #+end_src
 
@@ -105,87 +108,76 @@ without additional params
   - state could come from memory, database, cache - anywhere
 
 #+begin_src elixir
-defmodule Freyja.Effects.State do
-  defstruct Get
-  def get, do: %Get{} |> Freer.send_effect()
+defmodule Skuld.Effects.State do
+  import Skuld.Comp.DefOp
+  def_op(Get)
+  def_op(Put, [:value])
 
-  defstruct Put, val: nil
-  def put(v), do: %Put{val: v} |> Freer.send_effect()
+  @sig __MODULE__
+  def get, do: Comp.effect(@sig, %Get{})
+  def put(v), do: Comp.effect(@sig, %Put{value: v})
 end
 #+end_src
 
-** what does send_effect do ?
-In Freyja, the operation functions wrap data structures describing an effect
-request in a Freer type, which has two structs
+** what does Comp.effect do ?
+In Skuld, computations are represented as functions using continuation-passing
+style (CPS). A computation is a function `(env, k) -> {result, env}` where:
+- `env` is the environment containing handler evidence and state
+- `k` is the continuation to call with the result
 
-*** Pure
-represents a terminal node in a computation - just a value, which does
-not require any further interpretation
+*** Computations as functions
+Unlike Freyja's data-structure approach (Freer monads), Skuld represents
+computations directly as functions. This avoids creating intermediate
+structs and is significantly faster.
+
 #+begin_src elixir
-  defmodule Freyja.Freer.Pure do
-    defstruct val: nil
-  end
+# A computation has this shape:
+@type computation :: (env(), k() -> {result(), env()})
+@type k :: (term(), env() -> {result(), env()})
 #+end_src
 
-*** Impure
-represents a non-termiinal node in a computation - it requires
-interpretation for the computation to proceed
+*** The environment
+The environment tracks installed handlers and their state:
+
 #+begin_src elixir
-  defmodule Freyja.Freer.Impure do
-    defstruct sig: nil, data: nil, q: []
-  end
+%Skuld.Comp.Env{
+  evidence: %{sig => handler_fn},  # maps effect signatures to handlers
+  state: %{key => value},          # effect state (Reader value, Writer log, etc.)
+  leave_scope: fn result, env -> {result, env} end  # cleanup chain
+}
 #+end_src
 
-- sig: an effect signature module atom
-- data: an effect operation data structure, liks `%Ask{}`
-- q: a queue of `(term -> Freer.t())` continuations to feed
-  interpreted effect opeation values to
-
-*** The interpreter
-The job of the interpreter is to interpret (aka handle) all effects
-in Impure nodes in a computation, until only a Pure node remains, which
-that will contain the result of the computation
-
-*** send_effect
-- `send_effect` wraps a data-structure describing an effect request into
-  a minimal `Impure` struct - the continuation queue consists of just
-  `&Freer.pure/1`, which returns a value in a `Freer.Pure` terminal node.
-- because it's wrapped in `Impure` the effect operation struct is marked
-  as being non-terminal, or requiring interpreting, but once it's been
-  interpreted (by a handler) the `&Freer.pure/1` continuation immediately
-  returns the interpreted value in a terminal node
+*** Comp.effect
+- `Comp.effect(sig, args)` creates a computation that looks up the handler
+  for `sig` in the environment and calls it with the operation args
+- The handler is responsible for calling the continuation with the result
 
 #+begin_src elixir
 Reader.ask()
-
-# %Freyja.Freer.Impure{
-#   sig: Freyja.Effects.Reader,
-#   data: %Freyja.Effects.Reader.Ask{},
-#   q: [&Freyja.Freer.pure/1]
-# }
+# Returns a computation function that, when run:
+# 1. Looks up the Reader handler in env.evidence
+# 2. Calls the handler with %Ask{}, env, and continuation k
+# 3. Handler reads value from env.state and calls k.(value, env)
 
 State.put(100)
-
-# %Freyja.Freer.Impure{
-#   sig: Freyja.Effects.State,
-#   data: %Freyja.Effects.State.Put{val: 100},
-#   q: [&Freyja.Freer.pure/1]
-# }
-
+# Returns a computation function that, when run:
+# 1. Looks up the State handler in env.evidence
+# 2. Calls the handler with %Put{value: 100}, env, and continuation k
+# 3. Handler updates env.state and calls k.(:ok, new_env)
 #+end_src
 
 
 * How can we use effects
-- some simple example Freyja code introducing how
+- some simple example Skuld code introducing how
   effects can be combined into programs
 
 ** we can "handle" an effect
 - Handlers provide an interpreter for a particular effect's operations
 
 #+begin_src elixir
-   Reader.ask()
-   |> Reader.Handler.run(42)
-   |> Run.eval()
+Reader.ask()
+|> Reader.with_handler(42)
+|> Comp.run!()
 
 #>   42
 
@@ -194,25 +186,24 @@ State.put(100)
 ** We can sequence and compose effect operations
 using values from previous effects to request new effects
 
-We use the `&Freer.bind/2` function, which takes a Freer computation,
-and a function `(term -> freer)` of an interpreted effect value which
-returns another Freer - you'll see why the function is called `bind`
-soon. We also use `&Freer.return/1` which returns a value in a
-terminal node Freer.Pure struct
+We use the `&Comp.bind/2` function, which takes a computation,
+and a function `(term -> computation)` of an interpreted effect value which
+returns another computation - you'll see why the function is called `bind`
+soon. We also use `&Comp.pure/1` which returns a pure value as a computation.
 
 This computation requests two effects before returning a result:
 
 #+begin_src elixir
-Freer.bind(
+Comp.bind(
   Reader.ask(),
   fn x ->
-    Freer.bind(
+    Comp.bind(
       State.get(),
-      fn y -> Freer.return(x + y) end)
+      fn y -> Comp.pure(x + y) end)
   end)
-  |> Reader.Handler.run(5)
-  |> State.Handler.run(10)
-  |> Run.eval()
+  |> Reader.with_handler(5)
+  |> State.with_handler(10)
+  |> Comp.run!()
 
 #>   15
 
@@ -224,19 +215,19 @@ but this looks pretty ugly, and the nesting makes it hard to see what's going on
 This code is exactly equivalent to the previous sequence of nested
 function calls, and makes the intent much clearer - the bound/matched
 forms on the left of `<-` expressions end up as the anonymous function
-parameters of the same name above, so the `con` block behaves like
+parameters of the same name above, so the `comp` block behaves like
 a generalized `with` - binding (hence the name) interpreted effect
 values to variables at each step
 
 #+begin_src elixir
-con do
+comp do
   x <- Reader.ask()
   y <- State.get()
   return(x + y)
 end
-|> Reader.Handler.run(5)
-|> State.Handler.run(10)
-|> Run.eval()
+|> Reader.with_handler(5)
+|> State.with_handler(10)
+|> Comp.run!()
 
 #>    15
 
@@ -244,91 +235,72 @@ end
 
 
 * So what's actually going on here
-- let's manually play the interpreter so we can see how this works
+- let's trace through how Skuld executes a computation
 
 #+begin_src elixir
-e = con do
+c = comp do
   x <- Reader.ask()
   y <- State.get()
   return(x + y)
 end
 
-# %Freyja.Freer.Impure{
-#   sig: Freyja.Effects.Reader,
-#   data: %Freyja.Effects.Reader.Ask{},
-#   q: [&Freyja.Freer.pure/1, #Function<42.113135111/1 in :erl_eval.expr/6>]
-# }
-
+# c is a function: (env, k) -> {result, env}
+# The comp macro transforms this into nested Comp.bind calls
 #+end_src
 
-** the `con` expression creates an `Freer.Impure` struct
-which has 3 fields
-- `sig` - the effect signature atom
-- `data` - the struct returned by an operation function from the effect signature module
-- `q` - a queue of continuations to feed resolved effect values to - the first
-  item on the queue is `&Freer.pure/1` which is from the `Freer.send_effect` in
-  the effect signature opeation. The second item on the queue is the anonymous
-  function from the second parameter of the `bind` call, which binds the `x`
-  parameter
-
-** if we manually feed values to the continuations
-playing the part of the interpreter, we can see how the computation
-evolves to completion...
-
-so if we call the second continuation with the value 5, we are setting the
-value of `x`, the response to the Ask request, to 5 (the same value
-used before)...
+** the `comp` expression creates a computation function
+The macro expands to nested `Comp.bind` calls:
 
 #+begin_src elixir
-cont = e.q |> Enum.at(1)
-e2 = cont.(5)
-
-# %Freyja.Freer.Impure{
-#   sig: Freyja.Effects.State,
-#   data: %Freyja.Effects.State.Get{},
-#   q: [&Freyja.Freer.pure/1, #Function<42.113135111/1 in :erl_eval.expr/6>]
-# }
-
+# The comp block above is equivalent to:
+Comp.bind(Reader.ask(), fn x ->
+  Comp.bind(State.get(), fn y ->
+    Comp.pure(x + y)
+  end)
+end)
 #+end_src
 
-and we get a new `Impure` struct returned, with `data` for the `State.get()`
-operation...
-
-** calling the second continuation with the value 10
-is saying that the `State.get()` operation yielded 10 - which becomes
-the value of `y`...
+** when we install handlers and run
+each `with_handler` wraps the computation with handler evidence:
 
 #+begin_src elixir
-cont2 = e2.q |> Enum.at(1)
-cont2.(10)
-
-# %Freyja.Freer.Pure{val: 15}
+c
+|> Reader.with_handler(5)   # installs Reader handler, sets reader value to 5
+|> State.with_handler(10)   # installs State handler, sets state to 10
+|> Comp.run!()              # runs the computation
 #+end_src
 
-** and we have arrived
-we get a `Pure` struct back, wihch represents a terminal
-node in a computaiton, with value `15` - from `x + y`
-
+** execution flow
+1. `Comp.run!` calls the computation with an initial env and final continuation
+2. First effect: `Reader.ask()` looks up the Reader handler in env
+3. Handler reads value `5` from env.state and calls continuation with it
+4. Continuation binds `x = 5` and proceeds to next effect
+5. Second effect: `State.get()` looks up State handler
+6. Handler reads value `10` from env.state and calls continuation with it
+7. Continuation binds `y = 10` and evaluates `Comp.pure(x + y)`
+8. `Comp.pure(15)` calls the final continuation with result `15`
 
 ** What have we seen
-- the `con` macro rearranges a `with`-like syntax into nested
+- the `comp` macro rearranges a `with`-like syntax into nested
   `bind` function calls
-- program logic is captured in *pure* continuations in the `Freer.Impure` struct
+- program logic is captured in *pure* continuation functions
 - pure program logic can use effect operations to make impure requests
 - handlers can interpret those requests however they like
+- unlike Freyja, Skuld uses direct function calls (CPS) instead of data structures
 
 * getting more real-world
 
 - introducing some new concepts
 
-** defcon
-the `con` macro makes sequencing effect requests into a computation easy.
-`defcon` does the same for functions
+** defcomp
+the `comp` macro makes sequencing effect requests into a computation easy.
+`defcomp` does the same for functions
 
 #+begin_src elixir
 defmodule Ex1 do
+  use Skuld.Syntax
 
-  defcon foo(x) do
+  defcomp foo(x) do
     y <- Reader.ask()
     return(x + y)
   end
@@ -336,16 +308,17 @@ defmodule Ex1 do
 end
 
 Ex1.foo(5)
-|> Reader.Handler.run(10)
-|> Run.eval()
+|> Reader.with_handler(10)
+|> Comp.run!()
 #+end_src
 
 ** turtles
 
 #+begin_src elixir
 defmodule Ex2 do
+  use Skuld.Syntax
 
-  defcon bar(x) do
+  defcomp bar(x) do
     z <- Ex1.foo(x)
     return(z)
   end
@@ -353,8 +326,8 @@ defmodule Ex2 do
 end
 
 Ex2.bar(5)
-|> Reader.Handler.run(10)
-|> Run.eval()
+|> Reader.with_handler(10)
+|> Comp.run!()
 #+end_src
 
 ** higher and higher
@@ -363,89 +336,86 @@ So far, we've only seen "first order" effects - effects which *do not* take
 computations as parameters... but there are higher-order effects which *do* take
 computations as parameters too.
 
-When there are higher-order effects in
-play we use `hefty` blocks and `defhefty` functions instead of `con` blocks.
-(First-order effects can be freely used in `hefty` blocks too, but if you
-only have first-order effects then `con` blocks are more efficient)
+In Skuld, unlike Freyja, there's no distinction between first-order and
+higher-order effects at the syntax level - `comp` and `defcomp` work for both.
+This is because Skuld uses CPS which naturally handles higher-order effects.
 
 #+begin_src elixir
 defmodule Ex3 do
+  use Skuld.Syntax
 
-  defcon first() do
+  defcomp first() do
     _ <- TaggedWriter.tell(:foo, 100)
     return(:first)
   end
 
-  defcon second() do
+  defcomp second() do
     _ <- TaggedWriter.tell(:foo, 200)
     return(:second)
   end
 
-  defcon call_them() do
+  defcomp call_them() do
     _ <- first()
     second()
   end
 
-  defhefty collect() do
-    val <- call_them() |> TaggedWriter.listen()
-    Freer.return(val)
+  defcomp collect() do
+    # listen is a higher-order operation - it takes a computation as parameter
+    val <- TaggedWriter.listen(:foo, call_them())
+    return(val)
   end
 
 end
 
 Ex3.collect()
-|> TaggedWriter.Handler.run()
-|> TaggedWriter.Algebra.run()
-|> Lift.Algebra.run()
-|> Run.eval()
+|> TaggedWriter.with_handler(:foo)
+|> Comp.run!()
 #+end_src
 
 
 ** and the rest
 
-Now that you've met a higher-order effect, and the `hefty` macros, we
-can introduce `Throw` which is a first-order effect and `Catch` which
-is a higher-order effect. There's special syntax in `hefty` for `Catch`
+Now we can introduce `Throw` for error handling. There's special `catch`
+syntax in `comp` blocks for catching thrown errors.
 
 #+begin_src elixir
 defmodule Ex4 do
+  use Skuld.Syntax
 
-  defcon will_it_throw(x) do
+  defcomp will_it_throw(x) do
     if Integer.is_odd(x) do
-      Throw.throw_error(:boom)
+      Throw.throw(:boom)
     else
       return(x * 2)
     end
   end
 
-  defhefty safe_will_it_throw(x) do
+  defcomp safe_will_it_throw(x) do
     will_it_throw(x)
   catch
-    :boom -> Hefty.return(:oops)
+    :boom -> return(:oops)
   end
 
-  defhefty do_stuff_to_list(l) do
+  defcomp do_stuff_to_list(l) do
     FxList.fx_map(l, &safe_will_it_throw/1)
   end
 end
 
 Ex4.do_stuff_to_list([1,2,3,4,5])
-|> Throw.Handler.run()
-|> Catch.Algebra.run()
-|> FxList.Algebra.run()
-|> Lift.Algebra.run()
-|> Run.eval()
+|> Throw.with_handler()
+|> Comp.run!()
 
 #+end_src
 
 ** and and
 
-There's also an `else` syntax in `hefty` for `with` style steps
+There's also an `else` syntax in `comp` for `with` style pattern matching
 
 #+begin_src elixir
 defmodule Ex5 do
+  use Skuld.Syntax
 
-  defcon do_the_thing(k, x) do
+  defcomp do_the_thing(k, x) do
     if Integer.is_odd(x) do
       return({:ok, x * 2})
     else
@@ -453,7 +423,7 @@ defmodule Ex5 do
     end
   end
 
-  defhefty process(a,b,c) do
+  defcomp process(a,b,c) do
     {:ok, ar} <- do_the_thing(:a, a)
     {:ok, br} <- do_the_thing(:b, b)
     {:ok, cr} <- do_the_thing(:c, c)
@@ -464,9 +434,7 @@ defmodule Ex5 do
 end
 
 Ex5.process(1,2,3)
-|> Else.Algebra.run()
-|> Lift.Algebra.run()
-|> Run.eval()
+|> Comp.run!()
 
 #+end_src
 
@@ -488,51 +456,74 @@ to resume it with the exact values that caused the failure
 
 #+begin_src elixir
 defmodule Ex6 do
-  defcon maybe_fail(version) do
+  use Skuld.Syntax
+
+  defcomp maybe_fail(version) do
     _ <- State.put(10)
 
     _ <- case version do
-      :original ->             Throw.throw_error(:validation_failed)
-
-      :patched ->                       return(:ok)
+      :original -> Throw.throw(:validation_failed)
+      :patched -> return(:ok)
     end
 
     x <- State.get()
     return(x)
   end
 
-  def builder(version) do
+  def run_with_logging(version) do
     maybe_fail(version)
-    |> EffectLogger.Handler.run(EffectLogger.Log.new())
-    |> Throw.Handler.run()
-    |> State.Handler.run(0)
+    |> EffectLogger.with_logging()  # must be innermost
+    |> Throw.with_handler()
+    |> State.with_handler(0)
+    |> Comp.run()
   end
 
 end
 
-builder1 = Ex6.builder(:original)
-outcome1 =  Run.run(builder1)
-outcome1.outputs[EffectLogger.Handler]
+# Run the original (which throws)
+{{:throw, :validation_failed}, log1} = Ex6.run_with_logging(:original) |> elem(0)
 
-json1 = Jason.encode!(outcome1)
+# The log captures all effects up to the throw
+IO.inspect(log1)
 
-builder2 = Ex6.builder(:patched)
-outcome2 = Run.rerun(builder2, Jason.decode!(json1))
+# Run the patched version
+{{:ok, 10}, log2} = Ex6.run_with_logging(:patched) |> elem(0)
 
-outcome2 = (Ex6.maybe_fail(:patched)
-  |> EffectLogger.Handler.run(EffectLogger.Log.new())
-  |> Throw.Handler.run()
-  |> State.Handler.run(0)
-  |> Run.run())
-
-outcome2.outputs[EffectLogger.Handler]
-outcome2.result
+# Can replay from a log to reproduce exact behavior
+{replayed_result, _env} =
+  Ex6.maybe_fail(:patched)
+  |> EffectLogger.with_replay(log2)
+  |> Comp.run()
 
 #+end_src
 
 ** coroutines
 
-Coroutines allow a computation to request a value from its caller
+Coroutines (via the Yield effect) allow a computation to suspend and
+request a value from its caller
+
+#+begin_src elixir
+defmodule CoroutineEx do
+  use Skuld.Syntax
+  alias Skuld.Effects.Yield
+
+  defcomp interactive_sum() do
+    x <- Yield.yield("Enter first number:")
+    y <- Yield.yield("Enter second number:")
+    return(x + y)
+  end
+end
+
+# Drive the coroutine by feeding inputs
+alias Skuld.Effects.Yield
+
+{:done, result, _yields, _env} =
+  CoroutineEx.interactive_sum()
+  |> Yield.with_handler()
+  |> Yield.feed([10, 20])  # feed inputs to each yield
+
+# result == 30
+#+end_src
 
 ** serializable coroutines
 
@@ -548,19 +539,19 @@ deserialized and resumed some time later
 - <insert a plain Elixir example>
 #+begin_src elixir
 defmodule Anon do
-  defcon anonymize_user(user) do
+  use Skuld.Syntax
+
+  defcomp anonymize_user(user) do
     return(nil)
   end
 
-  defcon anonymise_org(org) do
+  defcomp anonymise_org(org) do
     return(nil)
   end
-
-
 end
 
 
-    defhefty anonymize_user(user) do
+    defcomp anonymize_user(user) do
       changeset = User.anonymize_changeset(user)
 
       # Record the change (effect!)
@@ -570,7 +561,7 @@ end
       return(Ecto.Changeset.apply_changes(changeset))
     end
 
-    defhefty anonymize_users_with_capture(user_ids) do
+    defcomp anonymize_users_with_capture(user_ids) do
       # (effect!)
       users <- EctoFx.query(Queries, :find_users_by_ids, %{ids: user_ids})
 
@@ -617,23 +608,33 @@ end
 
 * How do they work
 - There are several ways they can work
-- We'll focus on Freyja, an Elixir library using a Freer monad
-- It turns out the Freer monad has significant performance issues - so
-  I'm working on another library, using
+- Skuld uses an evidence-passing approach with continuation-passing style (CPS)
+- Computations are functions, handlers are stored in an environment,
+  and effects are dispatched by looking up handlers in the evidence map
 
 * What can they do
-
+- Reader: side-load configuration/context without parameter drilling
+- Writer: accumulate logs/events from anywhere in the call stack
+- State: thread mutable state through pure functions
+- TaggedReader/Writer/State: multiple independent instances of the above
+- Throw/Catch: structured error handling
+- Yield: coroutines and suspendable computations
+- FxList: effectful list operations (map, reduce, filter, etc.)
+- Bracket: resource acquisition and cleanup (like try/finally)
+- EffectLogger: logging, replay, and debugging of effect sequences
 
 * What are the problems
 ** Performance
-- Freyja is ~15x slower than a pure reduce
-- creating Freer structs and maintaining the
-  continuation queue dominate
-** Skuld
-- based on evidence-passing + final-encoding
-  - represents the effects as "evidence" functions
-  - doesn't create Freer structs - makes direct function calls
-  - uses CPS for a wider range of effects, which causes some performance hit
-  - ~4x slower than a pure reduce, ~4x faster than Freyja
-  - Koka avoids this hit by using the type-system to identify when it can
-    avoid creating continuations
+- There's inherent overhead in the effect dispatch mechanism
+- Pure Elixir code is always faster than effectful code
+- The tradeoff is worthwhile for I/O-bound code where the structure benefits
+  outweigh the performance cost
+
+** Skuld's approach
+- Based on evidence-passing + continuation-passing style (CPS)
+- Represents effects as "evidence" functions in an environment map
+- Doesn't create data structures for each effect - makes direct function calls
+- Uses CPS to support control effects (throw, catch, yield)
+- ~4x slower than a pure reduce, ~4x faster than Freyja
+- Koka (a research language) avoids some overhead by using the type-system
+  to identify when continuations can be avoided
