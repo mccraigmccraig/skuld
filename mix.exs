@@ -27,6 +27,7 @@ defmodule Skuld.MixProject do
 
   defp deps do
     [
+      {:jason, "~> 1.4"},
       {:mix_test_watch, "~> 1.4.0", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
