@@ -28,3 +28,5 @@ skuld-*.tar
 # LSP
 /.elixir_ls/
 /.lexical/
+
+/freyja
