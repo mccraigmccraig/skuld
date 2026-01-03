@@ -29,4 +29,7 @@ skuld-*.tar
 /.elixir_ls/
 /.lexical/
 
+# Dialyzer PLT cache
+/priv/plts/
+
 /freyja

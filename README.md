@@ -1,5 +1,7 @@
 # Skuld
 
+[![Test](https://github.com/mccraigmccraig/skuld/actions/workflows/test.yml/badge.svg)](https://github.com/mccraigmccraig/skuld/actions/workflows/test.yml)
+
 Evidence-passing algebraic effects for Elixir.
 
 Skuld is a clean, efficient implementation of algebraic effects using evidence-passing
