@@ -8,10 +8,10 @@ defmodule Skuld.Effects.FxList do
 
   ## Operations
 
-  - `fx_map(list, f)` - Map effectful function over list
-  - `fx_reduce(list, init, f)` - Reduce with effectful function
-  - `fx_each(list, f)` - Execute effectful function for each element (returns :ok)
-  - `fx_filter(list, pred)` - Filter with effectful predicate
+  - `fx_map(enumerable, f)` - Map effectful function over enumerable
+  - `fx_reduce(enumerable, init, f)` - Reduce with effectful function
+  - `fx_each(enumerable, f)` - Execute effectful function for each element (returns :ok)
+  - `fx_filter(enumerable, pred)` - Filter with effectful predicate
 
   ## Example
 
@@ -29,55 +29,31 @@ defmodule Skuld.Effects.FxList do
         return(users)
       end
 
-  ## Performance Warning: Large Lists
+  ## Implementation
 
-  FxList builds continuation chains proportional to list length. For large
-  lists (10,000+ elements), this causes memory/cache pressure that degrades
-  performance to ~O(n^1.3) instead of O(n).
+  FxList uses an iterative approach that runs each element's computation
+  to completion before moving to the next. This avoids building continuation
+  chains and provides O(n) scaling for any list size.
 
-  **Benchmarks show:**
-  - 1,000 elements: ~0.2µs per operation
-  - 10,000 elements: ~0.4µs per operation (2x slower per-op)
-  - 100,000 elements: ~0.8µs per operation (4x slower per-op)
+  Each element's effects are fully resolved before proceeding, with the
+  environment (containing state, handlers, etc.) threaded through.
 
-  **For large iteration counts, use `Skuld.Effects.Yield` instead:**
+  ## Suspension Handling
 
-      # Yield-based approach: O(n) scaling at any size
-      def iteration_loop() do
-        comp do
-          n <- State.get()
-          _ <- State.put(n + 1)
-          _ <- Yield.yield(:ok)
-          iteration_loop()
-        end
-      end
-
-      # Run N iterations with constant per-op cost
-      iteration_loop()
-      |> Yield.with_handler()
-      |> State.with_handler(0)
-      |> Yield.run_with_driver(fn _yielded ->
-        if iterations_remaining > 0 do
-          {:continue, :ok}
-        else
-          {:stop, :done}
-        end
-      end)
-
-  The Yield approach maintains ~0.17µs per operation regardless of N,
-  achieving 2-8x speedup over FxList at large scales.
-
-  **Rule of thumb:** Use FxList for lists under ~5,000 elements.
-  For larger iteration counts, use Yield-based coroutines.
+  If an element's computation suspends (e.g., via Yield), the suspension
+  is propagated but partial results are lost. For computations that may
+  suspend, consider using Yield-based iteration patterns directly.
   """
 
   alias Skuld.Comp
   alias Skuld.Comp.Types
 
   @doc """
-  Map an effectful function over a list.
+  Map an effectful function over an enumerable.
 
   Returns a computation that produces a list of results.
+  Each element's computation runs to completion before the next begins,
+  avoiding continuation chain buildup.
 
   ## Example
 
@@ -90,19 +66,40 @@ defmodule Skuld.Effects.FxList do
       end)
       # => computation returning [2, 4, 6]
   """
-  @spec fx_map(list(), (term() -> Types.computation())) :: Types.computation()
-  def fx_map([], _f), do: Comp.pure([])
+  @spec fx_map(Enumerable.t(), (term() -> Types.computation())) :: Types.computation()
+  def fx_map(enumerable, f) do
+    fn env, outer_k ->
+      result =
+        Enum.reduce_while(enumerable, {:ok, [], env}, fn elem, {:ok, acc, current_env} ->
+          case Comp.call(f.(elem), current_env, &Comp.identity_k/2) do
+            {%Comp.Throw{} = throw, err_env} ->
+              {:halt, {:error, throw, err_env}}
 
-  def fx_map([head | tail], f) do
-    Comp.bind(f.(head), fn result ->
-      Comp.bind(fx_map(tail, f), fn rest ->
-        Comp.pure([result | rest])
-      end)
-    end)
+            {%Comp.Suspend{} = suspend, suspend_env} ->
+              {:halt, {:suspended, suspend, suspend_env}}
+
+            {value, new_env} ->
+              {:cont, {:ok, [value | acc], new_env}}
+          end
+        end)
+
+      case result do
+        {:ok, acc, final_env} ->
+          outer_k.(Enum.reverse(acc), final_env)
+
+        {:error, throw, err_env} ->
+          err_env.leave_scope.(throw, err_env)
+
+        {:suspended, suspend, suspend_env} ->
+          {suspend, suspend_env}
+      end
+    end
   end
 
   @doc """
-  Reduce a list with an effectful function.
+  Reduce an enumerable with an effectful function.
+
+  Each element's computation runs to completion before the next begins.
 
   ## Example
 
@@ -114,21 +111,42 @@ defmodule Skuld.Effects.FxList do
       end)
       # => computation returning 6
   """
-  @spec fx_reduce(list(), term(), (term(), term() -> Types.computation())) :: Types.computation()
-  def fx_reduce([], acc, _f), do: Comp.pure(acc)
+  @spec fx_reduce(Enumerable.t(), term(), (term(), term() -> Types.computation())) ::
+          Types.computation()
+  def fx_reduce(enumerable, init, f) do
+    fn env, outer_k ->
+      result =
+        Enum.reduce_while(enumerable, {:ok, init, env}, fn elem, {:ok, acc, current_env} ->
+          case Comp.call(f.(elem, acc), current_env, &Comp.identity_k/2) do
+            {%Comp.Throw{} = throw, err_env} ->
+              {:halt, {:error, throw, err_env}}
 
-  def fx_reduce([head | tail], acc, f) do
-    Comp.bind(f.(head, acc), fn new_acc ->
-      fx_reduce(tail, new_acc, f)
-    end)
+            {%Comp.Suspend{} = suspend, suspend_env} ->
+              {:halt, {:suspended, suspend, suspend_env}}
+
+            {new_acc, new_env} ->
+              {:cont, {:ok, new_acc, new_env}}
+          end
+        end)
+
+      case result do
+        {:ok, final_acc, final_env} ->
+          outer_k.(final_acc, final_env)
+
+        {:error, throw, err_env} ->
+          err_env.leave_scope.(throw, err_env)
+
+        {:suspended, suspend, suspend_env} ->
+          {suspend, suspend_env}
+      end
+    end
   end
 
   @doc """
   Execute an effectful function for each element, discarding results.
 
   Returns a computation that produces `:ok`.
-
-  Useful for benchmarking - run N iterations inside a single computation.
+  Each element's computation runs to completion before the next begins.
 
   ## Example
 
@@ -143,21 +161,38 @@ defmodule Skuld.Effects.FxList do
   """
   @spec fx_each(Enumerable.t(), (term() -> Types.computation())) :: Types.computation()
   def fx_each(enumerable, f) do
-    enumerable
-    |> Enum.to_list()
-    |> do_fx_each(f)
-  end
+    fn env, outer_k ->
+      result =
+        Enum.reduce_while(enumerable, {:ok, env}, fn elem, {:ok, current_env} ->
+          case Comp.call(f.(elem), current_env, &Comp.identity_k/2) do
+            {%Comp.Throw{} = throw, err_env} ->
+              {:halt, {:error, throw, err_env}}
 
-  defp do_fx_each([], _f), do: Comp.pure(:ok)
+            {%Comp.Suspend{} = suspend, suspend_env} ->
+              {:halt, {:suspended, suspend, suspend_env}}
 
-  defp do_fx_each([head | tail], f) do
-    Comp.bind(f.(head), fn _result ->
-      do_fx_each(tail, f)
-    end)
+            {_value, new_env} ->
+              {:cont, {:ok, new_env}}
+          end
+        end)
+
+      case result do
+        {:ok, final_env} ->
+          outer_k.(:ok, final_env)
+
+        {:error, throw, err_env} ->
+          err_env.leave_scope.(throw, err_env)
+
+        {:suspended, suspend, suspend_env} ->
+          {suspend, suspend_env}
+      end
+    end
   end
 
   @doc """
-  Filter a list with an effectful predicate.
+  Filter an enumerable with an effectful predicate.
+
+  Each element's predicate runs to completion before the next begins.
 
   ## Example
 
@@ -169,18 +204,34 @@ defmodule Skuld.Effects.FxList do
       end)
       # With threshold=2 => computation returning [3, 4]
   """
-  @spec fx_filter(list(), (term() -> Types.computation())) :: Types.computation()
-  def fx_filter([], _pred), do: Comp.pure([])
+  @spec fx_filter(Enumerable.t(), (term() -> Types.computation())) :: Types.computation()
+  def fx_filter(enumerable, pred) do
+    fn env, outer_k ->
+      result =
+        Enum.reduce_while(enumerable, {:ok, [], env}, fn elem, {:ok, acc, current_env} ->
+          case Comp.call(pred.(elem), current_env, &Comp.identity_k/2) do
+            {%Comp.Throw{} = throw, err_env} ->
+              {:halt, {:error, throw, err_env}}
 
-  def fx_filter([head | tail], pred) do
-    Comp.bind(pred.(head), fn keep? ->
-      Comp.bind(fx_filter(tail, pred), fn rest ->
-        if keep? do
-          Comp.pure([head | rest])
-        else
-          Comp.pure(rest)
-        end
-      end)
-    end)
+            {%Comp.Suspend{} = suspend, suspend_env} ->
+              {:halt, {:suspended, suspend, suspend_env}}
+
+            {keep?, new_env} ->
+              new_acc = if keep?, do: [elem | acc], else: acc
+              {:cont, {:ok, new_acc, new_env}}
+          end
+        end)
+
+      case result do
+        {:ok, acc, final_env} ->
+          outer_k.(Enum.reverse(acc), final_env)
+
+        {:error, throw, err_env} ->
+          err_env.leave_scope.(throw, err_env)
+
+        {:suspended, suspend, suspend_env} ->
+          {suspend, suspend_env}
+      end
+    end
   end
 end

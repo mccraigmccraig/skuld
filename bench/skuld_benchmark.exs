@@ -346,8 +346,8 @@ defmodule SkuldBenchmark do
     IO.puts("Yield Benchmark (Coroutine Approach)")
     IO.puts("====================================")
     IO.puts("")
-    IO.puts("Yield uses coroutine-style suspend/resume: handler setup ONCE,")
-    IO.puts("short continuation chains. Scales better than FxList at large N.")
+    IO.puts("Yield uses coroutine-style suspend/resume for interruptible iteration.")
+    IO.puts("Both FxList and Yield now maintain constant per-op cost at any scale.")
     IO.puts("")
 
     yield_targets = [1_000, 5_000, 10_000, 50_000, 100_000]
@@ -358,7 +358,7 @@ defmodule SkuldBenchmark do
         String.pad_trailing("Skuld/Yield", 15) <>
         String.pad_trailing("FxL µs/op", 12) <>
         String.pad_trailing("Yield µs/op", 12) <>
-        String.pad_trailing("Speedup", 10)
+        String.pad_trailing("FxL/Yield", 10)
     )
 
     IO.puts(String.duplicate("-", 75))
@@ -393,9 +393,10 @@ defmodule SkuldBenchmark do
     IO.puts("")
     IO.puts("Yield Analysis:")
     IO.puts("---------------")
-    IO.puts("- Skuld/Yield maintains ~constant per-op cost as N grows")
-    IO.puts("- FxList shows ~O(n^1.3) scaling due to long continuation chains")
-    IO.puts("- For large iteration counts (10,000+), prefer Yield over FxList")
+    IO.puts("- Both FxList and Yield maintain ~constant per-op cost as N grows")
+    IO.puts("- FxList is ~1.7x faster due to lower per-iteration overhead")
+    IO.puts("- Use Yield when you need coroutine semantics (suspend/resume, early exit)")
+    IO.puts("- Use FxList for simple iteration over collections")
   end
 
   defp median_time(iterations, fun) do
