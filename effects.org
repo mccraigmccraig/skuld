@@ -42,9 +42,10 @@
   in-memory computation
 - Skuld is cobsiderably faster - 4x slower than a simple state monad
   - this seems reasonable for heavily I/O bound processes. A Benchmark with the
-    user.csv importer shows an N times speedup because bulk data access is used
-    - the thing that Algebraic Effects bring is making the bulk code as easy to
-      write as the slow N+1 pattern code
+    user.csv importer shows an TBD times speedup because bulk data access is
+    used
+    - the thing that Algebraic Effects bring to the party is to make the bulk
+      code as easy to write as the slow N+1 pattern code
 
 * Aliases
 - use these aliases to run all the code examples in IEx
