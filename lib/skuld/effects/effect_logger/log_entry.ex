@@ -329,4 +329,43 @@ defmodule Skuld.Effects.EffectLogger.LogEntry do
   def decode_log(entries) when is_list(entries) do
     Enum.map(entries, &SerializableStruct.decode/1)
   end
+
+  @doc """
+  Encode a list of log entries to a JSON string.
+
+  ## Options
+
+  - `:pretty` - When `true`, pretty-print the JSON output (default: `false`)
+
+  ## Example
+
+      json = LogEntry.json_encode_log(log)
+      json = LogEntry.json_encode_log(log, pretty: true)
+  """
+  @spec json_encode_log([t()], keyword()) :: String.t()
+  def json_encode_log(entries, opts \\ []) when is_list(entries) do
+    jason_opts = if Keyword.get(opts, :pretty, false), do: [pretty: true], else: []
+    Jason.encode!(entries, jason_opts)
+  end
+
+  @doc """
+  Decode a JSON string into a list of log entries.
+
+  ## Example
+
+      {:ok, log} = LogEntry.json_decode_log(json_string)
+  """
+  @spec json_decode_log(String.t()) :: {:ok, [t()]} | {:error, any()}
+  def json_decode_log(json) when is_binary(json) do
+    case Jason.decode(json) do
+      {:ok, entries} when is_list(entries) ->
+        {:ok, decode_log(entries)}
+
+      {:ok, _other} ->
+        {:error, :not_a_list}
+
+      {:error, _} = error ->
+        error
+    end
+  end
 end

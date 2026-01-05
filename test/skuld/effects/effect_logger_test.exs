@@ -494,5 +494,105 @@ defmodule Skuld.Effects.EffectLoggerTest do
       # Args should be decoded back to the original struct type
       assert %State.Put{value: 123} = decoded.args
     end
+
+    test "json_encode_log/2 encodes log entries to JSON string" do
+      comp = Comp.bind(State.get(), fn _x -> Comp.pure(:done) end)
+
+      {{:done, log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(42)
+        |> Comp.run()
+
+      json = LogEntry.json_encode_log(log)
+      assert is_binary(json)
+      assert String.contains?(json, "Completed")
+      assert String.contains?(json, "State.Get")
+    end
+
+    test "json_encode_log/2 with pretty option formats output" do
+      comp = State.get()
+
+      {{_result, log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(42)
+        |> Comp.run()
+
+      compact = LogEntry.json_encode_log(log)
+      pretty = LogEntry.json_encode_log(log, pretty: true)
+
+      # Pretty output should have newlines
+      refute String.contains?(compact, "\n")
+      assert String.contains?(pretty, "\n")
+    end
+
+    test "json_decode_log/1 decodes JSON string to log entries" do
+      comp =
+        Comp.bind(State.get(), fn x ->
+          Comp.bind(State.put(x + 1), fn _ ->
+            Comp.pure(x)
+          end)
+        end)
+
+      {{42, log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(42)
+        |> Comp.run()
+
+      json = LogEntry.json_encode_log(log)
+      assert {:ok, decoded_log} = LogEntry.json_decode_log(json)
+
+      assert length(decoded_log) == 2
+      assert [%Completed{}, %Completed{}] = decoded_log
+    end
+
+    test "json_decode_log/1 returns error for invalid JSON" do
+      assert {:error, %Jason.DecodeError{}} = LogEntry.json_decode_log("not valid json")
+    end
+
+    test "json_decode_log/1 returns error for non-list JSON" do
+      json = Jason.encode!(%{foo: "bar"})
+      assert {:error, :not_a_list} = LogEntry.json_decode_log(json)
+    end
+
+    test "json_encode_log and json_decode_log round-trip correctly" do
+      comp =
+        Comp.bind(Reader.ask(), fn x ->
+          Comp.bind(State.put(x * 2), fn _ ->
+            Comp.bind(State.get(), fn y ->
+              Comp.pure(y)
+            end)
+          end)
+        end)
+
+      {{20, log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> Reader.with_handler(10)
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      json = LogEntry.json_encode_log(log)
+      {:ok, decoded_log} = LogEntry.json_decode_log(json)
+
+      assert length(decoded_log) == length(log)
+
+      Enum.zip(log, decoded_log)
+      |> Enum.each(fn {original, decoded} ->
+        assert original.id == decoded.id
+        assert original.effect == decoded.effect
+        # Note: atoms in result become strings after JSON round-trip
+        # (e.g., :ok -> "ok"), but other values preserve correctly
+      end)
+
+      # Check specific results - integers should round-trip exactly
+      [reader_entry, state_put_entry, state_get_entry] = decoded_log
+      assert reader_entry.result == 10
+      # :ok -> "ok" in JSON
+      assert state_put_entry.result == "ok"
+      assert state_get_entry.result == 20
+    end
   end
 end
