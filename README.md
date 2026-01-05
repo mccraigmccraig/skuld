@@ -42,32 +42,35 @@ end
 ## Quick Start
 
 ```elixir
-import Skuld.Syntax
+use Skuld.Syntax
 alias Skuld.Comp
 alias Skuld.Effects.{State, Reader, Writer, Throw, Yield}
 
 # Define a computation using the comp macro
-defcomp example() do
-  # Read from Reader effect
-  config <- Reader.ask()
+defmodule Example do
+  defcomp example() do
+    # Read from Reader effect
+    config <- Reader.ask()
 
-  # Get and update State
-  count <- State.get()
-  _ <- State.put(count + 1)
+    # Get and update State
+    count <- State.get()
+    _ <- State.put(count + 1)
 
-  # Write to Writer effect
-  _ <- Writer.tell("processed item #{count}")
+    # Write to Writer effect
+    _ <- Writer.tell("processed item #{count}")
 
-  return({config, count})
+    return({config, count})
+  end
 end
 
 # Run with handlers installed
-{result, _env} =
-  example()
+Example.example()
   |> Reader.with_handler(:my_config)
-  |> State.with_handler(0)
-  |> Writer.with_handler()
-  |> Comp.run()
+  |> State.with_handler(0, result_transform: fn r, st -> {r, {:final_state, st}} end)
+  |> Writer.with_handler([], result_transform: fn r, w -> {r, {:log, w}} end)
+  |> Comp.run!()
+
+#=> {{{:my_config, 0}, {:final_state, 1}}, {:log, ["processed item 0"]}}
 ```
 
 ## Effects
