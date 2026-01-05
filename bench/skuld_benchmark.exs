@@ -10,13 +10,13 @@
 # 4. Evf/Nested    - Flat evidence-passing (minimal overhead baseline)
 # 5. Skuld/Nested  - Skuld with nested binds
 # 6. Skuld/Chained - Skuld with chained binds
-# 7. Skuld/FxList  - Skuld with FxList iteration
+# 7. Skuld/FxFList  - Skuld with FxList iteration
 # 8. Skuld/Yield   - Skuld with coroutine-style iteration
 
 alias Skuld.Comp
 alias Skuld.Effects.State, as: SkuldState
+alias Skuld.Effects.FxFasterList, as: SkuldFxFasterList
 alias Skuld.Effects.FxList, as: SkuldFxList
-alias Skuld.Effects.FxControlList, as: SkuldFxControlList
 alias Skuld.Effects.Yield, as: SkuldYield
 
 defmodule SkuldBenchmark do
@@ -179,8 +179,8 @@ defmodule SkuldBenchmark do
     end)
   end
 
-  def skuld_fxlist(target) do
-    SkuldFxList.fx_each(1..target, fn _i ->
+  def skuld_fxfasterlist(target) do
+    SkuldFxFasterList.fx_each(1..target, fn _i ->
       SkuldState.get()
       |> Comp.bind(fn n ->
         SkuldState.put(n + 1)
@@ -191,8 +191,8 @@ defmodule SkuldBenchmark do
     end)
   end
 
-  def skuld_fxcontrollist(target) do
-    SkuldFxControlList.fx_each(1..target, fn _i ->
+  def skuld_fxlist(target) do
+    SkuldFxList.fx_each(1..target, fn _i ->
       SkuldState.get()
       |> Comp.bind(fn n ->
         SkuldState.put(n + 1)
@@ -288,7 +288,7 @@ defmodule SkuldBenchmark do
       _ = time_evf(evf_nested(100))
       _ = time_skuld_wrapped(skuld_wrap(skuld_nested(100), 0))
       _ = time_skuld_wrapped(skuld_wrap(skuld_chained(100), 0))
-      _ = time_skuld_wrapped(skuld_wrap(skuld_fxlist(100), 0))
+      _ = time_skuld_wrapped(skuld_wrap(skuld_fxfasterlist(100), 0))
       _ = time_skuld_yield(100)
     end
 
@@ -303,7 +303,7 @@ defmodule SkuldBenchmark do
         String.pad_trailing("Evf", 12) <>
         String.pad_trailing("Skuld/Nest", 12) <>
         String.pad_trailing("Skuld/Chain", 12) <>
-        String.pad_trailing("Skuld/FxL", 12)
+        String.pad_trailing("Skuld/FxFL", 12)
     )
 
     IO.puts(String.duplicate("-", 80))
@@ -313,7 +313,7 @@ defmodule SkuldBenchmark do
       evf_nested_comp = evf_nested(target)
       skuld_nested_wrapped = skuld_wrap(skuld_nested(target), 0)
       skuld_chained_wrapped = skuld_wrap(skuld_chained(target), 0)
-      skuld_fxlist_wrapped = skuld_wrap(skuld_fxlist(target), 0)
+      skuld_fxfasterlist_wrapped = skuld_wrap(skuld_fxfasterlist(target), 0)
 
       pure_recurse_time =
         median_time(iterations, fn -> time_pure(fn -> pure_recurse(target) end) end)
@@ -327,8 +327,8 @@ defmodule SkuldBenchmark do
       skuld_chained_time =
         median_time(iterations, fn -> time_skuld_wrapped(skuld_chained_wrapped) end)
 
-      skuld_fxlist_time =
-        median_time(iterations, fn -> time_skuld_wrapped(skuld_fxlist_wrapped) end)
+      skuld_fxfasterlist_time =
+        median_time(iterations, fn -> time_skuld_wrapped(skuld_fxfasterlist_wrapped) end)
 
       IO.puts(
         String.pad_trailing("#{target}", 8) <>
@@ -337,7 +337,7 @@ defmodule SkuldBenchmark do
           String.pad_trailing(format_time(evf_nested_time), 12) <>
           String.pad_trailing(format_time(skuld_nested_time), 12) <>
           String.pad_trailing(format_time(skuld_chained_time), 12) <>
-          String.pad_trailing(format_time(skuld_fxlist_time), 12)
+          String.pad_trailing(format_time(skuld_fxfasterlist_time), 12)
       )
     end
 
@@ -349,7 +349,7 @@ defmodule SkuldBenchmark do
     IO.puts("- Evf: Flat evidence-passing (minimal dynamic dispatch)")
     IO.puts("- Skuld/Nest: Skuld with nested binds (typical usage)")
     IO.puts("- Skuld/Chain: Skuld with chained binds (tests CPS behavior)")
-    IO.puts("- Skuld/FxL: Skuld with FxList iteration")
+    IO.puts("- Skuld/FxFL: Skuld with FxFasterList iteration")
 
     # ============================================================
     # Yield Benchmark
@@ -360,16 +360,16 @@ defmodule SkuldBenchmark do
     IO.puts("====================================")
     IO.puts("")
     IO.puts("Yield uses coroutine-style suspend/resume for interruptible iteration.")
-    IO.puts("Both FxList and Yield now maintain constant per-op cost at any scale.")
+    IO.puts("Both FxFasterList and Yield now maintain constant per-op cost at any scale.")
     IO.puts("")
 
     yield_targets = [1_000, 5_000, 10_000, 50_000, 100_000]
 
     IO.puts(
       String.pad_trailing("Target", 10) <>
-        String.pad_trailing("Skuld/FxL", 15) <>
+        String.pad_trailing("Skuld/FxFL", 15) <>
         String.pad_trailing("Skuld/Yield", 15) <>
-        String.pad_trailing("FxL µs/op", 12) <>
+        String.pad_trailing("FxFL µs/op", 12) <>
         String.pad_trailing("Yield µs/op", 12) <>
         String.pad_trailing("FxL/Yield", 10)
     )
@@ -377,11 +377,11 @@ defmodule SkuldBenchmark do
     IO.puts(String.duplicate("-", 75))
 
     for target <- yield_targets do
-      skuld_fxlist_wrapped = skuld_wrap(skuld_fxlist(target), 0)
+      skuld_fxfasterlist_wrapped = skuld_wrap(skuld_fxfasterlist(target), 0)
 
-      skuld_fxlist_time =
+      skuld_fxfasterlist_time =
         median_time(iterations, fn ->
-          time_skuld_wrapped(skuld_fxlist_wrapped)
+          time_skuld_wrapped(skuld_fxfasterlist_wrapped)
         end)
 
       skuld_yield_time =
@@ -389,15 +389,17 @@ defmodule SkuldBenchmark do
           time_skuld_yield(target)
         end)
 
-      fxlist_per_op = skuld_fxlist_time / target
+      fxfasterlist_per_op = skuld_fxfasterlist_time / target
       yield_per_op = skuld_yield_time / target
-      yield_speedup = if skuld_yield_time > 0, do: skuld_fxlist_time / skuld_yield_time, else: 0
+
+      yield_speedup =
+        if skuld_yield_time > 0, do: skuld_fxfasterlist_time / skuld_yield_time, else: 0
 
       IO.puts(
         String.pad_trailing("#{target}", 10) <>
-          String.pad_trailing(format_time(skuld_fxlist_time), 15) <>
+          String.pad_trailing(format_time(skuld_fxfasterlist_time), 15) <>
           String.pad_trailing(format_time(skuld_yield_time), 15) <>
-          String.pad_trailing("#{Float.round(fxlist_per_op, 3)}", 12) <>
+          String.pad_trailing("#{Float.round(fxfasterlist_per_op, 3)}", 12) <>
           String.pad_trailing("#{Float.round(yield_per_op, 3)}", 12) <>
           String.pad_trailing("#{Float.round(yield_speedup, 2)}x", 10)
       )
@@ -406,79 +408,79 @@ defmodule SkuldBenchmark do
     IO.puts("")
     IO.puts("Yield Analysis:")
     IO.puts("---------------")
-    IO.puts("- Both FxList and Yield maintain ~constant per-op cost as N grows")
-    IO.puts("- FxList is ~1.7x faster due to lower per-iteration overhead")
+    IO.puts("- Both FxFasterList and Yield maintain ~constant per-op cost as N grows")
+    IO.puts("- FxFasterList is ~1.7x faster due to lower per-iteration overhead")
     IO.puts("- Use Yield when you need coroutine semantics (suspend/resume, early exit)")
-    IO.puts("- Use FxList for simple iteration over collections")
+    IO.puts("- Use FxFasterList for simple iteration over collections")
 
     # ============================================================
-    # FxList vs FxControlList Benchmark
+    # FxFasterList vs FxList Benchmark
     # ============================================================
     IO.puts("")
     IO.puts("")
-    IO.puts("FxList vs FxControlList Benchmark")
+    IO.puts("FxFasterList vs FxList Benchmark")
     IO.puts("=================================")
     IO.puts("")
-    IO.puts("FxList: Uses Enum.reduce_while, handles control effects explicitly")
-    IO.puts("FxControlList: Uses Comp.bind chains, control effects propagate naturally")
+    IO.puts("FxFasterList: Uses Enum.reduce_while, handles control effects explicitly")
+    IO.puts("FxList: Uses Comp.bind chains, control effects propagate naturally")
     IO.puts("")
-    IO.puts("Key difference: FxControlList supports full Yield resume semantics.")
+    IO.puts("Key difference: FxList supports full Yield resume semantics.")
     IO.puts("")
 
     fxlist_targets = [100, 500, 1_000, 2_000, 5_000, 10_000]
 
     IO.puts(
       String.pad_trailing("Target", 10) <>
+        String.pad_trailing("FxFasterList", 15) <>
         String.pad_trailing("FxList", 15) <>
-        String.pad_trailing("FxControlList", 15) <>
+        String.pad_trailing("FxFL µs/op", 12) <>
         String.pad_trailing("FxL µs/op", 12) <>
-        String.pad_trailing("FxCL µs/op", 12) <>
-        String.pad_trailing("FxL/FxCL", 10)
+        String.pad_trailing("FxFL/FxL", 10)
     )
 
     IO.puts(String.duplicate("-", 75))
 
     for target <- fxlist_targets do
+      skuld_fxfasterlist_wrapped = skuld_wrap(skuld_fxfasterlist(target), 0)
       skuld_fxlist_wrapped = skuld_wrap(skuld_fxlist(target), 0)
-      skuld_fxcontrollist_wrapped = skuld_wrap(skuld_fxcontrollist(target), 0)
+
+      skuld_fxfasterlist_time =
+        median_time(iterations, fn ->
+          time_skuld_wrapped(skuld_fxfasterlist_wrapped)
+        end)
 
       skuld_fxlist_time =
         median_time(iterations, fn ->
           time_skuld_wrapped(skuld_fxlist_wrapped)
         end)
 
-      skuld_fxcontrollist_time =
-        median_time(iterations, fn ->
-          time_skuld_wrapped(skuld_fxcontrollist_wrapped)
-        end)
-
+      fxfasterlist_per_op = skuld_fxfasterlist_time / target
       fxlist_per_op = skuld_fxlist_time / target
-      fxcontrollist_per_op = skuld_fxcontrollist_time / target
 
       ratio =
-        if skuld_fxcontrollist_time > 0,
-          do: skuld_fxlist_time / skuld_fxcontrollist_time,
+        if skuld_fxlist_time > 0,
+          do: skuld_fxfasterlist_time / skuld_fxlist_time,
           else: 0
 
       IO.puts(
         String.pad_trailing("#{target}", 10) <>
+          String.pad_trailing(format_time(skuld_fxfasterlist_time), 15) <>
           String.pad_trailing(format_time(skuld_fxlist_time), 15) <>
-          String.pad_trailing(format_time(skuld_fxcontrollist_time), 15) <>
+          String.pad_trailing("#{Float.round(fxfasterlist_per_op, 3)}", 12) <>
           String.pad_trailing("#{Float.round(fxlist_per_op, 3)}", 12) <>
-          String.pad_trailing("#{Float.round(fxcontrollist_per_op, 3)}", 12) <>
           String.pad_trailing("#{Float.round(ratio, 2)}x", 10)
       )
     end
 
     IO.puts("")
-    IO.puts("FxList vs FxControlList Analysis:")
+    IO.puts("FxFasterList vs FxList Analysis:")
     IO.puts("---------------------------------")
-    IO.puts("- FxList: Better performance for simple iteration (no control effects)")
-    IO.puts("- FxControlList: Supports full Yield/Suspend resume semantics")
-    IO.puts("- Trade-off: FxControlList builds continuation chains (more allocations)")
+    IO.puts("- FxFasterList: Better performance for simple iteration (no control effects)")
+    IO.puts("- FxList: Supports full Yield/Suspend resume semantics")
+    IO.puts("- Trade-off: FxList builds continuation chains (more allocations)")
     IO.puts("- Recommendation:")
-    IO.puts("  - Use FxList for high-performance iteration without Yield")
-    IO.puts("  - Use FxControlList when you need resumable Yield/Suspend")
+    IO.puts("  - Use FxFasterList for high-performance iteration without Yield")
+    IO.puts("  - Use FxList when you need resumable Yield/Suspend (recommended default)")
   end
 
   defp median_time(iterations, fun) do

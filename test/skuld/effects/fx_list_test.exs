@@ -35,6 +35,13 @@ defmodule Skuld.Effects.FxListTest do
 
       assert Comp.run!(comp) == [{1, 0}, {2, 1}, {3, 2}]
     end
+
+    test "works with range" do
+      comp =
+        FxList.fx_map(1..3, fn x -> Comp.pure(x * 2) end)
+
+      assert Comp.run!(comp) == [2, 4, 6]
+    end
   end
 
   describe "fx_reduce" do
@@ -212,6 +219,15 @@ defmodule Skuld.Effects.FxListTest do
       {result, _env} = Comp.run(comp)
       assert {:error, :hit_two} = result
     end
+
+    test "try_catch returns ok on success" do
+      comp =
+        Throw.try_catch(FxList.fx_map([1, 2, 3], fn x -> Comp.pure(x * 2) end))
+        |> Throw.with_handler()
+
+      {result, _env} = Comp.run(comp)
+      assert {:ok, [2, 4, 6]} = result
+    end
   end
 
   describe "fx_reduce with Throw" do
@@ -276,11 +292,10 @@ defmodule Skuld.Effects.FxListTest do
 
   # ============================================================
   # Control Effect Tests - Yield (Suspend/Resume)
-  # FxList has LIMITED suspend support - it suspends but loses context
   # ============================================================
 
   describe "fx_map with Yield" do
-    test "yield suspends but cannot resume to continue list (loses context)" do
+    test "yield in middle of list can be resumed" do
       comp =
         FxList.fx_map([1, 2, 3, 4, 5], fn x ->
           Comp.bind(Yield.yield({:processing, x}), fn _ ->
@@ -292,16 +307,61 @@ defmodule Skuld.Effects.FxListTest do
       # First run should yield with first element
       {%Comp.Suspend{value: {:processing, 1}, resume: r1}, _e1} = Comp.run(comp)
 
-      # Resume - but FxList doesn't preserve the list iteration context!
-      # It just returns the single element's result, not the full list
-      {result, _env} = r1.(:resumed)
-      # FxList only returns the result of the first element, not the full list
-      assert result == 2
+      # Resume and get next yield
+      {%Comp.Suspend{value: {:processing, 2}, resume: r2}, _e2} = r1.(:resumed_1)
+      {%Comp.Suspend{value: {:processing, 3}, resume: r3}, _e3} = r2.(:resumed_2)
+      {%Comp.Suspend{value: {:processing, 4}, resume: r4}, _e4} = r3.(:resumed_3)
+      {%Comp.Suspend{value: {:processing, 5}, resume: r5}, _e5} = r4.(:resumed_4)
+
+      # Final resume returns completed result
+      {final, _env} = r5.(:resumed_5)
+      assert final == [2, 4, 6, 8, 10]
+    end
+
+    test "yield preserves state across resumes" do
+      comp =
+        FxList.fx_map([1, 2, 3], fn x ->
+          Comp.bind(State.get(), fn count ->
+            Comp.bind(State.put(count + 1), fn _ ->
+              Comp.bind(Yield.yield({:at_count, count}), fn _ ->
+                Comp.pure({x, count})
+              end)
+            end)
+          end)
+        end)
+        |> State.with_handler(0)
+        |> Yield.with_handler()
+
+      # Process through all yields
+      {%Comp.Suspend{value: {:at_count, 0}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.Suspend{value: {:at_count, 1}, resume: r2}, _e2} = r1.(:ok)
+      {%Comp.Suspend{value: {:at_count, 2}, resume: r3}, _e3} = r2.(:ok)
+      {result, _env} = r3.(:ok)
+
+      assert result == [{1, 0}, {2, 1}, {3, 2}]
+    end
+  end
+
+  describe "fx_reduce with Yield" do
+    test "yield in reducer can be resumed" do
+      comp =
+        FxList.fx_reduce([1, 2, 3], 0, fn x, acc ->
+          Comp.bind(Yield.yield({:reducing, x, acc}), fn _ ->
+            Comp.pure(acc + x)
+          end)
+        end)
+        |> Yield.with_handler()
+
+      {%Comp.Suspend{value: {:reducing, 1, 0}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.Suspend{value: {:reducing, 2, 1}, resume: r2}, _e2} = r1.(:ok)
+      {%Comp.Suspend{value: {:reducing, 3, 3}, resume: r3}, _e3} = r2.(:ok)
+      {result, _env} = r3.(:ok)
+      assert result == 6
     end
   end
 
   describe "fx_each with Yield" do
-    test "yield suspends but loses remaining elements on resume" do
+    test "yield in each can be resumed" do
       comp =
         FxList.fx_each([1, 2, 3], fn x ->
           Yield.yield({:visiting, x})
@@ -309,30 +369,140 @@ defmodule Skuld.Effects.FxListTest do
         |> Yield.with_handler()
 
       {%Comp.Suspend{value: {:visiting, 1}, resume: r1}, _e1} = Comp.run(comp)
-      # Resume returns just the yield's resume value, not :ok from full iteration
-      {result, _env} = r1.(:ok)
-      # The result is just what the yield returned, not the full fx_each result
+      {%Comp.Suspend{value: {:visiting, 2}, resume: r2}, _e2} = r1.(:ok)
+      {%Comp.Suspend{value: {:visiting, 3}, resume: r3}, _e3} = r2.(:ok)
+      {result, _env} = r3.(:ok)
       assert result == :ok
     end
   end
 
+  describe "fx_filter with Yield" do
+    test "yield in predicate can be resumed" do
+      comp =
+        FxList.fx_filter([1, 2, 3, 4], fn x ->
+          Comp.bind(Yield.yield({:checking, x}), fn _ ->
+            Comp.pure(rem(x, 2) == 0)
+          end)
+        end)
+        |> Yield.with_handler()
+
+      {%Comp.Suspend{value: {:checking, 1}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.Suspend{value: {:checking, 2}, resume: r2}, _e2} = r1.(:ok)
+      {%Comp.Suspend{value: {:checking, 3}, resume: r3}, _e3} = r2.(:ok)
+      {%Comp.Suspend{value: {:checking, 4}, resume: r4}, _e4} = r3.(:ok)
+      {result, _env} = r4.(:ok)
+      assert result == [2, 4]
+    end
+  end
+
   # ============================================================
-  # Comparison note: FxList vs FxControlList
+  # Combined Control Effects
   # ============================================================
-  #
-  # FxList:
-  # - Throw: Works correctly - short-circuits and propagates
-  # - Yield: Suspends but LOSES list iteration context
-  #   - Resume only continues the single element's computation
-  #   - Remaining list elements are lost
-  #
-  # FxControlList:
-  # - Throw: Works correctly - short-circuits and propagates
-  # - Yield: Works correctly - resume continues from exact point
-  #   - Full list iteration context is preserved in continuation
-  #   - Can resume through all elements
-  #
-  # For computations that use Yield/Suspend, use FxControlList.
-  # For computations that only use Throw (or no control effects), 
-  # both work, but FxList may have better performance for large lists.
+
+  describe "combined Throw and Yield" do
+    test "throw after yield short-circuits" do
+      comp =
+        FxList.fx_map([1, 2, 3], fn x ->
+          Comp.bind(Yield.yield({:before, x}), fn _ ->
+            if x == 2 do
+              Throw.throw(:error_at_2)
+            else
+              Comp.pure(x * 2)
+            end
+          end)
+        end)
+        |> Throw.with_handler()
+        |> Yield.with_handler()
+
+      # First yield
+      {%Comp.Suspend{value: {:before, 1}, resume: r1}, _e1} = Comp.run(comp)
+      # Resume, get second yield
+      {%Comp.Suspend{value: {:before, 2}, resume: r2}, _e2} = r1.(:ok)
+      # Resume, throw happens - should be wrapped in Throw struct
+      {result, _env} = r2.(:ok)
+      assert %Comp.Throw{error: :error_at_2} = result
+    end
+
+    test "yield after throw recovery continues" do
+      comp =
+        FxList.fx_map([1, 2, 3], fn x ->
+          inner =
+            Throw.catch_error(
+              if x == 2 do
+                Throw.throw(:error_at_2)
+              else
+                Comp.pure(x * 2)
+              end,
+              fn _err -> Comp.pure(:recovered) end
+            )
+
+          Comp.bind(inner, fn result ->
+            Comp.bind(Yield.yield({:after, x, result}), fn _ ->
+              Comp.pure(result)
+            end)
+          end)
+        end)
+        |> Throw.with_handler()
+        |> Yield.with_handler()
+
+      # First yield
+      {%Comp.Suspend{value: {:after, 1, 2}, resume: r1}, _e1} = Comp.run(comp)
+      # Second yield (with recovered value)
+      {%Comp.Suspend{value: {:after, 2, :recovered}, resume: r2}, _e2} = r1.(:ok)
+      # Third yield
+      {%Comp.Suspend{value: {:after, 3, 6}, resume: r3}, _e3} = r2.(:ok)
+      # Final result
+      {result, _env} = r3.(:ok)
+      assert result == [2, :recovered, 6]
+    end
+  end
+
+  # ============================================================
+  # Yield.collect and Yield.feed helpers
+  # ============================================================
+
+  describe "with Yield.collect" do
+    test "collects all yields from fx_map" do
+      comp =
+        FxList.fx_map([1, 2, 3], fn x ->
+          Comp.bind(Yield.yield(x), fn _ ->
+            Comp.pure(x * 2)
+          end)
+        end)
+        |> Yield.with_handler()
+
+      {:done, result, yields, _env} = Yield.collect(comp)
+      assert result == [2, 4, 6]
+      assert yields == [1, 2, 3]
+    end
+  end
+
+  describe "with Yield.feed" do
+    test "feeds inputs to yields in fx_map" do
+      comp =
+        FxList.fx_map([1, 2, 3], fn x ->
+          Comp.bind(Yield.yield({:want_multiplier, x}), fn mult ->
+            Comp.pure(x * mult)
+          end)
+        end)
+        |> Yield.with_handler()
+
+      {:done, result, yields, _env} = Yield.feed(comp, [10, 20, 30])
+      assert result == [10, 40, 90]
+      assert yields == [{:want_multiplier, 1}, {:want_multiplier, 2}, {:want_multiplier, 3}]
+    end
+
+    test "suspends when inputs exhausted" do
+      comp =
+        FxList.fx_map([1, 2, 3], fn x ->
+          Comp.bind(Yield.yield(x), fn _ ->
+            Comp.pure(x * 2)
+          end)
+        end)
+        |> Yield.with_handler()
+
+      # Only provide one input
+      {:suspended, 2, _resume, [1], _env} = Yield.feed(comp, [:a])
+    end
+  end
 end
