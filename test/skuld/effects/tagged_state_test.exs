@@ -249,9 +249,7 @@ defmodule Skuld.Effects.TaggedStateTest do
             Comp.pure(:done)
           end)
         end)
-        |> TaggedState.with_handler(:counter, 0,
-          output: fn result, state -> {result, state} end
-        )
+        |> TaggedState.with_handler(:counter, 0, output: fn result, state -> {result, state} end)
 
       {result, _env} = Comp.run(comp)
 

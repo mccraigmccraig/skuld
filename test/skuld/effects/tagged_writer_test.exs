@@ -271,9 +271,7 @@ defmodule Skuld.Effects.TaggedWriterTest do
             Comp.pure(:done)
           end)
         end)
-        |> TaggedWriter.with_handler(:audit, [],
-          output: fn result, log -> {result, log} end
-        )
+        |> TaggedWriter.with_handler(:audit, [], output: fn result, log -> {result, log} end)
 
       {result, _env} = Comp.run(comp)
 
