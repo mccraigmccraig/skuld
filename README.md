@@ -4,19 +4,28 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/skuld.svg)](https://hex.pm/packages/skuld)
 [![Documentation](https://img.shields.io/badge/documentation-gray)](https://hexdocs.pm/skuld/)
 
-Evidence-passing algebraic effects for Elixir.
+Evidence-passing Algebraic Effects for Elixir.
 
-Skuld is a clean, efficient implementation of algebraic effects using evidence-passing
+Skuld is a clean, efficient implementation of Algebraic Effects using evidence-passing
 style with CPS (continuation-passing style) for control effects. It provides scoped
 handlers, coroutines via Yield, and composable effect stacks.
 
+Skuld's client API looks quite similar to
+[Freyja](https://github.com/mccraigmccraig/freyja),
+but the implementation is very different. Skuld performs better and has a
+simpler and more coherent API, and is (arguably) easier to understand.
+
 ## Features
 
-- **Evidence-passing style**: Handlers are looked up directly from the environment, avoiding pattern matching on effect signatures
-- **CPS for control effects**: Enables proper support for control flow effects like Yield and Throw
-- **Scoped handlers**: Handlers are automatically installed/restored with proper cleanup
+- **Evidence-passing style**: Handlers are looked up directly from the dynamic
+  environment, avoiding pattern matching on effect signatures
+- **CPS for control effects**: Enables proper support for control flow effects
+  like Yield and Throw
+- **Scoped handlers**: Handlers are automatically installed/restored with proper
+  cleanup
 - **Composable**: Multiple effects can be stacked and composed naturally
-- **No Freer/Hefty split**: Single unified `comp` macro for all effects
+- **Single type**: Single unified `computation` type and `comp` macro for all
+  effectful code (unlike Freyja, there's no first-order / higher-order split)
 
 ## Installation
 
@@ -41,14 +50,14 @@ alias Skuld.Effects.{State, Reader, Writer, Throw, Yield}
 defcomp example() do
   # Read from Reader effect
   config <- Reader.ask()
-  
+
   # Get and update State
   count <- State.get()
   _ <- State.put(count + 1)
-  
+
   # Write to Writer effect
   _ <- Writer.tell("processed item #{count}")
-  
+
   return({config, count})
 end
 
