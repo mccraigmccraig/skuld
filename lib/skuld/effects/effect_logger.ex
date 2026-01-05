@@ -106,7 +106,7 @@ defmodule Skuld.Effects.EffectLogger do
   def with_logging(comp, opts \\ []) do
     output_fn = Keyword.get(opts, :output, fn result, log -> {result, log} end)
     timestamp_fn = Keyword.get(opts, :timestamp_fn, &DateTime.utc_now/0)
-    id_fn = Keyword.get(opts, :id_fn, &make_ref/0)
+    id_fn = Keyword.get(opts, :id_fn, &generate_uuid/0)
     effects_opt = Keyword.get(opts, :effects)
 
     comp
@@ -476,5 +476,11 @@ defmodule Skuld.Effects.EffectLogger do
 
   defp clean_replay_state(env) do
     %{env | state: Map.delete(env.state, @replay_key)}
+  end
+
+  @doc false
+  # Generate a random UUID v4 string
+  def generate_uuid do
+    UUID.uuid4()
   end
 end

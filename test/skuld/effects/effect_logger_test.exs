@@ -2,7 +2,9 @@ defmodule Skuld.Effects.EffectLoggerTest do
   use ExUnit.Case, async: true
 
   alias Skuld.Comp
+  alias Skuld.Comp.SerializableStruct
   alias Skuld.Effects.EffectLogger
+  alias Skuld.Effects.EffectLogger.LogEntry
   alias Skuld.Effects.EffectLogger.LogEntry.Completed
   alias Skuld.Effects.EffectLogger.LogEntry.Thrown
   alias Skuld.Effects.Reader
@@ -344,6 +346,153 @@ defmodule Skuld.Effects.EffectLoggerTest do
         |> Comp.run()
 
       assert entry.id == "custom-id"
+    end
+
+    test "default id is a UUID string" do
+      comp = State.get()
+
+      {{_result, [entry]}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      # UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+      assert is_binary(entry.id)
+      assert String.length(entry.id) == 36
+
+      assert String.match?(
+               entry.id,
+               ~r/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+             )
+    end
+  end
+
+  describe "JSON serialization" do
+    test "Completed entry round-trips through JSON" do
+      comp = State.get()
+
+      {{_result, [entry]}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(42)
+        |> Comp.run()
+
+      # Encode to JSON
+      json = Jason.encode!(entry)
+      assert is_binary(json)
+
+      # Decode back
+      decoded_map = Jason.decode!(json)
+      decoded = SerializableStruct.decode(decoded_map)
+
+      assert %Completed{} = decoded
+      assert decoded.id == entry.id
+      assert decoded.effect == entry.effect
+      assert decoded.result == entry.result
+      assert DateTime.compare(decoded.timestamp, entry.timestamp) == :eq
+    end
+
+    test "Thrown entry round-trips through JSON" do
+      comp = Throw.throw(:my_error)
+
+      {{_result, [entry]}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %Thrown{} = entry
+
+      # Encode to JSON
+      json = Jason.encode!(entry)
+
+      # Decode back
+      decoded_map = Jason.decode!(json)
+      decoded = SerializableStruct.decode(decoded_map)
+
+      assert %Thrown{} = decoded
+      assert decoded.id == entry.id
+      assert decoded.effect == entry.effect
+      assert decoded.error == Atom.to_string(entry.error)
+      assert DateTime.compare(decoded.timestamp, entry.timestamp) == :eq
+    end
+
+    test "full log round-trips through JSON" do
+      comp =
+        Comp.bind(State.get(), fn x ->
+          Comp.bind(State.put(x + 1), fn _ ->
+            Comp.bind(State.get(), fn y ->
+              Comp.pure(y)
+            end)
+          end)
+        end)
+
+      {{_result, log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      assert length(log) == 3
+
+      # Encode entire log to JSON
+      json = Jason.encode!(log)
+
+      # Decode back
+      decoded_maps = Jason.decode!(json)
+      decoded_log = LogEntry.decode_log(decoded_maps)
+
+      assert length(decoded_log) == 3
+
+      Enum.zip(log, decoded_log)
+      |> Enum.each(fn {original, decoded} ->
+        assert original.id == decoded.id
+        assert original.effect == decoded.effect
+        assert DateTime.compare(original.timestamp, decoded.timestamp) == :eq
+      end)
+    end
+
+    test "log with different entry types round-trips" do
+      comp =
+        Comp.bind(State.put(42), fn _ ->
+          Throw.throw(:error_after_state)
+        end)
+
+      {{_result, log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      # Should have Completed for State.put and Thrown for Throw
+      assert length(log) == 2
+
+      json = Jason.encode!(log)
+      decoded_maps = Jason.decode!(json)
+      decoded_log = LogEntry.decode_log(decoded_maps)
+
+      [decoded_completed, decoded_thrown] = decoded_log
+      assert %Completed{effect: State} = decoded_completed
+      assert %Thrown{effect: Throw} = decoded_thrown
+    end
+
+    test "args are properly serialized and deserialized" do
+      comp = State.put(123)
+
+      {{_result, [entry]}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      json = Jason.encode!(entry)
+      decoded_map = Jason.decode!(json)
+      decoded = SerializableStruct.decode(decoded_map)
+
+      # Args should be decoded back to the original struct type
+      assert %State.Put{value: 123} = decoded.args
     end
   end
 end
