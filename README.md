@@ -1,6 +1,8 @@
 # Skuld
 
 [![Test](https://github.com/mccraigmccraig/skuld/actions/workflows/test.yml/badge.svg)](https://github.com/mccraigmccraig/skuld/actions/workflows/test.yml)
+[![Hex.pm](https://img.shields.io/hexpm/v/skuld.svg)](https://hex.pm/packages/skuld)
+[![Documentation](https://img.shields.io/badge/documentation-gray)](https://hexdocs.pm/skuld/)
 
 Evidence-passing algebraic effects for Elixir.
 
