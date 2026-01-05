@@ -54,6 +54,8 @@ defmodule Skuld.Effects.EffectLogger do
   alias LogEntry.Thrown
 
   @log_key {__MODULE__, :log}
+  @log_pdict_key {__MODULE__, :log_pdict}
+  @pending_finish_key {__MODULE__, :pending_finish}
   @replay_key {__MODULE__, :replay}
 
   #############################################################################
@@ -113,8 +115,10 @@ defmodule Skuld.Effects.EffectLogger do
     |> Comp.scoped(fn env ->
       effects_to_log = effects_opt || Map.keys(env.evidence)
 
-      # Setup: initialize log and interpose logging handlers
-      env_with_log = Env.put_state(env, @log_key, [])
+      # Setup: initialize log in process dictionary (survives leave_scope)
+      # and mark env so we know logging is active
+      Process.put(@log_pdict_key, [])
+      env_with_log = Env.put_state(env, @log_key, true)
 
       logged_env =
         Enum.reduce(effects_to_log, env_with_log, fn sig, acc_env ->
@@ -131,7 +135,25 @@ defmodule Skuld.Effects.EffectLogger do
 
       # Finally: extract log and transform result using output function
       finally_k = fn result, final_env ->
-        log = Env.get_state(final_env, @log_key, [])
+        # Check for pending Finished entries from resumed effects
+        pending_finish = Process.get(@pending_finish_key, [])
+        Process.delete(@pending_finish_key)
+
+        # Add Finished entries for any pending resumed effects (only if not a sentinel)
+        unless ISentinel.sentinel?(result) do
+          Enum.each(pending_finish, fn {pending_log_id, pending_timestamp_fn} ->
+            finished_entry = %Finished{
+              id: pending_log_id,
+              result: result,
+              timestamp: pending_timestamp_fn.()
+            }
+
+            append_log_entry(finished_entry)
+          end)
+        end
+
+        log = Process.get(@log_pdict_key, [])
+        Process.delete(@log_pdict_key)
         cleaned_env = clean_log_state(final_env)
         {output_fn.(result, Enum.reverse(log)), cleaned_env}
       end
@@ -154,18 +176,29 @@ defmodule Skuld.Effects.EffectLogger do
         # Mark that we logged this effect
         Process.put(flag_key, true)
 
-        # Log the effect completion BEFORE continuing
-        entry = %Completed{
-          id: log_id,
-          effect: sig,
-          args: args,
-          result: value,
-          timestamp: started_at
-        }
+        # Check if we're resuming this effect (timestamp_fn stored by logged_resume)
+        case Process.delete({__MODULE__, :resuming, log_id}) do
+          nil ->
+            # Normal effect completion - log Completed and continue
+            entry = %Completed{
+              id: log_id,
+              effect: sig,
+              args: args,
+              result: value,
+              timestamp: started_at
+            }
 
-        logged_env = append_log(env_after_effect, entry)
-        # Now continue with the rest of the computation
-        k.(value, logged_env)
+            append_log(env_after_effect, entry)
+            k.(value, env_after_effect)
+
+          timestamp_fn ->
+            # We're resuming - register a pending Finished entry that finally_k will complete
+            pending = Process.get(@pending_finish_key, [])
+            Process.put(@pending_finish_key, [{log_id, timestamp_fn} | pending])
+
+            # Continue with the computation
+            k.(value, env_after_effect)
+        end
       end
 
       # Call original handler with logging k
@@ -198,32 +231,38 @@ defmodule Skuld.Effects.EffectLogger do
             end
 
           inner_resume ->
-            # Resumable sentinel (Suspend, etc.) - log lifecycle
-            start_entry = %Started{
-              id: log_id,
-              effect: sig,
-              args: args,
-              timestamp: started_at
-            }
+            # Resumable sentinel (Suspend, etc.)
+            if was_logged do
+              # Sentinel from nested effect - just pass through
+              {result, result_env}
+            else
+              # This handler produced the sentinel - log lifecycle
+              start_entry = %Started{
+                id: log_id,
+                effect: sig,
+                args: args,
+                timestamp: started_at
+              }
 
-            %{yielded: yielded} = ISentinel.serializable_payload(result)
+              %{yielded: yielded} = ISentinel.serializable_payload(result)
 
-            suspend_entry = %Suspended{
-              id: log_id,
-              yielded: yielded,
-              timestamp: timestamp_fn.()
-            }
+              suspend_entry = %Suspended{
+                id: log_id,
+                yielded: yielded,
+                timestamp: timestamp_fn.()
+              }
 
-            logged_env =
-              result_env
-              |> append_log(start_entry)
-              |> append_log(suspend_entry)
+              logged_env =
+                result_env
+                |> append_log(start_entry)
+                |> append_log(suspend_entry)
 
-            # Wrap the resume to log when it's called
-            logged_resume = make_logged_resume(inner_resume, log_id, timestamp_fn)
-            new_sentinel = ISentinel.with_resume(result, logged_resume)
+              # Wrap the resume to log when it's called
+              logged_resume = make_logged_resume(inner_resume, log_id, timestamp_fn)
+              new_sentinel = ISentinel.with_resume(result, logged_resume)
 
-            {new_sentinel, logged_env}
+              {new_sentinel, logged_env}
+            end
         end
       else
         # Normal value - logging already happened in logging_k
@@ -235,54 +274,38 @@ defmodule Skuld.Effects.EffectLogger do
   # Create a logged resume function that wraps the original
   defp make_logged_resume(inner_resume, log_id, timestamp_fn) do
     fn input ->
+      # Log Resumed entry BEFORE calling inner_resume (so it's captured before finally_k)
       resume_entry = %Resumed{
         id: log_id,
         input: input,
         timestamp: timestamp_fn.()
       }
 
+      append_log_entry(resume_entry)
+
+      # Set flag so logging_k knows we're resuming and should add Finished instead of Completed
+      Process.put({__MODULE__, :resuming, log_id}, timestamp_fn)
+
       # Call original resume (arity-1)
       {res_result, res_env} = inner_resume.(input)
 
-      # Log the resume entry
-      res_env_logged = append_log(res_env, resume_entry)
-
-      if ISentinel.sentinel?(res_result) do
-        case ISentinel.get_resume(res_result) do
-          nil ->
-            # Terminal sentinel - pass through with logged env
-            {res_result, res_env_logged}
-
-          r ->
-            # Re-suspended - log and wrap the new resume
-            %{yielded: yielded} = ISentinel.serializable_payload(res_result)
-
-            re_suspend_entry = %Suspended{
-              id: log_id,
-              yielded: yielded,
-              timestamp: timestamp_fn.()
-            }
-
-            logged_r = make_logged_resume(r, log_id, timestamp_fn)
-            new_sentinel = ISentinel.with_resume(res_result, logged_r)
-
-            {new_sentinel, append_log(res_env_logged, re_suspend_entry)}
-        end
-      else
-        # Normal completion - log it
-        complete_entry = %Finished{
-          id: log_id,
-          result: res_result,
-          timestamp: timestamp_fn.()
-        }
-
-        {res_result, append_log(res_env_logged, complete_entry)}
-      end
+      # If the result is a sentinel (Suspend from nested effect, or Throw),
+      # just pass it through. The nested effect's own logging handles its lifecycle.
+      # Our Finished entry will be logged when we eventually complete (via pending_finish).
+      {res_result, res_env}
     end
   end
 
+  # Append a log entry directly to process dictionary
+  defp append_log_entry(entry) do
+    log = Process.get(@log_pdict_key, [])
+    Process.put(@log_pdict_key, [entry | log])
+  end
+
   defp append_log(env, entry) do
-    %{env | state: Map.update!(env.state, @log_key, fn log -> [entry | log] end)}
+    log = Process.get(@log_pdict_key, [])
+    Process.put(@log_pdict_key, [entry | log])
+    env
   end
 
   defp clean_log_state(env) do
@@ -476,6 +499,74 @@ defmodule Skuld.Effects.EffectLogger do
 
   defp clean_replay_state(env) do
     %{env | state: Map.delete(env.state, @replay_key)}
+  end
+
+  #############################################################################
+  ## Retry from Failure
+  #############################################################################
+
+  @doc """
+  Retry a computation from a point of failure using a previously captured log.
+
+  Given a log that contains a `Thrown` entry, this function:
+  1. Truncates the log before the `Thrown` entry
+  2. Replays effects from the truncated log (short-circuiting with logged results)
+  3. Continues with real effect execution from the failure point
+
+  This is useful for retrying after transient failures - effects that succeeded
+  before the failure are replayed (not re-executed), and only the failed effect
+  and subsequent ones are executed fresh.
+
+  Works with both:
+  - **Hot logs**: In-memory `LogEntry` structs
+  - **Cold logs**: Deserialized from JSON via `LogEntry.json_decode_log/1`
+
+  ## Options
+
+  Same as `replay/3`, except `:on_missing` defaults to `:execute` (since the
+  whole point is to continue execution after the logged effects).
+
+  ## Example
+
+      # Original computation that failed
+      {{%Comp.Throw{}, log}, _env} =
+        my_comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> ExternalService.with_handler()
+        |> Comp.run()
+
+      # Retry from failure - effects before the throw are replayed,
+      # the failed effect and beyond are re-executed
+      {result, _env} =
+        my_comp
+        |> EffectLogger.retry_from_failure(log)
+        |> State.with_handler(0)
+        |> ExternalService.with_handler()
+        |> Comp.run()
+
+      # For cold logs (e.g., loaded from database)
+      {:ok, cold_log} = LogEntry.json_decode_log(json_from_db)
+      {result, _env} =
+        my_comp
+        |> EffectLogger.retry_from_failure(cold_log)
+        |> State.with_handler(0)
+        |> ExternalService.with_handler()
+        |> Comp.run()
+  """
+  @spec retry_from_failure(Types.computation(), [LogEntry.t()], keyword()) :: Types.computation()
+  def retry_from_failure(comp, log, opts \\ []) do
+    # Find and remove the Thrown entry and everything after it
+    log_before_failure =
+      Enum.take_while(log, fn
+        %Thrown{} -> false
+        _ -> true
+      end)
+
+    # Default to :execute for on_missing since we want to continue execution
+    opts = Keyword.put_new(opts, :on_missing, :execute)
+
+    replay(comp, log_before_failure, opts)
   end
 
   @doc false
