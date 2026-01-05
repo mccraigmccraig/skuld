@@ -91,9 +91,9 @@ comp do
   _ <- State.put(n + 1)
   return(n)
 end
-|> State.with_handler(0)
+|> State.with_handler(0, output: fn result, state -> {result, {:final_state, state}} end)
 |> Comp.run!()
-#=> 0
+#=> {0, {:final_state, 1}}
 ```
 
 ### Reader
@@ -216,9 +216,9 @@ comp do
   end)
   return(results)
 end
-|> State.with_handler(0)
+|> State.with_handler(0, output: fn result, state -> {result, {:final_state, state}} end)
 |> Comp.run!()
-#=> [2, 4, 6]
+#=> {[2, 4, 6], {:final_state, 3}}
 ```
 
 > **Note**: For large iteration counts (10,000+), use `Yield`-based coroutines instead
