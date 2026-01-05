@@ -50,6 +50,27 @@ defmodule Skuld.Comp do
   end
 
   @doc """
+  Lift a pure value into a computation.
+
+  Alias for `pure/1`. Provided for ergonomic use both inside and outside
+  `comp` blocks. Inside `comp` blocks, use the imported `return/1` from
+  `Skuld.Comp.BaseOps`. Outside `comp` blocks, use `Comp.return/1` directly.
+
+  ## Example
+
+      # Inside a comp block (return is imported)
+      comp do
+        x <- State.get()
+        return(x + 1)
+      end
+
+      # Outside a comp block
+      fn x -> Comp.return(x * 2) end
+  """
+  @spec return(term()) :: Types.computation()
+  def return(value), do: pure(value)
+
+  @doc """
   Call a computation with validation and exception handling.
 
   Raises a helpful error if the value is not a valid computation (2-arity function).

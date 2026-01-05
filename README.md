@@ -204,9 +204,9 @@ alias Skuld.Effects.Throw
 # Returns {:ok, x}, {:error, reason}, or throws
 might_fail = fn x ->
   cond do
-    x < 0 -> return({:error, :negative})
+    x < 0 -> Comp.return({:error, :negative})
     x > 100 -> Throw.throw(:too_large)
-    true -> return({:ok, x})
+    true -> Comp.return({:ok, x})
   end
 end
 
