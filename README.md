@@ -135,33 +135,40 @@ end
 
 ### Throw
 
-Error handling:
+Error handling with the `catch` clause:
 
 ```elixir
 use Skuld.Syntax
 alias Skuld.Comp
 alias Skuld.Effects.Throw
 
-might_fail = fn x ->
-  comp do
-    if x < 0 do
-      Throw.throw({:error, "negative value"})
-    else
-      return(x * 2)
-    end
-  end
-end
-
 comp do
-  result <- Throw.catch_error(
-    might_fail.(-1),
-    fn error -> comp do return({:recovered, error}) end end
-  )
-  return(result)
+  x = -1
+  _ <- if x < 0, do: Throw.throw({:error, "negative"}), else: Comp.pure(:ok)
+  return(x * 2)
+catch
+  err -> return({:recovered, err})
 end
 |> Throw.with_handler()
 |> Comp.run!()
-#=> {:recovered, {:error, "negative value"}}
+#=> {:recovered, {:error, "negative"}}
+```
+
+The `catch` clause desugars to `Throw.catch_error/2`, so the above example 
+is exactly equivalent to:
+
+```elixir
+Throw.catch_error(
+  comp do
+    x = -1
+    _ <- if x < 0, do: Throw.throw({:error, "negative"}), else: Comp.pure(:ok)
+    return(x * 2)
+  end,
+  fn err -> comp do return({:recovered, err}) end end
+)
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:recovered, {:error, "negative"}}
 ```
 
 ### Yield
