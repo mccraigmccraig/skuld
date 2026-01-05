@@ -1,43 +1,125 @@
 defmodule Skuld.Effects.EffectLogger do
   @moduledoc """
-  Effect logging and replay for Skuld via handler wrapping.
+  Effect logging, replay, and resume for Skuld computations.
 
-  ## Logging
+  EffectLogger provides three main capabilities:
 
-  Wraps existing handlers to capture effect calls (requests and responses)
-  as serializable log entries. Must be applied innermost (first in pipe chain)
-  so it can see handlers installed by outer `with_handler` calls.
+  1. **Logging** - Capture all effect calls as serializable log entries
+  2. **Replay** - Re-run computations using logged results instead of real effects
+  3. **Resume** - Continue suspended computations from persisted logs
 
-  ## Replay
+  ## Use Case 1: Effect Logging / Tracing
 
-  Installs "replay" handlers that return logged responses instead of
-  executing real effects. Pure computation segments run normally.
+  Wrap a computation to capture all effect calls:
+
+      {{result, log}, _env} =
+        my_comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> Reader.with_handler(:config)
+        |> Comp.run()
+
+      # log is a list of LogEntry structs (Completed, Thrown, Started, etc.)
+
+  Logs can be serialized to JSON for persistence:
+
+      json = LogEntry.json_encode_log(log)
+      {:ok, log} = LogEntry.json_decode_log(json)
+
+  **Note**: EffectLogger must be innermost (first in pipe chain) to see
+  handlers installed by outer `with_handler` calls.
+
+  ## Use Case 2: Retry After Failure
+
+  When a computation fails, use `retry_from_failure/3` to re-run it:
+
+      # Original run fails
+      {{%Comp.Throw{}, log}, _env} =
+        my_comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> ExternalService.with_handler()
+        |> Comp.run()
+
+      # Retry - effects before failure are replayed, then execution continues
+      {result, _env} =
+        my_comp
+        |> EffectLogger.retry_from_failure(log)
+        |> State.with_handler(0)
+        |> ExternalService.with_handler()
+        |> Comp.run()
+
+  ## Use Case 3: Resume After Suspend
+
+  Computations using `Yield` can suspend and be resumed later.
+
+  ### Hot Resume (in-memory continuation)
+
+  When you have a live `%Comp.Suspend{}` result, call the continuation directly:
+
+      # Run computation - suspends at Yield
+      {%Comp.Suspend{value: yielded, resume: resume}, _env} =
+        my_comp
+        |> EffectLogger.with_logging()
+        |> Yield.with_handler()
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      # Do something with yielded value, get user input, etc.
+      user_input = get_user_response(yielded)
+
+      # Hot resume - call continuation directly
+      {{result, log}, _env} = resume.(user_input)
+
+  ### Cold Resume (from persisted log)
+
+  When the log has been persisted and you no longer have the live continuation,
+  use `resume_from_log/4`:
+
+      # Load log from database (ends with Suspended entry)
+      {:ok, cold_log} = LogEntry.json_decode_log(json_from_db)
+
+      # Cold resume - replays effects, injects resume value, continues execution
+      {result, _env} =
+        my_comp
+        |> EffectLogger.resume_from_log(cold_log, user_input)
+        |> Yield.with_handler()
+        |> State.with_handler(0)
+        |> Comp.run()
 
   ## Log Entry Types
 
   All entries are structs from `Skuld.Effects.EffectLogger.LogEntry`:
 
-  - `Completed` - Simple effect completed synchronously
-  - `Thrown` - Effect threw an error
-  - `Started` - Suspending effect began (for Yield, etc.)
-  - `Suspended` - Effect yielded a value
-  - `Resumed` - Suspended effect was resumed with input
-  - `Finished` - Suspending effect completed after resume(s)
+  | Entry | Description |
+  |-------|-------------|
+  | `Completed` | Simple effect completed synchronously |
+  | `Thrown` | Effect threw an error (terminal) |
+  | `Started` | Suspending effect began (for Yield, etc.) |
+  | `Suspended` | Effect yielded/suspended with a value |
+  | `Resumed` | Suspended effect was resumed with input |
+  | `Finished` | Suspending effect completed after resume(s) |
+
+  ## Hot vs Cold Logs
+
+  - **Hot log**: In-memory structs, may include live continuations in Suspend results
+  - **Cold log**: Deserialized from JSON, no live continuations available
+
+  When to use each:
+  - Use **hot resume** (`resume.(input)`) when the process is still alive
+  - Use **cold resume** (`resume_from_log/4`) after persistence/restart
+
+  ## Limitations
+
+  After JSON round-trip, atoms become strings:
+  - `:ok` → `"ok"`
+  - `%{foo: 1}` → `%{"foo" => 1}`
+
+  This can cause replay divergence if effect args contain atoms. Use string
+  values for data that needs to survive JSON serialization, or use hot replay
+  when possible.
 
   See `Skuld.Effects.EffectLogger.LogEntry` for full documentation.
-
-  ## Example
-
-      # EffectLogger must be innermost to see handlers installed by outer with_handler
-      {result_with_log, env} =
-        my_comp
-        |> EffectLogger.with_logging()
-        |> State.with_handler(0)
-        |> Reader.with_handler(:config)
-        |> Comp.run(Env.new())
-
-      # result_with_log is {original_result, log}
-      {result, log} = result_with_log
   """
 
   alias Skuld.Comp
@@ -349,8 +431,10 @@ defmodule Skuld.Effects.EffectLogger do
       env_with_replay = Env.put_state(env, @replay_key, log_queue)
 
       # Interpose replay handlers on all logged effects
+      # Only Completed, Thrown, and Started entries have the :effect field
       logged_effects =
         log
+        |> Enum.filter(&Map.has_key?(&1, :effect))
         |> Enum.map(& &1.effect)
         |> Enum.uniq()
 
@@ -440,53 +524,70 @@ defmodule Skuld.Effects.EffectLogger do
     end
   end
 
+  # Consume log entries to find how a suspending effect completed.
+  # IMPORTANT: Entries for OTHER effects may be interleaved (nested effects).
+  # We extract only the entries matching log_id, leaving others in place.
   defp consume_until_completion(queue, log_id) do
-    case :queue.out(queue) do
-      {{:value, %Finished{id: ^log_id, result: result}}, rest} ->
-        {:completed, result, rest}
+    # Convert to list for easier manipulation
+    entries = :queue.to_list(queue)
 
-      {{:value, %Suspended{id: ^log_id}}, rest} ->
-        # Look for the resume
-        case :queue.out(rest) do
-          {{:value, %Resumed{id: ^log_id, input: input}}, rest2} ->
-            # Check what happens after resume
-            consume_until_completion_after_resume(rest2, log_id, input)
+    # Find and extract entries for this effect ID
+    {our_entries, other_entries} =
+      Enum.split_with(entries, fn entry -> Map.get(entry, :id) == log_id end)
 
-          _ ->
-            # No resume found - effect is still suspended
-            {:suspended, nil, nil, rest}
+    # Reconstruct queue without our entries
+    rest_queue = :queue.from_list(other_entries)
+
+    # Process our entries in order
+    process_effect_entries(our_entries, log_id, rest_queue)
+  end
+
+  defp process_effect_entries(entries, _log_id, rest_queue) do
+    # Entries should be in order: [Suspended, Resumed, Finished] or [Suspended] (incomplete)
+    # or for simple effects that somehow ended up here: [Finished]
+    case entries do
+      [%Finished{result: result} | _] ->
+        # Direct completion without suspend
+        {:completed, result, rest_queue}
+
+      [%Suspended{}, %Resumed{input: input} | rest] ->
+        # Suspended and resumed - look for completion
+        case Enum.find(rest, &match?(%Finished{}, &1)) do
+          %Finished{} ->
+            {:suspended, nil, input, rest_queue}
+
+          nil ->
+            # Check for re-suspension
+            case Enum.find(rest, &match?(%Suspended{}, &1)) do
+              %Suspended{} ->
+                # Re-suspended - for now treat as incomplete
+                {:suspended, nil, input, rest_queue}
+
+              nil ->
+                # No finished, no re-suspend - incomplete
+                {:suspended, nil, input, rest_queue}
+            end
         end
 
-      {{:value, %Thrown{id: ^log_id, error: error}}, rest} ->
-        {:thrown, error, rest}
+      [%Suspended{}] ->
+        # Suspended but never resumed - incomplete log, cannot replay
+        {:thrown, :replay_log_incomplete, rest_queue}
 
-      {{:value, _other}, rest} ->
-        # Skip unrelated entries
-        consume_until_completion(rest, log_id)
+      [%Thrown{error: error} | _] ->
+        {:thrown, error, rest_queue}
 
-      {:empty, _} ->
-        # Log ended without completion - shouldn't happen in valid log
-        {:thrown, :replay_log_incomplete, queue}
+      [] ->
+        # No entries for this effect - shouldn't happen
+        {:thrown, :replay_log_incomplete, rest_queue}
+
+      _ ->
+        # Unexpected entry order
+        {:thrown, :replay_log_incomplete, rest_queue}
     end
   end
 
-  defp consume_until_completion_after_resume(queue, log_id, input) do
-    case :queue.out(queue) do
-      {{:value, %Finished{id: ^log_id}}, rest} ->
-        # Completed after resume - return the input that was used
-        {:suspended, nil, input, rest}
-
-      {{:value, %Suspended{id: ^log_id}}, _rest} ->
-        # Re-suspended - continue looking
-        consume_until_completion(queue, log_id)
-
-      {{:value, _other}, rest} ->
-        consume_until_completion_after_resume(rest, log_id, input)
-
-      {:empty, _} ->
-        {:suspended, nil, input, queue}
-    end
-  end
+  # No longer needed - functionality merged into consume_until_completion
+  # defp consume_until_completion_after_resume is replaced by process_effect_entries
 
   defp handle_missing(:error, sig, args, _env, _k, _handler) do
     raise "Replay divergence: effect #{inspect(sig)} with args #{inspect(args)} not found in log"
@@ -567,6 +668,87 @@ defmodule Skuld.Effects.EffectLogger do
     opts = Keyword.put_new(opts, :on_missing, :execute)
 
     replay(comp, log_before_failure, opts)
+  end
+
+  #############################################################################
+  ## Cold Resume
+  #############################################################################
+
+  @doc """
+  Resume a suspended computation from a cold (deserialized) log.
+
+  Given a log that ends with a `Suspended` entry (no live continuation available),
+  this function:
+  1. Replays all effects up to and including the suspension point
+  2. Injects the provided `resume_value` as if the user had called `resume.(value)`
+  3. Continues with real effect execution from that point
+
+  This is useful for resuming computations that were suspended, had their log
+  persisted (e.g., to a database), and need to be resumed later - potentially
+  in a different process or after a restart.
+
+  Works with both:
+  - **Hot logs**: In-memory `LogEntry` structs (though hot logs have live
+    continuations, so you'd normally just call `resume.(value)` directly)
+  - **Cold logs**: Deserialized from JSON via `LogEntry.json_decode_log/1`
+
+  ## Options
+
+  Same as `replay/3`, except `:on_missing` defaults to `:execute` (since
+  effects after the suspension point should execute normally).
+
+  ## Example
+
+      # Original computation suspended
+      {%Comp.Suspend{value: yielded}, _env} =
+        my_comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      # ... time passes, log is persisted ...
+
+      # Later: resume from cold log
+      {:ok, cold_log} = LogEntry.json_decode_log(json_from_db)
+      {result, _env} =
+        my_comp
+        |> EffectLogger.resume_from_log(cold_log, user_provided_input)
+        |> State.with_handler(0)
+        |> Yield.with_handler()
+        |> Comp.run()
+  """
+  @spec resume_from_log(Types.computation(), [LogEntry.t()], term(), keyword()) ::
+          Types.computation()
+  def resume_from_log(comp, log, resume_value, opts \\ []) do
+    # Find the last Suspended entry and add a synthetic Resumed entry
+    log_with_resume = inject_resume_entry(log, resume_value)
+
+    # Default to :execute for on_missing since effects after suspend should run
+    opts = Keyword.put_new(opts, :on_missing, :execute)
+
+    replay(comp, log_with_resume, opts)
+  end
+
+  defp inject_resume_entry(log, resume_value) do
+    # Find the last Suspended entry (the one we're resuming from)
+    case Enum.reverse(log) do
+      [%Suspended{id: suspend_id} = suspended | rest] ->
+        # Add a Resumed entry after the Suspended entry
+        resumed = %Resumed{
+          id: suspend_id,
+          input: resume_value,
+          timestamp: DateTime.utc_now()
+        }
+
+        # Reconstruct log with Resumed entry inserted after Suspended
+        Enum.reverse([resumed, suspended | rest])
+
+      _ ->
+        # Log doesn't end with Suspended - just return as-is
+        # (replay will handle any errors)
+        log
+    end
   end
 
   @doc false

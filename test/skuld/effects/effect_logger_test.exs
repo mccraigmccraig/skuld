@@ -306,6 +306,268 @@ defmodule Skuld.Effects.EffectLoggerTest do
     end
   end
 
+  # ============================================================
+  # Cold Log Replay Tests (JSON round-trip)
+  # ============================================================
+
+  describe "cold log replay (JSON round-trip)" do
+    test "replays State effects from cold log" do
+      comp =
+        Comp.bind(State.get(), fn x ->
+          Comp.bind(State.put(x + 1), fn _ ->
+            Comp.bind(State.get(), fn y ->
+              Comp.pure({x, y})
+            end)
+          end)
+        end)
+
+      # First run - capture hot log
+      {{result, hot_log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      assert result == {0, 1}
+
+      # Serialize to JSON and deserialize (cold log)
+      json = LogEntry.json_encode_log(hot_log)
+      {:ok, cold_log} = LogEntry.json_decode_log(json)
+
+      # Replay from cold log with different initial state
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(cold_log)
+        |> State.with_handler(999)
+        |> Comp.run()
+
+      # Should get original values from cold log replay
+      assert replay_result == {0, 1}
+    end
+
+    test "replays Reader effects from cold log (simple value)" do
+      # Note: Using a simple integer value, not a map with atom keys
+      # Maps with atom keys become string keys after JSON round-trip
+      comp = Reader.ask()
+
+      # First run - capture hot log
+      {{result, hot_log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> Reader.with_handler(42)
+        |> Comp.run()
+
+      assert result == 42
+
+      # Cold log round-trip
+      json = LogEntry.json_encode_log(hot_log)
+      {:ok, cold_log} = LogEntry.json_decode_log(json)
+
+      # Replay from cold log
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(cold_log)
+        |> Reader.with_handler(999)
+        |> Comp.run()
+
+      assert replay_result == 42
+    end
+
+    test "replays multiple effects from cold log (integer values only)" do
+      # Note: This test uses integer Reader values to avoid atom->string issues
+      # See the "documents atom->string conversion" test for the limitation
+
+      comp =
+        Comp.bind(Reader.ask(), fn multiplier ->
+          Comp.bind(State.get(), fn x ->
+            Comp.bind(State.put(x * multiplier), fn _ ->
+              Comp.bind(State.get(), fn y ->
+                Comp.pure({x, y})
+              end)
+            end)
+          end)
+        end)
+
+      # First run with integer Reader value
+      {{result, hot_log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(5)
+        |> Reader.with_handler(10)
+        |> Comp.run()
+
+      assert result == {5, 50}
+
+      # Cold log round-trip
+      json = LogEntry.json_encode_log(hot_log)
+      {:ok, cold_log} = LogEntry.json_decode_log(json)
+
+      # Replay with completely different values
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(cold_log)
+        |> State.with_handler(999)
+        |> Reader.with_handler(1)
+        |> Comp.run()
+
+      # Should match original
+      assert replay_result == {5, 50}
+    end
+
+    test "cold log replay preserves integer results exactly" do
+      comp =
+        Comp.bind(State.get(), fn x ->
+          Comp.bind(State.put(x + 100), fn _ ->
+            Comp.bind(State.get(), fn y ->
+              Comp.pure(y)
+            end)
+          end)
+        end)
+
+      {{result, hot_log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(42)
+        |> Comp.run()
+
+      assert result == 142
+
+      # Cold log round-trip
+      json = LogEntry.json_encode_log(hot_log)
+      {:ok, cold_log} = LogEntry.json_decode_log(json)
+
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(cold_log)
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      # Integers should round-trip exactly
+      assert replay_result == 142
+    end
+
+    @tag :atom_string_limitation
+    test "documents atom->string conversion in cold logs" do
+      # This test documents a known limitation: atoms become strings after JSON round-trip
+      # This affects results like :ok from State.put
+
+      comp = State.put(42)
+
+      {{result, hot_log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      # Hot result is atom
+      assert result == :ok
+
+      # Check the hot log entry
+      [entry] = hot_log
+      assert entry.result == :ok
+
+      # Cold log round-trip
+      json = LogEntry.json_encode_log(hot_log)
+      {:ok, cold_log} = LogEntry.json_decode_log(json)
+
+      # Cold log entry has string result
+      [cold_entry] = cold_log
+      assert cold_entry.result == "ok"
+
+      # Replay from cold log returns string, not atom
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(cold_log)
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      # Note: This is "ok" (string), not :ok (atom)
+      assert replay_result == "ok"
+    end
+
+    @tag :atom_string_limitation
+    test "documents Throw arg mismatch in cold log replay" do
+      # This test documents a limitation: when Throw.throw(:atom) is logged,
+      # the atom becomes a string after JSON round-trip. During replay, the
+      # args won't match because the computation still uses :atom but the
+      # log has "atom". This causes replay divergence.
+      #
+      # Workaround: Use string errors instead of atoms for Throw if you need
+      # cold log replay, or use retry_from_failure which truncates before Thrown.
+
+      comp =
+        Comp.bind(State.get(), fn x ->
+          Comp.bind(State.put(x + 1), fn _ ->
+            Throw.throw(:test_error)
+          end)
+        end)
+
+      {{%Comp.Throw{error: :test_error}, hot_log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(10)
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      # Cold log round-trip
+      json = LogEntry.json_encode_log(hot_log)
+      {:ok, cold_log} = LogEntry.json_decode_log(json)
+
+      # Verify the cold log has string error (not atom)
+      thrown_entry = Enum.find(cold_log, &match?(%Thrown{}, &1))
+      assert thrown_entry.error == "test_error"
+      # Args also have string error after deserialization
+      assert thrown_entry.args.error == "test_error"
+
+      # Replay will fail because the computation throws :test_error (atom)
+      # but the log has "test_error" (string) - args don't match
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(cold_log)
+        |> State.with_handler(999)
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      # Divergence error because args mismatch
+      assert %Comp.Throw{error: error} = replay_result
+      assert error.kind == :error
+      assert %RuntimeError{message: msg} = error.payload
+      assert msg =~ "Replay divergence"
+    end
+
+    test "cold log replay with string-based Throw works" do
+      # Using strings for errors avoids the atom->string mismatch issue
+
+      comp =
+        Comp.bind(State.get(), fn x ->
+          Comp.bind(State.put(x + 1), fn _ ->
+            Throw.throw("string_error")
+          end)
+        end)
+
+      {{%Comp.Throw{error: "string_error"}, hot_log}, _env} =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(10)
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      # Cold log round-trip
+      json = LogEntry.json_encode_log(hot_log)
+      {:ok, cold_log} = LogEntry.json_decode_log(json)
+
+      # Replay works because string errors match after JSON round-trip
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(cold_log)
+        |> State.with_handler(999)
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %Comp.Throw{error: "string_error"} = replay_result
+    end
+  end
+
   describe "log format" do
     test "log entries are Completed structs with expected fields" do
       comp = State.get()
@@ -811,6 +1073,428 @@ defmodule Skuld.Effects.EffectLoggerTest do
         end)
 
       assert types == [:started, :suspended, :resumed, :thrown]
+    end
+  end
+
+  # ============================================================
+  # Replay Suspending Effects Tests
+  # ============================================================
+
+  describe "replay suspending effects (Yield)" do
+    test "replays single yield/resume cycle" do
+      comp =
+        Comp.bind(Yield.yield(:yielded_value), fn input ->
+          Comp.pure({:got, input})
+        end)
+
+      # First run - capture log by running to completion
+      logged_comp =
+        comp
+        |> EffectLogger.with_logging()
+        |> Yield.with_handler()
+
+      {%Comp.Suspend{resume: resume}, _} = Comp.run(logged_comp)
+      {{result, log}, _} = resume.(:resume_input)
+
+      assert result == {:got, :resume_input}
+
+      # Log should have: Started, Suspended, Resumed, Finished
+      assert length(log) == 4
+      assert [%Started{}, %Suspended{}, %Resumed{}, %Finished{}] = log
+
+      # Replay from log - should get same result without actual suspension
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(log)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      # Replay should produce same result as original
+      assert replay_result == {:got, :resume_input}
+    end
+
+    test "replays multiple yield/resume cycles" do
+      comp =
+        Comp.bind(Yield.yield(:first), fn a ->
+          Comp.bind(Yield.yield(:second), fn b ->
+            Comp.pure({a, b})
+          end)
+        end)
+
+      # First run - complete both yields
+      logged_comp =
+        comp
+        |> EffectLogger.with_logging()
+        |> Yield.with_handler()
+
+      {%Comp.Suspend{resume: r1}, _} = Comp.run(logged_comp)
+      {%Comp.Suspend{resume: r2}, _} = r1.(:input_a)
+      {{result, log}, _} = r2.(:input_b)
+
+      assert result == {:input_a, :input_b}
+
+      # Log should have 8 entries: 4 for each yield
+      assert length(log) == 8
+
+      # Replay - should produce same result
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(log)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      assert replay_result == {:input_a, :input_b}
+    end
+
+    test "replays yield with state effects" do
+      comp =
+        Comp.bind(State.get(), fn before ->
+          Comp.bind(Yield.yield({:at, before}), fn input ->
+            Comp.bind(State.put(input), fn _ ->
+              Comp.bind(State.get(), fn after_val ->
+                Comp.pure({before, after_val})
+              end)
+            end)
+          end)
+        end)
+
+      # First run
+      logged_comp =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(42)
+        |> Yield.with_handler()
+
+      {%Comp.Suspend{resume: resume}, _} = Comp.run(logged_comp)
+      {{result, log}, _} = resume.(100)
+
+      assert result == {42, 100}
+
+      # Replay with different initial state to prove replay works
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(log)
+        |> State.with_handler(999)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      # Should get original values from replay
+      assert replay_result == {42, 100}
+    end
+
+    test "replay with log ending at Suspended (no resume)" do
+      # This tests what happens when the log has Started -> Suspended but no Resumed
+      # This would happen if we captured the log during suspension
+
+      comp =
+        Comp.bind(Yield.yield(:value), fn input ->
+          Comp.pure({:got, input})
+        end)
+
+      # Run until suspension (don't resume)
+      logged_comp =
+        comp
+        |> EffectLogger.with_logging()
+        |> Yield.with_handler()
+
+      {%Comp.Suspend{value: :value}, _env} = Comp.run(logged_comp)
+
+      # We can't easily capture the partial log without resuming...
+      # Let's manually construct a partial log to test the behavior
+      log = [
+        %Started{
+          id: "test-id",
+          effect: Yield,
+          args: %Yield.YieldOp{value: :value},
+          timestamp: DateTime.utc_now()
+        },
+        %Suspended{
+          id: "test-id",
+          yielded: :value,
+          timestamp: DateTime.utc_now()
+        }
+        # No Resumed or Finished - log ends at suspension
+      ]
+
+      # Replay with incomplete log - should get :replay_log_incomplete error
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(log)
+        |> Yield.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      # Currently returns a Throw with :replay_log_incomplete
+      assert %Comp.Throw{error: :replay_log_incomplete} = replay_result
+    end
+
+    test "replay yield from cold log" do
+      comp =
+        Comp.bind(Yield.yield(42), fn input ->
+          Comp.pure(input * 2)
+        end)
+
+      # First run
+      logged_comp =
+        comp
+        |> EffectLogger.with_logging()
+        |> Yield.with_handler()
+
+      {%Comp.Suspend{resume: resume}, _} = Comp.run(logged_comp)
+      {{result, hot_log}, _} = resume.(10)
+
+      assert result == 20
+
+      # Cold log round-trip
+      json = LogEntry.json_encode_log(hot_log)
+      {:ok, cold_log} = LogEntry.json_decode_log(json)
+
+      # Replay from cold log
+      {replay_result, _env} =
+        comp
+        |> EffectLogger.replay(cold_log)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      assert replay_result == 20
+    end
+  end
+
+  # ============================================================
+  # Cold Resume Tests (resume_from_log/4)
+  # ============================================================
+
+  describe "resume_from_log/4" do
+    test "resumes from cold log with single yield" do
+      comp =
+        Comp.bind(Yield.yield(:waiting), fn input ->
+          Comp.pure({:got, input})
+        end)
+
+      # First run - capture log at suspension point (don't resume)
+      logged_comp =
+        comp
+        |> EffectLogger.with_logging()
+        |> Yield.with_handler()
+
+      # Run until suspension and capture the partial log
+      # We need to get the log at the suspension point
+      # This is tricky because with_logging returns the log at completion
+      # Let's simulate a cold log by manually constructing it
+
+      # Run to get the Suspend result (to verify the computation structure)
+      {%Comp.Suspend{value: :waiting}, _env} = Comp.run(logged_comp)
+
+      # Construct a cold log representing the suspended state
+      log_id = EffectLogger.generate_uuid()
+      timestamp = DateTime.utc_now()
+
+      cold_log = [
+        %Started{
+          id: log_id,
+          effect: Yield,
+          args: %Yield.YieldOp{value: :waiting},
+          timestamp: timestamp
+        },
+        %Suspended{
+          id: log_id,
+          yielded: :waiting,
+          timestamp: timestamp
+        }
+      ]
+
+      # Resume from cold log with a value
+      {result, _env} =
+        comp
+        |> EffectLogger.resume_from_log(cold_log, :my_resume_value)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      assert result == {:got, :my_resume_value}
+    end
+
+    test "resumes from cold log with effects before suspend" do
+      comp =
+        Comp.bind(State.get(), fn before ->
+          Comp.bind(State.put(before + 10), fn _ ->
+            Comp.bind(Yield.yield({:checkpoint, before}), fn input ->
+              Comp.bind(State.put(input), fn _ ->
+                Comp.bind(State.get(), fn after_val ->
+                  Comp.pure({before, after_val})
+                end)
+              end)
+            end)
+          end)
+        end)
+
+      # Construct a cold log with State effects before the yield
+      log_id = EffectLogger.generate_uuid()
+      timestamp = DateTime.utc_now()
+
+      cold_log = [
+        %Completed{
+          id: EffectLogger.generate_uuid(),
+          effect: State,
+          args: %State.Get{},
+          result: 42,
+          timestamp: timestamp
+        },
+        %Completed{
+          id: EffectLogger.generate_uuid(),
+          effect: State,
+          args: %State.Put{value: 52},
+          result: :ok,
+          timestamp: timestamp
+        },
+        %Started{
+          id: log_id,
+          effect: Yield,
+          args: %Yield.YieldOp{value: {:checkpoint, 42}},
+          timestamp: timestamp
+        },
+        %Suspended{
+          id: log_id,
+          yielded: {:checkpoint, 42},
+          timestamp: timestamp
+        }
+      ]
+
+      # Resume from cold log
+      # - State.get should replay → 42
+      # - State.put(52) should replay → :ok
+      # - Yield should be resumed with 100
+      # - State.put(100) should execute fresh (not in log)
+      # - State.get should execute fresh → 100 (from fresh State.put)
+
+      {result, _env} =
+        comp
+        |> EffectLogger.resume_from_log(cold_log, 100)
+        |> State.with_handler(999)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      # before=42 (replayed), after_val=100 (fresh State.get after fresh State.put)
+      assert result == {42, 100}
+    end
+
+    test "resumes from JSON round-trip cold log" do
+      comp =
+        Comp.bind(State.get(), fn x ->
+          Comp.bind(Yield.yield(x * 2), fn input ->
+            Comp.pure({x, input})
+          end)
+        end)
+
+      # Run original computation to get structure
+      logged_comp =
+        comp
+        |> EffectLogger.with_logging()
+        |> State.with_handler(5)
+        |> Yield.with_handler()
+
+      {%Comp.Suspend{value: 10}, _} = Comp.run(logged_comp)
+
+      # Construct log that would exist at suspension
+      log_id = EffectLogger.generate_uuid()
+      timestamp = DateTime.utc_now()
+
+      hot_log = [
+        %Completed{
+          id: EffectLogger.generate_uuid(),
+          effect: State,
+          args: %State.Get{},
+          result: 5,
+          timestamp: timestamp
+        },
+        %Started{
+          id: log_id,
+          effect: Yield,
+          args: %Yield.YieldOp{value: 10},
+          timestamp: timestamp
+        },
+        %Suspended{
+          id: log_id,
+          yielded: 10,
+          timestamp: timestamp
+        }
+      ]
+
+      # JSON round-trip to simulate persistence
+      json = LogEntry.json_encode_log(hot_log)
+      {:ok, cold_log} = LogEntry.json_decode_log(json)
+
+      # Resume from cold log
+      {result, _env} =
+        comp
+        |> EffectLogger.resume_from_log(cold_log, 42)
+        |> State.with_handler(999)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      # x=5 (replayed State.get), input=42 (resume value)
+      assert result == {5, 42}
+    end
+
+    test "resume_from_log handles log not ending with Suspended" do
+      comp = Comp.pure(:done)
+
+      # Log with only Completed entries (no suspension)
+      cold_log = [
+        %Completed{
+          id: EffectLogger.generate_uuid(),
+          effect: State,
+          args: %State.Get{},
+          result: 42,
+          timestamp: DateTime.utc_now()
+        }
+      ]
+
+      # Should just replay normally (resume_value is ignored)
+      {result, _env} =
+        comp
+        |> EffectLogger.resume_from_log(cold_log, :ignored)
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      assert result == :done
+    end
+
+    test "resumes multiple times from successive cold logs" do
+      # A computation with multiple yields
+      comp =
+        Comp.bind(Yield.yield(:first), fn a ->
+          Comp.bind(Yield.yield(:second), fn b ->
+            Comp.pure({a, b})
+          end)
+        end)
+
+      # Cold log after first suspension
+      first_log_id = EffectLogger.generate_uuid()
+      timestamp = DateTime.utc_now()
+
+      first_cold_log = [
+        %Started{
+          id: first_log_id,
+          effect: Yield,
+          args: %Yield.YieldOp{value: :first},
+          timestamp: timestamp
+        },
+        %Suspended{
+          id: first_log_id,
+          yielded: :first,
+          timestamp: timestamp
+        }
+      ]
+
+      # Resume from first cold log - should hit second yield
+      result1 =
+        comp
+        |> EffectLogger.resume_from_log(first_cold_log, :input_a)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      # Should suspend at second yield
+      assert {%Comp.Suspend{value: :second}, _} = result1
     end
   end
 
