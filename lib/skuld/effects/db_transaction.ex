@@ -25,11 +25,11 @@ defmodule Skuld.Effects.DBTransaction do
 
       comp do
         user <- create_user(attrs)
-        
+
         if invalid?(user) do
           _ <- DBTransaction.rollback({:invalid_user, user})
         end
-        
+
         return(user)
       end
       |> EctoTx.with_handler(MyApp.Repo)
@@ -73,11 +73,11 @@ defmodule Skuld.Effects.DBTransaction do
 
       comp do
         user <- create_user(attrs)
-        
+
         if should_abort?(user) do
           _ <- DBTransaction.rollback({:aborted, user.id})
         end
-        
+
         return(user)
       end
   """
