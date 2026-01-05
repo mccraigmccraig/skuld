@@ -154,10 +154,10 @@ end
 #=> {:recovered, {:error, "negative"}}
 ```
 
-The `catch` clause desugars to `Throw.catch_error/2`, so the above example 
-is exactly equivalent to:
+The `catch` clause desugars to `Throw.catch_error/2`:
 
 ```elixir
+# The above is equivalent to:
 Throw.catch_error(
   comp do
     x = -1
@@ -170,6 +170,76 @@ Throw.catch_error(
 |> Comp.run!()
 #=> {:recovered, {:error, "negative"}}
 ```
+
+### Pattern Matching with Else
+
+The `else` clause handles pattern match failures in `<-` bindings. Since `else`
+uses the Throw effect internally, you need a Throw handler:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Throw
+
+comp do
+  {:ok, x} <- Comp.pure({:error, "something went wrong"})
+  return(x * 2)
+else
+  {:error, reason} -> return({:match_failed, reason})
+end
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:match_failed, "something went wrong"}
+```
+
+### Combining Else and Catch
+
+Both clauses can be used together. The `else` must come before `catch`:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Throw
+
+# Returns {:ok, x}, {:error, reason}, or throws
+might_fail = fn x ->
+  cond do
+    x < 0 -> Comp.pure({:error, :negative})
+    x > 100 -> Throw.throw(:too_large)
+    true -> Comp.pure({:ok, x})
+  end
+end
+
+# Throw case (x > 100):
+comp do
+  {:ok, x} <- might_fail.(150)
+  return(x * 2)
+else
+  {:error, reason} -> return({:match_failed, reason})
+catch
+  err -> return({:caught_throw, err})
+end
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:caught_throw, :too_large}
+
+# Match failure case (x < 0):
+comp do
+  {:ok, x} <- might_fail.(-5)
+  return(x * 2)
+else
+  {:error, reason} -> return({:match_failed, reason})
+catch
+  err -> return({:caught_throw, err})
+end
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:match_failed, :negative}
+```
+
+The semantic ordering is `catch(else(body))`, meaning:
+- `else` handles pattern match failures from the main computation
+- `catch` handles throws from both the main computation AND the else handler
 
 ### Yield
 
