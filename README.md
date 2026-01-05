@@ -17,8 +17,8 @@ simpler and more coherent API, and is (arguably) easier to understand.
 
 ## Features
 
-- **Evidence-passing style**: Handlers are looked up directly from the dynamic
-  environment, avoiding pattern matching on effect signatures
+- **Evidence-passing style**: Handlers are looked up directly from a map in the
+  dynamic environment
 - **CPS for control effects**: Enables proper support for control flow effects
   like Yield and Throw
 - **Scoped handlers**: Handlers are automatically installed/restored with proper
@@ -233,19 +233,20 @@ Skuld uses evidence-passing style where:
 3. **CPS** enables control effects (Yield, Throw) to manipulate continuations
 4. **Scoped handlers** automatically manage handler installation/cleanup
 
-This avoids the performance overhead of pattern matching on effect signatures
-and enables efficient composition of multiple effects.
-
 ## Comparison with Freyja
 
-Skuld is a cleaner alternative to Freyja:
+Skuld is a cleaner, faster alternative to Freyja:
 
 | Aspect | Freyja | Skuld |
 |--------|--------|-------|
 | Effect representation | Freer monad + Hefty algebras | Evidence-passing CPS |
+| Computation types | `Freer` + `Hefty` | Just `computation` |
 | Control effects | Hefty (higher-order) | Direct CPS |
-| Handler dispatch | Pattern matching on signatures | Direct map lookup |
+| Handler lookup | Search through handler list | Direct map lookup |
 | Macro system | `con` + `hefty` | Single `comp` |
+
+Skuld's performance advantage comes from avoiding Freer monad object allocation,
+continuation queue management, and linear search for handlers.
 
 ## License
 
