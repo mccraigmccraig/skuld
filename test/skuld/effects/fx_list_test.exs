@@ -298,12 +298,6 @@ defmodule Skuld.Effects.FxListTest do
       # FxList only returns the result of the first element, not the full list
       assert result == 2
     end
-
-    @tag :skip
-    test "SKIP: FxList cannot resume through full list like FxControlList can" do
-      # This test documents what FxList CANNOT do
-      # FxControlList handles this correctly
-    end
   end
 
   describe "fx_each with Yield" do
