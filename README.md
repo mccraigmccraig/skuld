@@ -144,7 +144,7 @@ alias Skuld.Effects.Throw
 
 comp do
   x = -1
-  _ <- if x < 0, do: Throw.throw({:error, "negative"}), else: Comp.pure(:ok)
+  _ <- if x < 0, do: Throw.throw({:error, "negative"}), else: return(:ok)
   return(x * 2)
 catch
   err -> return({:recovered, err})
@@ -161,7 +161,7 @@ The `catch` clause desugars to `Throw.catch_error/2`:
 Throw.catch_error(
   comp do
     x = -1
-    _ <- if x < 0, do: Throw.throw({:error, "negative"}), else: Comp.pure(:ok)
+    _ <- if x < 0, do: Throw.throw({:error, "negative"}), else: return(:ok)
     return(x * 2)
   end,
   fn err -> comp do return({:recovered, err}) end end
@@ -182,7 +182,7 @@ alias Skuld.Comp
 alias Skuld.Effects.Throw
 
 comp do
-  {:ok, x} <- Comp.pure({:error, "something went wrong"})
+  {:ok, x} <- return({:error, "something went wrong"})
   return(x * 2)
 else
   {:error, reason} -> return({:match_failed, reason})
@@ -204,9 +204,9 @@ alias Skuld.Effects.Throw
 # Returns {:ok, x}, {:error, reason}, or throws
 might_fail = fn x ->
   cond do
-    x < 0 -> Comp.pure({:error, :negative})
+    x < 0 -> return({:error, :negative})
     x > 100 -> Throw.throw(:too_large)
-    true -> Comp.pure({:ok, x})
+    true -> return({:ok, x})
   end
 end
 
