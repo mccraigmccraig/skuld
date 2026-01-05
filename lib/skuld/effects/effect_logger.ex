@@ -64,19 +64,22 @@ defmodule Skuld.Effects.EffectLogger do
   Wrap a computation with effect logging.
 
   Returns a computation that, when run, logs all effect calls and returns
-  `{original_result, log}` as the result.
+  the result transformed by the `:output` function.
 
   Must be applied innermost (first in the pipe chain) so it runs after
   outer `with_handler` calls have installed their handlers.
 
   ## Options
 
+  - `:output` - function `(result, log) -> output` to transform the result.
+    Default: `fn result, log -> {result, log} end`
   - `:effects` - list of effect signatures to log (default: all handlers in evidence)
   - `:timestamp_fn` - function to generate timestamps (default: `DateTime.utc_now/0`)
   - `:id_fn` - function to generate unique IDs (default: `make_ref/0`)
 
-  ## Example
+  ## Examples
 
+      # Default: returns {result, log}
       {result_with_log, _env} =
         my_comp
         |> EffectLogger.with_logging()
@@ -84,9 +87,24 @@ defmodule Skuld.Effects.EffectLogger do
         |> Comp.run(Env.new())
 
       {result, log} = result_with_log
+
+      # Custom output: just the result, discard log
+      result =
+        my_comp
+        |> EffectLogger.with_logging(output: fn result, _log -> result end)
+        |> State.with_handler(0)
+        |> Comp.run!()
+
+      # Custom output: log only
+      log =
+        my_comp
+        |> EffectLogger.with_logging(output: fn _result, log -> log end)
+        |> State.with_handler(0)
+        |> Comp.run!()
   """
   @spec with_logging(Types.computation(), keyword()) :: Types.computation()
   def with_logging(comp, opts \\ []) do
+    output_fn = Keyword.get(opts, :output, fn result, log -> {result, log} end)
     timestamp_fn = Keyword.get(opts, :timestamp_fn, &DateTime.utc_now/0)
     id_fn = Keyword.get(opts, :id_fn, &make_ref/0)
     effects_opt = Keyword.get(opts, :effects)
@@ -111,11 +129,11 @@ defmodule Skuld.Effects.EffectLogger do
           end
         end)
 
-      # Finally: extract log and transform result to {result, log}
+      # Finally: extract log and transform result using output function
       finally_k = fn result, final_env ->
         log = Env.get_state(final_env, @log_key, [])
         cleaned_env = clean_log_state(final_env)
-        {{result, Enum.reverse(log)}, cleaned_env}
+        {output_fn.(result, Enum.reverse(log)), cleaned_env}
       end
 
       {logged_env, finally_k}
