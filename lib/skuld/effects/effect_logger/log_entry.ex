@@ -109,7 +109,7 @@ defmodule Skuld.Effects.EffectLogger.LogEntry do
     defimpl Jason.Encoder do
       def encode(entry, opts) do
         map = %{
-          "__struct__" => "Elixir.Skuld.Effects.EffectLogger.LogEntry.Completed",
+          "__struct__" => Atom.to_string(@for),
           "id" => entry.id,
           "effect" => Helpers.encode_effect(entry.effect),
           "args" => Helpers.encode_args(entry.args),
@@ -151,7 +151,7 @@ defmodule Skuld.Effects.EffectLogger.LogEntry do
     defimpl Jason.Encoder do
       def encode(entry, opts) do
         map = %{
-          "__struct__" => "Elixir.Skuld.Effects.EffectLogger.LogEntry.Thrown",
+          "__struct__" => Atom.to_string(@for),
           "id" => entry.id,
           "effect" => Helpers.encode_effect(entry.effect),
           "args" => Helpers.encode_args(entry.args),
@@ -191,7 +191,7 @@ defmodule Skuld.Effects.EffectLogger.LogEntry do
     defimpl Jason.Encoder do
       def encode(entry, opts) do
         map = %{
-          "__struct__" => "Elixir.Skuld.Effects.EffectLogger.LogEntry.Started",
+          "__struct__" => Atom.to_string(@for),
           "id" => entry.id,
           "effect" => Helpers.encode_effect(entry.effect),
           "args" => Helpers.encode_args(entry.args),
@@ -228,7 +228,7 @@ defmodule Skuld.Effects.EffectLogger.LogEntry do
     defimpl Jason.Encoder do
       def encode(entry, opts) do
         map = %{
-          "__struct__" => "Elixir.Skuld.Effects.EffectLogger.LogEntry.Suspended",
+          "__struct__" => Atom.to_string(@for),
           "id" => entry.id,
           "yielded" => entry.yielded,
           "timestamp" => Helpers.encode_timestamp(entry.timestamp)
@@ -264,7 +264,7 @@ defmodule Skuld.Effects.EffectLogger.LogEntry do
     defimpl Jason.Encoder do
       def encode(entry, opts) do
         map = %{
-          "__struct__" => "Elixir.Skuld.Effects.EffectLogger.LogEntry.Resumed",
+          "__struct__" => Atom.to_string(@for),
           "id" => entry.id,
           "input" => entry.input,
           "timestamp" => Helpers.encode_timestamp(entry.timestamp)
@@ -300,7 +300,7 @@ defmodule Skuld.Effects.EffectLogger.LogEntry do
     defimpl Jason.Encoder do
       def encode(entry, opts) do
         map = %{
-          "__struct__" => "Elixir.Skuld.Effects.EffectLogger.LogEntry.Finished",
+          "__struct__" => Atom.to_string(@for),
           "id" => entry.id,
           "result" => entry.result,
           "timestamp" => Helpers.encode_timestamp(entry.timestamp)
