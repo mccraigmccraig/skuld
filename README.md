@@ -29,12 +29,12 @@ simpler and more coherent API, and is (arguably) easier to understand.
 
 ## Installation
 
-Add `skuld` to your list of dependencies in `mix.exs`:
+Add `skuld` to your list of dependencies in `mix.exs` (see the [Hex package](https://hex.pm/packages/skuld) for the current version):
 
 ```elixir
 def deps do
   [
-    {:skuld, "~> 0.1.0"}
+    {:skuld, "~> x.y"}
   ]
 end
 ```

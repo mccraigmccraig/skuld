@@ -1,10 +1,12 @@
 defmodule Skuld.MixProject do
   use Mix.Project
 
+  @version File.read!("VERSION") |> String.trim()
+
   def project do
     [
       app: :skuld,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -49,7 +51,7 @@ defmodule Skuld.MixProject do
   defp package do
     [
       name: "skuld",
-      files: ~w(lib .formatter.exs mix.exs README.md LICENSE),
+      files: ~w(lib .formatter.exs mix.exs README.md LICENSE VERSION),
       licenses: ["MIT"],
       links: %{
         "GitHub" => "https://github.com/mccraigmccraig/skuld"
