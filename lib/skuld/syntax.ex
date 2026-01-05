@@ -4,19 +4,15 @@ defmodule Skuld.Syntax do
 
   ## Usage
 
-      import Skuld.Syntax
+      use Skuld.Syntax
 
       # Now you have access to:
       # - comp (inline computation block)
       # - defcomp, defcompp (function definitions)
 
-  Or use `use Skuld.Syntax` to import all macros:
-
-      use Skuld.Syntax
-
   ## Example
 
-      import Skuld.Syntax
+      use Skuld.Syntax
       alias Skuld.Effects.State
 
       comp do
@@ -44,7 +40,7 @@ defmodule Skuld.Syntax do
   - `x <- effect()` - bind the result of an effectful computation
   - `x = expr` - pure variable binding (unchanged)
   - `return(value)` - lift a pure value into a computation
-  - Last expression is the final computation (must be a computation)
+  - Last expression is the final computation (and _must_ be a computation)
 
   ## See Also
 
