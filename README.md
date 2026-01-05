@@ -75,22 +75,25 @@ Example.example()
 
 ## Effects
 
+Each example below can be copy/pasted directly into IEx.
+
 ### State
 
 Mutable state within a computation:
 
 ```elixir
-defcomp counter() do
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.State
+
+comp do
   n <- State.get()
   _ <- State.put(n + 1)
   return(n)
 end
-
-{result, _} =
-  counter()
-  |> State.with_handler(0)
-  |> Comp.run()
-# result = 0
+|> State.with_handler(0)
+|> Comp.run!()
+#=> 0
 ```
 
 ### Reader
@@ -98,35 +101,36 @@ end
 Read-only environment:
 
 ```elixir
-defcomp greet() do
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Reader
+
+comp do
   name <- Reader.ask()
   return("Hello, #{name}!")
 end
-
-{result, _} =
-  greet()
-  |> Reader.with_handler("World")
-  |> Comp.run()
-# result = "Hello, World!"
+|> Reader.with_handler("World")
+|> Comp.run!()
+#=> "Hello, World!"
 ```
 
 ### Writer
 
-Accumulating output:
+Accumulating output (use `output:` to include the log in the result):
 
 ```elixir
-defcomp logging() do
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Writer
+
+comp do
   _ <- Writer.tell("step 1")
   _ <- Writer.tell("step 2")
   return(:done)
 end
-
-{{result, log}, _} =
-  logging()
-  |> Writer.with_handler()
-  |> Comp.run()
-# result = :done
-# log = ["step 1", "step 2"]
+|> Writer.with_handler([], output: fn result, log -> {result, Enum.reverse(log)} end)
+|> Comp.run!()
+#=> {:done, ["step 1", "step 2"]}
 ```
 
 ### Throw
@@ -134,24 +138,30 @@ end
 Error handling:
 
 ```elixir
-defcomp might_fail(x) do
-  if x < 0 do
-    Throw.throw({:error, "negative value"})
-  else
-    return(x * 2)
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Throw
+
+might_fail = fn x ->
+  comp do
+    if x < 0 do
+      Throw.throw({:error, "negative value"})
+    else
+      return(x * 2)
+    end
   end
 end
 
-defcomp with_recovery() do
+comp do
   result <- Throw.catch_error(
-    might_fail(-1),
-    fn error -> return({:recovered, error}) end
+    might_fail.(-1),
+    fn error -> comp do return({:recovered, error}) end end
   )
   return(result)
 end
-
-{result, _} = with_recovery() |> Comp.run()
-# result = {:recovered, {:error, "negative value"}}
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:recovered, {:error, "negative value"}}
 ```
 
 ### Yield
@@ -159,7 +169,11 @@ end
 Coroutine-style suspension and resumption:
 
 ```elixir
-defcomp generator() do
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Yield
+
+generator = comp do
   _ <- Yield.yield(1)
   _ <- Yield.yield(2)
   _ <- Yield.yield(3)
@@ -167,21 +181,20 @@ defcomp generator() do
 end
 
 # Collect all yielded values
-{:done, result, yields, _} =
-  generator()
-  |> Yield.with_handler()
-  |> Yield.collect()
-# result = :done
-# yields = [1, 2, 3]
+generator
+|> Yield.with_handler()
+|> Yield.collect()
+#=> {:done, :done, [1, 2, 3], _env}
 
 # Or drive with a custom function
-{:done, _, _} =
-  generator()
-  |> Yield.with_handler()
-  |> Yield.run_with_driver(fn yielded ->
-    IO.puts("Got: #{yielded}")
-    {:continue, :ok}
-  end)
+generator
+|> Yield.with_handler()
+|> Yield.run_with_driver(fn yielded ->
+  IO.puts("Got: #{yielded}")
+  {:continue, :ok}
+end)
+# Prints: Got: 1, Got: 2, Got: 3
+#=> {:done, :done, _env}
 ```
 
 ### FxList
@@ -189,8 +202,12 @@ end
 Effectful list operations:
 
 ```elixir
-defcomp process_all(items) do
-  results <- FxList.fx_map(items, fn item ->
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{State, FxList}
+
+comp do
+  results <- FxList.fx_map([1, 2, 3], fn item ->
     comp do
       count <- State.get()
       _ <- State.put(count + 1)
@@ -199,12 +216,9 @@ defcomp process_all(items) do
   end)
   return(results)
 end
-
-{result, _} =
-  process_all([1, 2, 3])
-  |> State.with_handler(0)
-  |> Comp.run()
-# result = [2, 4, 6]
+|> State.with_handler(0)
+|> Comp.run!()
+#=> [2, 4, 6]
 ```
 
 > **Note**: For large iteration counts (10,000+), use `Yield`-based coroutines instead
