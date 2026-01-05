@@ -542,6 +542,7 @@ defmodule Skuld.Effects.EffectLogger do
     process_effect_entries(our_entries, log_id, rest_queue)
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp process_effect_entries(entries, _log_id, rest_queue) do
     # Entries should be in order: [Suspended, Resumed, Finished] or [Suspended] (incomplete)
     # or for simple effects that somehow ended up here: [Finished]
