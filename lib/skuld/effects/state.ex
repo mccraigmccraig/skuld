@@ -68,7 +68,7 @@ defmodule Skuld.Effects.State do
 
   ## Options
 
-  - `result_transform` - optional function `(result, final_state) -> new_result`
+  - `output` - optional function `(result, final_state) -> new_result`
     to transform the result before returning. Useful for including the final
     state in the output.
 
@@ -103,13 +103,13 @@ defmodule Skuld.Effects.State do
         _ <- State.modify(&(&1 * 2))
         return(:done)
       end
-      |> State.with_handler(5, result_transform: fn result, state -> {result, state} end)
+      |> State.with_handler(5, output: fn result, state -> {result, state} end)
       |> Comp.run!()
       # => {:done, 12}
   """
   @spec with_handler(Types.computation(), term(), keyword()) :: Types.computation()
   def with_handler(comp, initial, opts \\ []) do
-    result_transform = Keyword.get(opts, :result_transform)
+    output = Keyword.get(opts, :output)
 
     comp
     |> Comp.scoped(fn env ->
@@ -126,8 +126,8 @@ defmodule Skuld.Effects.State do
           end
 
         transformed_value =
-          if result_transform do
-            result_transform.(value, final_state)
+          if output do
+            output.(value, final_state)
           else
             value
           end

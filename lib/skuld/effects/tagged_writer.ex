@@ -128,7 +128,7 @@ defmodule Skuld.Effects.TaggedWriter do
 
   ## Options
 
-  - `result_transform` - optional function `(result, final_log) -> new_result`
+  - `output` - optional function `(result, final_log) -> new_result`
     to transform the result before returning. Useful for including the final
     log in the output.
 
@@ -149,14 +149,14 @@ defmodule Skuld.Effects.TaggedWriter do
         _ <- TaggedWriter.tell(:audit, "action 2")
         return(:done)
       end
-      |> TaggedWriter.with_handler(:audit, [], result_transform: fn r, log -> {r, log} end)
+      |> TaggedWriter.with_handler(:audit, [], output: fn r, log -> {r, log} end)
       |> Comp.run!()
       # => {:done, ["action 2", "action 1"]}
   """
   @spec with_handler(Types.computation(), atom(), list(), keyword()) :: Types.computation()
   def with_handler(comp, tag, initial \\ [], opts \\ []) do
     state_key = state_key(tag)
-    result_transform = Keyword.get(opts, :result_transform)
+    output = Keyword.get(opts, :output)
 
     comp
     |> Comp.scoped(fn env ->
@@ -173,8 +173,8 @@ defmodule Skuld.Effects.TaggedWriter do
           end
 
         transformed_value =
-          if result_transform do
-            result_transform.(value, final_log)
+          if output do
+            output.(value, final_log)
           else
             value
           end

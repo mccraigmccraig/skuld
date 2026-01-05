@@ -4,7 +4,7 @@ defmodule Skuld.Effects.WriterTest do
   alias Skuld.Comp
   alias Skuld.Effects.Writer
 
-  describe "with_handler result_transform" do
+  describe "with_handler output" do
     test "includes final log in result" do
       comp =
         Comp.bind(Writer.tell("step 1"), fn _ ->
@@ -12,7 +12,7 @@ defmodule Skuld.Effects.WriterTest do
             Comp.pure(:done)
           end)
         end)
-        |> Writer.with_handler([], result_transform: fn result, log -> {result, log} end)
+        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
 
       {result, _env} = Comp.run(comp)
 
@@ -29,7 +29,7 @@ defmodule Skuld.Effects.WriterTest do
           end)
         end)
         |> Writer.with_handler([],
-          result_transform: fn result, log -> %{value: result, log_count: length(log)} end
+          output: fn result, log -> %{value: result, log_count: length(log)} end
         )
 
       {result, _env} = Comp.run(comp)
@@ -43,7 +43,7 @@ defmodule Skuld.Effects.WriterTest do
           Comp.pure(:ok)
         end)
         |> Writer.with_handler(["existing"],
-          result_transform: fn result, log -> {result, log} end
+          output: fn result, log -> {result, log} end
         )
 
       {result, _env} = Comp.run(comp)

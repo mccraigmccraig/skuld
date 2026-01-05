@@ -186,7 +186,7 @@ defmodule Skuld.Effects.FxListTest do
             end)
           end)
         end)
-        |> State.with_handler(0, result_transform: fn result, state -> {result, state} end)
+        |> State.with_handler(0, output: fn result, state -> {result, state} end)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)

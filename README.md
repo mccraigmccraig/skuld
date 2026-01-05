@@ -66,8 +66,8 @@ end
 # Run with handlers installed
 Example.example()
   |> Reader.with_handler(:my_config)
-  |> State.with_handler(0, result_transform: fn r, st -> {r, {:final_state, st}} end)
-  |> Writer.with_handler([], result_transform: fn r, w -> {r, {:log, w}} end)
+  |> State.with_handler(0, output: fn r, st -> {r, {:final_state, st}} end)
+  |> Writer.with_handler([], output: fn r, w -> {r, {:log, w}} end)
   |> Comp.run!()
 
 #=> {{{:my_config, 0}, {:final_state, 1}}, {:log, ["processed item 0"]}}

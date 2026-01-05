@@ -164,7 +164,7 @@ defmodule Skuld.Effects.Writer do
 
   ## Options
 
-  - `result_transform` - optional function `(result, final_log) -> new_result`
+  - `output` - optional function `(result, final_log) -> new_result`
     to transform the result before returning. Useful for including the final
     log in the output.
 
@@ -196,13 +196,13 @@ defmodule Skuld.Effects.Writer do
         _ <- Writer.tell("step 2")
         return(:done)
       end
-      |> Writer.with_handler([], result_transform: fn result, log -> {result, log} end)
+      |> Writer.with_handler([], output: fn result, log -> {result, log} end)
       |> Comp.run!()
       # => {:done, ["step 2", "step 1"]}
   """
   @spec with_handler(Types.computation(), list(), keyword()) :: Types.computation()
   def with_handler(comp, initial \\ [], opts \\ []) do
-    result_transform = Keyword.get(opts, :result_transform)
+    output = Keyword.get(opts, :output)
 
     comp
     |> Comp.scoped(fn env ->
@@ -219,8 +219,8 @@ defmodule Skuld.Effects.Writer do
           end
 
         transformed_value =
-          if result_transform do
-            result_transform.(value, final_log)
+          if output do
+            output.(value, final_log)
           else
             value
           end

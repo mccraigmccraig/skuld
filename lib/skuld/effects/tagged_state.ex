@@ -85,7 +85,7 @@ defmodule Skuld.Effects.TaggedState do
 
   ## Options
 
-  - `result_transform` - optional function `(result, final_state) -> new_result`
+  - `output` - optional function `(result, final_state) -> new_result`
     to transform the result before returning. Useful for including the final
     state in the output.
 
@@ -106,14 +106,14 @@ defmodule Skuld.Effects.TaggedState do
         _ <- TaggedState.modify(:counter, &(&1 + 1))
         return(:done)
       end
-      |> TaggedState.with_handler(:counter, 0, result_transform: fn r, s -> {r, s} end)
+      |> TaggedState.with_handler(:counter, 0, output: fn r, s -> {r, s} end)
       |> Comp.run!()
       # => {:done, 1}
   """
   @spec with_handler(Types.computation(), atom(), term(), keyword()) :: Types.computation()
   def with_handler(comp, tag, initial, opts \\ []) do
     state_key = state_key(tag)
-    result_transform = Keyword.get(opts, :result_transform)
+    output = Keyword.get(opts, :output)
 
     comp
     |> Comp.scoped(fn env ->
@@ -130,8 +130,8 @@ defmodule Skuld.Effects.TaggedState do
           end
 
         transformed_value =
-          if result_transform do
-            result_transform.(value, final_state)
+          if output do
+            output.(value, final_state)
           else
             value
           end

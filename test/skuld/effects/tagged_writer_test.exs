@@ -263,7 +263,7 @@ defmodule Skuld.Effects.TaggedWriterTest do
     end
   end
 
-  describe "with_handler result_transform" do
+  describe "with_handler output" do
     test "includes final log in result" do
       comp =
         Comp.bind(TaggedWriter.tell(:audit, "step 1"), fn _ ->
@@ -272,7 +272,7 @@ defmodule Skuld.Effects.TaggedWriterTest do
           end)
         end)
         |> TaggedWriter.with_handler(:audit, [],
-          result_transform: fn result, log -> {result, log} end
+          output: fn result, log -> {result, log} end
         )
 
       {result, _env} = Comp.run(comp)
@@ -290,7 +290,7 @@ defmodule Skuld.Effects.TaggedWriterTest do
           end)
         end)
         |> TaggedWriter.with_handler(:log, [],
-          result_transform: fn result, log -> %{value: result, count: length(log)} end
+          output: fn result, log -> %{value: result, count: length(log)} end
         )
 
       {result, _env} = Comp.run(comp)
@@ -304,7 +304,7 @@ defmodule Skuld.Effects.TaggedWriterTest do
           Comp.pure(:ok)
         end)
         |> TaggedWriter.with_handler(:log, ["existing"],
-          result_transform: fn result, log -> {result, log} end
+          output: fn result, log -> {result, log} end
         )
 
       {result, _env} = Comp.run(comp)
