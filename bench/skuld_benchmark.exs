@@ -16,6 +16,7 @@
 alias Skuld.Comp
 alias Skuld.Effects.State, as: SkuldState
 alias Skuld.Effects.FxList, as: SkuldFxList
+alias Skuld.Effects.FxControlList, as: SkuldFxControlList
 alias Skuld.Effects.Yield, as: SkuldYield
 
 defmodule SkuldBenchmark do
@@ -180,6 +181,18 @@ defmodule SkuldBenchmark do
 
   def skuld_fxlist(target) do
     SkuldFxList.fx_each(1..target, fn _i ->
+      SkuldState.get()
+      |> Comp.bind(fn n ->
+        SkuldState.put(n + 1)
+      end)
+    end)
+    |> Comp.bind(fn _ ->
+      SkuldState.get()
+    end)
+  end
+
+  def skuld_fxcontrollist(target) do
+    SkuldFxControlList.fx_each(1..target, fn _i ->
       SkuldState.get()
       |> Comp.bind(fn n ->
         SkuldState.put(n + 1)
@@ -397,6 +410,75 @@ defmodule SkuldBenchmark do
     IO.puts("- FxList is ~1.7x faster due to lower per-iteration overhead")
     IO.puts("- Use Yield when you need coroutine semantics (suspend/resume, early exit)")
     IO.puts("- Use FxList for simple iteration over collections")
+
+    # ============================================================
+    # FxList vs FxControlList Benchmark
+    # ============================================================
+    IO.puts("")
+    IO.puts("")
+    IO.puts("FxList vs FxControlList Benchmark")
+    IO.puts("=================================")
+    IO.puts("")
+    IO.puts("FxList: Uses Enum.reduce_while, handles control effects explicitly")
+    IO.puts("FxControlList: Uses Comp.bind chains, control effects propagate naturally")
+    IO.puts("")
+    IO.puts("Key difference: FxControlList supports full Yield resume semantics.")
+    IO.puts("")
+
+    fxlist_targets = [100, 500, 1_000, 2_000, 5_000, 10_000]
+
+    IO.puts(
+      String.pad_trailing("Target", 10) <>
+        String.pad_trailing("FxList", 15) <>
+        String.pad_trailing("FxControlList", 15) <>
+        String.pad_trailing("FxL µs/op", 12) <>
+        String.pad_trailing("FxCL µs/op", 12) <>
+        String.pad_trailing("FxL/FxCL", 10)
+    )
+
+    IO.puts(String.duplicate("-", 75))
+
+    for target <- fxlist_targets do
+      skuld_fxlist_wrapped = skuld_wrap(skuld_fxlist(target), 0)
+      skuld_fxcontrollist_wrapped = skuld_wrap(skuld_fxcontrollist(target), 0)
+
+      skuld_fxlist_time =
+        median_time(iterations, fn ->
+          time_skuld_wrapped(skuld_fxlist_wrapped)
+        end)
+
+      skuld_fxcontrollist_time =
+        median_time(iterations, fn ->
+          time_skuld_wrapped(skuld_fxcontrollist_wrapped)
+        end)
+
+      fxlist_per_op = skuld_fxlist_time / target
+      fxcontrollist_per_op = skuld_fxcontrollist_time / target
+
+      ratio =
+        if skuld_fxcontrollist_time > 0,
+          do: skuld_fxlist_time / skuld_fxcontrollist_time,
+          else: 0
+
+      IO.puts(
+        String.pad_trailing("#{target}", 10) <>
+          String.pad_trailing(format_time(skuld_fxlist_time), 15) <>
+          String.pad_trailing(format_time(skuld_fxcontrollist_time), 15) <>
+          String.pad_trailing("#{Float.round(fxlist_per_op, 3)}", 12) <>
+          String.pad_trailing("#{Float.round(fxcontrollist_per_op, 3)}", 12) <>
+          String.pad_trailing("#{Float.round(ratio, 2)}x", 10)
+      )
+    end
+
+    IO.puts("")
+    IO.puts("FxList vs FxControlList Analysis:")
+    IO.puts("---------------------------------")
+    IO.puts("- FxList: Better performance for simple iteration (no control effects)")
+    IO.puts("- FxControlList: Supports full Yield/Suspend resume semantics")
+    IO.puts("- Trade-off: FxControlList builds continuation chains (more allocations)")
+    IO.puts("- Recommendation:")
+    IO.puts("  - Use FxList for high-performance iteration without Yield")
+    IO.puts("  - Use FxControlList when you need resumable Yield/Suspend")
   end
 
   defp median_time(iterations, fun) do

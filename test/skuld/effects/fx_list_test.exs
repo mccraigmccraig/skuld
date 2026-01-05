@@ -4,6 +4,8 @@ defmodule Skuld.Effects.FxListTest do
   alias Skuld.Comp
   alias Skuld.Effects.FxList
   alias Skuld.Effects.State
+  alias Skuld.Effects.Throw
+  alias Skuld.Effects.Yield
 
   describe "fx_map" do
     test "maps effectful function over empty list" do
@@ -143,4 +145,200 @@ defmodule Skuld.Effects.FxListTest do
       assert Comp.run!(comp) == [1, 3, 5]
     end
   end
+
+  # ============================================================
+  # Control Effect Tests - Throw
+  # ============================================================
+
+  describe "fx_map with Throw" do
+    test "throw in middle of list short-circuits" do
+      comp =
+        FxList.fx_map([1, 2, 3, 4, 5], fn x ->
+          if x == 3 do
+            Throw.throw({:error, :hit_three})
+          else
+            Comp.pure(x * 2)
+          end
+        end)
+        |> Throw.with_handler()
+
+      {result, _env} = Comp.run(comp)
+      assert %Comp.Throw{error: {:error, :hit_three}} = result
+    end
+
+    test "throw preserves state up to failure point" do
+      comp =
+        FxList.fx_map([1, 2, 3, 4, 5], fn x ->
+          Comp.bind(State.get(), fn count ->
+            Comp.bind(State.put(count + 1), fn _ ->
+              if x == 3 do
+                Throw.throw({:error, :hit_three})
+              else
+                Comp.pure(x * 2)
+              end
+            end)
+          end)
+        end)
+        |> State.with_handler(0, result_transform: fn result, state -> {result, state} end)
+        |> Throw.with_handler()
+
+      {result, _env} = Comp.run(comp)
+      # State should be 3 (processed 1, 2, 3 before throw on 3)
+      assert {%Comp.Throw{error: {:error, :hit_three}}, 3} = result
+    end
+
+    test "no throw returns normal result" do
+      comp =
+        FxList.fx_map([1, 2, 3], fn x -> Comp.pure(x * 2) end)
+        |> Throw.with_handler()
+
+      {result, _env} = Comp.run(comp)
+      assert result == [2, 4, 6]
+    end
+
+    test "try_catch wraps result" do
+      comp =
+        Throw.try_catch(
+          FxList.fx_map([1, 2, 3], fn x ->
+            if x == 2 do
+              Throw.throw(:hit_two)
+            else
+              Comp.pure(x * 2)
+            end
+          end)
+        )
+        |> Throw.with_handler()
+
+      {result, _env} = Comp.run(comp)
+      assert {:error, :hit_two} = result
+    end
+  end
+
+  describe "fx_reduce with Throw" do
+    test "throw in reducer short-circuits" do
+      comp =
+        FxList.fx_reduce([1, 2, 3, 4, 5], 0, fn x, acc ->
+          if x == 3 do
+            Throw.throw({:error, :hit_three, acc})
+          else
+            Comp.pure(acc + x)
+          end
+        end)
+        |> Throw.with_handler()
+
+      {result, _env} = Comp.run(comp)
+      # acc was 3 (1+2) when we hit 3
+      assert %Comp.Throw{error: {:error, :hit_three, 3}} = result
+    end
+  end
+
+  describe "fx_each with Throw" do
+    test "throw in each short-circuits" do
+      comp =
+        Comp.bind(
+          FxList.fx_each([1, 2, 3, 4, 5], fn x ->
+            Comp.bind(State.get(), fn acc ->
+              Comp.bind(State.put([x | acc]), fn _ ->
+                if x == 3 do
+                  Throw.throw(:hit_three)
+                else
+                  Comp.pure(:ok)
+                end
+              end)
+            end)
+          end),
+          fn :ok -> State.get() end
+        )
+        |> State.with_handler([])
+        |> Throw.with_handler()
+
+      {result, _env} = Comp.run(comp)
+      assert %Comp.Throw{error: :hit_three} = result
+    end
+  end
+
+  describe "fx_filter with Throw" do
+    test "throw in predicate short-circuits" do
+      comp =
+        FxList.fx_filter([1, 2, 3, 4, 5], fn x ->
+          if x == 3 do
+            Throw.throw(:hit_three)
+          else
+            Comp.pure(rem(x, 2) == 0)
+          end
+        end)
+        |> Throw.with_handler()
+
+      {result, _env} = Comp.run(comp)
+      assert %Comp.Throw{error: :hit_three} = result
+    end
+  end
+
+  # ============================================================
+  # Control Effect Tests - Yield (Suspend/Resume)
+  # FxList has LIMITED suspend support - it suspends but loses context
+  # ============================================================
+
+  describe "fx_map with Yield" do
+    test "yield suspends but cannot resume to continue list (loses context)" do
+      comp =
+        FxList.fx_map([1, 2, 3, 4, 5], fn x ->
+          Comp.bind(Yield.yield({:processing, x}), fn _ ->
+            Comp.pure(x * 2)
+          end)
+        end)
+        |> Yield.with_handler()
+
+      # First run should yield with first element
+      {%Comp.Suspend{value: {:processing, 1}, resume: r1}, _e1} = Comp.run(comp)
+
+      # Resume - but FxList doesn't preserve the list iteration context!
+      # It just returns the single element's result, not the full list
+      {result, _env} = r1.(:resumed)
+      # FxList only returns the result of the first element, not the full list
+      assert result == 2
+    end
+
+    @tag :skip
+    test "SKIP: FxList cannot resume through full list like FxControlList can" do
+      # This test documents what FxList CANNOT do
+      # FxControlList handles this correctly
+    end
+  end
+
+  describe "fx_each with Yield" do
+    test "yield suspends but loses remaining elements on resume" do
+      comp =
+        FxList.fx_each([1, 2, 3], fn x ->
+          Yield.yield({:visiting, x})
+        end)
+        |> Yield.with_handler()
+
+      {%Comp.Suspend{value: {:visiting, 1}, resume: r1}, _e1} = Comp.run(comp)
+      # Resume returns just the yield's resume value, not :ok from full iteration
+      {result, _env} = r1.(:ok)
+      # The result is just what the yield returned, not the full fx_each result
+      assert result == :ok
+    end
+  end
+
+  # ============================================================
+  # Comparison note: FxList vs FxControlList
+  # ============================================================
+  #
+  # FxList:
+  # - Throw: Works correctly - short-circuits and propagates
+  # - Yield: Suspends but LOSES list iteration context
+  #   - Resume only continues the single element's computation
+  #   - Remaining list elements are lost
+  #
+  # FxControlList:
+  # - Throw: Works correctly - short-circuits and propagates
+  # - Yield: Works correctly - resume continues from exact point
+  #   - Full list iteration context is preserved in continuation
+  #   - Can resume through all elements
+  #
+  # For computations that use Yield/Suspend, use FxControlList.
+  # For computations that only use Throw (or no control effects), 
+  # both work, but FxList may have better performance for large lists.
 end

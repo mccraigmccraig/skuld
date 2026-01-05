@@ -1,10 +1,31 @@
 defmodule Skuld.Effects.FxList do
   @moduledoc """
-  FxList effect for Skuld - effectful list operations.
+  FxList - High-performance effectful list operations.
 
-  Provides map and reduce operations with effectful functions.
-  Unlike Freyja's Hefty-based FxList, this is a simple module
-  that sequences computations - no special handler needed.
+  Provides map and reduce operations with effectful functions using an
+  optimized iterative approach. Best for computations that don't need
+  resumable Yield/Suspend semantics.
+
+  ## When to Use FxList vs FxControlList
+
+  | Feature                    | FxList      | FxControlList |
+  |----------------------------|-------------|--------------|
+  | Performance                | ~2x faster  | Slower       |
+  | Throw (error handling)     | ✓ Works     | ✓ Works      |
+  | Yield (suspend/resume)     | ✗ Limited*  | ✓ Full       |
+  | Memory                     | Lower       | Higher       |
+
+  *FxList suspends but loses list context - resume returns only the
+  single element's result, not the full list.
+
+  **Use FxList when:**
+  - Performance is critical
+  - You only use Throw for error handling (not Yield)
+  - You don't need to resume suspended computations
+
+  **Use FxControlList when:**
+  - You need resumable Yield/Suspend semantics
+  - You want natural control effect propagation
 
   ## Operations
 
@@ -31,18 +52,13 @@ defmodule Skuld.Effects.FxList do
 
   ## Implementation
 
-  FxList uses an iterative approach that runs each element's computation
-  to completion before moving to the next. This avoids building continuation
-  chains and provides O(n) scaling for any list size.
+  FxList uses `Enum.reduce_while` to iterate, running each element's
+  computation to completion before moving to the next. This avoids
+  building continuation chains, providing ~0.1 µs/op constant cost.
 
-  Each element's effects are fully resolved before proceeding, with the
-  environment (containing state, handlers, etc.) threaded through.
-
-  ## Suspension Handling
-
-  If an element's computation suspends (e.g., via Yield), the suspension
-  is propagated but partial results are lost. For computations that may
-  suspend, consider using Yield-based iteration patterns directly.
+  Control effects (Throw, Suspend) are detected via pattern matching
+  and handled explicitly - Throw propagates correctly, but Suspend
+  loses the iteration context.
   """
 
   alias Skuld.Comp
