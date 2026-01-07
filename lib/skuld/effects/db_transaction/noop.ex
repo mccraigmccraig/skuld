@@ -32,6 +32,7 @@ defmodule Skuld.Effects.DBTransaction.Noop do
   """
 
   alias Skuld.Comp
+  alias Skuld.Comp.ISentinel
   alias Skuld.Effects.DBTransaction
 
   @doc """
@@ -107,18 +108,12 @@ defmodule Skuld.Effects.DBTransaction.Noop do
     {result, final_env} = Comp.call(wrapped, env, &Comp.identity_k/2)
 
     # Handle sentinels - propagate them without calling k
-    cond do
-      match?(%Skuld.Comp.Throw{}, result) ->
-        # Throw - propagate sentinel
-        {result, final_env}
-
-      match?(%Skuld.Comp.Suspend{}, result) ->
-        # Suspend - propagate sentinel
-        {result, final_env}
-
-      true ->
-        # Normal result - pass to continuation
-        k.(result, final_env)
+    if ISentinel.sentinel?(result) do
+      # Sentinel (Throw, Suspend, etc.) - propagate without calling k
+      {result, final_env}
+    else
+      # Normal result - pass to continuation
+      k.(result, final_env)
     end
   end
 end

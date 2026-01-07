@@ -51,6 +51,7 @@ if Code.ensure_loaded?(Ecto) do
     """
 
     alias Skuld.Comp
+    alias Skuld.Comp.ISentinel
     alias Skuld.Effects.DBTransaction
 
     @doc """
@@ -144,15 +145,11 @@ if Code.ensure_loaded?(Ecto) do
       {result, final_env} = Comp.call(wrapped, env, &Comp.identity_k/2)
 
       # Check for sentinels that should cause rollback
-      cond do
-        match?(%Skuld.Comp.Throw{}, result) ->
-          repo.rollback({:throw, result, final_env})
-
-        match?(%Skuld.Comp.Suspend{}, result) ->
-          repo.rollback({:suspend, result, final_env})
-
-        true ->
-          {:ok, result, final_env}
+      if ISentinel.sentinel?(result) do
+        # Sentinel (Throw, Suspend, etc.) - rollback and propagate
+        repo.rollback({:sentinel, result, final_env})
+      else
+        {:ok, result, final_env}
       end
     end
 
@@ -162,14 +159,9 @@ if Code.ensure_loaded?(Ecto) do
       k.(value, final_env)
     end
 
-    defp handle_result({:error, {:throw, throw_sentinel, final_env}}, _env, _k) do
-      # Threw - transaction rolled back, propagate the throw
-      {throw_sentinel, final_env}
-    end
-
-    defp handle_result({:error, {:suspend, suspend_sentinel, final_env}}, _env, _k) do
-      # Suspended - transaction rolled back, propagate the suspend
-      {suspend_sentinel, final_env}
+    defp handle_result({:error, {:sentinel, sentinel, final_env}}, _env, _k) do
+      # Sentinel (Throw, Suspend, etc.) - transaction rolled back, propagate
+      {sentinel, final_env}
     end
 
     defp handle_result({:error, {:rollback, reason, final_env}}, _env, k) do
