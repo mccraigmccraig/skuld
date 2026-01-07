@@ -32,6 +32,7 @@ defmodule Skuld.Effects.TaggedState do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
+  alias Skuld.Data.Change
 
   @sig __MODULE__
 
@@ -52,7 +53,7 @@ defmodule Skuld.Effects.TaggedState do
     Comp.effect(@sig, %Get{tag: tag})
   end
 
-  @doc "Replace the state for the given tag, returning :ok"
+  @doc "Replace the state for the given tag, returning `%Change{old: old_state, new: new_state}`"
   @spec put(atom(), term()) :: Types.computation()
   def put(tag, value) do
     Comp.effect(@sig, %Put{tag: tag, value: value})
@@ -162,8 +163,9 @@ defmodule Skuld.Effects.TaggedState do
 
   @impl Skuld.Comp.IHandler
   def handle(%Put{tag: tag, value: value}, env, k) do
+    old_value = Env.get_state(env, state_key(tag))
     new_env = Env.put_state(env, state_key(tag), value)
-    k.(:ok, new_env)
+    k.(Change.new(old_value, value), new_env)
   end
 
   #############################################################################

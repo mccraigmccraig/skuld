@@ -651,7 +651,7 @@ log
 #=> %Skuld.Effects.EffectLogger.Log{
 #=>   effect_queue: [
 #=>     %EffectLogEntry{sig: State, data: %State.Get{}, value: 0, state: :executed},
-#=>     %EffectLogEntry{sig: State, data: %State.Put{value: 10}, value: :ok, state: :executed},
+#=>     %EffectLogEntry{sig: State, data: %State.Put{value: 10}, value: %Change{old: 0, new: 10}, state: :executed},
 #=>     %EffectLogEntry{sig: State, data: %State.Get{}, value: 10, state: :executed}
 #=>   ],
 #=>   ...

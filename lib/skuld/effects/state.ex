@@ -12,6 +12,7 @@ defmodule Skuld.Effects.State do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
+  alias Skuld.Data.Change
 
   @sig __MODULE__
 
@@ -32,7 +33,7 @@ defmodule Skuld.Effects.State do
     Comp.effect(@sig, %Get{})
   end
 
-  @doc "Replace the state, returning :ok"
+  @doc "Replace the state, returning `%Change{old: old_state, new: new_state}`"
   @spec put(term()) :: Types.computation()
   def put(value) do
     Comp.effect(@sig, %Put{value: value})
@@ -158,7 +159,8 @@ defmodule Skuld.Effects.State do
 
   @impl Skuld.Comp.IHandler
   def handle(%Put{value: value}, env, k) do
+    old_value = Env.get_state(env, @sig)
     new_env = Env.put_state(env, @sig, value)
-    k.(:ok, new_env)
+    k.(Change.new(old_value, value), new_env)
   end
 end

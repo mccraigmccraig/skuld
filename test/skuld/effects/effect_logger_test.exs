@@ -10,6 +10,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
   alias Skuld.Effects.Yield
+  alias Skuld.Data.Change
 
   describe "basic logging" do
     test "logs a single effect" do
@@ -60,7 +61,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
       assert put.sig == State
       assert %State.Put{value: 1} = put.data
-      assert put.value == :ok
+      assert put.value == %Change{old: 0, new: 1}
       assert put.state == :executed
 
       assert get2.sig == State
@@ -134,7 +135,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
       # Put completed normally (its leave_scope was restored before throw)
       assert put_entry.state == :executed
-      assert put_entry.value == :ok
+      assert put_entry.value == %Change{old: 0, new: 42}
 
       # Throw discarded (handler never called wrapped_k)
       assert throw_entry.state == :discarded
@@ -184,7 +185,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
       # Put completed normally (leave_scope restored before throw)
       assert put_entry.state == :executed
-      assert put_entry.value == :ok
+      assert put_entry.value == %Change{old: 0, new: 1}
 
       # Throw discarded (handler never called wrapped_k)
       assert throw_entry.state == :discarded
@@ -360,9 +361,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         assert orig.id == restored.id
         assert orig.sig == restored.sig
         assert orig.state == restored.state
-        # Note: atoms become strings in JSON (e.g., :ok -> "ok")
-        # We just verify the value is preserved in some form
-        assert to_string(orig.value) == to_string(restored.value) or orig.value == restored.value
+        assert orig.value == restored.value
       end)
     end
 
