@@ -16,7 +16,53 @@ defmodule Skuld.MixProject do
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
         main: "readme",
-        extras: ["README.md"]
+        extras: ["README.md"],
+        groups_for_modules: [
+          Core: [
+            Skuld.Comp,
+            Skuld.Syntax
+          ],
+          "Standard Effects": [
+            Skuld.Effects.Reader,
+            Skuld.Effects.State,
+            Skuld.Effects.Writer,
+            Skuld.Effects.Throw,
+            Skuld.Effects.Fresh
+          ],
+          "Tagged Effects": [
+            Skuld.Effects.TaggedReader,
+            Skuld.Effects.TaggedState,
+            Skuld.Effects.TaggedWriter
+          ],
+          "Control Effects": [
+            Skuld.Effects.Yield,
+            Skuld.Effects.Bracket
+          ],
+          "Collection Effects": [
+            Skuld.Effects.FxList,
+            Skuld.Effects.FxFasterList
+          ],
+          "Database Effects": [
+            Skuld.Effects.DBTransaction,
+            Skuld.Effects.DBTransaction.Ecto,
+            Skuld.Effects.DBTransaction.Noop,
+            Skuld.Effects.EctoPersist,
+            Skuld.Effects.Query
+          ],
+          "Event & Logging Effects": [
+            Skuld.Effects.EventAccumulator,
+            Skuld.Effects.EffectLogger
+          ],
+          Internals: [
+            ~r/^Skuld\.Comp\..*/
+          ]
+        ],
+        nest_modules_by_prefix: [
+          Skuld.Effects.DBTransaction,
+          Skuld.Effects.EffectLogger,
+          Skuld.Effects.EctoPersist,
+          Skuld.Effects.EventAccumulator
+        ]
       ]
     ]
   end
