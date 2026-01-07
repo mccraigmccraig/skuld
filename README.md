@@ -301,6 +301,311 @@ end
 > **Note**: For large iteration counts (10,000+), use `Yield`-based coroutines instead
 > of `FxList` for better performance. See the FxList module docs for details.
 
+### FxFasterList
+
+High-performance variant of FxList using `Enum.reduce_while`:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{State, FxFasterList}
+
+comp do
+  results <- FxFasterList.fx_map([1, 2, 3], fn item ->
+    comp do
+      count <- State.get()
+      _ <- State.put(count + 1)
+      return(item * 2)
+    end
+  end)
+  return(results)
+end
+|> State.with_handler(0, output: fn result, state -> {result, {:final_state, state}} end)
+|> Comp.run!()
+#=> {[2, 4, 6], {:final_state, 3}}
+```
+
+> **Note**: FxFasterList is ~2x faster than FxList but has limited Yield/Suspend support.
+> Use it when performance is critical and you only use Throw for error handling.
+
+### TaggedState
+
+Multiple independent mutable state values identified by tags:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.TaggedState
+
+comp do
+  _ <- TaggedState.put(:counter, 0)
+  _ <- TaggedState.modify(:counter, &(&1 + 1))
+  count <- TaggedState.get(:counter)
+  _ <- TaggedState.put(:name, "alice")
+  name <- TaggedState.get(:name)
+  return({count, name})
+end
+|> TaggedState.with_handler(:counter, 0)
+|> TaggedState.with_handler(:name, "")
+|> Comp.run!()
+#=> {1, "alice"}
+```
+
+### TaggedReader
+
+Multiple independent read-only environments identified by tags:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.TaggedReader
+
+comp do
+  db <- TaggedReader.ask(:db)
+  api <- TaggedReader.ask(:api)
+  return({db, api})
+end
+|> TaggedReader.with_handler(:db, %{host: "localhost"})
+|> TaggedReader.with_handler(:api, %{url: "https://api.example.com"})
+|> Comp.run!()
+#=> {%{host: "localhost"}, %{url: "https://api.example.com"}}
+```
+
+### TaggedWriter
+
+Multiple independent accumulating logs identified by tags:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.TaggedWriter
+
+comp do
+  _ <- TaggedWriter.tell(:audit, "user logged in")
+  _ <- TaggedWriter.tell(:metrics, {:counter, :login})
+  _ <- TaggedWriter.tell(:audit, "viewed dashboard")
+  return(:ok)
+end
+|> TaggedWriter.with_handler(:audit, [], output: fn r, log -> {r, Enum.reverse(log)} end)
+|> TaggedWriter.with_handler(:metrics, [], output: fn r, log -> {r, Enum.reverse(log)} end)
+|> Comp.run!()
+#=> {{:ok, ["user logged in", "viewed dashboard"]}, [{:counter, :login}]}
+```
+
+### Bracket
+
+Safe resource acquisition and cleanup (like try/finally):
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{Bracket, State, Throw}
+
+# Track resource lifecycle with State
+comp do
+  result <- Bracket.bracket(
+    # Acquire
+    comp do
+      _ <- State.put(:acquired)
+      return(:resource)
+    end,
+    # Release (always runs)
+    fn _resource ->
+      comp do
+        _ <- State.put(:released)
+        return(:ok)
+      end
+    end,
+    # Use
+    fn resource ->
+      comp do
+        return({:used, resource})
+      end
+    end
+  )
+  final_state <- State.get()
+  return({result, final_state})
+end
+|> State.with_handler(:init)
+|> Comp.run!()
+#=> {{:used, :resource}, :released}
+```
+
+Use `Bracket.finally/2` for simpler cleanup without resource passing:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{Bracket, State}
+
+Bracket.finally(
+  comp do
+    _ <- State.put(:working)
+    return(:done)
+  end,
+  comp do
+    _ <- State.put(:cleaned_up)
+    return(:ok)
+  end
+)
+|> State.with_handler(:init, output: fn r, s -> {r, s} end)
+|> Comp.run!()
+#=> {:done, :cleaned_up}
+```
+
+### DBTransaction
+
+Database transactions with automatic commit/rollback:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.DBTransaction
+alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
+
+# Normal completion - transaction commits
+comp do
+  result <- DBTransaction.transact(comp do
+    return({:user_created, 123})
+  end)
+  return(result)
+end
+|> NoopTx.with_handler()
+|> Comp.run!()
+#=> {:user_created, 123}
+
+# Explicit rollback
+comp do
+  result <- DBTransaction.transact(comp do
+    _ <- DBTransaction.rollback(:validation_failed)
+    return(:never_reached)
+  end)
+  return(result)
+end
+|> NoopTx.with_handler()
+|> Comp.run!()
+#=> {:rolled_back, :validation_failed}
+```
+
+> **Note**: Use `DBTransaction.Ecto.with_handler(comp, MyRepo)` for real Ecto transactions.
+
+### Query
+
+Backend-agnostic data queries with pluggable handlers:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{Query, Throw}
+
+# Define a query module (in real code, this would have actual implementations)
+defmodule MyQueries do
+  def find_user(%{id: id}), do: %{id: id, name: "User #{id}"}
+end
+
+# Runtime: dispatch to actual query modules
+comp do
+  user <- Query.request(MyQueries, :find_user, %{id: 123})
+  return(user)
+end
+|> Query.with_handler(%{MyQueries => :direct})
+|> Comp.run!()
+#=> %{id: 123, name: "User 123"}
+
+# Test: stub responses
+comp do
+  user <- Query.request(MyQueries, :find_user, %{id: 456})
+  return(user)
+end
+|> Query.with_test_handler(%{
+  Query.key(MyQueries, :find_user, %{id: 456}) => %{id: 456, name: "Stubbed"}
+})
+|> Throw.with_handler()
+|> Comp.run!()
+#=> %{id: 456, name: "Stubbed"}
+```
+
+### EventAccumulator
+
+Accumulate domain events during computation (built on Writer):
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.EventAccumulator
+
+comp do
+  _ <- EventAccumulator.emit(%{type: :user_created, id: 1})
+  _ <- EventAccumulator.emit(%{type: :email_sent, to: "user@example.com"})
+  return(:ok)
+end
+|> EventAccumulator.with_handler(output: fn result, events -> {result, events} end)
+|> Comp.run!()
+#=> {:ok, [%{type: :user_created, id: 1}, %{type: :email_sent, to: "user@example.com"}]}
+```
+
+### EffectLogger
+
+Capture effect invocations for replay, resume, and retry:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{EffectLogger, State}
+
+# Capture a log of effects
+{{result, log}, _env} =
+  comp do
+    x <- State.get()
+    _ <- State.put(x + 10)
+    y <- State.get()
+    return({x, y})
+  end
+  |> EffectLogger.with_logging()
+  |> State.with_handler(0)
+  |> Comp.run()
+
+result
+#=> {0, 10}
+
+# Replay with different initial state - uses logged values
+{{replayed, _log2}, _env2} =
+  comp do
+    x <- State.get()
+    _ <- State.put(x + 10)
+    y <- State.get()
+    return({x, y})
+  end
+  |> EffectLogger.with_logging(log)
+  |> State.with_handler(999)  # Different initial state
+  |> Comp.run()
+
+replayed
+#=> {0, 10}  # Same result - values came from log
+```
+
+### EctoPersist
+
+Ecto database operations as effects (requires Ecto):
+
+```elixir
+# Example (requires Ecto and a configured Repo)
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.EctoPersist
+
+comp do
+  user <- EctoPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
+  order <- EctoPersist.insert(Order.changeset(%Order{}, %{user_id: user.id}))
+  return({user, order})
+end
+|> EctoPersist.with_handler(MyApp.Repo)
+|> Comp.run!()
+```
+
+> **Note**: EctoPersist wraps Ecto Repo operations. See the module docs for
+> `insert`, `update`, `delete`, `insert_all`, `update_all`, `delete_all`, and `upsert`.
+
 ## Architecture
 
 Skuld uses evidence-passing style where:
