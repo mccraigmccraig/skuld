@@ -8,19 +8,24 @@ defmodule Skuld.Effects.DBTransaction.Noop do
 
   ## Behavior
 
+  For `transact(comp)`:
   - Normal completion → returns result (no actual commit)
   - Throw/Suspend → propagates normally (no actual rollback)
   - Explicit `rollback(reason)` → returns `{:rolled_back, reason}` (no actual rollback)
 
   ## Example
 
+      alias Skuld.Comp
       alias Skuld.Effects.DBTransaction
       alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
 
       # In tests, use Noop instead of Ecto
       comp do
-        _ <- do_something()
-        return(:ok)
+        result <- DBTransaction.transact(comp do
+          _ <- do_something()
+          return(:ok)
+        end)
+        return(result)
       end
       |> NoopTx.with_handler()
       |> Comp.run!()
@@ -32,15 +37,18 @@ defmodule Skuld.Effects.DBTransaction.Noop do
   @doc """
   Install a no-op transaction handler.
 
-  The computation runs normally without any transaction wrapping.
-  The `rollback/1` operation returns `{:rolled_back, reason}` without
-  actually rolling back anything.
+  Handles `transact` operations by simply running the inner computation
+  without any actual transaction wrapping. The `rollback/1` operation
+  returns `{:rolled_back, reason}` without actually rolling back anything.
 
   ## Example
 
       comp do
-        _ <- DBTransaction.rollback(:test_reason)
-        return(:never_reached)
+        result <- DBTransaction.transact(comp do
+          _ <- DBTransaction.rollback(:test_reason)
+          return(:never_reached)
+        end)
+        return(result)
       end
       |> DBTransaction.Noop.with_handler()
       |> Comp.run!()
@@ -48,12 +56,69 @@ defmodule Skuld.Effects.DBTransaction.Noop do
   """
   @spec with_handler(Comp.Types.computation()) :: Comp.Types.computation()
   def with_handler(comp) do
-    # Handler for rollback - returns directly, aborting the computation
-    # By not calling k, the computation stops and returns {:rolled_back, reason}
-    rollback_handler = fn %DBTransaction.Rollback{reason: reason}, env, _k ->
-      {{:rolled_back, reason}, env}
+    handler = fn
+      %DBTransaction.Transact{comp: inner_comp}, env, k ->
+        handle_transact(inner_comp, env, k)
+
+      %DBTransaction.Rollback{}, _env, _k ->
+        raise ArgumentError, """
+        DBTransaction.rollback/1 called outside of a transaction.
+
+        rollback/1 must be called within a DBTransaction.transact/1 block:
+
+            comp do
+              result <- DBTransaction.transact(comp do
+                # ... do work ...
+                _ <- DBTransaction.rollback(:some_reason)
+              end)
+              return(result)
+            end
+        """
     end
 
-    Comp.with_handler(comp, DBTransaction.sig(), rollback_handler)
+    Comp.with_handler(comp, DBTransaction.sig(), handler)
+  end
+
+  # Handle the transact operation - run inner comp without actual transaction
+  defp handle_transact(inner_comp, env, k) do
+    # Handler for explicit rollback (inside transact block)
+    rollback_handler = fn %DBTransaction.Rollback{reason: reason}, e, _inner_k ->
+      # Return {:rolled_back, reason} - don't call continuation
+      {{:rolled_back, reason}, e}
+    end
+
+    # Handler for nested transact (just run it)
+    transact_handler = fn %DBTransaction.Transact{comp: nested_comp}, e, nested_k ->
+      handle_transact(nested_comp, e, nested_k)
+    end
+
+    # Install handlers for both rollback and nested transact
+    wrapped =
+      inner_comp
+      |> Comp.with_handler(DBTransaction.sig(), fn
+        %DBTransaction.Rollback{} = op, e, inner_k ->
+          rollback_handler.(op, e, inner_k)
+
+        %DBTransaction.Transact{} = op, e, inner_k ->
+          transact_handler.(op, e, inner_k)
+      end)
+
+    # Run the computation
+    {result, final_env} = Comp.call(wrapped, env, &Comp.identity_k/2)
+
+    # Handle sentinels - propagate them without calling k
+    cond do
+      match?(%Skuld.Comp.Throw{}, result) ->
+        # Throw - propagate sentinel
+        {result, final_env}
+
+      match?(%Skuld.Comp.Suspend{}, result) ->
+        # Suspend - propagate sentinel
+        {result, final_env}
+
+      true ->
+        # Normal result - pass to continuation
+        k.(result, final_env)
+    end
   end
 end
