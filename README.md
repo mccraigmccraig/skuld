@@ -487,7 +487,40 @@ end
 #=> {:rolled_back, :validation_failed}
 ```
 
-> **Note**: Use `DBTransaction.Ecto.with_handler(comp, MyRepo)` for real Ecto transactions.
+The same domain code works with different handlers - swap `Noop` for `Ecto` in production:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.DBTransaction
+alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
+
+# Domain logic - unchanged regardless of handler
+create_order = fn user_id, items ->
+  comp do
+    result <- DBTransaction.transact(comp do
+      # Imagine these are real Ecto operations
+      order = %{id: 1, user_id: user_id, items: items}
+      return(order)
+    end)
+    return(result)
+  end
+end
+
+# Production: real Ecto transactions
+create_order.(123, [:item_a, :item_b])
+|> EctoTx.with_handler(MyApp.Repo)
+|> Comp.run!()
+#=> %{id: 1, user_id: 123, items: [:item_a, :item_b]}
+
+# Testing: no database, same domain code
+alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
+
+create_order.(123, [:item_a, :item_b])
+|> NoopTx.with_handler()
+|> Comp.run!()
+#=> %{id: 1, user_id: 123, items: [:item_a, :item_b]}
+```
 
 ### Query
 
