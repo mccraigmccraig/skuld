@@ -631,7 +631,7 @@ alias Skuld.Comp
 alias Skuld.Effects.{EffectLogger, State}
 
 # Capture a log of effects
-{{result, log}, _env} =
+{{result, log}, _env} = (
   comp do
     x <- State.get()
     _ <- State.put(x + 10)
@@ -641,12 +641,24 @@ alias Skuld.Effects.{EffectLogger, State}
   |> EffectLogger.with_logging()
   |> State.with_handler(0)
   |> Comp.run()
+)
 
 result
 #=> {0, 10}
 
-# Replay with different initial state - uses logged values
-{{replayed, _log2}, _env2} =
+# The log captures each effect invocation with its result
+log
+#=> %Skuld.Effects.EffectLogger.Log{
+#=>   effect_queue: [
+#=>     %EffectLogEntry{sig: State, data: %State.Get{}, value: 0, state: :executed},
+#=>     %EffectLogEntry{sig: State, data: %State.Put{value: 10}, value: :ok, state: :executed},
+#=>     %EffectLogEntry{sig: State, data: %State.Get{}, value: 10, state: :executed}
+#=>   ],
+#=>   ...
+#=> }
+
+# Replay with different initial state - uses logged values instead of executing
+{{replayed, _log2}, _env2} = (
   comp do
     x <- State.get()
     _ <- State.put(x + 10)
@@ -654,11 +666,12 @@ result
     return({x, y})
   end
   |> EffectLogger.with_logging(log)
-  |> State.with_handler(999)  # Different initial state
+  |> State.with_handler(999)  # Different initial state - ignored during replay!
   |> Comp.run()
+)
 
 replayed
-#=> {0, 10}  # Same result - values came from log
+#=> {0, 10}  # Same result - values came from log, not from State handler
 ```
 
 ### EctoPersist
