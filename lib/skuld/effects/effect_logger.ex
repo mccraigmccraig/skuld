@@ -592,6 +592,7 @@ defmodule Skuld.Effects.EffectLogger do
   A wrapped handler function.
   """
   @spec wrap_resume_handler(module(), Types.handler()) :: Types.handler()
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def wrap_resume_handler(sig, handler) do
     fn args, env, k ->
       log = get_log(env) || Log.new()
