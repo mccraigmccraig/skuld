@@ -392,6 +392,50 @@ end
 #=> {{:ok, ["user logged in", "viewed dashboard"]}, [{:counter, :login}]}
 ```
 
+### Fresh
+
+Generate fresh/unique values (sequential integers and deterministic UUIDs):
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Fresh
+
+# Generate sequential integers (default starts at 0)
+comp do
+  id1 <- Fresh.fresh()
+  id2 <- Fresh.fresh()
+  return({id1, id2})
+end
+|> Fresh.with_handler()
+|> Comp.run!()
+#=> {0, 1}
+
+# Seed the counter to start from a different value
+comp do
+  id1 <- Fresh.fresh()
+  id2 <- Fresh.fresh()
+  return({id1, id2})
+end
+|> Fresh.with_handler(seed: 1000)
+|> Comp.run!()
+#=> {1000, 1001}
+
+# Generate deterministic UUIDs (v5) - reproducible given the same namespace
+namespace = UUID.uuid4()
+
+comp do
+  uuid1 <- Fresh.fresh_uuid()
+  uuid2 <- Fresh.fresh_uuid()
+  return({uuid1, uuid2})
+end
+|> Fresh.with_handler(namespace: namespace)
+|> Comp.run!()
+#=> {"550e8400-...", "6ba7b810-..."}
+
+# Same namespace always produces same sequence - great for testing!
+```
+
 ### Bracket
 
 Safe resource acquisition and cleanup (like try/finally):
