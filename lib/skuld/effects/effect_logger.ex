@@ -650,6 +650,6 @@ defmodule Skuld.Effects.EffectLogger do
   #############################################################################
 
   defp generate_id do
-    UUID.uuid4()
+    Uniq.UUID.uuid4()
   end
 end

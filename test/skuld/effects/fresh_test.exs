@@ -106,7 +106,7 @@ defmodule Skuld.Effects.FreshTest do
     end
 
     test "same namespace produces same UUID sequence" do
-      namespace = UUID.uuid4()
+      namespace = Uniq.UUID.uuid4()
 
       uuids1 =
         comp do
@@ -130,8 +130,8 @@ defmodule Skuld.Effects.FreshTest do
     end
 
     test "different namespaces produce different UUID sequences" do
-      namespace1 = UUID.uuid4()
-      namespace2 = UUID.uuid4()
+      namespace1 = Uniq.UUID.uuid4()
+      namespace2 = Uniq.UUID.uuid4()
 
       uuid1 =
         comp do
@@ -186,7 +186,7 @@ defmodule Skuld.Effects.FreshTest do
     end
 
     test "uuid generation is deterministic based on counter position" do
-      namespace = UUID.uuid4()
+      namespace = Uniq.UUID.uuid4()
 
       # Generate UUID at position 0
       uuid_at_0 =

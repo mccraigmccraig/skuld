@@ -28,7 +28,7 @@ defmodule Skuld.Effects.Fresh do
 
   The same namespace UUID produces the same UUID sequence:
 
-      namespace = UUID.uuid4()
+      namespace = Uniq.UUID.uuid4()
 
       # First run
       comp do
@@ -165,7 +165,7 @@ defmodule Skuld.Effects.Fresh do
       #=> 100
 
       # Custom namespace for reproducible UUIDs
-      namespace = UUID.uuid4()
+      namespace = Uniq.UUID.uuid4()
       comp do
         uuid <- Fresh.fresh_uuid()
         return(uuid)
@@ -243,7 +243,7 @@ defmodule Skuld.Effects.Fresh do
   @impl Skuld.Comp.IHandler
   def handle(%FreshUUID{}, env, k) do
     %State{counter: counter, namespace: namespace} = state = Env.get_state(env, @sig)
-    uuid = UUID.uuid5(namespace, Integer.to_string(counter))
+    uuid = Uniq.UUID.uuid5(namespace, Integer.to_string(counter))
     new_env = Env.put_state(env, @sig, %{state | counter: counter + 1})
     k.(uuid, new_env)
   end

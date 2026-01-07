@@ -422,7 +422,7 @@ end
 #=> {1000, 1001}
 
 # Generate deterministic UUIDs (v5) - reproducible given the same namespace
-namespace = UUID.uuid4()
+namespace = Uniq.UUID.uuid4()
 
 comp do
   uuid1 <- Fresh.fresh_uuid()
