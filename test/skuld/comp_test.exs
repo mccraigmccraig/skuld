@@ -51,6 +51,79 @@ defmodule Skuld.CompTest do
     end
   end
 
+  describe "each" do
+    alias Skuld.Effects.Writer
+
+    test "runs effects and returns :ok" do
+      comp =
+        Comp.each([1, 2, 3], fn x -> Writer.tell(x) end)
+        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
+
+      assert {{:ok, [3, 2, 1]}, _env} = Comp.run(comp)
+    end
+
+    test "empty list returns :ok" do
+      comp = Comp.each([], fn x -> Comp.pure(x) end)
+      assert {:ok, _env} = Comp.run(comp)
+    end
+
+    test "discards individual results" do
+      comp = Comp.each([1, 2, 3], fn x -> Comp.pure(x * 100) end)
+      # Returns :ok, not [100, 200, 300]
+      assert {:ok, _env} = Comp.run(comp)
+    end
+  end
+
+  describe "when_" do
+    alias Skuld.Effects.Writer
+
+    test "runs computation when condition is true" do
+      comp =
+        Comp.when_(true, Writer.tell(:logged))
+        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
+
+      assert {{:ok, [:logged]}, _env} = Comp.run(comp)
+    end
+
+    test "returns :ok without running when condition is false" do
+      comp =
+        Comp.when_(false, Writer.tell(:logged))
+        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
+
+      assert {{:ok, []}, _env} = Comp.run(comp)
+    end
+
+    test "discards computation result, returns :ok" do
+      comp = Comp.when_(true, Comp.pure(:some_value))
+      assert {:ok, _env} = Comp.run(comp)
+    end
+  end
+
+  describe "unless_" do
+    alias Skuld.Effects.Writer
+
+    test "runs computation when condition is false" do
+      comp =
+        Comp.unless_(false, Writer.tell(:logged))
+        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
+
+      assert {{:ok, [:logged]}, _env} = Comp.run(comp)
+    end
+
+    test "returns :ok without running when condition is true" do
+      comp =
+        Comp.unless_(true, Writer.tell(:logged))
+        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
+
+      assert {{:ok, []}, _env} = Comp.run(comp)
+    end
+
+    test "discards computation result, returns :ok" do
+      comp = Comp.unless_(false, Comp.pure(:some_value))
+      assert {:ok, _env} = Comp.run(comp)
+    end
+  end
+
   describe "then_do" do
     test "ignores first result" do
       comp = Comp.then_do(Comp.pure(:ignored), Comp.pure(:kept))
