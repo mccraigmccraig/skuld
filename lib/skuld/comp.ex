@@ -9,6 +9,17 @@ defmodule Skuld.Comp do
   - **Leave-scope**: Continuation chain for scope cleanup/control
   - **Suspend**: Sentinel struct that bypasses leave-scope
 
+  ## Auto-Lifting
+
+  Non-computation values are automatically lifted to `pure(value)`. This enables
+  ergonomic patterns:
+
+      comp do
+        x <- State.get()
+        _ <- if x > 5, do: Writer.tell(:big)  # nil auto-lifted when false
+        x * 2  # final expression auto-lifted (no return needed)
+      end
+
   ## Architecture
 
   Unlike Freyja's centralised interpreter, Skuld uses decentralised
@@ -96,24 +107,12 @@ defmodule Skuld.Comp do
       leave_scope.(%Skuld.Comp.Throw{error: error}, env)
   end
 
-  def call(comp, _env, _k) do
-    raise __MODULE__.InvalidComputation,
-      value: comp,
-      message: """
-      Expected a computation, got: #{inspect(comp)}
-
-      A computation must be a 2-arity function: fn env, k -> ... end
-
-      Common causes:
-      - Forgot `return(value)` at the end of a comp block
-      - Used a non-computation value in a `<-` binding
-
-      Example fix:
-        comp do
-          x <- State.get()
-          return(x + 1)  # <-- wrap final value with return
-        end
-      """
+  # Auto-lift: non-computation values are treated as pure(value)
+  # This enables ergonomic use like:
+  #   _ <- if condition, do: Writer.tell(x)  # nil auto-lifted when false
+  #   x + 1  # final expression auto-lifted (no return needed)
+  def call(value, env, k) do
+    k.(value, env)
   end
 
   @doc "Sequence computations"

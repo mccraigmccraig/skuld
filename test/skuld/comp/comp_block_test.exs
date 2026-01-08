@@ -134,6 +134,71 @@ defmodule Skuld.Comp.CompBlockTest do
     end
   end
 
+  describe "auto-lifting ergonomics" do
+    alias Skuld.Effects.Writer
+
+    test "final expression without return is auto-lifted" do
+      # No longer need return() for final expression
+      computation =
+        comp do
+          x <- State.get()
+          x + 1
+        end
+        |> State.with_handler(10)
+
+      assert Comp.run!(computation) == 11
+    end
+
+    test "if without else is auto-lifted (nil becomes pure(nil))" do
+      computation =
+        comp do
+          x <- State.get()
+          _ <- if x > 5, do: Writer.tell(:big)
+          return(:done)
+        end
+        |> State.with_handler(10)
+        |> Writer.with_handler([], output: fn r, log -> {r, log} end)
+
+      assert Comp.run!(computation) == {:done, [:big]}
+    end
+
+    test "if without else when condition is false" do
+      computation =
+        comp do
+          x <- State.get()
+          _ <- if x > 5, do: Writer.tell(:big)
+          return(:done)
+        end
+        |> State.with_handler(3)
+        |> Writer.with_handler([], output: fn r, log -> {r, log} end)
+
+      # No write happens when x <= 5
+      assert Comp.run!(computation) == {:done, []}
+    end
+
+    test "plain value in comp block is auto-lifted" do
+      computation =
+        comp do
+          42
+        end
+
+      assert Comp.run!(computation) == 42
+    end
+
+    test "complex expression as final value" do
+      computation =
+        comp do
+          x <- Reader.ask()
+          y <- State.get()
+          %{sum: x + y, product: x * y}
+        end
+        |> Reader.with_handler(3)
+        |> State.with_handler(4)
+
+      assert Comp.run!(computation) == %{sum: 7, product: 12}
+    end
+  end
+
   describe "defcomp macro" do
     defcomp simple_get do
       x <- State.get()

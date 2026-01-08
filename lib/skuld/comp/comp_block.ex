@@ -20,8 +20,18 @@ defmodule Skuld.Comp.CompBlock do
 
   - `x <- effect()` - bind the result of an effectful computation
   - `x = expr` - pure variable binding (unchanged)
-  - `return(value)` - lift a pure value (from `Skuld.Comp.BaseOps`)
-  - Last expression is the final computation
+  - `return(value)` - lift a pure value (optional - values are auto-lifted)
+  - Last expression is auto-lifted if not already a computation
+
+  ## Auto-Lifting
+
+  Non-computation values are automatically wrapped in `pure()`:
+
+      comp do
+        x <- State.get()
+        _ <- if x > 5, do: Writer.tell(:big)  # nil auto-lifted when false
+        x * 2  # final expression auto-lifted (no return needed)
+      end
 
   ## Else Clause
 

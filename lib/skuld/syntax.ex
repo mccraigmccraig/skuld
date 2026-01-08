@@ -39,8 +39,16 @@ defmodule Skuld.Syntax do
 
   - `x <- effect()` - bind the result of an effectful computation
   - `x = expr` - pure variable binding (unchanged)
-  - `return(value)` - lift a pure value into a computation
-  - Last expression is the final computation (and _must_ be a computation)
+  - `return(value)` - lift a pure value into a computation (optional - see auto-lifting)
+  - Last expression is auto-lifted if not already a computation
+
+  ## Auto-Lifting
+
+  Non-computation values are automatically wrapped in `pure()`. This means:
+
+  - Final expressions don't need `return()`: `x + 1` works as final line
+  - `if` without `else` works: `_ <- if cond, do: effect()` (nil auto-lifted)
+  - Any plain value in a bind position is treated as `pure(value)`
 
   ## See Also
 
