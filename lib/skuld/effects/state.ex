@@ -49,8 +49,8 @@ defmodule Skuld.Effects.State do
   ## Operation Structs
   #############################################################################
 
-  def_op(Get, [:tag])
-  def_op(Put, [:tag, :value])
+  def_op(Get, [:tag], atom_fields: [:tag])
+  def_op(Put, [:tag, :value], atom_fields: [:tag])
 
   #############################################################################
   ## Operations

@@ -44,7 +44,7 @@ defmodule Skuld.Effects.Reader do
   ## Operation Structs
   #############################################################################
 
-  def_op(Ask, [:tag])
+  def_op(Ask, [:tag], atom_fields: [:tag])
 
   #############################################################################
   ## Operations
