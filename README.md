@@ -26,6 +26,8 @@ simpler and more coherent API, and is (arguably) easier to understand.
 - **Composable**: Multiple effects can be stacked and composed naturally
 - **Single type**: Single unified `computation` type and `comp` macro for all
   effectful code (unlike Freyja, there's no first-order / higher-order split)
+- **Auto-lifting**: Plain values are automatically lifted to computations,
+  enabling ergonomic patterns like `if` without `else` and implicit final returns
 
 ## Installation
 
@@ -59,7 +61,7 @@ defmodule Example do
     # Write to Writer effect
     _ <- Writer.tell("processed item #{count}")
 
-    return({config, count})
+    {config, count}  # final expression auto-lifted (no return needed)
   end
 end
 
@@ -89,7 +91,7 @@ alias Skuld.Effects.State
 comp do
   n <- State.get()
   _ <- State.put(n + 1)
-  return(n)
+  n
 end
 |> State.with_handler(0, output: fn result, state -> {result, {:final_state, state}} end)
 |> Comp.run!()
@@ -107,7 +109,7 @@ alias Skuld.Effects.Reader
 
 comp do
   name <- Reader.ask()
-  return("Hello, #{name}!")
+  "Hello, #{name}!"
 end
 |> Reader.with_handler("World")
 |> Comp.run!()
@@ -126,7 +128,7 @@ alias Skuld.Effects.Writer
 comp do
   _ <- Writer.tell("step 1")
   _ <- Writer.tell("step 2")
-  return(:done)
+  :done
 end
 |> Writer.with_handler([], output: fn result, log -> {result, Enum.reverse(log)} end)
 |> Comp.run!()
@@ -144,10 +146,10 @@ alias Skuld.Effects.Throw
 
 comp do
   x = -1
-  _ <- if x < 0, do: Throw.throw({:error, "negative"}), else: return(:ok)
-  return(x * 2)
+  _ <- if x < 0, do: Throw.throw({:error, "negative"})  # nil auto-lifted when false
+  x * 2
 catch
-  err -> return({:recovered, err})
+  err -> {:recovered, err}
 end
 |> Throw.with_handler()
 |> Comp.run!()
@@ -161,10 +163,10 @@ The `catch` clause desugars to `Throw.catch_error/2`:
 Throw.catch_error(
   comp do
     x = -1
-    _ <- if x < 0, do: Throw.throw({:error, "negative"}), else: return(:ok)
-    return(x * 2)
+    _ <- if x < 0, do: Throw.throw({:error, "negative"})
+    x * 2
   end,
-  fn err -> comp do return({:recovered, err}) end end
+  fn err -> comp do {:recovered, err} end end
 )
 |> Throw.with_handler()
 |> Comp.run!()
@@ -182,10 +184,10 @@ alias Skuld.Comp
 alias Skuld.Effects.Throw
 
 comp do
-  {:ok, x} <- return({:error, "something went wrong"})
-  return(x * 2)
+  {:ok, x} <- {:error, "something went wrong"}  # auto-lifted
+  x * 2
 else
-  {:error, reason} -> return({:match_failed, reason})
+  {:error, reason} -> {:match_failed, reason}
 end
 |> Throw.with_handler()
 |> Comp.run!()
@@ -204,20 +206,20 @@ alias Skuld.Effects.Throw
 # Returns {:ok, x}, {:error, reason}, or throws
 might_fail = fn x ->
   cond do
-    x < 0 -> Comp.return({:error, :negative})
+    x < 0 -> {:error, :negative}  # auto-lifted
     x > 100 -> Throw.throw(:too_large)
-    true -> Comp.return({:ok, x})
+    true -> {:ok, x}  # auto-lifted
   end
 end
 
 # Throw case (x > 100):
 comp do
   {:ok, x} <- might_fail.(150)
-  return(x * 2)
+  x * 2
 else
-  {:error, reason} -> return({:match_failed, reason})
+  {:error, reason} -> {:match_failed, reason}
 catch
-  err -> return({:caught_throw, err})
+  err -> {:caught_throw, err}
 end
 |> Throw.with_handler()
 |> Comp.run!()
@@ -226,11 +228,11 @@ end
 # Match failure case (x < 0):
 comp do
   {:ok, x} <- might_fail.(-5)
-  return(x * 2)
+  x * 2
 else
-  {:error, reason} -> return({:match_failed, reason})
+  {:error, reason} -> {:match_failed, reason}
 catch
-  err -> return({:caught_throw, err})
+  err -> {:caught_throw, err}
 end
 |> Throw.with_handler()
 |> Comp.run!()
@@ -254,7 +256,7 @@ generator = comp do
   _ <- Yield.yield(1)
   _ <- Yield.yield(2)
   _ <- Yield.yield(3)
-  return(:done)
+  :done
 end
 
 # Collect all yielded values
@@ -288,10 +290,10 @@ comp do
     comp do
       count <- State.get()
       _ <- State.put(count + 1)
-      return(item * 2)
+      item * 2
     end
   end)
-  return(results)
+  results
 end
 |> State.with_handler(0, output: fn result, state -> {result, {:final_state, state}} end)
 |> Comp.run!()
@@ -315,10 +317,10 @@ comp do
     comp do
       count <- State.get()
       _ <- State.put(count + 1)
-      return(item * 2)
+      item * 2
     end
   end)
-  return(results)
+  results
 end
 |> State.with_handler(0, output: fn result, state -> {result, {:final_state, state}} end)
 |> Comp.run!()
@@ -343,7 +345,7 @@ comp do
   count <- TaggedState.get(:counter)
   _ <- TaggedState.put(:name, "alice")
   name <- TaggedState.get(:name)
-  return({count, name})
+  {count, name}
 end
 |> TaggedState.with_handler(:counter, 0)
 |> TaggedState.with_handler(:name, "")
@@ -363,7 +365,7 @@ alias Skuld.Effects.TaggedReader
 comp do
   db <- TaggedReader.ask(:db)
   api <- TaggedReader.ask(:api)
-  return({db, api})
+  {db, api}
 end
 |> TaggedReader.with_handler(:db, %{host: "localhost"})
 |> TaggedReader.with_handler(:api, %{url: "https://api.example.com"})
@@ -384,7 +386,7 @@ comp do
   _ <- TaggedWriter.tell(:audit, "user logged in")
   _ <- TaggedWriter.tell(:metrics, {:counter, :login})
   _ <- TaggedWriter.tell(:audit, "viewed dashboard")
-  return(:ok)
+  :ok
 end
 |> TaggedWriter.with_handler(:audit, [], output: fn r, log -> {r, Enum.reverse(log)} end)
 |> TaggedWriter.with_handler(:metrics, [], output: fn r, log -> {r, Enum.reverse(log)} end)
@@ -405,7 +407,7 @@ alias Skuld.Effects.Fresh
 comp do
   id1 <- Fresh.fresh()
   id2 <- Fresh.fresh()
-  return({id1, id2})
+  {id1, id2}
 end
 |> Fresh.with_handler()
 |> Comp.run!()
@@ -415,7 +417,7 @@ end
 comp do
   id1 <- Fresh.fresh()
   id2 <- Fresh.fresh()
-  return({id1, id2})
+  {id1, id2}
 end
 |> Fresh.with_handler(seed: 1000)
 |> Comp.run!()
@@ -427,7 +429,7 @@ namespace = Uniq.UUID.uuid4()
 comp do
   uuid1 <- Fresh.fresh_uuid()
   uuid2 <- Fresh.fresh_uuid()
-  return({uuid1, uuid2})
+  {uuid1, uuid2}
 end
 |> Fresh.with_handler(namespace: namespace)
 |> Comp.run!()
@@ -451,24 +453,22 @@ comp do
     # Acquire
     comp do
       _ <- State.put(:acquired)
-      return(:resource)
+      :resource
     end,
     # Release (always runs)
     fn _resource ->
       comp do
         _ <- State.put(:released)
-        return(:ok)
+        :ok
       end
     end,
     # Use
     fn resource ->
-      comp do
-        return({:used, resource})
-      end
+      {:used, resource}  # auto-lifted
     end
   )
   final_state <- State.get()
-  return({result, final_state})
+  {result, final_state}
 end
 |> State.with_handler(:init)
 |> Comp.run!()
@@ -485,11 +485,11 @@ alias Skuld.Effects.{Bracket, State}
 Bracket.finally(
   comp do
     _ <- State.put(:working)
-    return(:done)
+    :done
   end,
   comp do
     _ <- State.put(:cleaned_up)
-    return(:ok)
+    :ok
   end
 )
 |> State.with_handler(:init, output: fn r, s -> {r, s} end)
@@ -510,9 +510,9 @@ alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
 # Normal completion - transaction commits
 comp do
   result <- DBTransaction.transact(comp do
-    return({:user_created, 123})
+    {:user_created, 123}
   end)
-  return(result)
+  result
 end
 |> NoopTx.with_handler()
 |> Comp.run!()
@@ -522,9 +522,9 @@ end
 comp do
   result <- DBTransaction.transact(comp do
     _ <- DBTransaction.rollback(:validation_failed)
-    return(:never_reached)
+    :never_reached
   end)
-  return(result)
+  result
 end
 |> NoopTx.with_handler()
 |> Comp.run!()
@@ -545,9 +545,9 @@ create_order = fn user_id, items ->
     result <- DBTransaction.transact(comp do
       # Imagine these are real Ecto operations
       order = %{id: 1, user_id: user_id, items: items}
-      return(order)
+      order
     end)
-    return(result)
+    result
   end
 end
 
@@ -583,7 +583,7 @@ end
 # Runtime: dispatch to actual query modules
 comp do
   user <- Query.request(MyQueries, :find_user, %{id: 123})
-  return(user)
+  user
 end
 |> Query.with_handler(%{MyQueries => :direct})
 |> Comp.run!()
@@ -592,7 +592,7 @@ end
 # Test: stub responses
 comp do
   user <- Query.request(MyQueries, :find_user, %{id: 456})
-  return(user)
+  user
 end
 |> Query.with_test_handler(%{
   Query.key(MyQueries, :find_user, %{id: 456}) => %{id: 456, name: "Stubbed"}
@@ -614,7 +614,7 @@ alias Skuld.Effects.EventAccumulator
 comp do
   _ <- EventAccumulator.emit(%{type: :user_created, id: 1})
   _ <- EventAccumulator.emit(%{type: :email_sent, to: "user@example.com"})
-  return(:ok)
+  :ok
 end
 |> EventAccumulator.with_handler(output: fn result, events -> {result, events} end)
 |> Comp.run!()
@@ -636,7 +636,7 @@ alias Skuld.Effects.{EffectLogger, State}
     x <- State.get()
     _ <- State.put(x + 10)
     y <- State.get()
-    return({x, y})
+    {x, y}
   end
   |> EffectLogger.with_logging()
   |> State.with_handler(0)
@@ -663,7 +663,7 @@ log
     x <- State.get()
     _ <- State.put(x + 10)
     y <- State.get()
-    return({x, y})
+    {x, y}
   end
   |> EffectLogger.with_logging(log)
   |> State.with_handler(999)  # Different initial state - ignored during replay!
@@ -687,7 +687,7 @@ alias Skuld.Effects.EctoPersist
 comp do
   user <- EctoPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
   order <- EctoPersist.insert(Order.changeset(%Order{}, %{user_id: user.id}))
-  return({user, order})
+  {user, order}
 end
 |> EctoPersist.with_handler(MyApp.Repo)
 |> Comp.run!()
