@@ -28,6 +28,16 @@ defmodule Skuld.Comp.DefOp do
 
       Jason.encode!(%State.Put{value: 42})
       # => {"__struct__":"Elixir.Skuld.Effects.State.Put","value":42}
+
+  ## Atom Fields
+
+  Some fields may contain atoms (like tags) that need to be converted back
+  from strings during JSON deserialization. Use the `atom_fields` option:
+
+      def_op Get, [:tag], atom_fields: [:tag]
+
+  This generates a `from_json/1` callback that converts the specified fields
+  from strings to existing atoms.
   """
 
   @doc """
@@ -37,11 +47,47 @@ defmodule Skuld.Comp.DefOp do
 
   - `mod` - the module name (will be nested under the calling module)
   - `fields` - list of struct fields (default: [])
+  - `opts` - keyword options:
+    - `atom_fields` - list of fields that should be converted from strings to atoms
+      during deserialization
   """
-  defmacro def_op(mod, fields \\ []) do
+  defmacro def_op(mod, fields \\ [], opts \\ []) do
+    atom_fields = Keyword.get(opts, :atom_fields, [])
+
+    from_json_fn =
+      if atom_fields != [] do
+        quote do
+          def from_json(map) do
+            attrs =
+              Enum.reduce(unquote(fields), %{}, fn field, acc ->
+                key = Atom.to_string(field)
+                value = Map.get(map, key) || Map.get(map, field)
+
+                converted =
+                  if field in unquote(atom_fields) do
+                    case value do
+                      s when is_binary(s) -> String.to_existing_atom(s)
+                      a when is_atom(a) -> a
+                      nil -> nil
+                    end
+                  else
+                    value
+                  end
+
+                Map.put(acc, field, converted)
+              end)
+
+            struct(__MODULE__, attrs)
+          end
+        end
+      else
+        nil
+      end
+
     quote do
       defmodule unquote(mod) do
         defstruct unquote(fields)
+        unquote(from_json_fn)
       end
 
       defimpl Jason.Encoder, for: unquote(mod) do
