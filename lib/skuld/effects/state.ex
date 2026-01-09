@@ -2,7 +2,36 @@ defmodule Skuld.Effects.State do
   @moduledoc """
   State effect - mutable state threaded through computation.
 
-  Demonstrates state management in evidence-passing.
+  Supports both simple single-state usage and multiple independent states via tags.
+
+  ## Simple Usage (default tag)
+
+      use Skuld.Syntax
+      alias Skuld.Effects.State
+
+      comp do
+        n <- State.get()
+        _ <- State.put(n + 1)
+        n
+      end
+      |> State.with_handler(0)
+      |> Comp.run!()
+      #=> 0
+
+  ## Multiple States (explicit tags)
+
+      comp do
+        _ <- State.put(:counter, 0)
+        _ <- State.modify(:counter, &(&1 + 1))
+        count <- State.get(:counter)
+        _ <- State.put(:name, "alice")
+        name <- State.get(:name)
+        {count, name}
+      end
+      |> State.with_handler(0, tag: :counter)
+      |> State.with_handler("", tag: :name)
+      |> Comp.run!()
+      #=> {1, "alice"}
   """
 
   @behaviour Skuld.Comp.IHandler
@@ -20,39 +49,85 @@ defmodule Skuld.Effects.State do
   ## Operation Structs
   #############################################################################
 
-  def_op(Get)
-  def_op(Put, [:value])
+  def_op(Get, [:tag])
+  def_op(Put, [:tag, :value])
 
   #############################################################################
   ## Operations
   #############################################################################
 
-  @doc "Get the current state"
-  @spec get() :: Types.computation()
-  def get do
-    Comp.effect(@sig, %Get{})
+  @doc """
+  Get the current state.
+
+  ## Examples
+
+      State.get()           # use default tag
+      State.get(:counter)   # use explicit tag
+  """
+  @spec get(atom()) :: Types.computation()
+  def get(tag \\ @sig) do
+    Comp.effect(@sig, %Get{tag: tag})
   end
 
-  @doc "Replace the state, returning `%Change{old: old_state, new: new_state}`"
-  @spec put(term()) :: Types.computation()
-  def put(value) do
-    Comp.effect(@sig, %Put{value: value})
+  @doc """
+  Replace the state, returning `%Change{old: old_state, new: new_state}`.
+
+  ## Examples
+
+      State.put(42)              # use default tag
+      State.put(:counter, 42)    # use explicit tag
+  """
+  @spec put(atom(), term()) :: Types.computation()
+  def put(tag_or_value, value \\ nil)
+
+  def put(tag, value) when is_atom(tag) and value != nil do
+    Comp.effect(@sig, %Put{tag: tag, value: value})
   end
 
-  @doc "Modify the state with a function, returning the old value"
-  @spec modify((term() -> term())) :: Types.computation()
-  def modify(f) do
-    Comp.bind(get(), fn old ->
-      Comp.bind(put(f.(old)), fn _ ->
+  def put(value, nil) do
+    Comp.effect(@sig, %Put{tag: @sig, value: value})
+  end
+
+  @doc """
+  Modify the state with a function, returning the old value.
+
+  ## Examples
+
+      State.modify(&(&1 + 1))              # use default tag
+      State.modify(:counter, &(&1 + 1))    # use explicit tag
+  """
+  @spec modify(atom(), (term() -> term())) :: Types.computation()
+  def modify(tag_or_f, f \\ nil)
+
+  def modify(tag, f) when is_atom(tag) and is_function(f, 1) do
+    Comp.bind(get(tag), fn old ->
+      Comp.bind(put(tag, f.(old)), fn _ ->
         Comp.pure(old)
       end)
     end)
   end
 
-  @doc "Get a value derived from the state"
-  @spec gets((term() -> term())) :: Types.computation()
-  def gets(f) do
-    Comp.map(get(), f)
+  def modify(f, nil) when is_function(f, 1) do
+    modify(@sig, f)
+  end
+
+  @doc """
+  Get a value derived from the state.
+
+  ## Examples
+
+      State.gets(&Map.get(&1, :name))              # use default tag
+      State.gets(:user, &Map.get(&1, :name))       # use explicit tag
+  """
+  @spec gets(atom(), (term() -> term())) :: Types.computation()
+  def gets(tag_or_f, f \\ nil)
+
+  def gets(tag, f) when is_atom(tag) and is_function(f, 1) do
+    Comp.map(get(tag), f)
+  end
+
+  def gets(f, nil) when is_function(f, 1) do
+    gets(@sig, f)
   end
 
   #############################################################################
@@ -62,68 +137,72 @@ defmodule Skuld.Effects.State do
   @doc """
   Install a scoped State handler for a computation.
 
-  Installs the State handler and initializes state for the duration of `comp`.
-  Both the handler and state are restored/removed when `comp` completes or throws.
-
-  The argument order is pipe-friendly.
-
   ## Options
 
+  - `tag` - the state tag (default: `Skuld.Effects.State`)
   - `output` - optional function `(result, final_state) -> new_result`
-    to transform the result before returning. Useful for including the final
-    state in the output.
+    to transform the result before returning.
 
-  ## Example
+  ## Examples
 
-      # Wrap a computation with its own State
-      comp_with_state =
-        comp do
-          x <- State.get()
-          _ <- State.put(x + 1)
-          return(x)
-        end
-        |> State.with_handler(0)
-
-      # Can be nested - inner State shadows outer
-      outer_comp = comp do
-        _ <- State.put(100)
-        inner_result <- State.get() |> State.with_handler(0)
-        outer_val <- State.get()
-        return({inner_result, outer_val})  # {0, 100}
+      # Simple usage with default tag
+      comp do
+        x <- State.get()
+        _ <- State.put(x + 1)
+        x
       end
-
-      # Compose multiple handlers with pipes
-      my_comp
-      |> Reader.with_handler(:config)
       |> State.with_handler(0)
-      |> Comp.run(Env.new())
+      |> Comp.run!()
+      #=> 0
+
+      # With explicit tag
+      comp do
+        x <- State.get(:counter)
+        _ <- State.put(:counter, x + 1)
+        x
+      end
+      |> State.with_handler(0, tag: :counter)
+      |> Comp.run!()
+      #=> 0
 
       # Include final state in result
       comp do
         _ <- State.modify(&(&1 + 1))
-        _ <- State.modify(&(&1 * 2))
-        return(:done)
+        :done
       end
       |> State.with_handler(5, output: fn result, state -> {result, state} end)
       |> Comp.run!()
-      # => {:done, 12}
+      #=> {:done, 6}
+
+      # Multiple states
+      comp do
+        a <- State.get(:a)
+        b <- State.get(:b)
+        {a, b}
+      end
+      |> State.with_handler(1, tag: :a)
+      |> State.with_handler(2, tag: :b)
+      |> Comp.run!()
+      #=> {1, 2}
   """
   @spec with_handler(Types.computation(), term(), keyword()) :: Types.computation()
   def with_handler(comp, initial, opts \\ []) do
+    tag = Keyword.get(opts, :tag, @sig)
     output = Keyword.get(opts, :output)
+    state_key = state_key(tag)
 
     comp
     |> Comp.scoped(fn env ->
-      previous = Env.get_state(env, @sig)
-      modified = Env.put_state(env, @sig, initial)
+      previous = Env.get_state(env, state_key)
+      modified = Env.put_state(env, state_key, initial)
 
       finally_k = fn value, e ->
-        final_state = Env.get_state(e, @sig)
+        final_state = Env.get_state(e, state_key)
 
         restored_env =
           case previous do
-            nil -> %{e | state: Map.delete(e.state, @sig)}
-            val -> Env.put_state(e, @sig, val)
+            nil -> %{e | state: Map.delete(e.state, state_key)}
+            val -> Env.put_state(e, state_key, val)
           end
 
         transformed_value =
@@ -141,10 +220,10 @@ defmodule Skuld.Effects.State do
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 
-  @doc "Extract the final state from an env"
-  @spec get_state(Types.env()) :: term()
-  def get_state(env) do
-    Env.get_state(env, @sig)
+  @doc "Extract the state for the given tag from an env"
+  @spec get_state(Types.env(), atom()) :: term()
+  def get_state(env, tag \\ @sig) do
+    Env.get_state(env, state_key(tag))
   end
 
   #############################################################################
@@ -152,15 +231,22 @@ defmodule Skuld.Effects.State do
   #############################################################################
 
   @impl Skuld.Comp.IHandler
-  def handle(%Get{}, env, k) do
-    value = Env.get_state(env, @sig)
+  def handle(%Get{tag: tag}, env, k) do
+    value = Env.get_state(env, state_key(tag))
     k.(value, env)
   end
 
   @impl Skuld.Comp.IHandler
-  def handle(%Put{value: value}, env, k) do
-    old_value = Env.get_state(env, @sig)
-    new_env = Env.put_state(env, @sig, value)
+  def handle(%Put{tag: tag, value: value}, env, k) do
+    key = state_key(tag)
+    old_value = Env.get_state(env, key)
+    new_env = Env.put_state(env, key, value)
     k.(Change.new(old_value, value), new_env)
   end
+
+  #############################################################################
+  ## Private
+  #############################################################################
+
+  defp state_key(tag), do: {__MODULE__, tag}
 end
