@@ -260,47 +260,6 @@ defmodule Skuld.Comp do
     traverse(list, f) |> map(fn _ -> :ok end)
   end
 
-  @doc """
-  Run a computation only when condition is true, otherwise return `:ok`.
-
-  Useful for conditional effects without needing explicit else branches.
-  Named `when_` to avoid conflict with Elixir's `when` guard keyword.
-
-  ## Example
-
-      comp do
-        _ <- Comp.when_(should_log?, Writer.tell("logged"))
-        return(:done)
-      end
-
-  Instead of:
-
-      comp do
-        _ <- if should_log?, do: Writer.tell("logged"), else: Comp.pure(:ok)
-        return(:done)
-      end
-  """
-  @spec when_(boolean(), Types.computation()) :: Types.computation()
-  def when_(true, comp), do: comp |> map(fn _ -> :ok end)
-  def when_(false, _comp), do: pure(:ok)
-
-  @doc """
-  Run a computation only when condition is false, otherwise return `:ok`.
-
-  Inverse of `when_/2`.
-  Named `unless_` for consistency with `when_`.
-
-  ## Example
-
-      comp do
-        _ <- Comp.unless_(skip?, Writer.tell("not skipped"))
-        return(:done)
-      end
-  """
-  @spec unless_(boolean(), Types.computation()) :: Types.computation()
-  def unless_(true, _comp), do: pure(:ok)
-  def unless_(false, comp), do: comp |> map(fn _ -> :ok end)
-
   #############################################################################
   ## Scoping Primitives
   #############################################################################

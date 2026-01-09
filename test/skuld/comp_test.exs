@@ -74,56 +74,6 @@ defmodule Skuld.CompTest do
     end
   end
 
-  describe "when_" do
-    alias Skuld.Effects.Writer
-
-    test "runs computation when condition is true" do
-      comp =
-        Comp.when_(true, Writer.tell(:logged))
-        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
-
-      assert {{:ok, [:logged]}, _env} = Comp.run(comp)
-    end
-
-    test "returns :ok without running when condition is false" do
-      comp =
-        Comp.when_(false, Writer.tell(:logged))
-        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
-
-      assert {{:ok, []}, _env} = Comp.run(comp)
-    end
-
-    test "discards computation result, returns :ok" do
-      comp = Comp.when_(true, Comp.pure(:some_value))
-      assert {:ok, _env} = Comp.run(comp)
-    end
-  end
-
-  describe "unless_" do
-    alias Skuld.Effects.Writer
-
-    test "runs computation when condition is false" do
-      comp =
-        Comp.unless_(false, Writer.tell(:logged))
-        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
-
-      assert {{:ok, [:logged]}, _env} = Comp.run(comp)
-    end
-
-    test "returns :ok without running when condition is true" do
-      comp =
-        Comp.unless_(true, Writer.tell(:logged))
-        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
-
-      assert {{:ok, []}, _env} = Comp.run(comp)
-    end
-
-    test "discards computation result, returns :ok" do
-      comp = Comp.unless_(false, Comp.pure(:some_value))
-      assert {:ok, _env} = Comp.run(comp)
-    end
-  end
-
   describe "then_do" do
     test "ignores first result" do
       comp = Comp.then_do(Comp.pure(:ignored), Comp.pure(:kept))
