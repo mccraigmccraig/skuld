@@ -4,14 +4,13 @@
 #
 # Compares Skuld against pure baselines and simple effect implementations:
 #
-# 1. Pure/Reduce   - Non-effectful baseline using Enum.reduce
-# 2. Pure/Recurse  - Non-effectful baseline using recursion
-# 3. Monad/Nested  - Simple state monad (no effects library)
-# 4. Evf/Nested    - Flat evidence-passing (minimal overhead baseline)
+# 1. Pure/Recurse  - Non-effectful baseline using recursion
+# 2. Monad/Nested  - Simple state monad (no effects library)
+# 3. Evf/Nested    - Flat evidence-passing, direct-style (no CPS)
+# 4. Evf/CPS       - Flat evidence-passing with CPS (isolates CPS overhead)
 # 5. Skuld/Nested  - Skuld with nested binds
-# 6. Skuld/Chained - Skuld with chained binds
-# 7. Skuld/FxFList  - Skuld with FxList iteration
-# 8. Skuld/Yield   - Skuld with coroutine-style iteration
+# 6. Skuld/FxFL    - Skuld with FxFasterList iteration
+# 7. Skuld/Yield   - Skuld with coroutine-style iteration
 
 alias Skuld.Comp
 alias Skuld.Effects.State, as: SkuldState
@@ -142,6 +141,57 @@ defmodule SkuldBenchmark do
   end
 
   # ============================================================
+  # Flat evidence-passing with CPS - isolates CPS overhead
+  # ============================================================
+
+  def evf_cps_pure(value), do: fn env, k -> k.(value, env) end
+
+  def evf_cps_bind(ma, f) do
+    fn env, k ->
+      ma.(env, fn a, env2 ->
+        mb = f.(a)
+        mb.(env2, k)
+      end)
+    end
+  end
+
+  def evf_cps_run(ma, initial_env), do: ma.(initial_env, fn v, e -> {v, e} end)
+  def evf_cps_state_get(), do: fn env, k -> env.state_get.(env, k) end
+  def evf_cps_state_put(value), do: fn env, k -> env.state_put.(value, env, k) end
+
+  def evf_cps_with_state(initial_state, computation) do
+    fn env, k ->
+      inner_env =
+        env
+        |> Map.put(:state, initial_state)
+        |> Map.put(:state_get, fn inner_env, k -> k.(inner_env.state, inner_env) end)
+        |> Map.put(:state_put, fn new_state, inner_env, k ->
+          k.(:ok, %{inner_env | state: new_state})
+        end)
+
+      computation.(inner_env, fn result, final_env ->
+        k.(result, Map.drop(final_env, [:state, :state_get, :state_put]))
+      end)
+    end
+  end
+
+  def evf_cps_nested(target), do: evf_cps_with_state(0, evf_cps_nested_loop(target))
+
+  defp evf_cps_nested_loop(target) do
+    evf_cps_state_get()
+    |> evf_cps_bind(fn n ->
+      if n >= target do
+        evf_cps_pure(n)
+      else
+        evf_cps_state_put(n + 1)
+        |> evf_cps_bind(fn _ ->
+          evf_cps_nested_loop(target)
+        end)
+      end
+    end)
+  end
+
+  # ============================================================
   # Skuld implementations
   # ============================================================
 
@@ -237,6 +287,10 @@ defmodule SkuldBenchmark do
     :timer.tc(fn -> evf_run(computation, %{}) end)
   end
 
+  def time_evf_cps(computation) do
+    :timer.tc(fn -> evf_cps_run(computation, %{}) end)
+  end
+
   def time_skuld_wrapped(wrapped_computation) do
     :timer.tc(fn -> Comp.run(wrapped_computation) end)
   end
@@ -286,6 +340,7 @@ defmodule SkuldBenchmark do
       _ = time_pure(fn -> pure_recurse(100) end)
       _ = time_monad(monad_nested(100), 0)
       _ = time_evf(evf_nested(100))
+      _ = time_evf_cps(evf_cps_nested(100))
       _ = time_skuld_wrapped(skuld_wrap(skuld_nested(100), 0))
       _ = time_skuld_wrapped(skuld_wrap(skuld_chained(100), 0))
       _ = time_skuld_wrapped(skuld_wrap(skuld_fxfasterlist(100), 0))
@@ -301,8 +356,8 @@ defmodule SkuldBenchmark do
         String.pad_trailing("Pure/Rec", 12) <>
         String.pad_trailing("Monad", 12) <>
         String.pad_trailing("Evf", 12) <>
+        String.pad_trailing("Evf/CPS", 12) <>
         String.pad_trailing("Skuld/Nest", 12) <>
-        String.pad_trailing("Skuld/Chain", 12) <>
         String.pad_trailing("Skuld/FxFL", 12)
     )
 
@@ -311,8 +366,8 @@ defmodule SkuldBenchmark do
     for target <- targets do
       monad_nested_comp = monad_nested(target)
       evf_nested_comp = evf_nested(target)
+      evf_cps_nested_comp = evf_cps_nested(target)
       skuld_nested_wrapped = skuld_wrap(skuld_nested(target), 0)
-      skuld_chained_wrapped = skuld_wrap(skuld_chained(target), 0)
       skuld_fxfasterlist_wrapped = skuld_wrap(skuld_fxfasterlist(target), 0)
 
       pure_recurse_time =
@@ -320,12 +375,10 @@ defmodule SkuldBenchmark do
 
       monad_nested_time = median_time(iterations, fn -> time_monad(monad_nested_comp, 0) end)
       evf_nested_time = median_time(iterations, fn -> time_evf(evf_nested_comp) end)
+      evf_cps_nested_time = median_time(iterations, fn -> time_evf_cps(evf_cps_nested_comp) end)
 
       skuld_nested_time =
         median_time(iterations, fn -> time_skuld_wrapped(skuld_nested_wrapped) end)
-
-      skuld_chained_time =
-        median_time(iterations, fn -> time_skuld_wrapped(skuld_chained_wrapped) end)
 
       skuld_fxfasterlist_time =
         median_time(iterations, fn -> time_skuld_wrapped(skuld_fxfasterlist_wrapped) end)
@@ -335,8 +388,8 @@ defmodule SkuldBenchmark do
           String.pad_trailing(format_time(pure_recurse_time), 12) <>
           String.pad_trailing(format_time(monad_nested_time), 12) <>
           String.pad_trailing(format_time(evf_nested_time), 12) <>
+          String.pad_trailing(format_time(evf_cps_nested_time), 12) <>
           String.pad_trailing(format_time(skuld_nested_time), 12) <>
-          String.pad_trailing(format_time(skuld_chained_time), 12) <>
           String.pad_trailing(format_time(skuld_fxfasterlist_time), 12)
       )
     end
@@ -346,9 +399,9 @@ defmodule SkuldBenchmark do
     IO.puts("---------")
     IO.puts("- Pure/Rec: Non-effectful baseline (recursive function with map state)")
     IO.puts("- Monad: Simple state monad (fn state -> {val, state} end)")
-    IO.puts("- Evf: Flat evidence-passing (minimal dynamic dispatch)")
+    IO.puts("- Evf: Flat evidence-passing, direct-style (no CPS)")
+    IO.puts("- Evf/CPS: Flat evidence-passing with CPS (isolates CPS overhead)")
     IO.puts("- Skuld/Nest: Skuld with nested binds (typical usage)")
-    IO.puts("- Skuld/Chain: Skuld with chained binds (tests CPS behavior)")
     IO.puts("- Skuld/FxFL: Skuld with FxFasterList iteration")
 
     # ============================================================

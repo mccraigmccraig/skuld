@@ -679,32 +679,32 @@ Run with `mix run bench/skuld_benchmark.exs`.
 
 ### Core Benchmark
 
-| Target | Pure/Rec | Monad | Evf | Skuld/Nest | Skuld/Chain | Skuld/FxFL |
-|--------|----------|-------|-----|------------|-------------|------------|
-| 500 | 26 µs | 13 µs | 23 µs | 149 µs | 121 µs | 75 µs |
-| 1000 | 39 µs | 23 µs | 43 µs | 293 µs | 223 µs | 148 µs |
-| 2000 | 27 µs | 46 µs | 85 µs | 631 µs | 560 µs | 290 µs |
-| 5000 | 111 µs | 114 µs | 214 µs | 1.68 ms | 1.27 ms | 726 µs |
-| 10000 | 213 µs | 231 µs | 425 µs | 2.9 ms | 2.44 ms | 1.55 ms |
+| Target | Pure/Rec | Monad | Evf | Evf/CPS | Skuld/Nest | Skuld/FxFL |
+|--------|----------|-------|-----|---------|------------|------------|
+| 500 | 4 µs | 10 µs | 17 µs | 17 µs | 141 µs | 54 µs |
+| 1000 | 28 µs | 55 µs | 56 µs | 58 µs | 255 µs | 166 µs |
+| 2000 | 34 µs | 78 µs | 91 µs | 97 µs | 558 µs | 325 µs |
+| 5000 | 82 µs | 189 µs | 244 µs | 258 µs | 1.42 ms | 836 µs |
+| 10000 | 145 µs | 157 µs | 298 µs | 325 µs | 2.3 ms | 960 µs |
 
 **Implementations compared:**
 
 - **Pure/Rec** - Non-effectful baseline using tail recursion with map state
 - **Monad** - Simple state monad (`fn state -> {val, state} end`) with no effect system
-- **Evf** - Flat evidence-passing, direct-style (no CPS) - can't support control effects like Yield/Throw
+- **Evf** - Flat evidence-passing, direct-style (no CPS) - can't support control effects
+- **Evf/CPS** - Flat evidence-passing with CPS - isolates CPS overhead (~1.1x vs Evf)
 - **Skuld/Nest** - Skuld with nested `Comp.bind` calls (typical usage pattern)
-- **Skuld/Chain** - Skuld with chained binds via `Enum.reduce` (tests CPS behavior)
 - **Skuld/FxFL** - Skuld with `FxFasterList` iteration (optimized for collections)
 
 ### Iteration Strategies
 
 | Target | FxFasterList | FxList | Yield |
 |--------|--------------|--------|-------|
-| 1000 | 145 µs (0.14 µs/op) | 275 µs (0.28 µs/op) | 216 µs (0.22 µs/op) |
-| 5000 | 719 µs (0.14 µs/op) | 1.74 ms (0.35 µs/op) | 1.09 ms (0.22 µs/op) |
-| 10000 | 1.45 ms (0.14 µs/op) | 3.32 ms (0.33 µs/op) | 2.15 ms (0.22 µs/op) |
-| 50000 | 7.15 ms (0.14 µs/op) | - | 10.67 ms (0.21 µs/op) |
-| 100000 | 14.31 ms (0.14 µs/op) | - | 21.39 ms (0.21 µs/op) |
+| 1000 | 97 µs (0.10 µs/op) | 200 µs (0.20 µs/op) | 147 µs (0.15 µs/op) |
+| 5000 | 492 µs (0.10 µs/op) | 959 µs (0.19 µs/op) | 762 µs (0.15 µs/op) |
+| 10000 | 1.02 ms (0.10 µs/op) | 2.71 ms (0.27 µs/op) | 1.52 ms (0.15 µs/op) |
+| 50000 | 5.1 ms (0.10 µs/op) | - | 7.58 ms (0.15 µs/op) |
+| 100000 | 10.02 ms (0.10 µs/op) | - | 14.9 ms (0.15 µs/op) |
 
 **Iteration options:**
 
@@ -716,11 +716,10 @@ All three maintain constant per-operation cost as N grows.
 
 ### Key Takeaways
 
-1. **Skuld overhead** is ~6-7x vs the Evf baseline - the cost of CPS (for control effects),
-   scoped handlers, and exception conversion
-2. **FxFasterList** is the fastest iteration strategy when you don't need Yield semantics
-3. **Per-op cost is constant** - no quadratic blowup at scale
-4. **Use Yield** for interruptible/resumable iteration, **FxFasterList** for pure performance
+1. **CPS overhead is minimal** - Evf/CPS is only ~1.1x slower than direct-style Evf
+2. **Skuld overhead** (~7x vs Evf/CPS) comes from scoped handlers, exception handling, and auto-lifting
+3. **FxFasterList** is the fastest iteration strategy when you don't need Yield semantics
+4. **Per-op cost is constant** - no quadratic blowup at scale
 
 ## License
 
