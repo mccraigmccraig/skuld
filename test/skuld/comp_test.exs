@@ -306,11 +306,14 @@ defmodule Skuld.CompTest do
     alias Skuld.Effects.State
 
     # Helper to create a state-scoping setup function
+    # State now uses {State, tag} as key, with default tag being State module
+    @state_key {State, State}
+
     defp state_scope(initial) do
       fn env ->
-        previous = Env.get_state(env, State)
-        modified = Env.put_state(env, State, initial)
-        finally_k = fn value, e -> {value, Env.put_state(e, State, previous)} end
+        previous = Env.get_state(env, @state_key)
+        modified = Env.put_state(env, @state_key, initial)
+        finally_k = fn value, e -> {value, Env.put_state(e, @state_key, previous)} end
         {modified, finally_k}
       end
     end
