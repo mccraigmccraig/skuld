@@ -677,6 +677,10 @@ continuation queue management, and linear search for handlers.
 Benchmark comparing Skuld against pure baselines and minimal effect implementations.
 Run with `mix run bench/skuld_benchmark.exs`.
 
+**What's being measured:** A loop that increments a counter from 0 to N using
+`State.get()` / `State.put(n + 1)` operations. This exercises the core effect
+invocation path repeatedly, measuring per-operation overhead.
+
 ### Core Benchmark
 
 | Target | Pure/Rec | Monad | Evf | Evf/CPS | Skuld/Nest | Skuld/FxFL |
