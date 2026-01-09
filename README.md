@@ -85,7 +85,6 @@ alias Skuld.Comp
 alias Skuld.Effects.{
   State, Reader, Writer, Throw, Yield,
   FxList, FxFasterList,
-  TaggedState, TaggedReader, TaggedWriter,
   Fresh, Bracket, Query, EventAccumulator, EffectLogger,
   DBTransaction, EctoPersist
 }
@@ -308,54 +307,46 @@ end
 > **Note**: FxFasterList is ~2x faster than FxList but has limited Yield/Suspend support.
 > Use it when performance is critical and you only use Throw for error handling.
 
-### TaggedState
+### Multiple Independent Contexts (Tagged Usage)
 
-Multiple independent mutable state values identified by tags:
+State, Reader, and Writer all support explicit tags for multiple independent instances.
+Use an atom as the first argument to operations, and `tag: :name` in the handler:
 
 ```elixir
+# Multiple independent state values
 comp do
-  _ <- TaggedState.put(:counter, 0)
-  _ <- TaggedState.modify(:counter, &(&1 + 1))
-  count <- TaggedState.get(:counter)
-  _ <- TaggedState.put(:name, "alice")
-  name <- TaggedState.get(:name)
+  _ <- State.put(:counter, 0)
+  _ <- State.modify(:counter, &(&1 + 1))
+  count <- State.get(:counter)
+  _ <- State.put(:name, "alice")
+  name <- State.get(:name)
   {count, name}
 end
-|> TaggedState.with_handler(:counter, 0)
-|> TaggedState.with_handler(:name, "")
+|> State.with_handler(0, tag: :counter)
+|> State.with_handler("", tag: :name)
 |> Comp.run!()
 #=> {1, "alice"}
-```
 
-### TaggedReader
-
-Multiple independent read-only environments identified by tags:
-
-```elixir
+# Multiple independent reader contexts
 comp do
-  db <- TaggedReader.ask(:db)
-  api <- TaggedReader.ask(:api)
+  db <- Reader.ask(:db)
+  api <- Reader.ask(:api)
   {db, api}
 end
-|> TaggedReader.with_handler(:db, %{host: "localhost"})
-|> TaggedReader.with_handler(:api, %{url: "https://api.example.com"})
+|> Reader.with_handler(%{host: "localhost"}, tag: :db)
+|> Reader.with_handler(%{url: "https://api.example.com"}, tag: :api)
 |> Comp.run!()
 #=> {%{host: "localhost"}, %{url: "https://api.example.com"}}
-```
 
-### TaggedWriter
-
-Multiple independent accumulating logs identified by tags:
-
-```elixir
+# Multiple independent writer logs
 comp do
-  _ <- TaggedWriter.tell(:audit, "user logged in")
-  _ <- TaggedWriter.tell(:metrics, {:counter, :login})
-  _ <- TaggedWriter.tell(:audit, "viewed dashboard")
+  _ <- Writer.tell(:audit, "user logged in")
+  _ <- Writer.tell(:metrics, {:counter, :login})
+  _ <- Writer.tell(:audit, "viewed dashboard")
   :ok
 end
-|> TaggedWriter.with_handler(:audit, [], output: fn r, log -> {r, Enum.reverse(log)} end)
-|> TaggedWriter.with_handler(:metrics, [], output: fn r, log -> {r, Enum.reverse(log)} end)
+|> Writer.with_handler([], tag: :audit, output: fn r, log -> {r, Enum.reverse(log)} end)
+|> Writer.with_handler([], tag: :metrics, output: fn r, log -> {r, Enum.reverse(log)} end)
 |> Comp.run!()
 #=> {{:ok, ["user logged in", "viewed dashboard"]}, [{:counter, :login}]}
 ```
