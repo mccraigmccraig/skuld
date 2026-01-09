@@ -109,10 +109,13 @@ defmodule Skuld.Effects.Writer do
       Writer.listen(comp)          # use default tag
       Writer.listen(:audit, comp)  # use explicit tag
   """
-  @spec listen(atom(), Types.computation()) :: Types.computation()
-  def listen(tag_or_comp, comp \\ nil)
+  @spec listen(Types.computation()) :: Types.computation()
+  def listen(comp) do
+    listen(@sig, comp)
+  end
 
-  def listen(tag, comp) when is_atom(tag) and comp != nil do
+  @spec listen(atom(), Types.computation()) :: Types.computation()
+  def listen(tag, comp) when is_atom(tag) do
     Comp.bind(peek(tag), fn initial_log ->
       Comp.bind(comp, fn result ->
         Comp.bind(peek(tag), fn final_log ->
@@ -122,10 +125,6 @@ defmodule Skuld.Effects.Writer do
         end)
       end)
     end)
-  end
-
-  def listen(comp, nil) do
-    listen(@sig, comp)
   end
 
   @doc """
@@ -138,10 +137,13 @@ defmodule Skuld.Effects.Writer do
       Writer.pass(comp)          # use default tag
       Writer.pass(:audit, comp)  # use explicit tag
   """
-  @spec pass(atom(), Types.computation()) :: Types.computation()
-  def pass(tag_or_comp, comp \\ nil)
+  @spec pass(Types.computation()) :: Types.computation()
+  def pass(comp) do
+    pass(@sig, comp)
+  end
 
-  def pass(tag, comp) when is_atom(tag) and comp != nil do
+  @spec pass(atom(), Types.computation()) :: Types.computation()
+  def pass(tag, comp) when is_atom(tag) do
     Comp.bind(peek(tag), fn initial_log ->
       Comp.bind(comp, fn {value, transform_fn} ->
         Comp.bind(peek(tag), fn final_log ->
@@ -160,10 +162,6 @@ defmodule Skuld.Effects.Writer do
     end)
   end
 
-  def pass(comp, nil) do
-    pass(@sig, comp)
-  end
-
   @doc """
   Censor: transform all logs written during a computation.
 
@@ -172,9 +170,12 @@ defmodule Skuld.Effects.Writer do
       Writer.censor(comp, &Enum.map(&1, fn m -> "[REDACTED]" end))
       Writer.censor(:audit, comp, &Enum.reverse/1)
   """
-  @spec censor(atom(), Types.computation(), (list() -> list())) :: Types.computation()
-  def censor(tag_or_comp, comp_or_fn, transform_fn \\ nil)
+  @spec censor(Types.computation(), (list() -> list())) :: Types.computation()
+  def censor(comp, transform_fn) when is_function(transform_fn, 1) do
+    censor(@sig, comp, transform_fn)
+  end
 
+  @spec censor(atom(), Types.computation(), (list() -> list())) :: Types.computation()
   def censor(tag, comp, transform_fn) when is_atom(tag) and is_function(transform_fn, 1) do
     pass(
       tag,
@@ -182,10 +183,6 @@ defmodule Skuld.Effects.Writer do
         Comp.pure({result, transform_fn})
       end)
     )
-  end
-
-  def censor(comp, transform_fn, nil) when is_function(transform_fn, 1) do
-    censor(@sig, comp, transform_fn)
   end
 
   # Internal: set the log directly (used by pass)
@@ -333,15 +330,14 @@ defmodule Skuld.Effects.Writer do
       Writer.tell_many(["a", "b", "c"])           # use default tag
       Writer.tell_many(:audit, ["a", "b", "c"])   # use explicit tag
   """
-  @spec tell_many(atom(), [term()]) :: Types.computation()
-  def tell_many(tag_or_messages, messages \\ nil)
-
-  def tell_many(tag, messages) when is_atom(tag) and is_list(messages) do
-    Comp.traverse(messages, &tell(tag, &1))
+  @spec tell_many([term()]) :: Types.computation()
+  def tell_many(messages) when is_list(messages) do
+    tell_many(@sig, messages)
   end
 
-  def tell_many(messages, nil) when is_list(messages) do
-    tell_many(@sig, messages)
+  @spec tell_many(atom(), [term()]) :: Types.computation()
+  def tell_many(tag, messages) when is_atom(tag) and is_list(messages) do
+    Comp.traverse(messages, &tell(tag, &1))
   end
 
   @doc """

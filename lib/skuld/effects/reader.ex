@@ -71,15 +71,14 @@ defmodule Skuld.Effects.Reader do
       Reader.asks(&Map.get(&1, :name))           # use default tag
       Reader.asks(:user, &Map.get(&1, :name))    # use explicit tag
   """
-  @spec asks(atom(), (term() -> term())) :: Types.computation()
-  def asks(tag_or_f, f \\ nil)
-
-  def asks(tag, f) when is_atom(tag) and is_function(f, 1) do
-    Comp.map(ask(tag), f)
+  @spec asks((term() -> term())) :: Types.computation()
+  def asks(f) when is_function(f, 1) do
+    Comp.map(ask(), f)
   end
 
-  def asks(f, nil) when is_function(f, 1) do
-    asks(@sig, f)
+  @spec asks(atom(), (term() -> term())) :: Types.computation()
+  def asks(tag, f) when is_atom(tag) and is_function(f, 1) do
+    Comp.map(ask(tag), f)
   end
 
   @doc """
@@ -90,10 +89,13 @@ defmodule Skuld.Effects.Reader do
       Reader.local(&Map.put(&1, :debug, true), comp)           # use default tag
       Reader.local(:config, &Map.put(&1, :debug, true), comp)  # use explicit tag
   """
-  @spec local(atom(), (term() -> term()), Types.computation()) :: Types.computation()
-  def local(tag_or_modify, modify_or_comp, comp \\ nil)
+  @spec local((term() -> term()), Types.computation()) :: Types.computation()
+  def local(modify, comp) when is_function(modify, 1) do
+    local(@sig, modify, comp)
+  end
 
-  def local(tag, modify, comp) when is_atom(tag) and is_function(modify, 1) and comp != nil do
+  @spec local(atom(), (term() -> term()), Types.computation()) :: Types.computation()
+  def local(tag, modify, comp) when is_atom(tag) and is_function(modify, 1) do
     state_key = state_key(tag)
 
     Comp.scoped(comp, fn env ->
@@ -102,10 +104,6 @@ defmodule Skuld.Effects.Reader do
       finally_k = fn value, e -> {value, Env.put_state(e, state_key, current)} end
       {modified_env, finally_k}
     end)
-  end
-
-  def local(modify, comp, nil) when is_function(modify, 1) do
-    local(@sig, modify, comp)
   end
 
   #############################################################################

@@ -96,19 +96,18 @@ defmodule Skuld.Effects.State do
       State.modify(&(&1 + 1))              # use default tag
       State.modify(:counter, &(&1 + 1))    # use explicit tag
   """
-  @spec modify(atom(), (term() -> term())) :: Types.computation()
-  def modify(tag_or_f, f \\ nil)
+  @spec modify((term() -> term())) :: Types.computation()
+  def modify(f) when is_function(f, 1) do
+    modify(@sig, f)
+  end
 
+  @spec modify(atom(), (term() -> term())) :: Types.computation()
   def modify(tag, f) when is_atom(tag) and is_function(f, 1) do
     Comp.bind(get(tag), fn old ->
       Comp.bind(put(tag, f.(old)), fn _ ->
         Comp.pure(old)
       end)
     end)
-  end
-
-  def modify(f, nil) when is_function(f, 1) do
-    modify(@sig, f)
   end
 
   @doc """
@@ -119,15 +118,14 @@ defmodule Skuld.Effects.State do
       State.gets(&Map.get(&1, :name))              # use default tag
       State.gets(:user, &Map.get(&1, :name))       # use explicit tag
   """
-  @spec gets(atom(), (term() -> term())) :: Types.computation()
-  def gets(tag_or_f, f \\ nil)
-
-  def gets(tag, f) when is_atom(tag) and is_function(f, 1) do
-    Comp.map(get(tag), f)
+  @spec gets((term() -> term())) :: Types.computation()
+  def gets(f) when is_function(f, 1) do
+    gets(@sig, f)
   end
 
-  def gets(f, nil) when is_function(f, 1) do
-    gets(@sig, f)
+  @spec gets(atom(), (term() -> term())) :: Types.computation()
+  def gets(tag, f) when is_atom(tag) and is_function(f, 1) do
+    Comp.map(get(tag), f)
   end
 
   #############################################################################
