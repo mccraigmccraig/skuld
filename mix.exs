@@ -29,11 +29,6 @@ defmodule Skuld.MixProject do
             Skuld.Effects.Throw,
             Skuld.Effects.Fresh
           ],
-          "Tagged Effects": [
-            Skuld.Effects.TaggedReader,
-            Skuld.Effects.TaggedState,
-            Skuld.Effects.TaggedWriter
-          ],
           "Control Effects": [
             Skuld.Effects.Yield,
             Skuld.Effects.Bracket
