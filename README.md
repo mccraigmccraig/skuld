@@ -170,6 +170,44 @@ Throw.catch_error(
 #=> {:recovered, {:error, "negative"}}
 ```
 
+Elixir's `raise`, `throw`, and `exit` are automatically converted to Throw effects
+when they occur during computation execution:
+
+```elixir
+# Helper functions that raise/throw
+defmodule Risky do
+  def boom!, do: raise "oops!"
+  def throw_ball!, do: throw(:ball)
+end
+
+# Elixir raise is caught and converted
+comp do
+  x <- 1  # binding creates computation context for exception handling
+  Risky.boom!()
+  x + 1
+catch
+  %{kind: :error, payload: %RuntimeError{message: msg}} -> {:caught_raise, msg}
+end
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:caught_raise, "oops!"}
+
+# Elixir throw is also converted
+comp do
+  x <- 1
+  Risky.throw_ball!()
+  x + 1
+catch
+  %{kind: :throw, payload: value} -> {:caught_throw, value}
+end
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:caught_throw, :ball}
+```
+
+The converted error is a map with `:kind`, `:payload`, and `:stacktrace` keys,
+allowing you to handle different error types uniformly.
+
 ### Pattern Matching with Else
 
 The `else` clause handles pattern match failures in `<-` bindings. Since `else`
