@@ -49,6 +49,7 @@ defmodule Skuld.Comp do
   alias Skuld.Comp.Env
   alias Skuld.Comp.ISentinel
   alias Skuld.Comp.Types
+  alias Skuld.Comp.ConvertThrow
 
   #############################################################################
   ## Core Operations
@@ -98,7 +99,7 @@ defmodule Skuld.Comp do
     comp.(env, k)
   catch
     kind, payload ->
-      handle_exception(kind, payload, __STACKTRACE__, env)
+      ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, env)
   end
 
   # Auto-lift: non-computation values are treated as pure(value)
@@ -119,7 +120,7 @@ defmodule Skuld.Comp do
           call(result, env2, k)
         catch
           kind, payload ->
-            handle_exception(kind, payload, __STACKTRACE__, env2)
+            ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, env2)
         end
       end)
     end
@@ -181,7 +182,7 @@ defmodule Skuld.Comp do
     handler.(args, env, k)
   catch
     kind, payload ->
-      handle_exception(kind, payload, __STACKTRACE__, env)
+      ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, env)
   end
 
   @doc "Invoke an effect operation"
@@ -380,20 +381,5 @@ defmodule Skuld.Comp do
         {modified_env, finally_k}
       end
     )
-  end
-
-  #############################################################################
-  ## Private Helpers
-  #############################################################################
-
-  # Convert exceptions to Throw results, re-raising InvalidComputation errors
-  defp handle_exception(:error, %__MODULE__.InvalidComputation{} = e, stacktrace, _env) do
-    reraise e, stacktrace
-  end
-
-  defp handle_exception(kind, payload, stacktrace, env) do
-    error = %{kind: kind, payload: payload, stacktrace: stacktrace}
-    leave_scope = Map.get(env, :leave_scope, fn r, e -> {r, e} end)
-    leave_scope.(%__MODULE__.Throw{error: error}, env)
   end
 end
