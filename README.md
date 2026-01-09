@@ -171,7 +171,8 @@ Throw.catch_error(
 ```
 
 Elixir's `raise`, `throw`, and `exit` are automatically converted to Throw effects
-when they occur during computation execution:
+when they occur during computation execution. This works even in the first expression
+of a comp block:
 
 ```elixir
 # Helper functions that raise/throw
@@ -180,11 +181,9 @@ defmodule Risky do
   def throw_ball!, do: throw(:ball)
 end
 
-# Elixir raise is caught and converted
+# Elixir raise is caught and converted - even as the first expression
 comp do
-  x <- 1  # binding creates computation context for exception handling
   Risky.boom!()
-  x + 1
 catch
   %{kind: :error, payload: %RuntimeError{message: msg}} -> {:caught_raise, msg}
 end
@@ -194,9 +193,7 @@ end
 
 # Elixir throw is also converted
 comp do
-  x <- 1
   Risky.throw_ball!()
-  x + 1
 catch
   %{kind: :throw, payload: value} -> {:caught_throw, value}
 end
