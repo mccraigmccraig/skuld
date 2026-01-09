@@ -2,7 +2,32 @@ defmodule Skuld.Effects.Reader do
   @moduledoc """
   Reader effect - access an immutable environment value.
 
-  Demonstrates basic evidence-passing with `local` for scoped modification.
+  Supports both simple single-context usage and multiple independent contexts via tags.
+
+  ## Simple Usage (default tag)
+
+      use Skuld.Syntax
+      alias Skuld.Effects.Reader
+
+      comp do
+        cfg <- Reader.ask()
+        cfg.name
+      end
+      |> Reader.with_handler(%{name: "alice"})
+      |> Comp.run!()
+      #=> "alice"
+
+  ## Multiple Contexts (explicit tags)
+
+      comp do
+        db <- Reader.ask(:db)
+        api <- Reader.ask(:api)
+        {db.host, api.url}
+      end
+      |> Reader.with_handler(%{host: "localhost"}, tag: :db)
+      |> Reader.with_handler(%{url: "https://api.example.com"}, tag: :api)
+      |> Comp.run!()
+      #=> {"localhost", "https://api.example.com"}
   """
 
   @behaviour Skuld.Comp.IHandler
@@ -19,33 +44,68 @@ defmodule Skuld.Effects.Reader do
   ## Operation Structs
   #############################################################################
 
-  def_op(Ask)
+  def_op(Ask, [:tag])
 
   #############################################################################
   ## Operations
   #############################################################################
 
-  @doc "Read the current environment value"
-  @spec ask() :: Types.computation()
-  def ask do
-    Comp.effect(@sig, %Ask{})
+  @doc """
+  Read the current environment value.
+
+  ## Examples
+
+      Reader.ask()        # use default tag
+      Reader.ask(:config) # use explicit tag
+  """
+  @spec ask(atom()) :: Types.computation()
+  def ask(tag \\ @sig) do
+    Comp.effect(@sig, %Ask{tag: tag})
   end
 
-  @doc "Read and apply a function to the environment value"
-  @spec asks((term() -> term())) :: Types.computation()
-  def asks(f) do
-    Comp.map(ask(), f)
+  @doc """
+  Read and apply a function to the environment value.
+
+  ## Examples
+
+      Reader.asks(&Map.get(&1, :name))           # use default tag
+      Reader.asks(:user, &Map.get(&1, :name))    # use explicit tag
+  """
+  @spec asks(atom(), (term() -> term())) :: Types.computation()
+  def asks(tag_or_f, f \\ nil)
+
+  def asks(tag, f) when is_atom(tag) and is_function(f, 1) do
+    Comp.map(ask(tag), f)
   end
 
-  @doc "Run a computation with a modified environment value"
-  @spec local((term() -> term()), Types.computation()) :: Types.computation()
-  def local(modify, comp) do
+  def asks(f, nil) when is_function(f, 1) do
+    asks(@sig, f)
+  end
+
+  @doc """
+  Run a computation with a modified environment value.
+
+  ## Examples
+
+      Reader.local(&Map.put(&1, :debug, true), comp)           # use default tag
+      Reader.local(:config, &Map.put(&1, :debug, true), comp)  # use explicit tag
+  """
+  @spec local(atom(), (term() -> term()), Types.computation()) :: Types.computation()
+  def local(tag_or_modify, modify_or_comp, comp \\ nil)
+
+  def local(tag, modify, comp) when is_atom(tag) and is_function(modify, 1) and comp != nil do
+    state_key = state_key(tag)
+
     Comp.scoped(comp, fn env ->
-      current = Env.get_state(env, @sig)
-      modified_env = Env.put_state(env, @sig, modify.(current))
-      finally_k = fn value, e -> {value, Env.put_state(e, @sig, current)} end
+      current = Env.get_state(env, state_key)
+      modified_env = Env.put_state(env, state_key, modify.(current))
+      finally_k = fn value, e -> {value, Env.put_state(e, state_key, current)} end
       {modified_env, finally_k}
     end)
+  end
+
+  def local(modify, comp, nil) when is_function(modify, 1) do
+    local(@sig, modify, comp)
   end
 
   #############################################################################
@@ -55,46 +115,56 @@ defmodule Skuld.Effects.Reader do
   @doc """
   Install a scoped Reader handler for a computation.
 
-  Installs the Reader handler and context for the duration of `comp`.
-  Both the handler and context are restored/removed when `comp` completes or throws.
+  ## Options
 
-  The argument order is pipe-friendly.
+  - `tag` - the context tag (default: `Skuld.Effects.Reader`)
 
-  ## Example
+  ## Examples
 
-      # Wrap a computation with its own Reader context
-      comp_with_reader =
-        comp do
-          cfg <- Reader.ask()
-          return(cfg.config)
-        end
-        |> Reader.with_handler(%{config: "value"})
-
-      # Can be nested - inner Reader shadows outer
-      outer_comp = comp do
-        outer_cfg <- Reader.ask()
-        inner_result <- Reader.ask() |> Reader.with_handler(%{inner: true})
-        return({outer_cfg, inner_result})
+      # Simple usage with default tag
+      comp do
+        cfg <- Reader.ask()
+        cfg.name
       end
+      |> Reader.with_handler(%{name: "alice"})
+      |> Comp.run!()
+      #=> "alice"
 
-      # Compose multiple handlers with pipes
-      my_comp
-      |> Reader.with_handler(:config)
-      |> State.with_handler(0)
-      |> Comp.run(Env.new())
+      # With explicit tag
+      comp do
+        db <- Reader.ask(:db)
+        db.host
+      end
+      |> Reader.with_handler(%{host: "localhost"}, tag: :db)
+      |> Comp.run!()
+      #=> "localhost"
+
+      # Multiple contexts
+      comp do
+        db <- Reader.ask(:db)
+        cache <- Reader.ask(:cache)
+        {db, cache}
+      end
+      |> Reader.with_handler(%{host: "db.local"}, tag: :db)
+      |> Reader.with_handler(%{host: "cache.local"}, tag: :cache)
+      |> Comp.run!()
+      #=> {%{host: "db.local"}, %{host: "cache.local"}}
   """
-  @spec with_handler(Types.computation(), term()) :: Types.computation()
-  def with_handler(comp, value) do
+  @spec with_handler(Types.computation(), term(), keyword()) :: Types.computation()
+  def with_handler(comp, value, opts \\ []) do
+    tag = Keyword.get(opts, :tag, @sig)
+    state_key = state_key(tag)
+
     comp
     |> Comp.scoped(fn env ->
-      previous = Env.get_state(env, @sig)
-      modified = Env.put_state(env, @sig, value)
+      previous = Env.get_state(env, state_key)
+      modified = Env.put_state(env, state_key, value)
 
       finally_k = fn v, e ->
         restored_env =
           case previous do
-            nil -> %{e | state: Map.delete(e.state, @sig)}
-            val -> Env.put_state(e, @sig, val)
+            nil -> %{e | state: Map.delete(e.state, state_key)}
+            val -> Env.put_state(e, state_key, val)
           end
 
         {v, restored_env}
@@ -105,13 +175,25 @@ defmodule Skuld.Effects.Reader do
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 
+  @doc "Extract the context value for the given tag from an env"
+  @spec get_context(Types.env(), atom()) :: term()
+  def get_context(env, tag \\ @sig) do
+    Env.get_state(env, state_key(tag))
+  end
+
   #############################################################################
   ## IHandler Implementation
   #############################################################################
 
   @impl Skuld.Comp.IHandler
-  def handle(%Ask{}, env, k) do
-    value = Env.get_state(env, @sig)
+  def handle(%Ask{tag: tag}, env, k) do
+    value = Env.get_state(env, state_key(tag))
     k.(value, env)
   end
+
+  #############################################################################
+  ## Private
+  #############################################################################
+
+  defp state_key(tag), do: {__MODULE__, tag}
 end
