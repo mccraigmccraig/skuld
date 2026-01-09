@@ -462,31 +462,6 @@ defmodule Skuld.Comp.CompBlock do
       true
     end
 
-    # Wrap an expression in a computation that catches exceptions and converts
-    # them to Throw effects. This defers evaluation of the expression until
-    # inside the computation context, ensuring exceptions are properly handled.
-    #
-    # This is inlined directly rather than calling ConvertThrow.wrap/1 to avoid
-    # macro expansion issues (the macro would be treated as a function call).
-    defp wrap_with_exception_handling(expr) do
-      quote do
-        fn env, k ->
-          try do
-            result = unquote(expr)
-            Skuld.Comp.call(result, env, k)
-          catch
-            kind, payload ->
-              Skuld.Comp.ConvertThrow.handle_exception(
-                kind,
-                payload,
-                __STACKTRACE__,
-                env
-              )
-          end
-        end
-      end
-    end
-
     # Rewrite block expressions
     # has_else: whether to generate multi-clause continuations for complex patterns
     # is_first: whether this is the first expression (needs exception wrapping)
@@ -505,7 +480,7 @@ defmodule Skuld.Comp.CompBlock do
     defp rewrite_exprs([last], _has_else, is_first) do
       if is_first do
         # First expression needs wrapping - evaluated before computation context exists
-        wrap_with_exception_handling(last)
+        Skuld.Comp.ConvertThrow.wrap_expr(last)
       else
         # Inside a bind continuation - already protected by bind's try/catch
         last
@@ -541,7 +516,7 @@ defmodule Skuld.Comp.CompBlock do
 
       if is_first do
         # Wrap the entire assignment + rest to catch exceptions in RHS
-        wrap_with_exception_handling(base_expr)
+        Skuld.Comp.ConvertThrow.wrap_expr(base_expr)
       else
         base_expr
       end
@@ -552,7 +527,7 @@ defmodule Skuld.Comp.CompBlock do
       rest_rewritten = rewrite_exprs(rest, has_else, _is_first = false)
 
       # Only wrap RHS if this is the first expression
-      rhs_expr = if is_first, do: wrap_with_exception_handling(rhs), else: rhs
+      rhs_expr = if is_first, do: Skuld.Comp.ConvertThrow.wrap_expr(rhs), else: rhs
 
       if has_else and complex_pattern?(lhs) do
         # Generate multi-clause bind with match failure throw
@@ -568,7 +543,7 @@ defmodule Skuld.Comp.CompBlock do
       rest_rewritten = rewrite_exprs(rest, has_else, _is_first = false)
 
       # Only wrap if this is the first expression
-      expr_to_use = if is_first, do: wrap_with_exception_handling(expr), else: expr
+      expr_to_use = if is_first, do: Skuld.Comp.ConvertThrow.wrap_expr(expr), else: expr
 
       quote do
         Skuld.Comp.then_do(unquote(expr_to_use), unquote(rest_rewritten))

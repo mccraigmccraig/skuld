@@ -27,6 +27,29 @@ defmodule Skuld.Comp.ConvertThrow do
       # Which catches the exception and converts to Throw
   """
   defmacro wrap(expr) do
+    wrap_expr(expr)
+  end
+
+  @doc """
+  Generate AST that wraps an expression in exception-handling computation.
+
+  This is the underlying implementation used by both the `wrap/1` macro and
+  the `comp` macro in CompBlock. It generates a computation function that:
+
+  1. Defers evaluation of the expression until inside the computation context
+  2. Catches any exceptions (raise/throw/exit) during evaluation
+  3. Converts them to Skuld Throw effects via `handle_exception/4`
+
+  ## Parameters
+
+  - `expr` - The quoted expression AST to wrap
+
+  ## Returns
+
+  Quoted AST for a computation function `fn env, k -> ... end`
+  """
+  @spec wrap_expr(Macro.t()) :: Macro.t()
+  def wrap_expr(expr) do
     quote do
       fn env, k ->
         try do
