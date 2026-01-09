@@ -672,6 +672,56 @@ Skuld is a cleaner, faster alternative to Freyja:
 Skuld's performance advantage comes from avoiding Freer monad object allocation,
 continuation queue management, and linear search for handlers.
 
+## Performance
+
+Benchmark comparing Skuld against pure baselines and minimal effect implementations.
+Run with `mix run bench/skuld_benchmark.exs`.
+
+### Core Benchmark
+
+| Target | Pure/Rec | Monad | Evf | Skuld/Nest | Skuld/Chain | Skuld/FxFL |
+|--------|----------|-------|-----|------------|-------------|------------|
+| 500 | 26 µs | 13 µs | 23 µs | 149 µs | 121 µs | 75 µs |
+| 1000 | 39 µs | 23 µs | 43 µs | 293 µs | 223 µs | 148 µs |
+| 2000 | 27 µs | 46 µs | 85 µs | 631 µs | 560 µs | 290 µs |
+| 5000 | 111 µs | 114 µs | 214 µs | 1.68 ms | 1.27 ms | 726 µs |
+| 10000 | 213 µs | 231 µs | 425 µs | 2.9 ms | 2.44 ms | 1.55 ms |
+
+**Implementations compared:**
+
+- **Pure/Rec** - Non-effectful baseline using tail recursion with map state
+- **Monad** - Simple state monad (`fn state -> {val, state} end`) with no effect system
+- **Evf** - Flat evidence-passing, direct-style (no CPS) - can't support control effects like Yield/Throw
+- **Skuld/Nest** - Skuld with nested `Comp.bind` calls (typical usage pattern)
+- **Skuld/Chain** - Skuld with chained binds via `Enum.reduce` (tests CPS behavior)
+- **Skuld/FxFL** - Skuld with `FxFasterList` iteration (optimized for collections)
+
+### Iteration Strategies
+
+| Target | FxFasterList | FxList | Yield |
+|--------|--------------|--------|-------|
+| 1000 | 145 µs (0.14 µs/op) | 275 µs (0.28 µs/op) | 216 µs (0.22 µs/op) |
+| 5000 | 719 µs (0.14 µs/op) | 1.74 ms (0.35 µs/op) | 1.09 ms (0.22 µs/op) |
+| 10000 | 1.45 ms (0.14 µs/op) | 3.32 ms (0.33 µs/op) | 2.15 ms (0.22 µs/op) |
+| 50000 | 7.15 ms (0.14 µs/op) | - | 10.67 ms (0.21 µs/op) |
+| 100000 | 14.31 ms (0.14 µs/op) | - | 21.39 ms (0.21 µs/op) |
+
+**Iteration options:**
+
+- **FxFasterList** - Uses `Enum.reduce_while`, fastest option (~2x faster than FxList)
+- **FxList** - Uses `Comp.bind` chains, supports full Yield/Suspend resume semantics
+- **Yield** - Coroutine-style suspend/resume, use when you need interruptible iteration
+
+All three maintain constant per-operation cost as N grows.
+
+### Key Takeaways
+
+1. **Skuld overhead** is ~6-7x vs the Evf baseline - the cost of CPS (for control effects),
+   scoped handlers, and exception conversion
+2. **FxFasterList** is the fastest iteration strategy when you don't need Yield semantics
+3. **Per-op cost is constant** - no quadratic blowup at scale
+4. **Use Yield** for interruptible/resumable iteration, **FxFasterList** for pure performance
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
