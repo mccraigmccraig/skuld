@@ -97,14 +97,8 @@ defmodule Skuld.Comp do
   def call(comp, env, k) when is_function(comp, 2) do
     comp.(env, k)
   catch
-    :error, %__MODULE__.InvalidComputation{} = e ->
-      # Re-raise validation errors - these are programming bugs, not runtime errors
-      reraise e, __STACKTRACE__
-
     kind, payload ->
-      error = %{kind: kind, payload: payload, stacktrace: __STACKTRACE__}
-      leave_scope = Map.get(env, :leave_scope, fn r, e -> {r, e} end)
-      leave_scope.(%Skuld.Comp.Throw{error: error}, env)
+      handle_exception(kind, payload, __STACKTRACE__, env)
   end
 
   # Auto-lift: non-computation values are treated as pure(value)
@@ -120,7 +114,13 @@ defmodule Skuld.Comp do
   def bind(comp, f) do
     fn env, k ->
       call(comp, env, fn a, env2 ->
-        call(f.(a), env2, k)
+        try do
+          result = f.(a)
+          call(result, env2, k)
+        catch
+          kind, payload ->
+            handle_exception(kind, payload, __STACKTRACE__, env2)
+        end
       end)
     end
   end
@@ -180,13 +180,8 @@ defmodule Skuld.Comp do
   def call_handler(handler, args, env, k) when is_function(handler, 3) do
     handler.(args, env, k)
   catch
-    :error, %__MODULE__.InvalidComputation{} = e ->
-      reraise e, __STACKTRACE__
-
     kind, payload ->
-      error = %{kind: kind, payload: payload, stacktrace: __STACKTRACE__}
-      leave_scope = Map.get(env, :leave_scope, fn r, e -> {r, e} end)
-      leave_scope.(%Skuld.Comp.Throw{error: error}, env)
+      handle_exception(kind, payload, __STACKTRACE__, env)
   end
 
   @doc "Invoke an effect operation"
@@ -385,5 +380,20 @@ defmodule Skuld.Comp do
         {modified_env, finally_k}
       end
     )
+  end
+
+  #############################################################################
+  ## Private Helpers
+  #############################################################################
+
+  # Convert exceptions to Throw results, re-raising InvalidComputation errors
+  defp handle_exception(:error, %__MODULE__.InvalidComputation{} = e, stacktrace, _env) do
+    reraise e, stacktrace
+  end
+
+  defp handle_exception(kind, payload, stacktrace, env) do
+    error = %{kind: kind, payload: payload, stacktrace: stacktrace}
+    leave_scope = Map.get(env, :leave_scope, fn r, e -> {r, e} end)
+    leave_scope.(%__MODULE__.Throw{error: error}, env)
   end
 end
