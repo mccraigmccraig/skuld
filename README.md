@@ -77,17 +77,27 @@ Example.example()
 
 ## Effects
 
-Each example below can be copy/pasted directly into IEx.
+All examples below assume the following setup (paste once into IEx):
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{
+  State, Reader, Writer, Throw, Yield,
+  FxList, FxFasterList,
+  TaggedState, TaggedReader, TaggedWriter,
+  Fresh, Bracket, Query, EventAccumulator, EffectLogger,
+  DBTransaction, EctoPersist
+}
+alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
+alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
+```
 
 ### State
 
 Mutable state within a computation:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.State
-
 comp do
   n <- State.get()
   _ <- State.put(n + 1)
@@ -103,10 +113,6 @@ end
 Read-only environment:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.Reader
-
 comp do
   name <- Reader.ask()
   "Hello, #{name}!"
@@ -121,10 +127,6 @@ end
 Accumulating output (use `output:` to include the log in the result):
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.Writer
-
 comp do
   _ <- Writer.tell("step 1")
   _ <- Writer.tell("step 2")
@@ -140,10 +142,6 @@ end
 Error handling with the `catch` clause:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.Throw
-
 comp do
   x = -1
   _ <- if x < 0, do: Throw.throw({:error, "negative"})  # nil auto-lifted when false
@@ -179,10 +177,6 @@ The `else` clause handles pattern match failures in `<-` bindings. Since `else`
 uses the Throw effect internally, you need a Throw handler:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.Throw
-
 comp do
   {:ok, x} <- {:error, "something went wrong"}  # auto-lifted
   x * 2
@@ -199,10 +193,6 @@ end
 Both clauses can be used together. The `else` must come before `catch`:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.Throw
-
 # Returns {:ok, x}, {:error, reason}, or throws
 might_fail = fn x ->
   cond do
@@ -248,10 +238,6 @@ The semantic ordering is `catch(else(body))`, meaning:
 Coroutine-style suspension and resumption:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.Yield
-
 generator = comp do
   _ <- Yield.yield(1)
   _ <- Yield.yield(2)
@@ -281,10 +267,6 @@ end)
 Effectful list operations:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.{State, FxList}
-
 comp do
   results <- FxList.fx_map([1, 2, 3], fn item ->
     comp do
@@ -308,10 +290,6 @@ end
 High-performance variant of FxList using `Enum.reduce_while`:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.{State, FxFasterList}
-
 comp do
   results <- FxFasterList.fx_map([1, 2, 3], fn item ->
     comp do
@@ -335,10 +313,6 @@ end
 Multiple independent mutable state values identified by tags:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.TaggedState
-
 comp do
   _ <- TaggedState.put(:counter, 0)
   _ <- TaggedState.modify(:counter, &(&1 + 1))
@@ -358,10 +332,6 @@ end
 Multiple independent read-only environments identified by tags:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.TaggedReader
-
 comp do
   db <- TaggedReader.ask(:db)
   api <- TaggedReader.ask(:api)
@@ -378,10 +348,6 @@ end
 Multiple independent accumulating logs identified by tags:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.TaggedWriter
-
 comp do
   _ <- TaggedWriter.tell(:audit, "user logged in")
   _ <- TaggedWriter.tell(:metrics, {:counter, :login})
@@ -399,10 +365,6 @@ end
 Generate fresh/unique values (sequential integers and deterministic UUIDs):
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.Fresh
-
 # Generate sequential integers (default starts at 0)
 comp do
   id1 <- Fresh.fresh()
@@ -443,10 +405,6 @@ end
 Safe resource acquisition and cleanup (like try/finally):
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.{Bracket, State, Throw}
-
 # Track resource lifecycle with State
 comp do
   result <- Bracket.bracket(
@@ -478,10 +436,6 @@ end
 Use `Bracket.finally/2` for simpler cleanup without resource passing:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.{Bracket, State}
-
 Bracket.finally(
   comp do
     _ <- State.put(:working)
@@ -502,11 +456,6 @@ Bracket.finally(
 Database transactions with automatic commit/rollback:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.DBTransaction
-alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
-
 # Normal completion - transaction commits
 comp do
   result <- DBTransaction.transact(comp do
@@ -534,11 +483,6 @@ end
 The same domain code works with different handlers - swap `Noop` for `Ecto` in production:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.DBTransaction
-alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
-
 # Domain logic - unchanged regardless of handler
 create_order = fn user_id, items ->
   comp do
@@ -551,15 +495,13 @@ create_order = fn user_id, items ->
   end
 end
 
-# Production: real Ecto transactions
+# Production: real Ecto transactions (won't work in IEX!)
 create_order.(123, [:item_a, :item_b])
 |> EctoTx.with_handler(MyApp.Repo)
 |> Comp.run!()
 #=> %{id: 1, user_id: 123, items: [:item_a, :item_b]}
 
 # Testing: no database, same domain code
-alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
-
 create_order.(123, [:item_a, :item_b])
 |> NoopTx.with_handler()
 |> Comp.run!()
@@ -571,10 +513,6 @@ create_order.(123, [:item_a, :item_b])
 Backend-agnostic data queries with pluggable handlers:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.{Query, Throw}
-
 # Define a query module (in real code, this would have actual implementations)
 defmodule MyQueries do
   def find_user(%{id: id}), do: %{id: id, name: "User #{id}"}
@@ -607,10 +545,6 @@ end
 Accumulate domain events during computation (built on Writer):
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.EventAccumulator
-
 comp do
   _ <- EventAccumulator.emit(%{type: :user_created, id: 1})
   _ <- EventAccumulator.emit(%{type: :email_sent, to: "user@example.com"})
@@ -626,10 +560,6 @@ end
 Capture effect invocations for replay, resume, and retry:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.{EffectLogger, State}
-
 # Capture a log of effects
 {{result, log}, _env} = (
   comp do
@@ -679,11 +609,7 @@ replayed
 Ecto database operations as effects (requires Ecto):
 
 ```elixir
-# Example (requires Ecto and a configured Repo)
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.EctoPersist
-
+# Example (won't work in IEx!)
 comp do
   user <- EctoPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
   order <- EctoPersist.insert(Order.changeset(%Order{}, %{user_id: user.id}))
