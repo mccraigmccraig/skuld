@@ -752,4 +752,196 @@ defmodule Skuld.Comp.CompBlockTest do
       assert Comp.run!(complex_handler({:ok, 10}) |> Throw.with_handler()) == 20
     end
   end
+
+  describe "Elixir exception handling in comp blocks" do
+    # Tests that Elixir exceptions (raise/throw/exit) are properly converted
+    # to Skuld Throw effects, even when they occur in the first expression
+    # of a comp block (before any computation context exists).
+
+    alias Skuld.Comp.Throw, as: ThrowStruct
+
+    defmodule Risky do
+      def boom!, do: raise("boom!")
+      def throw_it!, do: throw(:thrown_value)
+      def exit_it!, do: exit(:shutdown)
+    end
+
+    test "single expression that raises is converted to Throw" do
+      computation =
+        comp do
+          Risky.boom!()
+        end
+
+      {result, _env} = Comp.run(computation)
+      assert %ThrowStruct{error: error} = result
+      assert error.kind == :error
+      assert %RuntimeError{message: "boom!"} = error.payload
+    end
+
+    test "single expression that raises can be caught" do
+      computation =
+        comp do
+          Risky.boom!()
+        catch
+          %{kind: :error, payload: %RuntimeError{message: msg}} -> return({:caught, msg})
+        end
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == {:caught, "boom!"}
+    end
+
+    test "RHS of <- binding that raises is converted to Throw" do
+      computation =
+        comp do
+          x <- Risky.boom!()
+          return(x)
+        end
+
+      {result, _env} = Comp.run(computation)
+      assert %ThrowStruct{error: error} = result
+      assert error.kind == :error
+      assert %RuntimeError{message: "boom!"} = error.payload
+    end
+
+    test "RHS of <- binding that raises can be caught" do
+      computation =
+        comp do
+          x <- Risky.boom!()
+          return(x)
+        catch
+          %{kind: :error, payload: %RuntimeError{message: msg}} -> return({:caught, msg})
+        end
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == {:caught, "boom!"}
+    end
+
+    test "non-binding expression that raises is converted to Throw" do
+      computation =
+        comp do
+          Risky.boom!()
+          x <- State.get()
+          return(x)
+        end
+        |> State.with_handler(42)
+
+      {result, _env} = Comp.run(computation)
+      assert %ThrowStruct{error: error} = result
+      assert error.kind == :error
+      assert %RuntimeError{message: "boom!"} = error.payload
+    end
+
+    test "non-binding expression that raises can be caught" do
+      computation =
+        comp do
+          Risky.boom!()
+          x <- State.get()
+          return(x)
+        catch
+          %{kind: :error, payload: %RuntimeError{message: msg}} -> return({:caught, msg})
+        end
+        |> State.with_handler(42)
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == {:caught, "boom!"}
+    end
+
+    test "last expression that raises is converted to Throw" do
+      computation =
+        comp do
+          x <- State.get()
+          _ = x
+          Risky.boom!()
+        end
+        |> State.with_handler(42)
+
+      {result, _env} = Comp.run(computation)
+      assert %ThrowStruct{error: error} = result
+      assert error.kind == :error
+      assert %RuntimeError{message: "boom!"} = error.payload
+    end
+
+    test "last expression that raises can be caught" do
+      computation =
+        comp do
+          x <- State.get()
+          _ = x
+          Risky.boom!()
+        catch
+          %{kind: :error, payload: %RuntimeError{message: msg}} -> return({:caught, msg})
+        end
+        |> State.with_handler(42)
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == {:caught, "boom!"}
+    end
+
+    test "Elixir throw is converted to Throw with kind: :throw" do
+      computation =
+        comp do
+          Risky.throw_it!()
+        end
+
+      {result, _env} = Comp.run(computation)
+      assert %ThrowStruct{error: error} = result
+      assert error.kind == :throw
+      assert error.payload == :thrown_value
+    end
+
+    test "Elixir throw can be caught" do
+      computation =
+        comp do
+          Risky.throw_it!()
+        catch
+          %{kind: :throw, payload: value} -> return({:caught_throw, value})
+        end
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == {:caught_throw, :thrown_value}
+    end
+
+    test "exit is converted to Throw with kind: :exit" do
+      computation =
+        comp do
+          Risky.exit_it!()
+        end
+
+      {result, _env} = Comp.run(computation)
+      assert %ThrowStruct{error: error} = result
+      assert error.kind == :exit
+      assert error.payload == :shutdown
+    end
+
+    test "exit can be caught" do
+      computation =
+        comp do
+          Risky.exit_it!()
+        catch
+          %{kind: :exit, payload: reason} -> return({:caught_exit, reason})
+        end
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == {:caught_exit, :shutdown}
+    end
+
+    test "exception after successful bindings is caught" do
+      computation =
+        comp do
+          x <- State.get()
+          _ <- State.put(x + 1)
+          y <- State.get()
+          _ = y
+          Risky.boom!()
+        catch
+          %{kind: :error, payload: %RuntimeError{message: msg}} ->
+            final <- State.get()
+            return({:caught, msg, final})
+        end
+        |> State.with_handler(10)
+        |> Throw.with_handler()
+
+      # State changes before the exception should be preserved
+      assert Comp.run!(computation) == {:caught, "boom!", 11}
+    end
+  end
 end

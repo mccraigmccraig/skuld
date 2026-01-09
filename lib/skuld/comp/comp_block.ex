@@ -462,57 +462,116 @@ defmodule Skuld.Comp.CompBlock do
       true
     end
 
-    # Rewrite block expressions
-    # has_else: whether to generate multi-clause continuations for complex patterns
-    defp rewrite_block(block, has_else)
-
-    defp rewrite_block({:__block__, _, exprs}, has_else), do: rewrite_exprs(exprs, has_else)
-    defp rewrite_block(expr, has_else), do: rewrite_exprs([expr], has_else)
-
-    defp rewrite_exprs([last], _has_else) do
-      last
-    end
-
-    defp rewrite_exprs([{:=, meta, [lhs, rhs]} | rest], has_else) do
-      rest_rewritten = rewrite_exprs(rest, has_else)
-
-      if has_else and complex_pattern?(lhs) do
-        # Wrap in case with fallback for match failure
-        quote do
-          case unquote(rhs) do
-            unquote(lhs) ->
-              unquote(rest_rewritten)
-
-            __skuld_nomatch__ ->
-              Skuld.Effects.Throw.throw(%Skuld.Comp.MatchFailed{value: __skuld_nomatch__})
+    # Wrap an expression in a computation that catches exceptions and converts
+    # them to Throw effects. This defers evaluation of the expression until
+    # inside the computation context, ensuring exceptions are properly handled.
+    #
+    # This is inlined directly rather than calling ConvertThrow.wrap/1 to avoid
+    # macro expansion issues (the macro would be treated as a function call).
+    defp wrap_with_exception_handling(expr) do
+      quote do
+        fn env, k ->
+          try do
+            result = unquote(expr)
+            Skuld.Comp.call(result, env, k)
+          catch
+            kind, payload ->
+              Skuld.Comp.ConvertThrow.handle_exception(
+                kind,
+                payload,
+                __STACKTRACE__,
+                env
+              )
           end
-        end
-      else
-        # Simple pattern or no else - regular assignment
-        quote do
-          unquote({:=, meta, [lhs, rhs]})
-          unquote(rest_rewritten)
         end
       end
     end
 
-    defp rewrite_exprs([{:<-, _meta, [lhs, rhs]} | rest], has_else) do
-      rest_rewritten = rewrite_exprs(rest, has_else)
+    # Rewrite block expressions
+    # has_else: whether to generate multi-clause continuations for complex patterns
+    # is_first: whether this is the first expression (needs exception wrapping)
+    #
+    # Only the FIRST expression needs explicit exception wrapping because:
+    # - Subsequent expressions are inside bind's continuation, which already has try/catch
+    # - The first expression is evaluated before any computation context exists
+    defp rewrite_block(block, has_else)
+
+    defp rewrite_block({:__block__, _, exprs}, has_else),
+      do: rewrite_exprs(exprs, has_else, _is_first = true)
+
+    defp rewrite_block(expr, has_else), do: rewrite_exprs([expr], has_else, _is_first = true)
+
+    # Single/last expression
+    defp rewrite_exprs([last], _has_else, is_first) do
+      if is_first do
+        # First expression needs wrapping - evaluated before computation context exists
+        wrap_with_exception_handling(last)
+      else
+        # Inside a bind continuation - already protected by bind's try/catch
+        last
+      end
+    end
+
+    # = assignment
+    defp rewrite_exprs([{:=, meta, [lhs, rhs]} | rest], has_else, is_first) do
+      # Note: = assignments don't create computation context, so if the first
+      # expression is an assignment, the RHS still executes outside any try/catch.
+      # We wrap the entire rest (which includes the assignment) when is_first.
+      rest_rewritten = rewrite_exprs(rest, has_else, _is_first = false)
+
+      base_expr =
+        if has_else and complex_pattern?(lhs) do
+          # Wrap in case with fallback for match failure
+          quote do
+            case unquote(rhs) do
+              unquote(lhs) ->
+                unquote(rest_rewritten)
+
+              __skuld_nomatch__ ->
+                Skuld.Effects.Throw.throw(%Skuld.Comp.MatchFailed{value: __skuld_nomatch__})
+            end
+          end
+        else
+          # Simple pattern or no else - regular assignment
+          quote do
+            unquote({:=, meta, [lhs, rhs]})
+            unquote(rest_rewritten)
+          end
+        end
+
+      if is_first do
+        # Wrap the entire assignment + rest to catch exceptions in RHS
+        wrap_with_exception_handling(base_expr)
+      else
+        base_expr
+      end
+    end
+
+    # <- binding
+    defp rewrite_exprs([{:<-, _meta, [lhs, rhs]} | rest], has_else, is_first) do
+      rest_rewritten = rewrite_exprs(rest, has_else, _is_first = false)
+
+      # Only wrap RHS if this is the first expression
+      rhs_expr = if is_first, do: wrap_with_exception_handling(rhs), else: rhs
 
       if has_else and complex_pattern?(lhs) do
         # Generate multi-clause bind with match failure throw
-        binder_with_else(lhs, rhs, rest_rewritten)
+        binder_with_else(lhs, rhs_expr, rest_rewritten)
       else
         # Simple pattern or no else - regular bind
-        binder(lhs, rhs, rest_rewritten)
+        binder(lhs, rhs_expr, rest_rewritten)
       end
     end
 
-    defp rewrite_exprs([expr | rest], has_else) do
-      # Non-binding expression (e.g., side-effect or ignored computation)
-      # Sequence it with then_do
+    # Non-binding expression followed by more
+    defp rewrite_exprs([expr | rest], has_else, is_first) do
+      rest_rewritten = rewrite_exprs(rest, has_else, _is_first = false)
+
+      # Only wrap if this is the first expression
+      expr_to_use = if is_first, do: wrap_with_exception_handling(expr), else: expr
+
       quote do
-        Skuld.Comp.then_do(unquote(expr), unquote(rewrite_exprs(rest, has_else)))
+        Skuld.Comp.then_do(unquote(expr_to_use), unquote(rest_rewritten))
       end
     end
 
