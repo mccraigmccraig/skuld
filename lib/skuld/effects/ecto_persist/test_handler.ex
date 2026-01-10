@@ -53,6 +53,7 @@ if Code.ensure_loaded?(Ecto) do
 
     alias Skuld.Comp
     alias Skuld.Comp.Env
+    alias Skuld.Comp.Types
     alias Skuld.Effects.EctoPersist
     alias Skuld.Effects.Writer
 
@@ -84,7 +85,8 @@ if Code.ensure_loaded?(Ecto) do
         )
         |> Comp.run!()
     """
-    @spec with_handler(Comp.t(), (struct() -> term()) | keyword()) :: Comp.t()
+    @spec with_handler(Types.computation(), (struct() -> term()) | keyword()) ::
+            Types.computation()
     def with_handler(comp, handler_or_opts)
 
     def with_handler(comp, handler) when is_function(handler, 1) do
