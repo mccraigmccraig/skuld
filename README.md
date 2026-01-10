@@ -41,6 +41,14 @@ def deps do
 end
 ```
 
+## Demo Application
+
+See [TodosMcp](https://github.com/mccraigmccraig/skuld/tree/main/todos_mcp) - a 
+voice-controllable todo application built with Skuld. It demonstrates how 
+command/query structs combined with algebraic effects enable trivial LLM 
+integration and property-based testing. Try it live at 
+https://todos-mcp-lu6h.onrender.com/
+
 ## Quick Start
 
 ```elixir
@@ -85,7 +93,7 @@ alias Skuld.Comp
 alias Skuld.Effects.{
   State, Reader, Writer, Throw, Yield,
   FxList, FxFasterList,
-  Fresh, Bracket, Query, EventAccumulator, EffectLogger,
+  Fresh, Bracket, Query, Command, EventAccumulator, EffectLogger,
   DBTransaction, EctoPersist
 }
 alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
@@ -388,30 +396,20 @@ end
 
 ### Fresh
 
-Generate fresh/unique values (sequential integers and deterministic UUIDs):
+Generate fresh UUIDs with two handler modes:
 
 ```elixir
-# Generate sequential integers (default starts at 0)
+# Production: v7 UUIDs (time-ordered, good for database primary keys)
 comp do
-  id1 <- Fresh.fresh()
-  id2 <- Fresh.fresh()
-  {id1, id2}
+  uuid1 <- Fresh.fresh_uuid()
+  uuid2 <- Fresh.fresh_uuid()
+  {uuid1, uuid2}
 end
-|> Fresh.with_handler()
+|> Fresh.with_uuid7_handler()
 |> Comp.run!()
-#=> {0, 1}
+#=> {"01945a3b-...", "01945a3b-..."}  # time-ordered, unique
 
-# Seed the counter to start from a different value
-comp do
-  id1 <- Fresh.fresh()
-  id2 <- Fresh.fresh()
-  {id1, id2}
-end
-|> Fresh.with_handler(seed: 1000)
-|> Comp.run!()
-#=> {1000, 1001}
-
-# Generate deterministic UUIDs (v5) - reproducible given the same namespace
+# Testing: deterministic v5 UUIDs (reproducible given same namespace)
 namespace = Uniq.UUID.uuid4()
 
 comp do
@@ -419,11 +417,18 @@ comp do
   uuid2 <- Fresh.fresh_uuid()
   {uuid1, uuid2}
 end
-|> Fresh.with_handler(namespace: namespace)
+|> Fresh.with_test_handler(namespace: namespace)
 |> Comp.run!()
 #=> {"550e8400-...", "6ba7b810-..."}
 
 # Same namespace always produces same sequence - great for testing!
+comp do
+  uuid <- Fresh.fresh_uuid()
+  uuid
+end
+|> Fresh.with_test_handler(namespace: namespace)
+|> Comp.run!()
+#=> "550e8400-..."  # same UUID every time with same namespace
 ```
 
 ### Bracket
@@ -566,6 +571,53 @@ end
 #=> %{id: 456, name: "Stubbed"}
 ```
 
+### Command
+
+Dispatch commands (mutations) through a unified handler:
+
+```elixir
+# Define command structs
+defmodule CreateTodo do
+  defstruct [:title, :priority]
+end
+
+defmodule DeleteTodo do
+  defstruct [:id]
+end
+
+# Define a command handler that routes via pattern matching
+defmodule MyCommandHandler do
+  use Skuld.Syntax
+
+  def handle(%CreateTodo{title: title, priority: priority}) do
+    comp do
+      id <- Fresh.fresh_uuid()
+      {:ok, %{id: id, title: title, priority: priority}}
+    end
+  end
+
+  def handle(%DeleteTodo{id: id}) do
+    comp do
+      {:ok, %{deleted: id}}
+    end
+  end
+end
+
+# Execute commands through the effect system
+comp do
+  {:ok, todo} <- Command.execute(%CreateTodo{title: "Buy milk", priority: :high})
+  todo
+end
+|> Command.with_handler(&MyCommandHandler.handle/1)
+|> Fresh.with_uuid7_handler()
+|> Comp.run!()
+#=> %{id: "01945a3b-...", title: "Buy milk", priority: :high}
+```
+
+The handler function returns a computation, so commands can use other effects
+(Fresh, EctoPersist, EventAccumulator, etc.) internally. This enables a clean
+separation between command dispatch and command implementation.
+
 ### EventAccumulator
 
 Accumulate domain events during computation (built on Writer):
@@ -635,7 +687,7 @@ replayed
 Ecto database operations as effects (requires Ecto):
 
 ```elixir
-# Example (won't work in IEx!)
+# Production: real database operations
 comp do
   user <- EctoPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
   order <- EctoPersist.insert(Order.changeset(%Order{}, %{user_id: user.id}))
@@ -643,6 +695,38 @@ comp do
 end
 |> EctoPersist.with_handler(MyApp.Repo)
 |> Comp.run!()
+```
+
+For testing, use the test handler to stub responses and record calls:
+
+```elixir
+# Test handler applies changeset changes and records all operations
+{result, calls} =
+  comp do
+    user <- EctoPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
+    _ <- EctoPersist.update(User.changeset(user, %{name: "Bob"}))
+    user
+  end
+  |> EctoPersist.with_test_handler(&EctoPersist.TestHandler.default_handler/1)
+  |> Comp.run!()
+
+result
+#=> %User{name: "Alice"}
+
+calls
+#=> [{:insert, %Ecto.Changeset{...}}, {:update, %Ecto.Changeset{...}}]
+
+# Custom handler for specific test scenarios
+comp do
+  user <- EctoPersist.insert(changeset)
+  user
+end
+|> EctoPersist.with_test_handler(fn
+  %EctoPersist.Insert{input: cs} -> %User{id: "test-id", name: "Stubbed"}
+  %EctoPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
+end)
+|> Comp.run!()
+#=> {%User{id: "test-id", name: "Stubbed"}, [{:insert, changeset}]}
 ```
 
 > **Note**: EctoPersist wraps Ecto Repo operations. See the module docs for
