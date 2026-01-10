@@ -67,7 +67,7 @@ defmodule Skuld.Effects.EventAccumulator do
   """
   @spec emit(term()) :: Types.computation()
   def emit(event) do
-    Writer.tell(event)
+    Writer.tell(__MODULE__, event)
     |> Comp.then_do(Comp.pure(:ok))
   end
 
@@ -112,6 +112,6 @@ defmodule Skuld.Effects.EventAccumulator do
       end
     end
 
-    Writer.with_handler(comp, [], output: internal_output)
+    Writer.with_handler(comp, [], tag: __MODULE__, output: internal_output)
   end
 end
