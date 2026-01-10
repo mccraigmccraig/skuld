@@ -1,52 +1,52 @@
 defmodule Skuld.Effects.Fresh do
   @moduledoc """
-  Fresh effect - generate fresh/unique values.
+  Fresh effect - generate fresh/unique UUIDs.
 
-  Provides sequential integers and deterministic UUIDs (v5) for generating
-  unique identifiers. The UUID generation uses a namespace UUID combined
-  with the counter value, making sequences reproducible given the same
-  namespace - ideal for testing.
+  Provides two handler modes:
 
-  ## Example
+  - **Production** (`with_uuid7_handler/2`): Generates v7 UUIDs which are
+    time-ordered and suitable for database primary keys (good data locality,
+    lexical ordering).
+
+  - **Test** (`with_test_handler/2`): Generates deterministic v5 UUIDs based
+    on a namespace and counter, making sequences reproducible for testing.
+
+  ## Production Usage
 
       use Skuld.Syntax
       alias Skuld.Comp
       alias Skuld.Effects.Fresh
 
       comp do
-        id1 <- Fresh.fresh()
-        id2 <- Fresh.fresh()
-        uuid1 <- Fresh.fresh_uuid()
-        uuid2 <- Fresh.fresh_uuid()
-        return(%{ids: {id1, id2}, uuids: {uuid1, uuid2}})
+        id1 <- Fresh.fresh_uuid()
+        id2 <- Fresh.fresh_uuid()
+        return({id1, id2})
       end
-      |> Fresh.with_handler()
+      |> Fresh.with_uuid7_handler()
       |> Comp.run!()
-      #=> %{ids: {0, 1}, uuids: {"...", "..."}}
+      #=> {"01945a3b-...", "01945a3b-..."}  # time-ordered v7 UUIDs
 
-  ## Reproducible UUIDs
+  ## Test Usage (Deterministic)
 
-  The same namespace UUID produces the same UUID sequence:
-
+      # Same namespace produces same UUID sequence - reproducible tests
       namespace = Uniq.UUID.uuid4()
 
-      # First run
       comp do
         uuid <- Fresh.fresh_uuid()
         return(uuid)
       end
-      |> Fresh.with_handler(namespace: namespace)
+      |> Fresh.with_test_handler(namespace: namespace)
       |> Comp.run!()
-      #=> "abc123..."
+      #=> "550e8400-..."  # deterministic v5 UUID
 
-      # Second run with same namespace - same result!
+      # Running again with same namespace produces same result
       comp do
         uuid <- Fresh.fresh_uuid()
         return(uuid)
       end
-      |> Fresh.with_handler(namespace: namespace)
+      |> Fresh.with_test_handler(namespace: namespace)
       |> Comp.run!()
-      #=> "abc123..."
+      #=> "550e8400-..."  # same UUID!
   """
 
   @behaviour Skuld.Comp.IHandler
@@ -59,23 +59,27 @@ defmodule Skuld.Effects.Fresh do
 
   @sig __MODULE__
 
-  # Default namespace for UUID generation (a fixed v4 UUID)
+  # Default namespace for deterministic UUID generation (a fixed v4 UUID)
   @default_namespace "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 
   #############################################################################
-  ## State Structure
+  ## State Structures
   #############################################################################
 
-  defmodule State do
+  defmodule TestState do
     @moduledoc false
     defstruct counter: 0, namespace: nil
+  end
+
+  defmodule Uuid7State do
+    @moduledoc false
+    defstruct count: 0
   end
 
   #############################################################################
   ## Operation Structs
   #############################################################################
 
-  def_op(Fresh)
   def_op(FreshUUID)
 
   #############################################################################
@@ -83,34 +87,12 @@ defmodule Skuld.Effects.Fresh do
   #############################################################################
 
   @doc """
-  Generate the next fresh integer.
+  Generate a fresh UUID.
 
-  Returns sequential integers starting from the initial value (default 0).
+  The UUID format depends on the installed handler:
 
-  ## Example
-
-      comp do
-        a <- Fresh.fresh()
-        b <- Fresh.fresh()
-        c <- Fresh.fresh()
-        return({a, b, c})
-      end
-      |> Fresh.with_handler()
-      |> Comp.run!()
-      #=> {0, 1, 2}
-  """
-  @spec fresh() :: Types.computation()
-  def fresh do
-    Comp.effect(@sig, %Fresh{})
-  end
-
-  @doc """
-  Generate the next fresh UUID (v5).
-
-  Uses UUID v5 (name-based, SHA-1) with the configured namespace UUID
-  and the current counter value as the name. This produces deterministic,
-  reproducible UUIDs - the same namespace and counter always produce the
-  same UUID.
+  - `with_uuid7_handler/2`: Generates v7 UUIDs (time-ordered, production)
+  - `with_test_handler/2`: Generates v5 UUIDs (deterministic, testing)
 
   ## Example
 
@@ -119,9 +101,8 @@ defmodule Skuld.Effects.Fresh do
         uuid2 <- Fresh.fresh_uuid()
         return({uuid1, uuid2})
       end
-      |> Fresh.with_handler(namespace: "my-namespace-uuid")
+      |> Fresh.with_uuid7_handler()
       |> Comp.run!()
-      #=> {"550e8400-...", "6ba7b810-..."}
   """
   @spec fresh_uuid() :: Types.computation()
   def fresh_uuid do
@@ -129,67 +110,37 @@ defmodule Skuld.Effects.Fresh do
   end
 
   #############################################################################
-  ## Handler Installation
+  ## Production Handler (v7 UUIDs)
   #############################################################################
 
   @doc """
-  Install a scoped Fresh handler for a computation.
+  Install a v7 UUID handler for production use.
+
+  Generates time-ordered UUIDs using UUID v7 (RFC 9562). These UUIDs:
+  - Are time-ordered (lexically sortable by creation time)
+  - Have excellent database index locality
+  - Are suitable for distributed systems
 
   ## Options
 
-  - `seed` - initial counter value (default: 0)
-  - `namespace` - UUID namespace for `fresh_uuid/0` (default: a fixed UUID).
-    Can be a UUID string or one of the standard namespaces: `:dns`, `:url`,
-    `:oid`, `:x500`, or `nil`.
-  - `output` - optional function `(result, final_counter) -> new_result`
-    to transform the result before returning.
+  - `output` - optional function `(result, count) -> new_result`
+    to transform the result before returning. `count` is the number
+    of UUIDs generated.
 
-  ## Examples
+  ## Example
 
-      # Basic usage
       comp do
-        id <- Fresh.fresh()
+        id <- Fresh.fresh_uuid()
         return(id)
       end
-      |> Fresh.with_handler()
+      |> Fresh.with_uuid7_handler()
       |> Comp.run!()
-      #=> 0
-
-      # Start from a different value (seed the counter)
-      comp do
-        id <- Fresh.fresh()
-        return(id)
-      end
-      |> Fresh.with_handler(seed: 100)
-      |> Comp.run!()
-      #=> 100
-
-      # Custom namespace for reproducible UUIDs
-      namespace = Uniq.UUID.uuid4()
-      comp do
-        uuid <- Fresh.fresh_uuid()
-        return(uuid)
-      end
-      |> Fresh.with_handler(namespace: namespace)
-      |> Comp.run!()
-
-      # Include final counter in result
-      comp do
-        _ <- Fresh.fresh()
-        _ <- Fresh.fresh()
-        return(:done)
-      end
-      |> Fresh.with_handler(output: fn result, counter -> {result, counter} end)
-      |> Comp.run!()
-      #=> {:done, 2}
+      #=> "01945a3b-7c9d-7000-8000-..."  # v7 UUID
   """
-  @spec with_handler(Types.computation(), keyword()) :: Types.computation()
-  def with_handler(comp, opts \\ []) do
-    seed = Keyword.get(opts, :seed, 0)
-    namespace = Keyword.get(opts, :namespace, @default_namespace)
+  @spec with_uuid7_handler(Types.computation(), keyword()) :: Types.computation()
+  def with_uuid7_handler(comp, opts \\ []) do
     output = Keyword.get(opts, :output)
-
-    initial_state = %State{counter: seed, namespace: namespace}
+    initial_state = %Uuid7State{count: 0}
 
     comp
     |> Comp.scoped(fn env ->
@@ -197,7 +148,93 @@ defmodule Skuld.Effects.Fresh do
       modified = Env.put_state(env, @sig, initial_state)
 
       finally_k = fn value, e ->
-        %State{counter: final_counter} = Env.get_state(e, @sig)
+        %Uuid7State{count: final_count} = Env.get_state(e, @sig)
+
+        restored_env =
+          case previous do
+            nil -> %{e | state: Map.delete(e.state, @sig)}
+            val -> Env.put_state(e, @sig, val)
+          end
+
+        transformed_value =
+          if output do
+            output.(value, final_count)
+          else
+            value
+          end
+
+        {transformed_value, restored_env}
+      end
+
+      {modified, finally_k}
+    end)
+    |> Comp.with_handler(@sig, &handle_uuid7/3)
+  end
+
+  defp handle_uuid7(%FreshUUID{}, env, k) do
+    %Uuid7State{count: count} = state = Env.get_state(env, @sig)
+    uuid = Uniq.UUID.uuid7()
+    new_env = Env.put_state(env, @sig, %{state | count: count + 1})
+    k.(uuid, new_env)
+  end
+
+  #############################################################################
+  ## Test Handler (Deterministic v5 UUIDs)
+  #############################################################################
+
+  @doc """
+  Install a deterministic UUID handler for testing.
+
+  Generates reproducible UUIDs using UUID v5 (name-based, SHA-1) with a
+  configured namespace and sequential counter. The same namespace and
+  counter position always produce the same UUID - ideal for testing.
+
+  ## Options
+
+  - `seed` - initial counter value (default: 0)
+  - `namespace` - UUID namespace for generation (default: a fixed UUID).
+    Can be a UUID string or one of the standard namespaces: `:dns`, `:url`,
+    `:oid`, `:x500`, or `nil`.
+  - `output` - optional function `(result, final_counter) -> new_result`
+    to transform the result before returning.
+
+  ## Example
+
+      namespace = Uniq.UUID.uuid4()
+
+      # First run
+      uuid1 = comp do
+        uuid <- Fresh.fresh_uuid()
+        return(uuid)
+      end
+      |> Fresh.with_test_handler(namespace: namespace)
+      |> Comp.run!()
+
+      # Second run - same result!
+      uuid2 = comp do
+        uuid <- Fresh.fresh_uuid()
+        return(uuid)
+      end
+      |> Fresh.with_test_handler(namespace: namespace)
+      |> Comp.run!()
+
+      uuid1 == uuid2  #=> true
+  """
+  @spec with_test_handler(Types.computation(), keyword()) :: Types.computation()
+  def with_test_handler(comp, opts \\ []) do
+    seed = Keyword.get(opts, :seed, 0)
+    namespace = Keyword.get(opts, :namespace, @default_namespace)
+    output = Keyword.get(opts, :output)
+
+    initial_state = %TestState{counter: seed, namespace: namespace}
+
+    comp
+    |> Comp.scoped(fn env ->
+      previous = Env.get_state(env, @sig)
+      modified = Env.put_state(env, @sig, initial_state)
+
+      finally_k = fn value, e ->
+        %TestState{counter: final_counter} = Env.get_state(e, @sig)
 
         restored_env =
           case previous do
@@ -217,34 +254,40 @@ defmodule Skuld.Effects.Fresh do
 
       {modified, finally_k}
     end)
-    |> Comp.with_handler(@sig, &__MODULE__.handle/3)
+    |> Comp.with_handler(@sig, &handle_test/3)
   end
 
-  @doc "Get the current counter value from an env"
+  defp handle_test(%FreshUUID{}, env, k) do
+    %TestState{counter: counter, namespace: namespace} = state = Env.get_state(env, @sig)
+    uuid = Uniq.UUID.uuid5(namespace, Integer.to_string(counter))
+    new_env = Env.put_state(env, @sig, %{state | counter: counter + 1})
+    k.(uuid, new_env)
+  end
+
+  #############################################################################
+  ## Utilities
+  #############################################################################
+
+  @doc """
+  Get the current counter value from an env (test handler only).
+
+  Returns 0 if no Fresh handler state is present.
+  """
   @spec get_counter(Types.env()) :: non_neg_integer()
   def get_counter(env) do
     case Env.get_state(env, @sig) do
-      %State{counter: counter} -> counter
+      %TestState{counter: counter} -> counter
+      %Uuid7State{count: count} -> count
       nil -> 0
     end
   end
 
   #############################################################################
-  ## IHandler Implementation
+  ## IHandler Implementation (not used directly - handlers use private fns)
   #############################################################################
 
   @impl Skuld.Comp.IHandler
-  def handle(%Fresh{}, env, k) do
-    %State{counter: counter} = state = Env.get_state(env, @sig)
-    new_env = Env.put_state(env, @sig, %{state | counter: counter + 1})
-    k.(counter, new_env)
-  end
-
-  @impl Skuld.Comp.IHandler
-  def handle(%FreshUUID{}, env, k) do
-    %State{counter: counter, namespace: namespace} = state = Env.get_state(env, @sig)
-    uuid = Uniq.UUID.uuid5(namespace, Integer.to_string(counter))
-    new_env = Env.put_state(env, @sig, %{state | counter: counter + 1})
-    k.(uuid, new_env)
+  def handle(%FreshUUID{}, _env, _k) do
+    raise "Fresh.handle/3 should not be called directly - use with_uuid7_handler/2 or with_test_handler/2"
   end
 end
