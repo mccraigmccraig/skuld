@@ -9,30 +9,55 @@ defmodule Skuld.Effects.Query do
     * `name` – function name inside `mod`
     * `params` – map/struct of query parameters
 
-  Handlers decide how to dispatch each request. The default runtime handler
-  accepts a registry map keyed by module so applications can plug in their own
-  routing logic, while `with_test_handler/2` makes it easy to stub responses
-  in tests.
+  ## Result Tuple Convention
+
+  Query handlers should return `{:ok, value}` or `{:error, reason}` tuples.
+  This convention enables two request modes:
+
+    * `request/3` – returns the result tuple as-is for caller to handle
+    * `request!/3` – unwraps `{:ok, value}` or dispatches `Throw` on error
 
   ## Example
 
       alias Skuld.Effects.Query
 
+      # Query implementation returns result tuples
+      defmodule MyApp.UserQueries do
+        def find_by_id(%{id: id}) do
+          case Repo.get(User, id) do
+            nil -> {:error, {:not_found, User, id}}
+            user -> {:ok, user}
+          end
+        end
+      end
+
+      # Using request/3 - returns result tuple
       defcomp find_user(id) do
-        user <- Query.request(MyApp.UserQueries, :find_by_id, %{id: id})
+        result <- Query.request(MyApp.UserQueries, :find_by_id, %{id: id})
+        case result do
+          {:ok, user} -> return(user)
+          {:error, _} -> return(nil)
+        end
+      end
+
+      # Using request!/3 - unwraps or throws
+      defcomp find_user!(id) do
+        user <- Query.request!(MyApp.UserQueries, :find_by_id, %{id: id})
         return(user)
       end
 
       # Runtime: dispatch to actual query modules
-      find_user(123)
+      find_user!(123)
       |> Query.with_handler(%{MyApp.UserQueries => :direct})
+      |> Throw.with_handler()
       |> Comp.run!()
 
-      # Test: stub responses
-      find_user(123)
+      # Test: stub responses (use result tuples)
+      find_user!(123)
       |> Query.with_test_handler(%{
-        Query.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => %{id: 123, name: "Alice"}
+        Query.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => {:ok, %{id: 123, name: "Alice"}}
       })
+      |> Throw.with_handler()
       |> Comp.run!()
   """
 
@@ -44,6 +69,7 @@ defmodule Skuld.Effects.Query do
   alias Skuld.Comp.Env
   alias Skuld.Comp.Throw, as: ThrowResult
   alias Skuld.Comp.Types
+  alias Skuld.Effects.Throw
 
   @sig __MODULE__
   @state_key {__MODULE__, :registry}
@@ -91,13 +117,39 @@ defmodule Skuld.Effects.Query do
   @doc """
   Build a query request for the given module/function.
 
+  Returns the result tuple `{:ok, value}` or `{:error, reason}` as-is,
+  allowing the caller to handle errors explicitly.
+
   ## Example
 
       Query.request(MyApp.UserQueries, :find_by_id, %{id: 123})
+      # => {:ok, %User{...}} or {:error, {:not_found, User, 123}}
   """
   @spec request(query_module(), query_name(), params()) :: Types.computation()
   def request(mod, name, params \\ %{}) do
     Comp.effect(@sig, %Request{mod: mod, name: name, params: params})
+  end
+
+  @doc """
+  Build a query request that unwraps the result or throws on error.
+
+  Expects the query handler to return `{:ok, value}` or `{:error, reason}`.
+  On success, returns the unwrapped `value`. On error, dispatches a
+  `Skuld.Effects.Throw` effect with the `reason`.
+
+  Requires a `Throw.with_handler/1` in the handler chain.
+
+  ## Example
+
+      Query.request!(MyApp.UserQueries, :find_by_id, %{id: 123})
+      # => %User{...} or throws {:not_found, User, 123}
+  """
+  @spec request!(query_module(), query_name(), params()) :: Types.computation()
+  def request!(mod, name, params \\ %{}) do
+    Comp.bind(request(mod, name, params), fn
+      {:ok, value} -> Comp.pure(value)
+      {:error, reason} -> Throw.throw(reason)
+    end)
   end
 
   #############################################################################
