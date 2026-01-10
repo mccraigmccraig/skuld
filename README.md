@@ -43,7 +43,7 @@ end
 
 ## Demo Application
 
-See [TodosMcp](https://github.com/mccraigmccraig/skuld/tree/main/todos_mcp) - a 
+See [TodosMcp](https://github.com/mccraigmccraig/todos_mcp) - a 
 voice-controllable todo application built with Skuld. It demonstrates how 
 command/query structs combined with algebraic effects enable trivial LLM 
 integration and property-based testing. Try it live at 
