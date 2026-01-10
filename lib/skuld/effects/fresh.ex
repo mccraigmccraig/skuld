@@ -71,11 +71,6 @@ defmodule Skuld.Effects.Fresh do
     defstruct counter: 0, namespace: nil
   end
 
-  defmodule Uuid7State do
-    @moduledoc false
-    defstruct count: 0
-  end
-
   #############################################################################
   ## Operation Structs
   #############################################################################
@@ -121,12 +116,6 @@ defmodule Skuld.Effects.Fresh do
   - Have excellent database index locality
   - Are suitable for distributed systems
 
-  ## Options
-
-  - `output` - optional function `(result, count) -> new_result`
-    to transform the result before returning. `count` is the number
-    of UUIDs generated.
-
   ## Example
 
       comp do
@@ -137,45 +126,14 @@ defmodule Skuld.Effects.Fresh do
       |> Comp.run!()
       #=> "01945a3b-7c9d-7000-8000-..."  # v7 UUID
   """
-  @spec with_uuid7_handler(Types.computation(), keyword()) :: Types.computation()
-  def with_uuid7_handler(comp, opts \\ []) do
-    output = Keyword.get(opts, :output)
-    initial_state = %Uuid7State{count: 0}
-
-    comp
-    |> Comp.scoped(fn env ->
-      previous = Env.get_state(env, @sig)
-      modified = Env.put_state(env, @sig, initial_state)
-
-      finally_k = fn value, e ->
-        %Uuid7State{count: final_count} = Env.get_state(e, @sig)
-
-        restored_env =
-          case previous do
-            nil -> %{e | state: Map.delete(e.state, @sig)}
-            val -> Env.put_state(e, @sig, val)
-          end
-
-        transformed_value =
-          if output do
-            output.(value, final_count)
-          else
-            value
-          end
-
-        {transformed_value, restored_env}
-      end
-
-      {modified, finally_k}
-    end)
-    |> Comp.with_handler(@sig, &handle_uuid7/3)
+  @spec with_uuid7_handler(Types.computation()) :: Types.computation()
+  def with_uuid7_handler(comp) do
+    Comp.with_handler(comp, @sig, &handle_uuid7/3)
   end
 
   defp handle_uuid7(%FreshUUID{}, env, k) do
-    %Uuid7State{count: count} = state = Env.get_state(env, @sig)
     uuid = Uniq.UUID.uuid7()
-    new_env = Env.put_state(env, @sig, %{state | count: count + 1})
-    k.(uuid, new_env)
+    k.(uuid, env)
   end
 
   #############################################################################
@@ -186,12 +144,11 @@ defmodule Skuld.Effects.Fresh do
   Install a deterministic UUID handler for testing.
 
   Generates reproducible UUIDs using UUID v5 (name-based, SHA-1) with a
-  configured namespace and sequential counter. The same namespace and
-  counter position always produce the same UUID - ideal for testing.
+  configured namespace and sequential counter. The same namespace always
+  produces the same UUID sequence - ideal for testing.
 
   ## Options
 
-  - `seed` - initial counter value (default: 0)
   - `namespace` - UUID namespace for generation (default: a fixed UUID).
     Can be a UUID string or one of the standard namespaces: `:dns`, `:url`,
     `:oid`, `:x500`, or `nil`.
@@ -222,11 +179,10 @@ defmodule Skuld.Effects.Fresh do
   """
   @spec with_test_handler(Types.computation(), keyword()) :: Types.computation()
   def with_test_handler(comp, opts \\ []) do
-    seed = Keyword.get(opts, :seed, 0)
     namespace = Keyword.get(opts, :namespace, @default_namespace)
     output = Keyword.get(opts, :output)
 
-    initial_state = %TestState{counter: seed, namespace: namespace}
+    initial_state = %TestState{counter: 0, namespace: namespace}
 
     comp
     |> Comp.scoped(fn env ->
@@ -262,24 +218,6 @@ defmodule Skuld.Effects.Fresh do
     uuid = Uniq.UUID.uuid5(namespace, Integer.to_string(counter))
     new_env = Env.put_state(env, @sig, %{state | counter: counter + 1})
     k.(uuid, new_env)
-  end
-
-  #############################################################################
-  ## Utilities
-  #############################################################################
-
-  @doc """
-  Get the current counter value from an env (test handler only).
-
-  Returns 0 if no Fresh handler state is present.
-  """
-  @spec get_counter(Types.env()) :: non_neg_integer()
-  def get_counter(env) do
-    case Env.get_state(env, @sig) do
-      %TestState{counter: counter} -> counter
-      %Uuid7State{count: count} -> count
-      nil -> 0
-    end
   end
 
   #############################################################################

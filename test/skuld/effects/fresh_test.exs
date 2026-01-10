@@ -67,20 +67,6 @@ defmodule Skuld.Effects.FreshTest do
       assert uuid1 < uuid2
     end
 
-    test "output option transforms result with count" do
-      result =
-        comp do
-          _ <- Fresh.fresh_uuid()
-          _ <- Fresh.fresh_uuid()
-          _ <- Fresh.fresh_uuid()
-          return(:done)
-        end
-        |> Fresh.with_uuid7_handler(output: fn result, count -> {result, count} end)
-        |> Comp.run!()
-
-      assert result == {:done, 3}
-    end
-
     test "nested handlers are independent" do
       result =
         comp do
@@ -97,17 +83,14 @@ defmodule Skuld.Effects.FreshTest do
           outer2 <- Fresh.fresh_uuid()
           return({outer1, inner_result, outer2})
         end
-        |> Fresh.with_uuid7_handler(output: fn r, count -> {r, count} end)
+        |> Fresh.with_uuid7_handler()
         |> Comp.run!()
 
-      {{outer1, {inner1, inner2}, outer2}, outer_count} = result
+      {outer1, {inner1, inner2}, outer2} = result
 
       # All UUIDs should be unique
       all_uuids = [outer1, inner1, inner2, outer2]
       assert length(Enum.uniq(all_uuids)) == 4
-
-      # Outer handler should have count 2 (outer1, outer2)
-      assert outer_count == 2
     end
   end
 
@@ -195,41 +178,6 @@ defmodule Skuld.Effects.FreshTest do
       assert uuid1 != uuid2
     end
 
-    test "seed option affects counter start position" do
-      namespace = Uniq.UUID.uuid4()
-
-      # UUID at counter position 0
-      uuid_at_0 =
-        comp do
-          uuid <- Fresh.fresh_uuid()
-          return(uuid)
-        end
-        |> Fresh.with_test_handler(namespace: namespace, seed: 0)
-        |> Comp.run!()
-
-      # UUID at counter position 100
-      uuid_at_100 =
-        comp do
-          uuid <- Fresh.fresh_uuid()
-          return(uuid)
-        end
-        |> Fresh.with_test_handler(namespace: namespace, seed: 100)
-        |> Comp.run!()
-
-      assert uuid_at_0 != uuid_at_100
-
-      # Verify position 100 is deterministic
-      uuid_at_100_again =
-        comp do
-          uuid <- Fresh.fresh_uuid()
-          return(uuid)
-        end
-        |> Fresh.with_test_handler(namespace: namespace, seed: 100)
-        |> Comp.run!()
-
-      assert uuid_at_100 == uuid_at_100_again
-    end
-
     test "supports standard UUID namespaces" do
       result =
         comp do
@@ -260,7 +208,8 @@ defmodule Skuld.Effects.FreshTest do
     end
 
     test "nested handlers are independent" do
-      namespace = Uniq.UUID.uuid4()
+      outer_namespace = Uniq.UUID.uuid4()
+      inner_namespace = Uniq.UUID.uuid4()
 
       result =
         comp do
@@ -272,30 +221,19 @@ defmodule Skuld.Effects.FreshTest do
               inner2 <- Fresh.fresh_uuid()
               return({inner1, inner2})
             end
-            |> Fresh.with_test_handler(namespace: namespace, seed: 1000)
+            |> Fresh.with_test_handler(namespace: inner_namespace)
 
           outer2 <- Fresh.fresh_uuid()
           return({outer1, inner_result, outer2})
         end
-        |> Fresh.with_test_handler(namespace: namespace)
+        |> Fresh.with_test_handler(namespace: outer_namespace)
         |> Comp.run!()
 
       {outer1, {inner1, inner2}, outer2} = result
 
-      # Outer: positions 0 and 1, Inner: positions 1000 and 1001
-      # All should be different (different counter positions)
+      # All should be different (different namespaces for inner vs outer)
       all_uuids = [outer1, inner1, inner2, outer2]
       assert length(Enum.uniq(all_uuids)) == 4
-    end
-  end
-
-  describe "get_counter/1" do
-    test "returns 0 when no handler state present" do
-      {_result, env} =
-        Comp.pure(:ok)
-        |> Comp.run()
-
-      assert Fresh.get_counter(env) == 0
     end
   end
 end
