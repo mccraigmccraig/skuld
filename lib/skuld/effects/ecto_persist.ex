@@ -251,6 +251,31 @@ if Code.ensure_loaded?(Ecto) do
       |> Comp.with_handler(@sig, &__MODULE__.handle/3)
     end
 
+    @doc """
+    Install a test handler that records calls and returns stubbed results.
+
+    Delegates to `EctoPersist.TestHandler.with_handler/2`. See that module
+    for full documentation.
+
+    ## Example
+
+        {result, calls} =
+          my_comp
+          |> EctoPersist.with_test_handler(fn
+            %EctoPersist.Insert{input: cs} -> Ecto.Changeset.apply_changes(cs)
+            %EctoPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
+            %EctoPersist.Delete{input: s} -> {:ok, s}
+          end)
+          |> Comp.run!()
+
+        assert [{:insert, changeset}] = calls
+    """
+    @spec with_test_handler(Types.computation(), (struct() -> term()) | keyword()) ::
+            Types.computation()
+    def with_test_handler(comp, handler_or_opts) do
+      __MODULE__.TestHandler.with_handler(comp, handler_or_opts)
+    end
+
     #############################################################################
     ## IHandler Implementation
     #############################################################################
