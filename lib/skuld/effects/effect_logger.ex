@@ -94,8 +94,70 @@ defmodule Skuld.Effects.EffectLogger do
   3. **Retry**: Re-run after failure - `:discarded` entries are re-executed
   4. **Resume**: Continue after Yield suspension (hot or cold)
 
+  ## Loop Pruning with mark_loop
+
+  For long-running loop-based computations (like LLM conversation loops), the log
+  can grow unboundedly. The `mark_loop/2` operation enables efficient pruning of
+  completed loop iterations while preserving checkpoints for recovery.
+
+  ### Basic Usage
+
+      alias Skuld.Effects.{EffectLogger, Yield}
+
+      defcomp conversation_loop(state) do
+        # Mark iteration start with checkpoint
+        _ <- EffectLogger.mark_loop(ConversationLoop, %{messages: state.messages})
+
+        input <- Yield.yield(:await_input)
+        state = handle_input(state, input)
+
+        conversation_loop(state)
+      end
+
+      # Run with pruning enabled - no extra handler needed
+      {{result, log}, _env} =
+        conversation_loop(initial_state)
+        |> EffectLogger.with_logging(prune_loops: true)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+  ### How It Works
+
+  1. Each `EffectLogger.mark_loop(loop_id, checkpoint)` call records a loop iteration boundary
+  2. When `prune_loops: true`, completed iterations are removed on finalization
+  3. Only the last iteration's effects are retained
+  4. Nested loops are handled hierarchically - inner loop pruning doesn't cross outer loop marks
+
+  ### Nested Loops
+
+  For nested loops with different loop-ids, pruning respects the hierarchy:
+
+      defcomp outer_loop(state) do
+        _ <- EffectLogger.mark_loop(OuterLoop, %{outer_state: state})
+        {result, state} <- inner_loop(state)
+        outer_loop(state)
+      end
+
+      defcomp inner_loop(state) do
+        _ <- EffectLogger.mark_loop(InnerLoop, %{inner_state: state})
+        # ... inner loop logic ...
+        inner_loop(updated_state)
+      end
+
+  The hierarchy `OuterLoop <- InnerLoop` is inferred from nesting order in the log.
+  Pruning `InnerLoop` only removes entries between inner loop marks, preserving
+  outer loop structure.
+
+  ### Benefits
+
+  - **Bounded log size**: O(current_iteration) instead of O(total_iterations)
+  - **Fast cold resume**: Replay only current iteration, not entire history
+  - **Preserved semantics**: Full logging within each iteration
+
   See `EffectLogger.Log` and `EffectLogger.EffectLogEntry` for details.
   """
+
+  import Skuld.Comp.DefOp
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
@@ -104,6 +166,69 @@ defmodule Skuld.Effects.EffectLogger do
   alias Skuld.Effects.EffectLogger.Log
 
   @state_key {__MODULE__, :log}
+  @sig __MODULE__
+
+  #############################################################################
+  ## Operation Structs
+  #############################################################################
+
+  def_op(MarkLoopOp, [:loop_id, :checkpoint], atom_fields: [:loop_id])
+
+  #############################################################################
+  ## Operations
+  #############################################################################
+
+  @doc """
+  Mark the start of a loop iteration with a loop identifier and optional checkpoint.
+
+  This creates a boundary in the effect log that enables pruning of completed
+  loop iterations. Only meaningful when used with `with_logging(prune_loops: true)`.
+
+  ## Parameters
+
+  - `loop_id` - Atom identifying which loop this mark belongs to (module atoms work well)
+  - `checkpoint` - (optional) State to restore when resuming from this point
+
+  ## Example
+
+      defcomp conversation_loop(state) do
+        # Mark iteration start with checkpoint
+        _ <- EffectLogger.mark_loop(ConversationLoop, %{messages: state.messages})
+
+        input <- Yield.yield(:await_input)
+        state = handle_input(state, input)
+
+        conversation_loop(state)
+      end
+
+      # Run with pruning - only last iteration kept in log
+      {{result, log}, _env} =
+        conversation_loop(initial_state)
+        |> EffectLogger.with_logging(prune_loops: true)
+        |> Yield.with_handler()
+        |> Comp.run()
+  """
+  @spec mark_loop(atom(), term()) :: Types.computation()
+  def mark_loop(loop_id, checkpoint \\ nil) when is_atom(loop_id) do
+    Comp.effect(@sig, %MarkLoopOp{loop_id: loop_id, checkpoint: checkpoint})
+  end
+
+  #############################################################################
+  ## Handler
+  #############################################################################
+
+  @doc """
+  Handle EffectLogger operations.
+
+  Currently handles:
+  - `MarkLoopOp` - Records loop iteration boundary, returns `:ok`
+  """
+  @spec handle(term(), Types.env(), Types.k()) :: {Types.result(), Types.env()}
+  def handle(%MarkLoopOp{}, env, k) do
+    # The mark is recorded by the logging wrapper.
+    # This handler just returns :ok to continue the computation.
+    k.(:ok, env)
+  end
 
   #############################################################################
   ## Log Access
@@ -238,6 +363,8 @@ defmodule Skuld.Effects.EffectLogger do
 
   - `:effects` - List of effect signatures to log. Default is all handlers in env.
   - `:allow_divergence` - (replay only) If true, allow effects that don't match the log.
+  - `:prune_loops` - If true, prune completed loop segments on finalization.
+    Requires MarkLoop effect to be used in the computation. See `Skuld.Effects.MarkLoop`.
 
   ## Example - Fresh Logging
 
@@ -279,18 +406,22 @@ defmodule Skuld.Effects.EffectLogger do
 
   def with_logging(comp, opts) when is_list(opts) do
     effects_to_log = Keyword.get(opts, :effects, :all)
+    prune_loops = Keyword.get(opts, :prune_loops, false)
 
     Comp.scoped(comp, fn env ->
-      # Determine which handlers to wrap
+      # Install EffectLogger's own handler (for mark_loop operations)
+      env_with_self = Env.with_handler(env, @sig, &__MODULE__.handle/3)
+
+      # Determine which handlers to wrap (including our own handler)
       sigs_to_wrap =
         case effects_to_log do
-          :all -> Map.keys(env.evidence)
-          list when is_list(list) -> list
+          :all -> Map.keys(env_with_self.evidence)
+          list when is_list(list) -> [@sig | list] |> Enum.uniq()
         end
 
       # Wrap each handler with logging and install
       {env_with_wrapped, original_handlers} =
-        Enum.reduce(sigs_to_wrap, {env, %{}}, fn sig, {acc_env, originals} ->
+        Enum.reduce(sigs_to_wrap, {env_with_self, %{}}, fn sig, {acc_env, originals} ->
           case Env.get_handler(acc_env, sig) do
             nil ->
               {acc_env, originals}
@@ -310,6 +441,14 @@ defmodule Skuld.Effects.EffectLogger do
         log = get_log(final_env) || Log.new()
         finalized_log = Log.finalize(log)
 
+        # Optionally prune completed loop segments
+        output_log =
+          if prune_loops do
+            Log.prune_completed_loops(finalized_log)
+          else
+            finalized_log
+          end
+
         # Clean up log from env state
         cleaned_env = %{final_env | state: Map.delete(final_env.state, @state_key)}
 
@@ -320,7 +459,7 @@ defmodule Skuld.Effects.EffectLogger do
           end)
 
         # Return result paired with log
-        {{value, finalized_log}, restored_env}
+        {{value, output_log}, restored_env}
       end
 
       {env_with_log, finally_k}
@@ -333,18 +472,22 @@ defmodule Skuld.Effects.EffectLogger do
   def with_logging(comp, %Log{} = log, opts) when is_list(opts) do
     effects_to_log = Keyword.get(opts, :effects, :all)
     allow_divergence = Keyword.get(opts, :allow_divergence, false)
+    prune_loops = Keyword.get(opts, :prune_loops, false)
 
     Comp.scoped(comp, fn env ->
-      # Determine which handlers to wrap
+      # Install EffectLogger's own handler (for mark_loop operations)
+      env_with_self = Env.with_handler(env, @sig, &__MODULE__.handle/3)
+
+      # Determine which handlers to wrap (including our own handler)
       sigs_to_wrap =
         case effects_to_log do
-          :all -> Map.keys(env.evidence)
-          list when is_list(list) -> list
+          :all -> Map.keys(env_with_self.evidence)
+          list when is_list(list) -> [@sig | list] |> Enum.uniq()
         end
 
       # Wrap each handler with replay logging and install
       {env_with_wrapped, original_handlers} =
-        Enum.reduce(sigs_to_wrap, {env, %{}}, fn sig, {acc_env, originals} ->
+        Enum.reduce(sigs_to_wrap, {env_with_self, %{}}, fn sig, {acc_env, originals} ->
           case Env.get_handler(acc_env, sig) do
             nil ->
               {acc_env, originals}
@@ -371,6 +514,14 @@ defmodule Skuld.Effects.EffectLogger do
         final_log = get_log(final_env) || Log.new()
         finalized_log = Log.finalize(final_log)
 
+        # Optionally prune completed loop segments
+        output_log =
+          if prune_loops do
+            Log.prune_completed_loops(finalized_log)
+          else
+            finalized_log
+          end
+
         # Clean up log from env state
         cleaned_env = %{final_env | state: Map.delete(final_env.state, @state_key)}
 
@@ -381,7 +532,7 @@ defmodule Skuld.Effects.EffectLogger do
           end)
 
         # Return result paired with log
-        {{value, finalized_log}, restored_env}
+        {{value, output_log}, restored_env}
       end
 
       {env_with_log, finally_k}
@@ -515,18 +666,22 @@ defmodule Skuld.Effects.EffectLogger do
   def with_resume(comp, %Log{} = log, resume_value, opts) when is_list(opts) do
     effects_to_log = Keyword.get(opts, :effects, :all)
     allow_divergence = Keyword.get(opts, :allow_divergence, false)
+    prune_loops = Keyword.get(opts, :prune_loops, false)
 
     Comp.scoped(comp, fn env ->
-      # Determine which handlers to wrap
+      # Install EffectLogger's own handler (for mark_loop operations)
+      env_with_self = Env.with_handler(env, @sig, &__MODULE__.handle/3)
+
+      # Determine which handlers to wrap (including our own handler)
       sigs_to_wrap =
         case effects_to_log do
-          :all -> Map.keys(env.evidence)
-          list when is_list(list) -> list
+          :all -> Map.keys(env_with_self.evidence)
+          list when is_list(list) -> [@sig | list] |> Enum.uniq()
         end
 
       # Wrap each handler with resume logging and install
       {env_with_wrapped, original_handlers} =
-        Enum.reduce(sigs_to_wrap, {env, %{}}, fn sig, {acc_env, originals} ->
+        Enum.reduce(sigs_to_wrap, {env_with_self, %{}}, fn sig, {acc_env, originals} ->
           case Env.get_handler(acc_env, sig) do
             nil ->
               {acc_env, originals}
@@ -554,6 +709,14 @@ defmodule Skuld.Effects.EffectLogger do
         final_log = get_log(final_env) || Log.new()
         finalized_log = Log.finalize(final_log)
 
+        # Optionally prune completed loop segments
+        output_log =
+          if prune_loops do
+            Log.prune_completed_loops(finalized_log)
+          else
+            finalized_log
+          end
+
         # Clean up log and resume value from env state
         cleaned_env =
           final_env
@@ -567,7 +730,7 @@ defmodule Skuld.Effects.EffectLogger do
           end)
 
         # Return result paired with log
-        {{value, finalized_log}, restored_env}
+        {{value, output_log}, restored_env}
       end
 
       {env_with_resume, finally_k}
