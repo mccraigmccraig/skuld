@@ -243,8 +243,25 @@ defmodule Skuld.Effects.State do
   end
 
   #############################################################################
-  ## Private
+  ## State Key Helper
   #############################################################################
 
-  defp state_key(tag), do: {__MODULE__, tag}
+  @doc """
+  Returns the env.state key used for a given tag.
+
+  Useful for configuring EffectLogger's `state_keys` filter.
+
+  ## Examples
+
+      # Only capture State effect data in EffectLogger snapshots
+      EffectLogger.with_logging(state_keys: [State.state_key(MyApp.Counter)])
+
+      # Multiple states
+      EffectLogger.with_logging(state_keys: [
+        State.state_key(:counter),
+        State.state_key(:user)
+      ])
+  """
+  @spec state_key(atom()) :: {module(), atom()}
+  def state_key(tag), do: {__MODULE__, tag}
 end

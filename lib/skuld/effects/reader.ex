@@ -190,8 +190,25 @@ defmodule Skuld.Effects.Reader do
   end
 
   #############################################################################
-  ## Private
+  ## State Key Helper
   #############################################################################
 
-  defp state_key(tag), do: {__MODULE__, tag}
+  @doc """
+  Returns the env.state key used for a given tag.
+
+  Useful for configuring EffectLogger's `state_keys` filter.
+
+  ## Examples
+
+      # Only capture Reader context in EffectLogger snapshots
+      EffectLogger.with_logging(state_keys: [Reader.state_key(:config)])
+
+      # Multiple contexts
+      EffectLogger.with_logging(state_keys: [
+        Reader.state_key(:db),
+        Reader.state_key(:api)
+      ])
+  """
+  @spec state_key(atom()) :: {module(), atom()}
+  def state_key(tag), do: {__MODULE__, tag}
 end
