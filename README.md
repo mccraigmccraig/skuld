@@ -700,10 +700,12 @@ defcomp process_loop(items) do
       State.get()  # Return final count
 
     [item | rest] ->
-      count <- State.get()
-      _ <- State.put(count + 1)
-      _ <- Writer.tell("Processed: #{item}")
-      process_loop(rest)
+      comp do
+        count <- State.get()
+        _ <- State.put(count + 1)
+        _ <- Writer.tell("Processed: #{item}")
+        process_loop(rest)
+      end
   end
 end
 
