@@ -12,6 +12,14 @@ defmodule Skuld.Effects.EffectLoggerTest do
   alias Skuld.Effects.Yield
   alias Skuld.Data.Change
 
+  # Helper to filter out the root mark from log entries for easier testing
+  defp user_entries(log) do
+    Log.to_list(log)
+    |> Enum.reject(fn entry ->
+      entry.sig == EffectLogger and match?(%{loop_id: :__root__}, entry.data)
+    end)
+  end
+
   describe "basic logging" do
     test "logs a single effect" do
       {{result, log}, _env} =
@@ -22,7 +30,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
       assert result == 0
 
-      entries = Log.to_list(log)
+      entries = user_entries(log)
       assert length(entries) == 1
 
       [entry] = entries
@@ -49,7 +57,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
       assert result == {0, 1}
 
-      entries = Log.to_list(log)
+      entries = user_entries(log)
       assert length(entries) == 3
 
       [get1, put, get2] = entries
@@ -104,7 +112,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         |> State.with_handler(42)
         |> Comp.run()
 
-      entries = Log.to_list(log)
+      entries = user_entries(log)
       assert length(entries) == 1
     end
   end
@@ -128,7 +136,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
       assert %Comp.Throw{error: :boom} = result
 
-      entries = Log.to_list(log)
+      entries = user_entries(log)
       assert length(entries) == 2
 
       [put_entry, throw_entry] = entries
@@ -173,7 +181,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
       assert {0, {:caught, :error}} = result
 
-      entries = Log.to_list(log)
+      entries = user_entries(log)
       # get, put, throw
       assert length(entries) == 3
 
@@ -217,7 +225,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
       assert result == 2
 
-      entries = Log.to_list(log)
+      entries = user_entries(log)
       # put(1), throw, put(2), get
       assert length(entries) == 4
 
@@ -250,9 +258,10 @@ defmodule Skuld.Effects.EffectLoggerTest do
       assert result1 == {0, 10}
 
       # Replay - should get same result even with different initial state
+      # allow_divergence: true because we're deliberately using different state
       {{result2, _log2}, _env2} =
         computation
-        |> EffectLogger.with_logging(log)
+        |> EffectLogger.with_logging(log, allow_divergence: true)
         |> State.with_handler(999)
         |> Comp.run()
 
@@ -315,10 +324,10 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
       assert result1 == nil
 
-      # Replay
+      # Replay - allow_divergence: true because we're deliberately using different state
       {{result2, _log2}, _env2} =
         computation
-        |> EffectLogger.with_logging(log)
+        |> EffectLogger.with_logging(log, allow_divergence: true)
         |> State.with_handler(:different)
         |> Comp.run()
 
@@ -350,9 +359,9 @@ defmodule Skuld.Effects.EffectLoggerTest do
       decoded = Jason.decode!(json)
       restored_log = Log.from_json(decoded)
 
-      # Verify structure preserved
-      original_entries = Log.to_list(log)
-      restored_entries = Log.to_list(restored_log)
+      # Verify structure preserved (skip root mark which has atom value :ok -> "ok")
+      original_entries = user_entries(log)
+      restored_entries = user_entries(restored_log)
 
       assert length(original_entries) == length(restored_entries)
 
@@ -386,10 +395,10 @@ defmodule Skuld.Effects.EffectLoggerTest do
       decoded = Jason.decode!(json)
       cold_log = Log.from_json(decoded)
 
-      # Replay with cold log
+      # Replay with cold log - allow_divergence: true because we're using different state
       {{result2, _log2}, _env2} =
         computation
-        |> EffectLogger.with_logging(cold_log)
+        |> EffectLogger.with_logging(cold_log, allow_divergence: true)
         |> State.with_handler(999)
         |> Comp.run()
 
@@ -540,7 +549,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
       log = extract_log(env)
 
       # Verify log has started Yield entry
-      entries = Log.to_list(log)
+      entries = user_entries(log)
       assert length(entries) == 2
       [get_entry, yield_entry] = entries
       assert get_entry.state == :executed
@@ -563,7 +572,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
       # - put (fresh execution)
       # - get (fresh execution)
       # Note: short-circuited entries (the original get) don't create new entries
-      new_entries = Log.to_list(new_log)
+      new_entries = user_entries(new_log)
       assert length(new_entries) == 3
       assert Enum.all?(new_entries, &(&1.state == :executed))
     end

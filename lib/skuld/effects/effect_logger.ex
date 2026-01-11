@@ -97,16 +97,16 @@ defmodule Skuld.Effects.EffectLogger do
   ## Loop Pruning with mark_loop
 
   For long-running loop-based computations (like LLM conversation loops), the log
-  can grow unboundedly. The `mark_loop/2` operation enables efficient pruning of
-  completed loop iterations while preserving checkpoints for recovery.
+  can grow unboundedly. The `mark_loop/1` operation enables efficient pruning of
+  completed loop iterations while preserving state checkpoints for cold resume.
 
   ### Basic Usage
 
       alias Skuld.Effects.{EffectLogger, Yield}
 
       defcomp conversation_loop(state) do
-        # Mark iteration start with checkpoint
-        _ <- EffectLogger.mark_loop(ConversationLoop, %{messages: state.messages})
+        # Mark iteration start - env.state is captured automatically
+        _ <- EffectLogger.mark_loop(ConversationLoop)
 
         input <- Yield.yield(:await_input)
         state = handle_input(state, input)
@@ -123,46 +123,48 @@ defmodule Skuld.Effects.EffectLogger do
 
   ### How It Works
 
-  1. Each `EffectLogger.mark_loop(loop_id, checkpoint)` call records a loop iteration boundary
-  2. When `prune_loops: true`, completed iterations are removed on finalization
-  3. Only the last iteration's effects are retained
-  4. Nested loops are handled hierarchically - inner loop pruning doesn't cross outer loop marks
+  1. A root mark (`:__root__`) is auto-inserted on the first intercepted effect,
+     capturing the initial `env.state`
+  2. Each `EffectLogger.mark_loop(loop_id)` captures current `env.state`
+  3. When `prune_loops: true`, completed iterations are removed on finalization
+  4. Only the last iteration's effects are retained, plus checkpoints
+  5. Cold resume restores `env.state` from the most recent checkpoint
 
   ### Nested Loops
 
   For nested loops with different loop-ids, pruning respects the hierarchy:
 
       defcomp outer_loop(state) do
-        _ <- EffectLogger.mark_loop(OuterLoop, %{outer_state: state})
+        _ <- EffectLogger.mark_loop(OuterLoop)
         {result, state} <- inner_loop(state)
         outer_loop(state)
       end
 
       defcomp inner_loop(state) do
-        _ <- EffectLogger.mark_loop(InnerLoop, %{inner_state: state})
+        _ <- EffectLogger.mark_loop(InnerLoop)
         # ... inner loop logic ...
         inner_loop(updated_state)
       end
 
-  The hierarchy `OuterLoop <- InnerLoop` is inferred from nesting order in the log.
-  Pruning `InnerLoop` only removes entries between inner loop marks, preserving
-  outer loop structure.
+  The hierarchy `:__root__ <- OuterLoop <- InnerLoop` is inferred from nesting
+  order. Pruning `InnerLoop` only removes entries between inner loop marks,
+  preserving outer loop structure. The root mark is never pruned.
 
   ### Benefits
 
   - **Bounded log size**: O(current_iteration) instead of O(total_iterations)
   - **Fast cold resume**: Replay only current iteration, not entire history
+  - **State restoration**: `env.state` is restored from checkpoint on cold resume
   - **Preserved semantics**: Full logging within each iteration
 
   See `EffectLogger.Log` and `EffectLogger.EffectLogEntry` for details.
   """
 
-  import Skuld.Comp.DefOp
-
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
   alias Skuld.Effects.EffectLogger.EffectLogEntry
+  alias Skuld.Effects.EffectLogger.EnvStateSnapshot
   alias Skuld.Effects.EffectLogger.Log
 
   @state_key {__MODULE__, :log}
@@ -172,28 +174,75 @@ defmodule Skuld.Effects.EffectLogger do
   ## Operation Structs
   #############################################################################
 
-  def_op(MarkLoopOp, [:loop_id, :checkpoint], atom_fields: [:loop_id])
+  defmodule MarkLoopOp do
+    @moduledoc """
+    Operation struct for loop iteration marks.
+
+    Contains the loop_id and a snapshot of env.state for cold resume.
+    """
+
+    alias Skuld.Effects.EffectLogger.EnvStateSnapshot
+
+    defstruct [:loop_id, :env_state]
+
+    @type t :: %__MODULE__{
+            loop_id: atom(),
+            env_state: EnvStateSnapshot.t() | nil
+          }
+
+    @doc """
+    Reconstruct from decoded JSON map.
+    """
+    @spec from_json(map()) :: t()
+    def from_json(map) do
+      loop_id =
+        case map["loop_id"] || map[:loop_id] do
+          s when is_binary(s) -> String.to_existing_atom(s)
+          a when is_atom(a) -> a
+          nil -> nil
+        end
+
+      env_state =
+        case map["env_state"] || map[:env_state] do
+          nil -> nil
+          %EnvStateSnapshot{} = s -> s
+          m when is_map(m) -> EnvStateSnapshot.from_json(m)
+        end
+
+      %__MODULE__{loop_id: loop_id, env_state: env_state}
+    end
+  end
+
+  defimpl Jason.Encoder, for: Skuld.Effects.EffectLogger.MarkLoopOp do
+    def encode(value, opts) do
+      value
+      |> Skuld.Comp.SerializableStruct.encode()
+      |> Jason.Encode.map(opts)
+    end
+  end
+
+  @root_loop_id :__root__
 
   #############################################################################
   ## Operations
   #############################################################################
 
   @doc """
-  Mark the start of a loop iteration with a loop identifier and optional checkpoint.
+  Mark the start of a loop iteration with a loop identifier.
 
   This creates a boundary in the effect log that enables pruning of completed
-  loop iterations. Only meaningful when used with `with_logging(prune_loops: true)`.
+  loop iterations. The current `env.state` is automatically captured for
+  cold resume. Only meaningful when used with `with_logging(prune_loops: true)`.
 
   ## Parameters
 
   - `loop_id` - Atom identifying which loop this mark belongs to (module atoms work well)
-  - `checkpoint` - (optional) State to restore when resuming from this point
 
   ## Example
 
       defcomp conversation_loop(state) do
-        # Mark iteration start with checkpoint
-        _ <- EffectLogger.mark_loop(ConversationLoop, %{messages: state.messages})
+        # Mark iteration start - env.state captured automatically
+        _ <- EffectLogger.mark_loop(ConversationLoop)
 
         input <- Yield.yield(:await_input)
         state = handle_input(state, input)
@@ -208,10 +257,17 @@ defmodule Skuld.Effects.EffectLogger do
         |> Yield.with_handler()
         |> Comp.run()
   """
-  @spec mark_loop(atom(), term()) :: Types.computation()
-  def mark_loop(loop_id, checkpoint \\ nil) when is_atom(loop_id) do
-    Comp.effect(@sig, %MarkLoopOp{loop_id: loop_id, checkpoint: checkpoint})
+  @spec mark_loop(atom()) :: Types.computation()
+  def mark_loop(loop_id) when is_atom(loop_id) do
+    # env_state will be captured by wrap_handler when this effect is logged
+    Comp.effect(@sig, %MarkLoopOp{loop_id: loop_id, env_state: nil})
   end
+
+  @doc """
+  Returns the root loop ID used for the implicit root mark.
+  """
+  @spec root_loop_id() :: atom()
+  def root_loop_id, do: @root_loop_id
 
   #############################################################################
   ## Handler
@@ -286,12 +342,23 @@ defmodule Skuld.Effects.EffectLogger do
   @spec wrap_handler(module(), Types.handler()) :: Types.handler()
   def wrap_handler(sig, handler) do
     fn args, env, k ->
+      # Ensure root mark exists (lazy insertion on first intercepted effect)
+      env_with_root = ensure_root_mark(env)
+
       # Generate unique ID for this entry
       entry_id = generate_id()
 
+      # For MarkLoopOp, capture current env.state as a serializable snapshot
+      entry_data =
+        if sig == __MODULE__ and match?(%MarkLoopOp{}, args) do
+          %{args | env_state: EnvStateSnapshot.capture(env_with_root.state)}
+        else
+          args
+        end
+
       # Create entry and push to log
-      entry = EffectLogEntry.new(entry_id, sig, args)
-      env_with_entry = update_log(env, &Log.push_entry(&1, entry))
+      entry = EffectLogEntry.new(entry_id, sig, entry_data)
+      env_with_entry = update_log(env_with_root, &Log.push_entry(&1, entry))
 
       # Save previous leave_scope
       previous_leave_scope = Env.get_leave_scope(env_with_entry)
@@ -433,8 +500,8 @@ defmodule Skuld.Effects.EffectLogger do
           end
         end)
 
-      # Initialize empty log
-      env_with_log = put_log(env_with_wrapped, Log.new())
+      # Initialize empty log (with auto_root_mark? when prune_loops is enabled)
+      env_with_log = put_log(env_with_wrapped, Log.new(auto_root_mark?: prune_loops))
 
       finally_k = fn value, final_env ->
         # Extract and finalize the log
@@ -500,12 +567,11 @@ defmodule Skuld.Effects.EffectLogger do
         end)
 
       # Initialize with existing log (prepared for replay)
+      # Set auto_root_mark? if prune_loops is enabled (or preserve from original log)
       replay_log =
-        if allow_divergence do
-          Log.allow_divergence(log)
-        else
-          log
-        end
+        log
+        |> then(fn l -> %{l | auto_root_mark?: l.auto_root_mark? or prune_loops} end)
+        |> then(fn l -> if allow_divergence, do: Log.allow_divergence(l), else: l end)
 
       env_with_log = put_log(env_with_wrapped, replay_log)
 
@@ -568,7 +634,9 @@ defmodule Skuld.Effects.EffectLogger do
   @spec wrap_replay_handler(module(), Types.handler()) :: Types.handler()
   def wrap_replay_handler(sig, handler) do
     fn args, env, k ->
-      log = get_log(env) || Log.new()
+      # Skip any loop marks at front of queue, validating state consistency
+      env_after_marks = skip_loop_marks(env)
+      log = get_log(env_after_marks) || Log.new()
 
       case Log.peek_queue(log) do
         %EffectLogEntry{} = entry ->
@@ -577,23 +645,23 @@ defmodule Skuld.Effects.EffectLogger do
                 EffectLogEntry.can_short_circuit?(entry) ->
               # Short-circuit: pop entry from queue and return logged value
               {_entry, updated_log} = Log.pop_queue(log)
-              env_with_updated_log = put_log(env, updated_log)
+              env_with_updated_log = put_log(env_after_marks, updated_log)
               k.(entry.value, env_with_updated_log)
 
             EffectLogEntry.matches?(entry, sig, args) ->
               # Matches but can't short-circuit (e.g., :discarded) - pop and re-execute
               {_entry, updated_log} = Log.pop_queue(log)
-              env_with_updated_log = put_log(env, updated_log)
+              env_with_updated_log = put_log(env_after_marks, updated_log)
               wrap_handler(sig, handler).(args, env_with_updated_log, k)
 
             true ->
               # Doesn't match - divergence, execute normally without popping
-              wrap_handler(sig, handler).(args, env, k)
+              wrap_handler(sig, handler).(args, env_after_marks, k)
           end
 
         nil ->
           # No entries in queue - execute normally with logging
-          wrap_handler(sig, handler).(args, env, k)
+          wrap_handler(sig, handler).(args, env_after_marks, k)
       end
     end
   end
@@ -694,15 +762,18 @@ defmodule Skuld.Effects.EffectLogger do
         end)
 
       # Initialize with existing log (prepared for replay) and resume value
+      # Set auto_root_mark? if prune_loops is enabled (or preserve from original log)
       replay_log =
-        if allow_divergence do
-          Log.allow_divergence(log)
-        else
-          log
-        end
+        log
+        |> then(fn l -> %{l | auto_root_mark?: l.auto_root_mark? or prune_loops} end)
+        |> then(fn l -> if allow_divergence, do: Log.allow_divergence(l), else: l end)
 
       env_with_log = put_log(env_with_wrapped, replay_log)
-      env_with_resume = put_resume_value(env_with_log, resume_value)
+
+      # Restore env.state from the most recent checkpoint in the log
+      env_with_restored_state = restore_checkpoint_state(env_with_log)
+
+      env_with_resume = put_resume_value(env_with_restored_state, resume_value)
 
       finally_k = fn value, final_env ->
         # Extract and finalize the log
@@ -758,7 +829,9 @@ defmodule Skuld.Effects.EffectLogger do
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def wrap_resume_handler(sig, handler) do
     fn args, env, k ->
-      log = get_log(env) || Log.new()
+      # Skip any loop marks at front of queue, validating state consistency
+      env_after_marks = skip_loop_marks(env)
+      log = get_log(env_after_marks) || Log.new()
 
       case Log.peek_queue(log) do
         %EffectLogEntry{} = entry ->
@@ -767,17 +840,17 @@ defmodule Skuld.Effects.EffectLogger do
             EffectLogEntry.matches?(entry, sig, args) and
                 EffectLogEntry.can_short_circuit?(entry) ->
               {_entry, updated_log} = Log.pop_queue(log)
-              env_with_updated_log = put_log(env, updated_log)
+              env_with_updated_log = put_log(env_after_marks, updated_log)
               k.(entry.value, env_with_updated_log)
 
             # Yield suspension point with resume value: inject it
             EffectLogEntry.matches?(entry, sig, args) and
               sig == Skuld.Effects.Yield and
               entry.state == :started and
-                get_resume_value(env) != :not_set ->
-              {:ok, resume_value} = get_resume_value(env)
+                get_resume_value(env_after_marks) != :not_set ->
+              {:ok, resume_value} = get_resume_value(env_after_marks)
               {_entry, updated_log} = Log.pop_queue(log)
-              env_with_updated_log = put_log(env, updated_log)
+              env_with_updated_log = put_log(env_after_marks, updated_log)
               # Clear resume value so subsequent Yields execute normally
               env_cleared = clear_resume_value(env_with_updated_log)
               # Log this as a new executed entry (the resumed Yield)
@@ -793,17 +866,17 @@ defmodule Skuld.Effects.EffectLogger do
             # Matches but can't short-circuit - pop and re-execute
             EffectLogEntry.matches?(entry, sig, args) ->
               {_entry, updated_log} = Log.pop_queue(log)
-              env_with_updated_log = put_log(env, updated_log)
+              env_with_updated_log = put_log(env_after_marks, updated_log)
               wrap_handler(sig, handler).(args, env_with_updated_log, k)
 
             # Doesn't match - divergence, execute normally without popping
             true ->
-              wrap_handler(sig, handler).(args, env, k)
+              wrap_handler(sig, handler).(args, env_after_marks, k)
           end
 
         nil ->
           # No entries in queue - execute normally with logging
-          wrap_handler(sig, handler).(args, env, k)
+          wrap_handler(sig, handler).(args, env_after_marks, k)
       end
     end
   end
@@ -815,4 +888,92 @@ defmodule Skuld.Effects.EffectLogger do
   defp generate_id do
     Uniq.UUID.uuid4()
   end
+
+  # Ensure the root mark exists in the log (lazy insertion on first effect)
+  # Always inserts root mark to capture initial env.state for cold resume
+  defp ensure_root_mark(env) do
+    log = get_log(env) || Log.new()
+
+    if Log.has_root_mark?(log) do
+      env
+    else
+      root_entry =
+        EffectLogEntry.new(
+          generate_id(),
+          __MODULE__,
+          %MarkLoopOp{loop_id: @root_loop_id, env_state: EnvStateSnapshot.capture(env.state)}
+        )
+        |> EffectLogEntry.set_executed(:ok)
+
+      update_log(env, &Log.push_entry(&1, root_entry))
+    end
+  end
+
+  # Restore env.state from the most recent checkpoint in the log (for cold resume)
+  defp restore_checkpoint_state(env) do
+    log = get_log(env)
+
+    case Log.find_latest_checkpoint(log) do
+      nil ->
+        env
+
+      %EffectLogEntry{data: %{env_state: %EnvStateSnapshot{} = snapshot}} ->
+        restored_state = EnvStateSnapshot.restore(snapshot)
+        %{env | state: Map.merge(env.state, restored_state)}
+
+      _ ->
+        env
+    end
+  end
+
+  # Skip any MarkLoopOp entries at the front of the queue during replay.
+  # These are checkpoints for state restoration, not user effects.
+  # If divergence is not allowed, validates that current state matches checkpoint.
+  defp skip_loop_marks(env) do
+    log = get_log(env) || Log.new()
+
+    case Log.peek_queue(log) do
+      %EffectLogEntry{sig: sig, data: %MarkLoopOp{env_state: checkpoint_state}} = entry
+      when sig == __MODULE__ ->
+        # Pop the mark entry
+        {_entry, updated_log} = Log.pop_queue(log)
+
+        # Validate state consistency if not allowing divergence
+        if not updated_log.allow_divergence? and checkpoint_state != nil do
+          validate_state_consistency(env, checkpoint_state, entry)
+        end
+
+        # Update env and recurse to skip any additional marks
+        env_with_updated_log = put_log(env, updated_log)
+        skip_loop_marks(env_with_updated_log)
+
+      _ ->
+        # Not a mark entry, return env unchanged
+        env
+    end
+  end
+
+  # Validate that current env.state is consistent with the checkpoint snapshot.
+  # For now, just compare the user state (excluding EffectLogger internal state).
+  defp validate_state_consistency(env, %EnvStateSnapshot{} = checkpoint_state, entry) do
+    current_snapshot = EnvStateSnapshot.capture(env.state)
+
+    if current_snapshot.entries != checkpoint_state.entries do
+      raise """
+      State divergence detected during replay.
+
+      Loop mark: #{inspect(entry.data.loop_id)}
+
+      Expected state (from log):
+      #{inspect(checkpoint_state.entries, pretty: true)}
+
+      Actual state:
+      #{inspect(current_snapshot.entries, pretty: true)}
+
+      Use `allow_divergence: true` option if state changes are expected.
+      """
+    end
+  end
+
+  defp validate_state_consistency(_env, _checkpoint_state, _entry), do: :ok
 end

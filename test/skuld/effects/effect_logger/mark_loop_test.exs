@@ -1,4 +1,4 @@
-defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
+defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
   use ExUnit.Case, async: true
 
   import Skuld.Comp.CompBlock
@@ -8,13 +8,63 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
   alias Skuld.Effects.EffectLogger.Log
   alias Skuld.Effects.State
 
+  describe "EffectLogger.mark_loop/1" do
+    test "returns :ok when handled" do
+      {{:done, _log}, _env} =
+        comp do
+          _ <- EffectLogger.mark_loop(TestLoop)
+          return(:done)
+        end
+        |> EffectLogger.with_logging()
+        |> Comp.run()
+    end
+
+    test "accepts any atom as loop_id" do
+      {{:done, _log}, _env} =
+        comp do
+          _ <- EffectLogger.mark_loop(:my_loop)
+          _ <- EffectLogger.mark_loop(SomeModule)
+          _ <- EffectLogger.mark_loop(:"Elixir.AnotherModule")
+          return(:done)
+        end
+        |> EffectLogger.with_logging()
+        |> Comp.run()
+    end
+
+    test "allows multiple marks of the same loop_id" do
+      {{:done, _log}, _env} =
+        comp do
+          _ <- EffectLogger.mark_loop(TestLoop)
+          _ <- EffectLogger.mark_loop(TestLoop)
+          _ <- EffectLogger.mark_loop(TestLoop)
+          return(:done)
+        end
+        |> EffectLogger.with_logging()
+        |> Comp.run()
+    end
+
+    test "allows nested marks of different loop_ids" do
+      {{:done, _log}, _env} =
+        comp do
+          _ <- EffectLogger.mark_loop(OuterLoop)
+          _ <- EffectLogger.mark_loop(InnerLoop)
+          _ <- EffectLogger.mark_loop(InnerLoop)
+          _ <- EffectLogger.mark_loop(OuterLoop)
+          _ <- EffectLogger.mark_loop(InnerLoop)
+          return(:done)
+        end
+        |> EffectLogger.with_logging()
+        |> Comp.run()
+    end
+  end
+
   describe "Log.build_loop_hierarchy/1" do
     test "empty log has empty hierarchy" do
       log = Log.new()
       assert Log.build_loop_hierarchy(log) == %{}
     end
 
-    test "single loop has nil parent" do
+    test "single loop has :__root__ as parent" do
       {{:done, log}, _env} =
         comp do
           _ <- EffectLogger.mark_loop(TestLoop)
@@ -24,10 +74,10 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
         |> Comp.run()
 
       hierarchy = Log.build_loop_hierarchy(log)
-      assert hierarchy == %{TestLoop => nil}
+      assert hierarchy == %{:__root__ => nil, TestLoop => :__root__}
     end
 
-    test "nested loops have correct parent-child relationships" do
+    test "nested loops have correct parent-child relationships with :__root__" do
       {{:done, log}, _env} =
         comp do
           _ <- EffectLogger.mark_loop(OuterLoop)
@@ -39,7 +89,13 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
         |> Comp.run()
 
       hierarchy = Log.build_loop_hierarchy(log)
-      assert hierarchy == %{OuterLoop => nil, MiddleLoop => OuterLoop, InnerLoop => MiddleLoop}
+
+      assert hierarchy == %{
+               :__root__ => nil,
+               OuterLoop => :__root__,
+               MiddleLoop => OuterLoop,
+               InnerLoop => MiddleLoop
+             }
     end
 
     test "repeated marks maintain hierarchy" do
@@ -56,7 +112,7 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
         |> Comp.run()
 
       hierarchy = Log.build_loop_hierarchy(log)
-      assert hierarchy == %{OuterLoop => nil, InnerLoop => OuterLoop}
+      assert hierarchy == %{:__root__ => nil, OuterLoop => :__root__, InnerLoop => OuterLoop}
     end
   end
 
@@ -105,10 +161,10 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
   end
 
   describe "Log.prune_completed_loops/1 - single loop" do
-    test "no pruning with single mark" do
+    test "no pruning with single mark (plus root)" do
       {{:done, log}, _env} =
         comp do
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 1})
+          _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(100)
           return(:done)
         end
@@ -120,16 +176,16 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
       pruned = Log.prune_completed_loops(log)
       entries_after = Log.to_list(pruned)
 
-      # With only one mark, nothing to prune
+      # With only one mark per loop (root + TestLoop), nothing to prune
       assert length(entries_before) == length(entries_after)
     end
 
-    test "prunes completed iteration" do
+    test "prunes completed iteration (keeps root + last iteration)" do
       {{:done, log}, _env} =
         comp do
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 1})
+          _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(100)
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 2})
+          _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(200)
           return(:done)
         end
@@ -141,20 +197,20 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
       pruned = Log.prune_completed_loops(log)
       entries_after = Log.to_list(pruned)
 
-      # Before: Mark1, Put100, Mark2, Put200 (4 entries)
-      # After: Mark2, Put200 (2 entries) - first iteration pruned
-      assert length(entries_before) == 4
-      assert length(entries_after) == 2
+      # Before: Root, Mark1, Put100, Mark2, Put200 (5 entries)
+      # After: Root, Mark2, Put200 (3 entries) - first iteration pruned
+      assert length(entries_before) == 5
+      assert length(entries_after) == 3
     end
 
     test "prunes multiple completed iterations" do
       {{:done, log}, _env} =
         comp do
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 1})
+          _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(100)
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 2})
+          _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(200)
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 3})
+          _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(300)
           return(:done)
         end
@@ -166,10 +222,10 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
       pruned = Log.prune_completed_loops(log)
       entries_after = Log.to_list(pruned)
 
-      # Before: 6 entries (3 marks + 3 puts)
-      # After: 2 entries (Mark3, Put300) - iterations 1 and 2 pruned
-      assert length(entries_before) == 6
-      assert length(entries_after) == 2
+      # Before: 7 entries (root + 3 marks + 3 puts)
+      # After: 3 entries (Root, Mark3, Put300) - iterations 1 and 2 pruned
+      assert length(entries_before) == 7
+      assert length(entries_after) == 3
     end
   end
 
@@ -177,13 +233,13 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
     test "inner loop pruning respects outer loop boundaries" do
       {{:done, log}, _env} =
         comp do
-          _ <- EffectLogger.mark_loop(OuterLoop, %{outer: 1})
-          _ <- EffectLogger.mark_loop(InnerLoop, %{inner: 1})
+          _ <- EffectLogger.mark_loop(OuterLoop)
+          _ <- EffectLogger.mark_loop(InnerLoop)
           _ <- State.put(10)
-          _ <- EffectLogger.mark_loop(InnerLoop, %{inner: 2})
+          _ <- EffectLogger.mark_loop(InnerLoop)
           _ <- State.put(20)
-          _ <- EffectLogger.mark_loop(OuterLoop, %{outer: 2})
-          _ <- EffectLogger.mark_loop(InnerLoop, %{inner: 1})
+          _ <- EffectLogger.mark_loop(OuterLoop)
+          _ <- EffectLogger.mark_loop(InnerLoop)
           _ <- State.put(30)
           return(:done)
         end
@@ -195,34 +251,30 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
       pruned = Log.prune_completed_loops(log)
       entries_after = Log.to_list(pruned)
 
-      # Original: Outer1, Inner1, Put10, Inner2, Put20, Outer2, Inner1, Put30
-      # Inner loop pruning: Inner1->Inner2 range pruned (within first outer iteration)
-      # Outer loop pruning: Outer1->Outer2 range pruned
-      # Result should keep: Outer2, Inner1, Put30
-
-      assert length(entries_before) == 8
-      assert length(entries_after) == 3
+      # Original: Root, Outer1, Inner1, Put10, Inner2, Put20, Outer2, Inner1, Put30 (9)
+      # After pruning: Root, Outer2, Inner1, Put30 (4)
+      assert length(entries_before) == 9
+      assert length(entries_after) == 4
 
       # Verify the remaining entries are from the last iteration
-      [outer_mark, inner_mark, put_entry] = entries_after
-      assert outer_mark.data.checkpoint == %{outer: 2}
-      assert inner_mark.data.checkpoint == %{inner: 1}
-      # State.put returns a Change struct
+      [_root, outer_mark, inner_mark, put_entry] = entries_after
+      assert outer_mark.data.loop_id == OuterLoop
+      assert inner_mark.data.loop_id == InnerLoop
       assert %Skuld.Data.Change{} = put_entry.value
     end
 
     test "three-level nesting prunes correctly" do
       {{:done, log}, _env} =
         comp do
-          _ <- EffectLogger.mark_loop(L1, %{l1: 1})
-          _ <- EffectLogger.mark_loop(L2, %{l2: 1})
-          _ <- EffectLogger.mark_loop(L3, %{l3: 1})
+          _ <- EffectLogger.mark_loop(L1)
+          _ <- EffectLogger.mark_loop(L2)
+          _ <- EffectLogger.mark_loop(L3)
           _ <- State.put(1)
-          _ <- EffectLogger.mark_loop(L3, %{l3: 2})
+          _ <- EffectLogger.mark_loop(L3)
           _ <- State.put(2)
-          _ <- EffectLogger.mark_loop(L1, %{l1: 2})
-          _ <- EffectLogger.mark_loop(L2, %{l2: 1})
-          _ <- EffectLogger.mark_loop(L3, %{l3: 1})
+          _ <- EffectLogger.mark_loop(L1)
+          _ <- EffectLogger.mark_loop(L2)
+          _ <- EffectLogger.mark_loop(L3)
           _ <- State.put(3)
           return(:done)
         end
@@ -234,21 +286,22 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
       pruned = Log.prune_completed_loops(log)
       entries_after = Log.to_list(pruned)
 
-      # Should keep only the last outer iteration: L1(2), L2(1), L3(1), Put3
-      assert length(entries_before) == 10
-      assert length(entries_after) == 4
+      # Before: 11 (root + 6 marks + 3 puts + 1 extra from second iteration)
+      # After: Root, L1(2), L2(1), L3(1), Put3 = 5 entries
+      assert length(entries_before) == 11
+      assert length(entries_after) == 5
     end
   end
 
   describe "Log.extract_loop_checkpoints/1" do
-    test "extracts most recent checkpoint for each loop" do
+    test "extracts most recent env_state for each loop" do
       {{:done, log}, _env} =
         comp do
-          _ <- EffectLogger.mark_loop(OuterLoop, %{outer: 1})
-          _ <- EffectLogger.mark_loop(InnerLoop, %{inner: 1})
-          _ <- EffectLogger.mark_loop(InnerLoop, %{inner: 2})
-          _ <- EffectLogger.mark_loop(OuterLoop, %{outer: 2})
-          _ <- EffectLogger.mark_loop(InnerLoop, %{inner: 3})
+          _ <- EffectLogger.mark_loop(OuterLoop)
+          _ <- EffectLogger.mark_loop(InnerLoop)
+          _ <- EffectLogger.mark_loop(InnerLoop)
+          _ <- EffectLogger.mark_loop(OuterLoop)
+          _ <- EffectLogger.mark_loop(InnerLoop)
           return(:done)
         end
         |> EffectLogger.with_logging()
@@ -256,10 +309,12 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
 
       checkpoints = Log.extract_loop_checkpoints(log)
 
-      assert checkpoints == %{
-               OuterLoop => %{outer: 2},
-               InnerLoop => %{inner: 3}
-             }
+      # Should have :__root__, OuterLoop, InnerLoop
+      assert Map.has_key?(checkpoints, :__root__)
+      assert Map.has_key?(checkpoints, OuterLoop)
+      assert Map.has_key?(checkpoints, InnerLoop)
+      # Each checkpoint should be a map (the env.state)
+      assert is_map(checkpoints[:__root__])
     end
   end
 
@@ -267,9 +322,9 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
     test "prune_loops: true prunes on finalization" do
       {{:done, log}, _env} =
         comp do
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 1})
+          _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(100)
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 2})
+          _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(200)
           return(:done)
         end
@@ -278,16 +333,16 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
         |> Comp.run()
 
       entries = Log.to_list(log)
-      # Only last iteration remains
-      assert length(entries) == 2
+      # Only root + last iteration remains: Root, Mark2, Put200 = 3
+      assert length(entries) == 3
     end
 
     test "prune_loops: false (default) preserves all entries" do
       {{:done, log}, _env} =
         comp do
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 1})
+          _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(100)
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 2})
+          _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(200)
           return(:done)
         end
@@ -296,8 +351,8 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
         |> Comp.run()
 
       entries = Log.to_list(log)
-      # All entries preserved
-      assert length(entries) == 4
+      # All entries preserved: Root, Mark1, Put100, Mark2, Put200 = 5
+      assert length(entries) == 5
     end
   end
 
@@ -306,10 +361,10 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
       # First run with pruning
       {{:done, log}, _env} =
         comp do
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 1})
+          _ <- EffectLogger.mark_loop(TestLoop)
           s1 <- State.get()
           _ <- State.put(s1 + 10)
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 2})
+          _ <- EffectLogger.mark_loop(TestLoop)
           s2 <- State.get()
           _ <- State.put(s2 + 20)
           return(:done)
@@ -318,16 +373,16 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
         |> State.with_handler(0)
         |> Comp.run()
 
-      # Verify pruned
-      assert length(Log.to_list(log)) == 3
+      # Verify pruned (Root + Mark2 + Get + Put = 4)
+      assert length(Log.to_list(log)) == 4
 
       # Replay the pruned log - this replays only the last iteration
       {{:done, _replay_log}, _env} =
         comp do
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 1})
+          _ <- EffectLogger.mark_loop(TestLoop)
           s1 <- State.get()
           _ <- State.put(s1 + 10)
-          _ <- EffectLogger.mark_loop(TestLoop, %{iter: 2})
+          _ <- EffectLogger.mark_loop(TestLoop)
           s2 <- State.get()
           _ <- State.put(s2 + 20)
           return(:done)
@@ -344,7 +399,7 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
     test "mark_loop entries serialize and deserialize correctly" do
       {{:done, log}, _env} =
         comp do
-          _ <- EffectLogger.mark_loop(TestLoop, %{messages: ["hello"], count: 42})
+          _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(100)
           return(:done)
         end
@@ -358,15 +413,66 @@ defmodule Skuld.Effects.EffectLoggerMarkLoopTest do
       # Deserialize
       restored = json |> Jason.decode!() |> Log.from_json()
 
-      # Verify entries are preserved
+      # Verify entries are preserved (Root + Mark + Put = 3)
       entries = Log.to_list(restored)
-      assert length(entries) == 2
+      assert length(entries) == 3
 
-      [mark_entry, _state_entry] = entries
+      [root_entry, mark_entry, _state_entry] = entries
+      assert root_entry.sig == Skuld.Effects.EffectLogger
+      assert root_entry.data.loop_id == :__root__
       assert mark_entry.sig == Skuld.Effects.EffectLogger
       assert mark_entry.data.loop_id == TestLoop
-      # After JSON round-trip, map keys are strings
-      assert mark_entry.data.checkpoint == %{"messages" => ["hello"], "count" => 42}
+      # env_state should be a map
+      assert is_map(mark_entry.data.env_state)
+    end
+  end
+
+  describe "env.state capture and restore" do
+    test "mark_loop captures current env.state" do
+      {{:done, log}, _env} =
+        comp do
+          _ <- State.put(42)
+          _ <- EffectLogger.mark_loop(TestLoop)
+          return(:done)
+        end
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      # Find the TestLoop mark entry
+      entries = Log.to_list(log)
+
+      mark_entry =
+        Enum.find(entries, fn e ->
+          e.sig == Skuld.Effects.EffectLogger and
+            match?(%{loop_id: TestLoop}, e.data)
+        end)
+
+      # The env_state should contain the State effect's state key
+      assert is_map(mark_entry.data.env_state)
+    end
+
+    test "root mark captures initial env.state" do
+      {{:done, log}, _env} =
+        comp do
+          _ <- State.get()
+          return(:done)
+        end
+        |> EffectLogger.with_logging()
+        |> State.with_handler(42)
+        |> Comp.run()
+
+      # Find the root mark entry
+      entries = Log.to_list(log)
+
+      root_entry =
+        Enum.find(entries, fn e ->
+          e.sig == Skuld.Effects.EffectLogger and
+            match?(%{loop_id: :__root__}, e.data)
+        end)
+
+      assert root_entry != nil
+      assert is_map(root_entry.data.env_state)
     end
   end
 end

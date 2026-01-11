@@ -69,33 +69,77 @@ defmodule Skuld.Effects.EffectLogger.Log do
 
   defstruct effect_stack: [],
             effect_queue: [],
-            allow_divergence?: false
+            allow_divergence?: false,
+            auto_root_mark?: false
 
   @type t :: %__MODULE__{
           effect_stack: [EffectLogEntry.t()],
           effect_queue: [EffectLogEntry.t()],
-          allow_divergence?: boolean()
+          allow_divergence?: boolean(),
+          auto_root_mark?: boolean()
         }
 
   @doc """
-  Create a new empty log.
+  Create a new empty log or a log with entries.
+
+  ## Variants
+
+  - `new()` - Create empty log
+  - `new(opts)` - Create empty log with options (keyword list)
+  - `new(entries)` - Create log with entries for replay
+  - `new(entries, opts)` - Create log with entries and options
+
+  ## Options
+
+  - `:auto_root_mark?` - If true, automatically insert a root mark on first effect.
+    Used when `prune_loops: true` is set. Default: false.
   """
   @spec new() :: t()
-  def new do
+  @spec new(keyword()) :: t()
+  @spec new([EffectLogEntry.t()]) :: t()
+  @spec new([EffectLogEntry.t()], keyword()) :: t()
+  def new(arg \\ [])
+
+  # Empty list - could be empty opts or empty entries, treat as empty opts
+  def new([]) do
     %__MODULE__{
       effect_stack: [],
       effect_queue: []
     }
   end
 
-  @doc """
-  Create a log initialized with entries for replay.
-  """
-  @spec new([EffectLogEntry.t()]) :: t()
-  def new(entries) when is_list(entries) do
+  # Keyword list (opts) - check if first element is tuple with atom key
+  def new([{key, _} | _] = opts) when is_atom(key) do
+    %__MODULE__{
+      effect_stack: [],
+      effect_queue: [],
+      auto_root_mark?: Keyword.get(opts, :auto_root_mark?, false)
+    }
+  end
+
+  # List of entries
+  def new([%EffectLogEntry{} | _] = entries) do
     %__MODULE__{
       effect_stack: [],
       effect_queue: entries
+    }
+  end
+
+  # List of entries with opts
+  def new([%EffectLogEntry{} | _] = entries, opts) when is_list(opts) do
+    %__MODULE__{
+      effect_stack: [],
+      effect_queue: entries,
+      auto_root_mark?: Keyword.get(opts, :auto_root_mark?, false)
+    }
+  end
+
+  # Empty entries with opts
+  def new([], opts) when is_list(opts) do
+    %__MODULE__{
+      effect_stack: [],
+      effect_queue: [],
+      auto_root_mark?: Keyword.get(opts, :auto_root_mark?, false)
     }
   end
 
@@ -201,6 +245,27 @@ defmodule Skuld.Effects.EffectLogger.Log do
   end
 
   @doc """
+  Pop all root mark entries from the front of the queue.
+
+  Root marks are used for state restoration during cold resume, but shouldn't
+  be matched against user effects during replay. This removes them from the
+  queue after state restoration.
+  """
+  @spec pop_root_marks(t()) :: t()
+  def pop_root_marks(%__MODULE__{} = log) do
+    root_id = Skuld.Effects.EffectLogger.root_loop_id()
+    effect_logger_sig = Skuld.Effects.EffectLogger
+
+    # Pop root marks from front of queue
+    new_queue =
+      Enum.drop_while(log.effect_queue, fn entry ->
+        entry.sig == effect_logger_sig and match?(%{loop_id: ^root_id}, entry.data)
+      end)
+
+    %{log | effect_queue: new_queue}
+  end
+
+  @doc """
   Get all entries as a list (for inspection/debugging).
 
   Returns entries in execution order.
@@ -208,6 +273,24 @@ defmodule Skuld.Effects.EffectLogger.Log do
   @spec to_list(t()) :: [EffectLogEntry.t()]
   def to_list(%__MODULE__{} = log) do
     Enum.reverse(log.effect_stack) ++ log.effect_queue
+  end
+
+  @doc """
+  Check if the log contains a root mark (`:__root__`).
+
+  The root mark is lazily inserted on the first intercepted effect.
+  """
+  @spec has_root_mark?(t()) :: boolean()
+  def has_root_mark?(%__MODULE__{} = log) do
+    root_id = Skuld.Effects.EffectLogger.root_loop_id()
+    effect_logger_sig = Skuld.Effects.EffectLogger
+
+    entries = to_list(log)
+
+    Enum.any?(entries, fn entry ->
+      entry.sig == effect_logger_sig and
+        match?(%{loop_id: ^root_id}, entry.data)
+    end)
   end
 
   #############################################################################
@@ -447,14 +530,14 @@ defmodule Skuld.Effects.EffectLogger.Log do
   end
 
   @doc """
-  Extract the most recent checkpoint for each loop_id from the log.
+  Extract the most recent env_state checkpoint for each loop_id from the log.
 
-  Returns a map of loop_id => checkpoint (the data from the most recent mark).
+  Returns a map of loop_id => env_state (the captured state from the most recent mark).
 
   ## Example
 
       checkpoints = Log.extract_loop_checkpoints(log)
-      # => %{ConversationLoop => %{messages: [...], tools: [...]}}
+      # => %{:__root__ => %{...initial state...}, MyLoop => %{...state at mark...}}
   """
   @spec extract_loop_checkpoints(t()) :: %{atom() => term()}
   def extract_loop_checkpoints(%__MODULE__{} = log) do
@@ -462,22 +545,39 @@ defmodule Skuld.Effects.EffectLogger.Log do
 
     # Walk through and keep updating checkpoints (last one wins)
     Enum.reduce(entries, %{}, fn entry, acc ->
-      case extract_checkpoint(entry) do
+      case extract_env_state(entry) do
         nil -> acc
-        {loop_id, checkpoint} -> Map.put(acc, loop_id, checkpoint)
+        {loop_id, env_state} -> Map.put(acc, loop_id, env_state)
       end
     end)
   end
 
-  # Extract {loop_id, checkpoint} from a MarkLoop entry, or nil
-  defp extract_checkpoint(%EffectLogEntry{sig: sig, data: data}) do
+  @doc """
+  Find the most recent mark entry in the log queue (for cold resume).
+
+  Returns the MarkLoopOp entry with the most recent env_state, or nil.
+  """
+  @spec find_latest_checkpoint(t()) :: EffectLogEntry.t() | nil
+  def find_latest_checkpoint(%__MODULE__{} = log) do
+    effect_logger_sig = Skuld.Effects.EffectLogger
+
+    # Look through the queue (entries to replay) for mark entries
+    log.effect_queue
+    |> Enum.filter(fn entry ->
+      entry.sig == effect_logger_sig and match?(%{loop_id: _, env_state: _}, entry.data)
+    end)
+    |> List.last()
+  end
+
+  # Extract {loop_id, env_state} from a MarkLoop entry, or nil
+  defp extract_env_state(%EffectLogEntry{sig: sig, data: data}) do
     effect_logger_sig = Skuld.Effects.EffectLogger
 
     case sig do
       ^effect_logger_sig ->
         case data do
-          %{loop_id: loop_id, checkpoint: checkpoint} when is_atom(loop_id) ->
-            {loop_id, checkpoint}
+          %{loop_id: loop_id, env_state: env_state} when is_atom(loop_id) ->
+            {loop_id, env_state}
 
           _ ->
             nil
@@ -496,7 +596,8 @@ defmodule Skuld.Effects.EffectLogger.Log do
     %__MODULE__{
       effect_stack: Enum.map(map["effect_stack"] || [], &EffectLogEntry.from_json/1),
       effect_queue: Enum.map(map["effect_queue"] || [], &EffectLogEntry.from_json/1),
-      allow_divergence?: map["allow_divergence?"] || false
+      allow_divergence?: map["allow_divergence?"] || false,
+      auto_root_mark?: map["auto_root_mark?"] || false
     }
   end
 end
@@ -507,7 +608,8 @@ defimpl Jason.Encoder, for: Skuld.Effects.EffectLogger.Log do
       %{
         effect_stack: value.effect_stack,
         effect_queue: value.effect_queue,
-        allow_divergence?: value.allow_divergence?
+        allow_divergence?: value.allow_divergence?,
+        auto_root_mark?: value.auto_root_mark?
       },
       opts
     )
