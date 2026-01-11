@@ -43,10 +43,10 @@ end
 
 ## Demo Application
 
-See [TodosMcp](https://github.com/mccraigmccraig/todos_mcp) - a 
-voice-controllable todo application built with Skuld. It demonstrates how 
-command/query structs combined with algebraic effects enable trivial LLM 
-integration and property-based testing. Try it live at 
+See [TodosMcp](https://github.com/mccraigmccraig/todos_mcp) - a
+voice-controllable todo application built with Skuld. It demonstrates how
+command/query structs combined with algebraic effects enable trivial LLM
+integration and property-based testing. Try it live at
 https://todos-mcp-lu6h.onrender.com/
 
 ## Quick Start
@@ -808,6 +808,19 @@ All three maintain constant per-operation cost as N grows.
 2. **Skuld overhead** (~7x vs Evf/CPS) comes from scoped handlers, exception handling, and auto-lifting
 3. **FxFasterList** is the fastest iteration strategy when you don't need Yield semantics
 4. **Per-op cost is constant** - no quadratic blowup at scale
+
+### Real-World Perspective
+
+These benchmarks represent a **worst-case scenario** where computations do almost
+nothing except exercise the effects machinery. In practice, algebraic effects
+compose real work — serialization, domain calculations, transcoding — where actual
+computation dominates execution time.
+
+For example, JSON encoding a moderate payload takes 10-100µs, and domain validation
+or business logic involves similar compute. Compared to Skuld's ~0.1µs per effect
+invocation, even dozens of effect operations add negligible overhead to real
+workloads. The architectural benefits—testability, composability, separation of
+concerns—far outweigh the microsecond-level cost.
 
 ## License
 
