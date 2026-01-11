@@ -8,6 +8,54 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
   alias Skuld.Effects.EffectLogger.Log
   alias Skuld.Effects.State
 
+  # Recursive computations for testing pruning
+  defcomp countdown(n) do
+    _ <- EffectLogger.mark_loop(CountdownLoop)
+    current <- State.get()
+    _ <- State.put(current + 1)
+
+    result <-
+      if n > 0 do
+        countdown(n - 1)
+      else
+        State.get()
+      end
+
+    return(result)
+  end
+
+  defcomp nested_loops(outer, inner) do
+    _ <- EffectLogger.mark_loop(OuterLoop)
+    _ <- State.put({:outer, outer})
+
+    result <-
+      if outer > 0 do
+        comp do
+          _ <- inner_loop(inner)
+          nested_loops(outer - 1, inner)
+        end
+      else
+        Comp.pure(:done)
+      end
+
+    return(result)
+  end
+
+  defcomp inner_loop(n) do
+    _ <- EffectLogger.mark_loop(InnerLoop)
+    {tag, val} <- State.get()
+    _ <- State.put({tag, val + 1})
+
+    result <-
+      if n > 0 do
+        inner_loop(n - 1)
+      else
+        Comp.pure(:inner_done)
+      end
+
+    return(result)
+  end
+
   describe "EffectLogger.mark_loop/1" do
     test "returns :ok when handled" do
       {{:done, _log}, _env} =
@@ -392,6 +440,124 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
         |> Comp.run()
 
       # Should complete successfully
+    end
+  end
+
+  describe "pruning with recursive computations" do
+    test "prunes completed iterations in recursive countdown loop" do
+      # Run countdown from 3 to 0 (4 iterations total)
+      {{result, log}, _env} =
+        countdown(3)
+        |> EffectLogger.with_logging(prune_loops: true)
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      # Final state should be 4 (incremented once per iteration)
+      assert result == 4
+
+      entries = Log.to_list(log)
+
+      # Count how many CountdownLoop marks remain (should be 1 - only last iteration)
+      loop_marks =
+        Enum.filter(entries, fn e ->
+          e.sig == EffectLogger and match?(%{loop_id: CountdownLoop}, e.data)
+        end)
+
+      assert length(loop_marks) == 1
+
+      # Total entries should be: root + 1 mark + get + put + get = 5
+      # (last iteration: mark, get current, put incremented, get final, return)
+      assert length(entries) == 5
+    end
+
+    test "without pruning, all iterations are preserved" do
+      # Run same countdown without pruning
+      {{result, log}, _env} =
+        countdown(3)
+        |> EffectLogger.with_logging(prune_loops: false)
+        |> State.with_handler(0)
+        |> Comp.run()
+
+      assert result == 4
+
+      entries = Log.to_list(log)
+
+      # All 4 CountdownLoop marks should be present
+      loop_marks =
+        Enum.filter(entries, fn e ->
+          e.sig == EffectLogger and match?(%{loop_id: CountdownLoop}, e.data)
+        end)
+
+      assert length(loop_marks) == 4
+
+      # Total: root + 4*(mark + get + put) + final_get = 1 + 12 + 1 = 14
+      assert length(entries) == 14
+    end
+
+    test "nested recursive loops prune correctly" do
+      # 2 outer iterations (outer=1, outer=0), inner loop runs only when outer > 0
+      # So we get: outer=1 with inner iterations, then outer=0 (no inner)
+      {{result, log}, _env} =
+        nested_loops(1, 1)
+        |> EffectLogger.with_logging(prune_loops: true)
+        |> State.with_handler({:init, 0})
+        |> Comp.run()
+
+      assert result == :done
+
+      entries = Log.to_list(log)
+
+      # After pruning: only last outer iteration remains
+      # The last outer iteration (outer=0) has no inner loop
+      outer_marks =
+        Enum.filter(entries, fn e ->
+          e.sig == EffectLogger and match?(%{loop_id: OuterLoop}, e.data)
+        end)
+
+      # Should have 1 outer mark after pruning (the final iteration)
+      assert length(outer_marks) == 1
+
+      # Verify this is fewer entries than without pruning
+      {{_result2, log2}, _env2} =
+        nested_loops(1, 1)
+        |> EffectLogger.with_logging(prune_loops: false)
+        |> State.with_handler({:init, 0})
+        |> Comp.run()
+
+      # Pruned log should be smaller
+      assert length(Log.to_list(log)) < length(Log.to_list(log2))
+    end
+
+    test "state is correctly accumulated across pruned iterations" do
+      # Verify that even though iterations are pruned, the result reflects all work done
+      {{result, log}, _env} =
+        countdown(5)
+        |> EffectLogger.with_logging(prune_loops: true)
+        |> State.with_handler(100)
+        |> Comp.run()
+
+      # Started at 100, incremented 6 times (iterations 5,4,3,2,1,0)
+      assert result == 106
+
+      # Log should be small (pruned) compared to all iterations
+      entries = Log.to_list(log)
+
+      # Count marks - should only have 1 CountdownLoop mark
+      loop_marks =
+        Enum.filter(entries, fn e ->
+          e.sig == EffectLogger and match?(%{loop_id: CountdownLoop}, e.data)
+        end)
+
+      assert length(loop_marks) == 1
+
+      # Verify it's much smaller than unpruned
+      {{_result2, log2}, _env2} =
+        countdown(5)
+        |> EffectLogger.with_logging(prune_loops: false)
+        |> State.with_handler(100)
+        |> Comp.run()
+
+      assert length(entries) < length(Log.to_list(log2))
     end
   end
 
