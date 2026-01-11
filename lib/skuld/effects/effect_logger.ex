@@ -500,8 +500,8 @@ defmodule Skuld.Effects.EffectLogger do
           end
         end)
 
-      # Initialize empty log (with auto_root_mark? when prune_loops is enabled)
-      env_with_log = put_log(env_with_wrapped, Log.new(auto_root_mark?: prune_loops))
+      # Initialize empty log
+      env_with_log = put_log(env_with_wrapped, Log.new())
 
       finally_k = fn value, final_env ->
         # Extract and finalize the log
@@ -567,11 +567,8 @@ defmodule Skuld.Effects.EffectLogger do
         end)
 
       # Initialize with existing log (prepared for replay)
-      # Set auto_root_mark? if prune_loops is enabled (or preserve from original log)
       replay_log =
-        log
-        |> then(fn l -> %{l | auto_root_mark?: l.auto_root_mark? or prune_loops} end)
-        |> then(fn l -> if allow_divergence, do: Log.allow_divergence(l), else: l end)
+        if allow_divergence, do: Log.allow_divergence(log), else: log
 
       env_with_log = put_log(env_with_wrapped, replay_log)
 
@@ -762,11 +759,8 @@ defmodule Skuld.Effects.EffectLogger do
         end)
 
       # Initialize with existing log (prepared for replay) and resume value
-      # Set auto_root_mark? if prune_loops is enabled (or preserve from original log)
       replay_log =
-        log
-        |> then(fn l -> %{l | auto_root_mark?: l.auto_root_mark? or prune_loops} end)
-        |> then(fn l -> if allow_divergence, do: Log.allow_divergence(l), else: l end)
+        if allow_divergence, do: Log.allow_divergence(log), else: log
 
       env_with_log = put_log(env_with_wrapped, replay_log)
 

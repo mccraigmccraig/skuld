@@ -69,14 +69,12 @@ defmodule Skuld.Effects.EffectLogger.Log do
 
   defstruct effect_stack: [],
             effect_queue: [],
-            allow_divergence?: false,
-            auto_root_mark?: false
+            allow_divergence?: false
 
   @type t :: %__MODULE__{
           effect_stack: [EffectLogEntry.t()],
           effect_queue: [EffectLogEntry.t()],
-          allow_divergence?: boolean(),
-          auto_root_mark?: boolean()
+          allow_divergence?: boolean()
         }
 
   @doc """
@@ -85,35 +83,17 @@ defmodule Skuld.Effects.EffectLogger.Log do
   ## Variants
 
   - `new()` - Create empty log
-  - `new(opts)` - Create empty log with options (keyword list)
   - `new(entries)` - Create log with entries for replay
-  - `new(entries, opts)` - Create log with entries and options
-
-  ## Options
-
-  - `:auto_root_mark?` - If true, automatically insert a root mark on first effect.
-    Used when `prune_loops: true` is set. Default: false.
   """
   @spec new() :: t()
-  @spec new(keyword()) :: t()
   @spec new([EffectLogEntry.t()]) :: t()
-  @spec new([EffectLogEntry.t()], keyword()) :: t()
   def new(arg \\ [])
 
-  # Empty list - could be empty opts or empty entries, treat as empty opts
+  # Empty list
   def new([]) do
     %__MODULE__{
       effect_stack: [],
       effect_queue: []
-    }
-  end
-
-  # Keyword list (opts) - check if first element is tuple with atom key
-  def new([{key, _} | _] = opts) when is_atom(key) do
-    %__MODULE__{
-      effect_stack: [],
-      effect_queue: [],
-      auto_root_mark?: Keyword.get(opts, :auto_root_mark?, false)
     }
   end
 
@@ -122,24 +102,6 @@ defmodule Skuld.Effects.EffectLogger.Log do
     %__MODULE__{
       effect_stack: [],
       effect_queue: entries
-    }
-  end
-
-  # List of entries with opts
-  def new([%EffectLogEntry{} | _] = entries, opts) when is_list(opts) do
-    %__MODULE__{
-      effect_stack: [],
-      effect_queue: entries,
-      auto_root_mark?: Keyword.get(opts, :auto_root_mark?, false)
-    }
-  end
-
-  # Empty entries with opts
-  def new([], opts) when is_list(opts) do
-    %__MODULE__{
-      effect_stack: [],
-      effect_queue: [],
-      auto_root_mark?: Keyword.get(opts, :auto_root_mark?, false)
     }
   end
 
@@ -242,27 +204,6 @@ defmodule Skuld.Effects.EffectLogger.Log do
   @spec allow_divergence(t()) :: t()
   def allow_divergence(%__MODULE__{} = log) do
     %{log | allow_divergence?: true}
-  end
-
-  @doc """
-  Pop all root mark entries from the front of the queue.
-
-  Root marks are used for state restoration during cold resume, but shouldn't
-  be matched against user effects during replay. This removes them from the
-  queue after state restoration.
-  """
-  @spec pop_root_marks(t()) :: t()
-  def pop_root_marks(%__MODULE__{} = log) do
-    root_id = Skuld.Effects.EffectLogger.root_loop_id()
-    effect_logger_sig = Skuld.Effects.EffectLogger
-
-    # Pop root marks from front of queue
-    new_queue =
-      Enum.drop_while(log.effect_queue, fn entry ->
-        entry.sig == effect_logger_sig and match?(%{loop_id: ^root_id}, entry.data)
-      end)
-
-    %{log | effect_queue: new_queue}
   end
 
   @doc """
@@ -596,8 +537,7 @@ defmodule Skuld.Effects.EffectLogger.Log do
     %__MODULE__{
       effect_stack: Enum.map(map["effect_stack"] || [], &EffectLogEntry.from_json/1),
       effect_queue: Enum.map(map["effect_queue"] || [], &EffectLogEntry.from_json/1),
-      allow_divergence?: map["allow_divergence?"] || false,
-      auto_root_mark?: map["auto_root_mark?"] || false
+      allow_divergence?: map["allow_divergence?"] || false
     }
   end
 end
@@ -608,8 +548,7 @@ defimpl Jason.Encoder, for: Skuld.Effects.EffectLogger.Log do
       %{
         effect_stack: value.effect_stack,
         effect_queue: value.effect_queue,
-        allow_divergence?: value.allow_divergence?,
-        auto_root_mark?: value.auto_root_mark?
+        allow_divergence?: value.allow_divergence?
       },
       opts
     )
