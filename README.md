@@ -673,14 +673,109 @@ log
     y <- State.get()
     {x, y}
   end
-  |> EffectLogger.with_logging(log)
-  |> State.with_handler(999)  # Different initial state - ignored during replay!
+  |> EffectLogger.with_logging(log, allow_divergence: true)
+  |> State.with_handler(999)  # Different initial state - allowed with divergence
   |> Comp.run()
 )
 
 replayed
 #=> {0, 10}  # Same result - values came from log, not from State handler
 ```
+
+#### Loop Marking and Pruning
+
+For long-running loop-based computations (like LLM conversation loops), the log can
+grow unboundedly. Use `mark_loop/1` to mark iteration boundaries and `prune_loops: true`
+to automatically prune completed iterations:
+
+```elixir
+# A recursive computation that processes items
+defcomp process_loop(items) do
+  # Mark the start of each iteration - captures current state for cold resume
+  _ <- EffectLogger.mark_loop(ProcessLoop)
+
+  case items do
+    [] ->
+      State.get()  # Return final count
+
+    [item | rest] ->
+      count <- State.get()
+      _ <- State.put(count + 1)
+      _ <- Writer.tell("Processed: #{item}")
+      process_loop(rest)
+  end
+end
+
+# Run with pruning enabled - only the last iteration is retained
+{{result, log}, _env} =
+  process_loop(["a", "b", "c", "d"])
+  |> EffectLogger.with_logging(prune_loops: true)
+  |> State.with_handler(0)
+  |> Writer.with_handler([])
+  |> Comp.run()
+
+result
+#=> 4
+
+# Log is small - only root mark + last iteration's effects
+# Without pruning, all 5 iterations would be in the log
+```
+
+**Key benefits:**
+- **Bounded log size**: O(current iteration) instead of O(total iterations)
+- **Cold resume**: State checkpoints are preserved for resuming from serialized logs
+- **State validation**: During replay, state consistency is validated against checkpoints
+
+#### Cold Resume with Yield
+
+When a computation suspends via `Yield`, you can serialize the log and resume later:
+
+```elixir
+# Computation that yields for user input
+defcomp conversation() do
+  _ <- EffectLogger.mark_loop(ConversationLoop)
+  count <- State.get()
+  _ <- State.put(count + 1)
+
+  # Yield for input, then continue
+  input <- Yield.yield({:prompt, "Message #{count}:"})
+  _ <- Writer.tell("User said: #{input}")
+
+  conversation()  # Loop forever, yielding each iteration
+end
+
+# First run - suspends at first yield
+{suspended, env} =
+  conversation()
+  |> EffectLogger.with_logging(prune_loops: true)
+  |> Yield.with_handler()
+  |> State.with_handler(0)
+  |> Writer.with_handler([])
+  |> Comp.run()
+
+# Extract and serialize the log
+log = EffectLogger.get_log(env) |> EffectLogger.Log.finalize()
+json = Jason.encode!(log)
+
+# Later... deserialize and cold resume with user's response
+cold_log = json |> Jason.decode!() |> EffectLogger.Log.from_json()
+
+{suspended2, env2} =
+  conversation()
+  |> EffectLogger.with_resume(cold_log, "Hello!")  # Inject resume value
+  |> Yield.with_handler()
+  |> State.with_handler(999)  # State restored from checkpoint, not this value
+  |> Writer.with_handler([])
+  |> Comp.run()
+
+# Continues from where it left off, state properly restored
+```
+
+The `with_resume/3` function:
+1. Restores `env.state` from the most recent checkpoint in the log
+2. Replays completed effects by short-circuiting with logged values
+3. Injects the resume value at the Yield suspension point
+4. Continues fresh execution after that point
 
 ### EctoPersist
 
