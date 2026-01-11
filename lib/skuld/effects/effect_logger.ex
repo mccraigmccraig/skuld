@@ -168,6 +168,7 @@ defmodule Skuld.Effects.EffectLogger do
   alias Skuld.Effects.EffectLogger.Log
 
   @state_key {__MODULE__, :log}
+  @state_keys_key {__MODULE__, :state_keys}
   @sig __MODULE__
 
   #############################################################################
@@ -309,6 +310,22 @@ defmodule Skuld.Effects.EffectLogger do
     put_log(env, f.(log))
   end
 
+  # Get the state_keys filter from env (internal)
+  defp get_state_keys(env) do
+    Env.get_state(env, @state_keys_key) || :all
+  end
+
+  # Put state_keys filter into env (internal)
+  defp put_state_keys(env, state_keys) do
+    Env.put_state(env, @state_keys_key, state_keys)
+  end
+
+  # Capture env.state snapshot with configured state_keys filter
+  defp capture_state_snapshot(env) do
+    state_keys = get_state_keys(env)
+    EnvStateSnapshot.capture(env.state, state_keys: state_keys)
+  end
+
   #############################################################################
   ## Handler Wrapping
   #############################################################################
@@ -351,7 +368,7 @@ defmodule Skuld.Effects.EffectLogger do
       # For MarkLoopOp, capture current env.state as a serializable snapshot
       entry_data =
         if sig == __MODULE__ and match?(%MarkLoopOp{}, args) do
-          %{args | env_state: EnvStateSnapshot.capture(env_with_root.state)}
+          %{args | env_state: capture_state_snapshot(env_with_root)}
         else
           args
         end
@@ -451,6 +468,12 @@ defmodule Skuld.Effects.EffectLogger do
   - `:prune_loops` - If true (default), prune completed loop segments eagerly after each
     `mark_loop/1` call. This keeps memory bounded during long-running computations.
     Set to `false` to preserve all entries (e.g., for debugging).
+  - `:state_keys` - List of env.state keys to include in `EnvStateSnapshot` captures.
+    Default `:all` includes everything. Use this to filter out constant Reader state:
+
+        state_keys: [{Skuld.Effects.State, MyApp.Counter}]
+
+    This only captures the specified State keys, excluding Reader/other constant state.
 
   ## Example - Fresh Logging
 
@@ -493,21 +516,25 @@ defmodule Skuld.Effects.EffectLogger do
   def with_logging(comp, opts) when is_list(opts) do
     effects_to_log = Keyword.get(opts, :effects, :all)
     prune_loops = Keyword.get(opts, :prune_loops, true)
+    state_keys = Keyword.get(opts, :state_keys, :all)
 
     Comp.scoped(comp, fn env ->
       # Install EffectLogger's own handler (for mark_loop operations)
       env_with_self = Env.with_handler(env, @sig, &__MODULE__.handle/3)
 
+      # Store state_keys filter for use in snapshots
+      env_with_config = put_state_keys(env_with_self, state_keys)
+
       # Determine which handlers to wrap (including our own handler)
       sigs_to_wrap =
         case effects_to_log do
-          :all -> Map.keys(env_with_self.evidence)
+          :all -> Map.keys(env_with_config.evidence)
           list when is_list(list) -> [@sig | list] |> Enum.uniq()
         end
 
       # Wrap each handler with logging and install
       {env_with_wrapped, original_handlers} =
-        Enum.reduce(sigs_to_wrap, {env_with_self, %{}}, fn sig, {acc_env, originals} ->
+        Enum.reduce(sigs_to_wrap, {env_with_config, %{}}, fn sig, {acc_env, originals} ->
           case Env.get_handler(acc_env, sig) do
             nil ->
               {acc_env, originals}
@@ -538,8 +565,14 @@ defmodule Skuld.Effects.EffectLogger do
             finalized_log
           end
 
-        # Clean up log from env state
-        cleaned_env = %{final_env | state: Map.delete(final_env.state, @state_key)}
+        # Clean up EffectLogger internal state from env
+        cleaned_env = %{
+          final_env
+          | state:
+              final_env.state
+              |> Map.delete(@state_key)
+              |> Map.delete(@state_keys_key)
+        }
 
         # Restore original handlers
         restored_env =
@@ -562,21 +595,25 @@ defmodule Skuld.Effects.EffectLogger do
     effects_to_log = Keyword.get(opts, :effects, :all)
     allow_divergence = Keyword.get(opts, :allow_divergence, false)
     prune_loops = Keyword.get(opts, :prune_loops, true)
+    state_keys = Keyword.get(opts, :state_keys, :all)
 
     Comp.scoped(comp, fn env ->
       # Install EffectLogger's own handler (for mark_loop operations)
       env_with_self = Env.with_handler(env, @sig, &__MODULE__.handle/3)
 
+      # Store state_keys filter for use in snapshots
+      env_with_config = put_state_keys(env_with_self, state_keys)
+
       # Determine which handlers to wrap (including our own handler)
       sigs_to_wrap =
         case effects_to_log do
-          :all -> Map.keys(env_with_self.evidence)
+          :all -> Map.keys(env_with_config.evidence)
           list when is_list(list) -> [@sig | list] |> Enum.uniq()
         end
 
       # Wrap each handler with replay logging and install
       {env_with_wrapped, original_handlers} =
-        Enum.reduce(sigs_to_wrap, {env_with_self, %{}}, fn sig, {acc_env, originals} ->
+        Enum.reduce(sigs_to_wrap, {env_with_config, %{}}, fn sig, {acc_env, originals} ->
           case Env.get_handler(acc_env, sig) do
             nil ->
               {acc_env, originals}
@@ -610,8 +647,14 @@ defmodule Skuld.Effects.EffectLogger do
             finalized_log
           end
 
-        # Clean up log from env state
-        cleaned_env = %{final_env | state: Map.delete(final_env.state, @state_key)}
+        # Clean up EffectLogger internal state from env
+        cleaned_env = %{
+          final_env
+          | state:
+              final_env.state
+              |> Map.delete(@state_key)
+              |> Map.delete(@state_keys_key)
+        }
 
         # Restore original handlers
         restored_env =
@@ -757,21 +800,25 @@ defmodule Skuld.Effects.EffectLogger do
     effects_to_log = Keyword.get(opts, :effects, :all)
     allow_divergence = Keyword.get(opts, :allow_divergence, false)
     prune_loops = Keyword.get(opts, :prune_loops, true)
+    state_keys = Keyword.get(opts, :state_keys, :all)
 
     Comp.scoped(comp, fn env ->
       # Install EffectLogger's own handler (for mark_loop operations)
       env_with_self = Env.with_handler(env, @sig, &__MODULE__.handle/3)
 
+      # Store state_keys filter for use in snapshots
+      env_with_config = put_state_keys(env_with_self, state_keys)
+
       # Determine which handlers to wrap (including our own handler)
       sigs_to_wrap =
         case effects_to_log do
-          :all -> Map.keys(env_with_self.evidence)
+          :all -> Map.keys(env_with_config.evidence)
           list when is_list(list) -> [@sig | list] |> Enum.uniq()
         end
 
       # Wrap each handler with resume logging and install
       {env_with_wrapped, original_handlers} =
-        Enum.reduce(sigs_to_wrap, {env_with_self, %{}}, fn sig, {acc_env, originals} ->
+        Enum.reduce(sigs_to_wrap, {env_with_config, %{}}, fn sig, {acc_env, originals} ->
           case Env.get_handler(acc_env, sig) do
             nil ->
               {acc_env, originals}
@@ -810,10 +857,12 @@ defmodule Skuld.Effects.EffectLogger do
             finalized_log
           end
 
-        # Clean up log and resume value from env state
+        # Clean up log, state_keys filter, and resume value from env state
         cleaned_env =
           final_env
-          |> then(fn e -> %{e | state: Map.delete(e.state, @state_key)} end)
+          |> then(fn e ->
+            %{e | state: e.state |> Map.delete(@state_key) |> Map.delete(@state_keys_key)}
+          end)
           |> clear_resume_value()
 
         # Restore original handlers
@@ -923,7 +972,7 @@ defmodule Skuld.Effects.EffectLogger do
         EffectLogEntry.new(
           generate_id(),
           __MODULE__,
-          %MarkLoopOp{loop_id: @root_loop_id, env_state: EnvStateSnapshot.capture(env.state)}
+          %MarkLoopOp{loop_id: @root_loop_id, env_state: capture_state_snapshot(env)}
         )
         |> EffectLogEntry.set_executed(:ok)
 
@@ -978,7 +1027,7 @@ defmodule Skuld.Effects.EffectLogger do
   # Validate that current env.state is consistent with the checkpoint snapshot.
   # For now, just compare the user state (excluding EffectLogger internal state).
   defp validate_state_consistency(env, %EnvStateSnapshot{} = checkpoint_state, entry) do
-    current_snapshot = EnvStateSnapshot.capture(env.state)
+    current_snapshot = capture_state_snapshot(env)
 
     if current_snapshot.entries != checkpoint_state.entries do
       raise """

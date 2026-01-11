@@ -12,9 +12,10 @@ defmodule Skuld.Effects.EffectLogger.EnvStateSnapshot do
 
   ## Filtering
 
-  EffectLogger's own state key is filtered out when capturing, since:
-  1. It would create a circular reference (the log contains the snapshot)
-  2. The log itself is used for replay, not the captured log state
+  EffectLogger's internal state keys are filtered out when capturing:
+  - Log state key: would create circular reference (log contains snapshot)
+  - Resume value key: only needed during active resume, not for persistence
+  - State keys filter: internal config that doesn't survive JSON round-trip
 
   ## Example
 
@@ -34,6 +35,7 @@ defmodule Skuld.Effects.EffectLogger.EnvStateSnapshot do
 
   @effect_logger_state_key {Skuld.Effects.EffectLogger, :log}
   @resume_value_key {Skuld.Effects.EffectLogger, :resume_value}
+  @state_keys_key {Skuld.Effects.EffectLogger, :state_keys}
 
   defstruct entries: %{}
 
@@ -45,13 +47,39 @@ defmodule Skuld.Effects.EffectLogger.EnvStateSnapshot do
   Capture a snapshot of env.state for serialization.
 
   Filters out EffectLogger's internal state and converts tuple keys to strings.
+
+  ## Options
+
+  - `:state_keys` - List of state keys to include. Default `:all` captures everything.
+    Keys should be in the format `{Module, tag}` as used in env.state.
+
+  ## Examples
+
+      # Capture all state
+      EnvStateSnapshot.capture(env_state)
+
+      # Capture only specific State effect keys
+      EnvStateSnapshot.capture(env_state, state_keys: [
+        {Skuld.Effects.State, MyApp.Counter}
+      ])
   """
-  @spec capture(map()) :: t()
-  def capture(env_state) when is_map(env_state) do
+  @spec capture(map(), keyword()) :: t()
+  def capture(env_state, opts \\ [])
+
+  def capture(env_state, opts) when is_map(env_state) do
+    state_keys = Keyword.get(opts, :state_keys, :all)
+
     entries =
       env_state
       |> Enum.reject(fn {key, _value} ->
-        key == @effect_logger_state_key or key == @resume_value_key
+        key == @effect_logger_state_key or key == @resume_value_key or key == @state_keys_key
+      end)
+      |> Enum.filter(fn {key, _value} ->
+        case state_keys do
+          :all -> true
+          nil -> true
+          keys when is_list(keys) -> key in keys
+        end
       end)
       |> Enum.map(fn {key, value} ->
         {encode_key(key), encode_value(value)}
