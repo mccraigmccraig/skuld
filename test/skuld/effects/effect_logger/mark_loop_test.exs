@@ -164,34 +164,34 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
     end
   end
 
-  describe "Log.is_ancestor?/3" do
+  describe "Log.ancestor?/3" do
     test "returns false for same loop_id" do
       hierarchy = %{A => nil, B => A, C => B}
-      refute Log.is_ancestor?(hierarchy, A, A)
-      refute Log.is_ancestor?(hierarchy, B, B)
+      refute Log.ancestor?(hierarchy, A, A)
+      refute Log.ancestor?(hierarchy, B, B)
     end
 
     test "returns true for direct parent" do
       hierarchy = %{A => nil, B => A, C => B}
-      assert Log.is_ancestor?(hierarchy, A, B)
-      assert Log.is_ancestor?(hierarchy, B, C)
+      assert Log.ancestor?(hierarchy, A, B)
+      assert Log.ancestor?(hierarchy, B, C)
     end
 
     test "returns true for transitive ancestor" do
       hierarchy = %{A => nil, B => A, C => B}
-      assert Log.is_ancestor?(hierarchy, A, C)
+      assert Log.ancestor?(hierarchy, A, C)
     end
 
     test "returns false for non-ancestor" do
       hierarchy = %{A => nil, B => A, C => B}
-      refute Log.is_ancestor?(hierarchy, C, A)
-      refute Log.is_ancestor?(hierarchy, B, A)
+      refute Log.ancestor?(hierarchy, C, A)
+      refute Log.ancestor?(hierarchy, B, A)
     end
 
     test "returns false for unrelated loops" do
       hierarchy = %{A => nil, B => nil}
-      refute Log.is_ancestor?(hierarchy, A, B)
-      refute Log.is_ancestor?(hierarchy, B, A)
+      refute Log.ancestor?(hierarchy, A, B)
+      refute Log.ancestor?(hierarchy, B, A)
     end
   end
 

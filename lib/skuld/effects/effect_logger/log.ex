@@ -281,20 +281,20 @@ defmodule Skuld.Effects.EffectLogger.Log do
   ## Example
 
       hierarchy = %{M1 => nil, M2 => M1, M3 => M2}
-      Log.is_ancestor?(hierarchy, M1, M3)  # => true (M1 <- M2 <- M3)
-      Log.is_ancestor?(hierarchy, M3, M1)  # => false
-      Log.is_ancestor?(hierarchy, M1, M1)  # => false (not an ancestor of itself)
+      Log.ancestor?(hierarchy, M1, M3)  # => true (M1 <- M2 <- M3)
+      Log.ancestor?(hierarchy, M3, M1)  # => false
+      Log.ancestor?(hierarchy, M1, M1)  # => false (not an ancestor of itself)
   """
-  @spec is_ancestor?(hierarchy(), atom(), atom()) :: boolean()
-  def is_ancestor?(hierarchy, ancestor_id, descendant_id)
+  @spec ancestor?(hierarchy(), atom(), atom()) :: boolean()
+  def ancestor?(hierarchy, ancestor_id, descendant_id)
 
-  def is_ancestor?(_hierarchy, same, same), do: false
+  def ancestor?(_hierarchy, same, same), do: false
 
-  def is_ancestor?(hierarchy, ancestor_id, descendant_id) do
+  def ancestor?(hierarchy, ancestor_id, descendant_id) do
     case Map.get(hierarchy, descendant_id) do
       nil -> false
       ^ancestor_id -> true
-      parent -> is_ancestor?(hierarchy, ancestor_id, parent)
+      parent -> ancestor?(hierarchy, ancestor_id, parent)
     end
   end
 
