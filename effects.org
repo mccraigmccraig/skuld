@@ -43,18 +43,12 @@
 
 * Where
 - I/O bound programs struggling to manage complexity
-  - CSV importer
-  - combination of Reader / Writer pattern + CommandStreams
 
 * The cost
-- Freyja is pretty slow - benchmarked at 17x slower than a simple state monad for
+- Freyja (an earlier Algebraic Effects lib) was pretty slow - benchmarked at 17x slower than a simple state monad for
   in-memory computation
 - Skuld is considerably faster - 4x slower than a simple state monad
-  - this seems reasonable for heavily I/O bound processes. A Benchmark with the
-    user.csv importer shows an TBD times speedup because bulk data access is
-    used
-    - the thing that Algebraic Effects bring to the party is to make the bulk
-      code as easy to write as the slow N+1 pattern code
+  - this seems reasonable for heavily I/O bound processes - it represents a worst-case, if a computation did nothing useful and just exercised the Algebraic Effects coordination machinery
 
 * Aliases
 - use these aliases to run all the code examples in IEx
@@ -634,12 +628,9 @@ end
 - You would like to investigate generative testing a.k.a. property-based testing
 - You really like coroutines
 - You would like your domain model to be pure
-- You would like to make your unit-tests run 10,000 times faster
-  - Sona has ~30k tests - Freyja has ~500 and runs in 0.5s... Sona's tests could
-    run in ~30s
+- You would like to make your unit-tests run 10,000 times faster - by making your domain logic "effectful" rather than "side-effecting" and running pure handlers in tests
 - You would like to write functions without data-shuffling parameters
-- You want all the logging for a multi-process backend operation to be gathered
-  together
+- You want all the logging for a multi-process backend operation to be gathered together
 - You want to replay failed computations
 - You want to write simple domain code without concerns for effect plumbing
 - You want automatic logging without having to think about it
