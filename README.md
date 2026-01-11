@@ -685,13 +685,14 @@ replayed
 #### Loop Marking and Pruning
 
 For long-running loop-based computations (like LLM conversation loops), the log can
-grow unboundedly. Use `mark_loop/1` to mark iteration boundaries and `prune_loops: true`
-to automatically prune completed iterations:
+grow unboundedly. Use `mark_loop/1` to mark iteration boundaries - pruning is enabled
+by default and happens eagerly after each mark, keeping memory bounded:
 
 ```elixir
 # A recursive computation that processes items
 defcomp process_loop(items) do
   # Mark the start of each iteration - captures current state for cold resume
+  # Pruning happens immediately after this mark executes
   _ <- EffectLogger.mark_loop(ProcessLoop)
 
   case items do
@@ -706,10 +707,10 @@ defcomp process_loop(items) do
   end
 end
 
-# Run with pruning enabled - only the last iteration is retained
+# Pruning is enabled by default - log stays bounded during execution
 {{result, log}, _env} =
   process_loop(["a", "b", "c", "d"])
-  |> EffectLogger.with_logging(prune_loops: true)
+  |> EffectLogger.with_logging()  # prune_loops: true is the default
   |> State.with_handler(0)
   |> Writer.with_handler([])
   |> Comp.run()
@@ -718,13 +719,25 @@ result
 #=> 4
 
 # Log is small - only root mark + last iteration's effects
-# Without pruning, all 5 iterations would be in the log
+# Memory never grew beyond O(1 iteration) during execution
 ```
 
 **Key benefits:**
-- **Bounded log size**: O(current iteration) instead of O(total iterations)
+- **Bounded memory**: Pruning happens eagerly after each `mark_loop`, so memory stays O(current iteration) even for computations that never suspend or complete
 - **Cold resume**: State checkpoints are preserved for resuming from serialized logs
 - **State validation**: During replay, state consistency is validated against checkpoints
+
+To disable pruning and keep all entries (e.g., for debugging), use `prune_loops: false`:
+
+```elixir
+# Keep all entries for debugging
+{{result, log}, _env} =
+  process_loop(["a", "b", "c", "d"])
+  |> EffectLogger.with_logging(prune_loops: false)
+  |> State.with_handler(0)
+  |> Writer.with_handler([])
+  |> Comp.run()
+```
 
 #### Cold Resume with Yield
 
@@ -744,10 +757,10 @@ defcomp conversation() do
   conversation()  # Loop forever, yielding each iteration
 end
 
-# First run - suspends at first yield
+# First run - suspends at first yield (pruning is enabled by default)
 {suspended, env} =
   conversation()
-  |> EffectLogger.with_logging(prune_loops: true)
+  |> EffectLogger.with_logging()
   |> Yield.with_handler()
   |> State.with_handler(0)
   |> Writer.with_handler([])
