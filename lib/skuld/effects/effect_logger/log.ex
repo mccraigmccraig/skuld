@@ -69,12 +69,14 @@ defmodule Skuld.Effects.EffectLogger.Log do
 
   defstruct effect_stack: [],
             effect_queue: [],
-            allow_divergence?: false
+            allow_divergence?: false,
+            prune_on_mark?: false
 
   @type t :: %__MODULE__{
           effect_stack: [EffectLogEntry.t()],
           effect_queue: [EffectLogEntry.t()],
-          allow_divergence?: boolean()
+          allow_divergence?: boolean(),
+          prune_on_mark?: boolean()
         }
 
   @doc """
@@ -259,34 +261,9 @@ defmodule Skuld.Effects.EffectLogger.Log do
   """
   @spec build_loop_hierarchy(t()) :: hierarchy()
   def build_loop_hierarchy(%__MODULE__{} = log) do
-    entries = to_list(log)
-
-    # Track: {hierarchy_map, active_loop_stack}
-    # active_loop_stack is a stack of loop_ids in order of nesting (innermost first)
-    {hierarchy, _stack} =
-      Enum.reduce(entries, {%{}, []}, fn entry, {hier, stack} ->
-        case extract_loop_id(entry) do
-          nil ->
-            {hier, stack}
-
-          loop_id ->
-            if Map.has_key?(hier, loop_id) do
-              # Already seen this loop_id - pop stack back to this loop's level
-              # (we're starting a new iteration, so inner loops are done)
-              new_stack = pop_stack_to(stack, loop_id)
-              {hier, new_stack}
-            else
-              # First time seeing this loop_id
-              # Parent is the current innermost loop (head of stack)
-              parent = List.first(stack)
-              new_hier = Map.put(hier, loop_id, parent)
-              new_stack = [loop_id | stack]
-              {new_hier, new_stack}
-            end
-        end
-      end)
-
-    hierarchy
+    # Use all_entries_ordered to handle mixed stack/queue state correctly
+    entries = all_entries_ordered(log)
+    build_loop_hierarchy_from_entries(entries)
   end
 
   # Pop the stack until we find loop_id, returning stack with loop_id at head
@@ -357,18 +334,74 @@ defmodule Skuld.Effects.EffectLogger.Log do
   """
   @spec prune_completed_loops(t()) :: t()
   def prune_completed_loops(%__MODULE__{} = log) do
-    entries = to_list(log)
-    hierarchy = build_loop_hierarchy(log)
+    # Combine all entries in execution order
+    entries = all_entries_ordered(log)
+    hierarchy = build_loop_hierarchy_from_entries(entries)
 
     # Process entries to find which to keep
-    # Strategy: work backwards, keeping track of which loop segments we've seen
     pruned_entries = prune_entries(entries, hierarchy)
 
     %__MODULE__{
       effect_stack: [],
       effect_queue: pruned_entries,
-      allow_divergence?: log.allow_divergence?
+      allow_divergence?: log.allow_divergence?,
+      prune_on_mark?: log.prune_on_mark?
     }
+  end
+
+  @doc """
+  Prune completed loop segments in place, suitable for use during execution.
+
+  Unlike `prune_completed_loops/1`, this keeps entries on the stack so that
+  new entries pushed after pruning maintain correct execution order.
+  """
+  @spec prune_in_place(t()) :: t()
+  def prune_in_place(%__MODULE__{} = log) do
+    # Combine all entries in execution order
+    entries = all_entries_ordered(log)
+    hierarchy = build_loop_hierarchy_from_entries(entries)
+
+    # Process entries to find which to keep
+    pruned_entries = prune_entries(entries, hierarchy)
+
+    # Keep on stack (reversed for correct push order) so new entries append correctly
+    %__MODULE__{
+      effect_stack: Enum.reverse(pruned_entries),
+      effect_queue: [],
+      allow_divergence?: log.allow_divergence?,
+      prune_on_mark?: log.prune_on_mark?
+    }
+  end
+
+  # Get all entries in execution order, regardless of stack/queue state
+  defp all_entries_ordered(%__MODULE__{effect_stack: stack, effect_queue: queue}) do
+    # Queue has older entries in execution order
+    # Stack has newer entries in reverse order (newest first)
+    queue ++ Enum.reverse(stack)
+  end
+
+  # Build hierarchy from an ordered list of entries
+  defp build_loop_hierarchy_from_entries(entries) do
+    {hierarchy, _stack} =
+      Enum.reduce(entries, {%{}, []}, fn entry, {hier, stack} ->
+        case extract_loop_id(entry) do
+          nil ->
+            {hier, stack}
+
+          loop_id ->
+            if Map.has_key?(hier, loop_id) do
+              new_stack = pop_stack_to(stack, loop_id)
+              {hier, new_stack}
+            else
+              parent = List.first(stack)
+              new_hier = Map.put(hier, loop_id, parent)
+              new_stack = [loop_id | stack]
+              {new_hier, new_stack}
+            end
+        end
+      end)
+
+    hierarchy
   end
 
   # Prune entries by processing forward and removing completed segments
@@ -428,14 +461,19 @@ defmodule Skuld.Effects.EffectLogger.Log do
 
   # Find where to stop pruning - at end_pos or the first ancestor mark, whichever is first
   defp find_stop_position(start_pos, end_pos, ancestor_positions) do
-    # Check if any ancestor mark is between start_pos and end_pos
-    blocking_ancestor =
-      (start_pos + 1)..(end_pos - 1)
-      |> Enum.find(fn pos -> MapSet.member?(ancestor_positions, pos) end)
+    # If there's no room between start and end, just return end_pos
+    if end_pos <= start_pos + 1 do
+      end_pos
+    else
+      # Check if any ancestor mark is between start_pos and end_pos
+      blocking_ancestor =
+        (start_pos + 1)..(end_pos - 1)//1
+        |> Enum.find(fn pos -> MapSet.member?(ancestor_positions, pos) end)
 
-    case blocking_ancestor do
-      nil -> end_pos
-      pos -> pos
+      case blocking_ancestor do
+        nil -> end_pos
+        pos -> pos
+      end
     end
   end
 
@@ -537,8 +575,20 @@ defmodule Skuld.Effects.EffectLogger.Log do
     %__MODULE__{
       effect_stack: Enum.map(map["effect_stack"] || [], &EffectLogEntry.from_json/1),
       effect_queue: Enum.map(map["effect_queue"] || [], &EffectLogEntry.from_json/1),
-      allow_divergence?: map["allow_divergence?"] || false
+      allow_divergence?: map["allow_divergence?"] || false,
+      prune_on_mark?: map["prune_on_mark?"] || false
     }
+  end
+
+  @doc """
+  Enable eager pruning on mark_loop.
+
+  When enabled, `prune_completed_loops/1` is called after each mark_loop effect,
+  keeping the log bounded during long-running computations.
+  """
+  @spec enable_prune_on_mark(t()) :: t()
+  def enable_prune_on_mark(%__MODULE__{} = log) do
+    %{log | prune_on_mark?: true}
   end
 end
 
@@ -548,7 +598,8 @@ defimpl Jason.Encoder, for: Skuld.Effects.EffectLogger.Log do
       %{
         effect_stack: value.effect_stack,
         effect_queue: value.effect_queue,
-        allow_divergence?: value.allow_divergence?
+        allow_divergence?: value.allow_divergence?,
+        prune_on_mark?: value.prune_on_mark?
       },
       opts
     )

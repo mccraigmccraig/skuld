@@ -370,6 +370,9 @@ defmodule Skuld.Effects.EffectLogger do
         previous_leave_scope.(result, marked_env)
       end
 
+      # Track whether this is a mark_loop effect for eager pruning
+      is_mark_loop = sig == __MODULE__ and match?(%MarkLoopOp{}, args)
+
       # Create wrapped continuation that marks entry as executed
       wrapped_k = fn value, inner_env ->
         # Mark entry as executed with the value
@@ -378,10 +381,25 @@ defmodule Skuld.Effects.EffectLogger do
             update_entry_executed(log, entry_id, value)
           end)
 
+        # Eagerly prune after mark_loop if prune_on_mark? is enabled
+        pruned_env =
+          if is_mark_loop do
+            update_log(executed_env, fn log ->
+              if log.prune_on_mark? do
+                # Prune in place - keeps entries on stack for correct ordering
+                Log.prune_in_place(log)
+              else
+                log
+              end
+            end)
+          else
+            executed_env
+          end
+
         # Restore previous leave_scope and call original k.
         # Our leave_scope is no longer active - only the current entry's
         # leave_scope can mark it as :discarded (if wrapped_k is never called).
-        restored_env = Env.with_leave_scope(executed_env, previous_leave_scope)
+        restored_env = Env.with_leave_scope(pruned_env, previous_leave_scope)
         k.(value, restored_env)
       end
 
@@ -430,8 +448,9 @@ defmodule Skuld.Effects.EffectLogger do
 
   - `:effects` - List of effect signatures to log. Default is all handlers in env.
   - `:allow_divergence` - (replay only) If true, allow effects that don't match the log.
-  - `:prune_loops` - If true, prune completed loop segments on finalization.
-    Requires MarkLoop effect to be used in the computation. See `Skuld.Effects.MarkLoop`.
+  - `:prune_loops` - If true (default), prune completed loop segments eagerly after each
+    `mark_loop/1` call. This keeps memory bounded during long-running computations.
+    Set to `false` to preserve all entries (e.g., for debugging).
 
   ## Example - Fresh Logging
 
@@ -473,7 +492,7 @@ defmodule Skuld.Effects.EffectLogger do
 
   def with_logging(comp, opts) when is_list(opts) do
     effects_to_log = Keyword.get(opts, :effects, :all)
-    prune_loops = Keyword.get(opts, :prune_loops, false)
+    prune_loops = Keyword.get(opts, :prune_loops, true)
 
     Comp.scoped(comp, fn env ->
       # Install EffectLogger's own handler (for mark_loop operations)
@@ -500,15 +519,18 @@ defmodule Skuld.Effects.EffectLogger do
           end
         end)
 
-      # Initialize empty log
-      env_with_log = put_log(env_with_wrapped, Log.new())
+      # Initialize empty log with prune_on_mark enabled if prune_loops is true
+      initial_log =
+        if prune_loops, do: Log.enable_prune_on_mark(Log.new()), else: Log.new()
+
+      env_with_log = put_log(env_with_wrapped, initial_log)
 
       finally_k = fn value, final_env ->
         # Extract and finalize the log
         log = get_log(final_env) || Log.new()
         finalized_log = Log.finalize(log)
 
-        # Optionally prune completed loop segments
+        # Final prune (may be redundant if eager pruning is enabled, but ensures consistency)
         output_log =
           if prune_loops do
             Log.prune_completed_loops(finalized_log)
@@ -539,7 +561,7 @@ defmodule Skuld.Effects.EffectLogger do
   def with_logging(comp, %Log{} = log, opts) when is_list(opts) do
     effects_to_log = Keyword.get(opts, :effects, :all)
     allow_divergence = Keyword.get(opts, :allow_divergence, false)
-    prune_loops = Keyword.get(opts, :prune_loops, false)
+    prune_loops = Keyword.get(opts, :prune_loops, true)
 
     Comp.scoped(comp, fn env ->
       # Install EffectLogger's own handler (for mark_loop operations)
@@ -567,8 +589,11 @@ defmodule Skuld.Effects.EffectLogger do
         end)
 
       # Initialize with existing log (prepared for replay)
+      # Enable prune_on_mark if prune_loops is true (or preserve from log)
       replay_log =
-        if allow_divergence, do: Log.allow_divergence(log), else: log
+        log
+        |> then(fn l -> if prune_loops, do: Log.enable_prune_on_mark(l), else: l end)
+        |> then(fn l -> if allow_divergence, do: Log.allow_divergence(l), else: l end)
 
       env_with_log = put_log(env_with_wrapped, replay_log)
 
@@ -577,7 +602,7 @@ defmodule Skuld.Effects.EffectLogger do
         final_log = get_log(final_env) || Log.new()
         finalized_log = Log.finalize(final_log)
 
-        # Optionally prune completed loop segments
+        # Final prune (may be redundant if eager pruning is enabled, but ensures consistency)
         output_log =
           if prune_loops do
             Log.prune_completed_loops(finalized_log)
@@ -731,7 +756,7 @@ defmodule Skuld.Effects.EffectLogger do
   def with_resume(comp, %Log{} = log, resume_value, opts) when is_list(opts) do
     effects_to_log = Keyword.get(opts, :effects, :all)
     allow_divergence = Keyword.get(opts, :allow_divergence, false)
-    prune_loops = Keyword.get(opts, :prune_loops, false)
+    prune_loops = Keyword.get(opts, :prune_loops, true)
 
     Comp.scoped(comp, fn env ->
       # Install EffectLogger's own handler (for mark_loop operations)
@@ -759,8 +784,11 @@ defmodule Skuld.Effects.EffectLogger do
         end)
 
       # Initialize with existing log (prepared for replay) and resume value
+      # Enable prune_on_mark if prune_loops is true (or preserve from log)
       replay_log =
-        if allow_divergence, do: Log.allow_divergence(log), else: log
+        log
+        |> then(fn l -> if prune_loops, do: Log.enable_prune_on_mark(l), else: l end)
+        |> then(fn l -> if allow_divergence, do: Log.allow_divergence(l), else: l end)
 
       env_with_log = put_log(env_with_wrapped, replay_log)
 
@@ -774,7 +802,7 @@ defmodule Skuld.Effects.EffectLogger do
         final_log = get_log(final_env) || Log.new()
         finalized_log = Log.finalize(final_log)
 
-        # Optionally prune completed loop segments
+        # Final prune (may be redundant if eager pruning is enabled, but ensures consistency)
         output_log =
           if prune_loops do
             Log.prune_completed_loops(finalized_log)
