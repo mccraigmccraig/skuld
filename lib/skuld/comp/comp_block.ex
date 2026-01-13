@@ -245,7 +245,7 @@ defmodule Skuld.Comp.CompBlock do
 
       # Rewrite the do block, generating multi-clause continuations if else is present
       has_else = else_block != nil
-      rewritten_do = rewrite_block(do_block, has_else)
+      rewritten_do = rewrite_block(caller, do_block, has_else)
 
       # Wrap with else if present (innermost)
       with_else =
@@ -334,9 +334,10 @@ defmodule Skuld.Comp.CompBlock do
       clauses = extract_clauses(else_block)
 
       # Rewrite each clause body (they're comp blocks too, but no else support nested)
+      # Note: else clause bodies don't have caller context for line numbers
       rewritten_clauses =
         Enum.map(clauses, fn {:->, meta, [patterns, body]} ->
-          rewritten_body = rewrite_block(body, false)
+          rewritten_body = rewrite_block(nil, body, false)
           {:->, meta, [patterns, rewritten_body]}
         end)
 
@@ -384,9 +385,11 @@ defmodule Skuld.Comp.CompBlock do
       clauses = extract_clauses(catch_block)
 
       # Rewrite each clause body (they're comp blocks too)
+      # Note: catch/else clause bodies don't have caller context for line numbers,
+      # so we pass nil - bare expressions in these bodies won't have precise line info
       rewritten_clauses =
         Enum.map(clauses, fn {:->, meta, [patterns, body]} ->
-          rewritten_body = rewrite_block(body, false)
+          rewritten_body = rewrite_block(nil, body, false)
           {:->, meta, [patterns, rewritten_body]}
         end)
 
@@ -463,21 +466,23 @@ defmodule Skuld.Comp.CompBlock do
     end
 
     # Rewrite block expressions
+    # caller: the __CALLER__ context for error reporting (may be nil for nested blocks)
     # has_else: whether to generate multi-clause continuations for complex patterns
     # is_first: whether this is the first expression (needs exception wrapping)
     #
     # Only the FIRST expression needs explicit exception wrapping because:
     # - Subsequent expressions are inside bind's continuation, which already has try/catch
     # - The first expression is evaluated before any computation context exists
-    defp rewrite_block(block, has_else)
+    defp rewrite_block(caller, block, has_else)
 
-    defp rewrite_block({:__block__, _, exprs}, has_else),
-      do: rewrite_exprs(exprs, has_else, _is_first = true)
+    defp rewrite_block(caller, {:__block__, _, exprs}, has_else),
+      do: rewrite_exprs(caller, exprs, has_else, _is_first = true)
 
-    defp rewrite_block(expr, has_else), do: rewrite_exprs([expr], has_else, _is_first = true)
+    defp rewrite_block(caller, expr, has_else),
+      do: rewrite_exprs(caller, [expr], has_else, _is_first = true)
 
-    # Single/last expression
-    defp rewrite_exprs([last], _has_else, is_first) do
+    # Single/last expression - this is always allowed (auto-lifted to pure)
+    defp rewrite_exprs(_caller, [last], _has_else, is_first) do
       if is_first do
         # First expression needs wrapping - evaluated before computation context exists
         Skuld.Comp.ConvertThrow.wrap_expr(last)
@@ -487,12 +492,12 @@ defmodule Skuld.Comp.CompBlock do
       end
     end
 
-    # = assignment
-    defp rewrite_exprs([{:=, meta, [lhs, rhs]} | rest], has_else, is_first) do
+    # = assignment - allowed in any position
+    defp rewrite_exprs(caller, [{:=, meta, [lhs, rhs]} | rest], has_else, is_first) do
       # Note: = assignments don't create computation context, so if the first
       # expression is an assignment, the RHS still executes outside any try/catch.
       # We wrap the entire rest (which includes the assignment) when is_first.
-      rest_rewritten = rewrite_exprs(rest, has_else, _is_first = false)
+      rest_rewritten = rewrite_exprs(caller, rest, has_else, _is_first = false)
 
       base_expr =
         if has_else and complex_pattern?(lhs) do
@@ -522,9 +527,9 @@ defmodule Skuld.Comp.CompBlock do
       end
     end
 
-    # <- binding
-    defp rewrite_exprs([{:<-, _meta, [lhs, rhs]} | rest], has_else, is_first) do
-      rest_rewritten = rewrite_exprs(rest, has_else, _is_first = false)
+    # <- binding - allowed in any position
+    defp rewrite_exprs(caller, [{:<-, _meta, [lhs, rhs]} | rest], has_else, is_first) do
+      rest_rewritten = rewrite_exprs(caller, rest, has_else, _is_first = false)
 
       # Only wrap RHS if this is the first expression
       rhs_expr = if is_first, do: Skuld.Comp.ConvertThrow.wrap_expr(rhs), else: rhs
@@ -538,16 +543,40 @@ defmodule Skuld.Comp.CompBlock do
       end
     end
 
-    # Non-binding expression followed by more
-    defp rewrite_exprs([expr | rest], has_else, is_first) do
-      rest_rewritten = rewrite_exprs(rest, has_else, _is_first = false)
+    # Bare expression followed by more - NOT allowed, raise compile error
+    defp rewrite_exprs(caller, [expr | _rest], _has_else, _is_first) do
+      {line, description} = bare_expression_error_info(caller, expr)
 
-      # Only wrap if this is the first expression
-      expr_to_use = if is_first, do: Skuld.Comp.ConvertThrow.wrap_expr(expr), else: expr
+      raise CompileError,
+        file: (caller && caller.file) || "nofile",
+        line: line,
+        description: description
+    end
 
-      quote do
-        Skuld.Comp.then_do(unquote(expr_to_use), unquote(rest_rewritten))
-      end
+    # Get line number and description for bare expression error
+    defp bare_expression_error_info(caller, expr) do
+      # Try to extract line number from the expression's metadata
+      line =
+        case expr do
+          {_op, meta, _args} when is_list(meta) -> Keyword.get(meta, :line)
+          _ -> nil
+        end
+
+      # Fall back to caller's line if expression doesn't have line info
+      line = line || (caller && caller.line) || 0
+
+      expr_preview =
+        expr
+        |> Macro.to_string()
+        |> String.slice(0, 50)
+
+      description =
+        "bare expression in comp block: `#{expr_preview}`. " <>
+          "Only `pattern <- computation` (effectful bind), " <>
+          "`pattern = expression` (pure bind), or a final expression are allowed. " <>
+          "If you want to execute a side effect, use `_ = expression` or `_ <- computation`."
+
+      {line, description}
     end
 
     defp binder(lhs, rhs, body) do

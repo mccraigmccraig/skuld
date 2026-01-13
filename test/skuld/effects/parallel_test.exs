@@ -64,15 +64,15 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.all([
             comp do
-              Process.sleep(30)
+              _ = Process.sleep(30)
               :slow
             end,
             comp do
-              Process.sleep(10)
+              _ = Process.sleep(10)
               :fast
             end,
             comp do
-              Process.sleep(20)
+              _ = Process.sleep(20)
               :medium
             end
           ])
@@ -92,15 +92,15 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.all([
             comp do
-              Process.sleep(50)
+              _ = Process.sleep(50)
               :a
             end,
             comp do
-              Process.sleep(50)
+              _ = Process.sleep(50)
               :b
             end,
             comp do
-              Process.sleep(50)
+              _ = Process.sleep(50)
               :c
             end
           ])
@@ -145,15 +145,15 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.race([
             comp do
-              Process.sleep(100)
+              _ = Process.sleep(100)
               :slow
             end,
             comp do
-              Process.sleep(10)
+              _ = Process.sleep(10)
               :fast
             end,
             comp do
-              Process.sleep(50)
+              _ = Process.sleep(50)
               :medium
             end
           ])
@@ -201,7 +201,7 @@ defmodule Skuld.Effects.ParallelTest do
               raise "fail fast"
             end,
             comp do
-              Process.sleep(20)
+              _ = Process.sleep(20)
               :success
             end
           ])
@@ -314,7 +314,7 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.map([3, 1, 2], fn x ->
             comp do
-              Process.sleep(x * 10)
+              _ = Process.sleep(x * 10)
               x
             end
           end)
@@ -333,7 +333,7 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.map([1, 2, 3], fn x ->
             comp do
-              Process.sleep(50)
+              _ = Process.sleep(50)
               x
             end
           end)
@@ -353,7 +353,7 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.map([1, 2, 3], fn x ->
             comp do
-              if x == 2, do: raise("boom!")
+              _ = if x == 2, do: raise("boom!")
               x
             end
           end)
@@ -519,7 +519,7 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.map([1, 2, 3], fn x ->
             comp do
-              if x == 2, do: raise("boom!")
+              _ = if x == 2, do: raise("boom!")
               x
             end
           end)

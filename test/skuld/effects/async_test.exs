@@ -257,7 +257,7 @@ defmodule Skuld.Effects.AsyncTest do
               h1 <-
                 Async.async(
                   comp do
-                    Process.sleep(50)
+                    _ = Process.sleep(50)
                     :a
                   end
                 )
@@ -265,7 +265,7 @@ defmodule Skuld.Effects.AsyncTest do
               h2 <-
                 Async.async(
                   comp do
-                    Process.sleep(50)
+                    _ = Process.sleep(50)
                     :b
                   end
                 )
@@ -273,7 +273,7 @@ defmodule Skuld.Effects.AsyncTest do
               h3 <-
                 Async.async(
                   comp do
-                    Process.sleep(50)
+                    _ = Process.sleep(50)
                     :c
                   end
                 )

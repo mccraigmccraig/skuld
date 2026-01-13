@@ -640,6 +640,70 @@ defmodule Skuld.Comp.CompBlockTest do
     end
   end
 
+  describe "compile-time validation" do
+    test "bare expression in non-final position is a compile error" do
+      # comp blocks should only allow:
+      # - `pattern <- computation` (effectful bind)
+      # - `pattern = expression` (pure bind)
+      # - final expression (auto-lifted to pure)
+      #
+      # Bare expressions like `IO.puts("foo")` in non-final position should fail
+      assert_raise CompileError, ~r/bare expression/, fn ->
+        Code.compile_string("""
+        import Skuld.Comp.CompBlock
+        comp do
+          IO.puts("side effect")
+          :final_value
+        end
+        """)
+      end
+    end
+
+    test "multiple bare expressions are compile errors" do
+      assert_raise CompileError, ~r/bare expression/, fn ->
+        Code.compile_string("""
+        import Skuld.Comp.CompBlock
+        comp do
+          IO.puts("first")
+          IO.puts("second")
+          :final_value
+        end
+        """)
+      end
+    end
+
+    test "bare expression after binding is a compile error" do
+      assert_raise CompileError, ~r/bare expression/, fn ->
+        Code.compile_string("""
+        import Skuld.Comp.CompBlock
+        alias Skuld.Comp
+        comp do
+          x <- Comp.pure(1)
+          IO.puts("side effect")
+          x + 1
+        end
+        """)
+      end
+    end
+
+    test "function call returning computation in non-final position needs binding" do
+      # This should fail because `some_effect()` is a bare expression
+      assert_raise CompileError, ~r/bare expression/, fn ->
+        Code.compile_string("""
+        import Skuld.Comp.CompBlock
+        alias Skuld.Comp
+        defmodule TempModule do
+          def some_effect, do: Comp.pure(:ok)
+        end
+        comp do
+          TempModule.some_effect()
+          :done
+        end
+        """)
+      end
+    end
+  end
+
   describe "else with catch" do
     test "else inside catch - throws from else are caught" do
       computation =
@@ -816,10 +880,10 @@ defmodule Skuld.Comp.CompBlockTest do
       assert Comp.run!(computation) == {:caught, "boom!"}
     end
 
-    test "non-binding expression that raises is converted to Throw" do
+    test "discarded binding expression that raises is converted to Throw" do
       computation =
         comp do
-          Risky.boom!()
+          _ <- Risky.boom!()
           x <- State.get()
           return(x)
         end
@@ -831,10 +895,10 @@ defmodule Skuld.Comp.CompBlockTest do
       assert %RuntimeError{message: "boom!"} = error.payload
     end
 
-    test "non-binding expression that raises can be caught" do
+    test "discarded binding expression that raises can be caught" do
       computation =
         comp do
-          Risky.boom!()
+          _ <- Risky.boom!()
           x <- State.get()
           return(x)
         catch
