@@ -39,8 +39,20 @@ defmodule Skuld.Comp.Env do
   @spec get_handler!(Skuld.Comp.Types.env(), Skuld.Comp.Types.sig()) :: Skuld.Comp.Types.handler()
   def get_handler!(env, sig) do
     case env.evidence[sig] do
-      nil -> raise "No handler for effect signature: #{inspect(sig)}"
-      handler -> handler
+      nil ->
+        available = Map.keys(env.evidence)
+
+        raise ArgumentError, """
+        No handler installed for effect: #{inspect(sig)}
+
+        Ensure you've installed a handler before running the computation:
+          comp |> SomeEffect.with_handler(initial_state) |> Comp.run()
+
+        Available handlers: #{inspect(available)}
+        """
+
+      handler ->
+        handler
     end
   end
 

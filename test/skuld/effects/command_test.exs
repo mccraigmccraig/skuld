@@ -75,7 +75,7 @@ defmodule Skuld.Effects.CommandTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %Skuld.Comp.Throw{error: %{kind: :error, payload: %RuntimeError{}}} = result
+      assert %Skuld.Comp.Throw{error: %{kind: :error, payload: %ArgumentError{}}} = result
     end
 
     test "handler can throw errors" do
