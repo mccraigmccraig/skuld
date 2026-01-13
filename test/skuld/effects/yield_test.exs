@@ -3,7 +3,10 @@ defmodule Skuld.Effects.YieldTest do
   use Skuld.Syntax
 
   alias Skuld.Comp
-  alias Skuld.Effects.{Yield, State, Reader, Throw}
+  alias Skuld.Effects.Yield
+  alias Skuld.Effects.State
+  alias Skuld.Effects.Reader
+  alias Skuld.Effects.Throw
 
   describe "yield" do
     test "suspends computation" do

@@ -129,6 +129,7 @@ defmodule Skuld.Effects.Yield do
   end
 
   # The respond loop - runs inner_comp and handles yields
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp respond_loop(inner_comp, env, responder, outer_leave_scope, outer_k) do
     alias Skuld.Comp.Env
 
