@@ -336,6 +336,7 @@ defmodule Skuld.Comp do
         previous_leave_scope.(new_result, Env.with_leave_scope(final_env, previous_leave_scope))
       end
 
+      # comp.(env, k)
       call(comp, Env.with_leave_scope(modified_env, my_leave_scope), normal_k)
     end
   end

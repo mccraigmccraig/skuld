@@ -434,6 +434,83 @@ end)
 #=> {:done, :done, _env}
 ```
 
+#### Yield.respond - Internal Yield Handling
+
+`Yield.respond/2` catches yields inside a computation and provides responses, similar
+to how `Throw.catch_error/2` catches throws. This enables handling yield requests
+within the computation itself rather than requiring an external driver:
+
+```elixir
+# Handle yields internally with a responder function
+comp do
+  result <- Yield.respond(
+    comp do
+      x <- Yield.yield(:get_x)
+      y <- Yield.yield(:get_y)
+      x + y
+    end,
+    fn
+      :get_x -> Comp.pure(10)
+      :get_y -> Comp.pure(20)
+    end
+  )
+  result
+end
+|> Yield.with_handler()
+|> Comp.run!()
+#=> 30
+
+# Responder can use effects (State, Reader, etc.)
+comp do
+  Yield.respond(
+    comp do
+      x <- Yield.yield(:get_state)
+      _ <- Yield.yield({:add, 10})
+      y <- Yield.yield(:get_state)
+      {x, y}
+    end,
+    fn
+      :get_state -> State.get()
+      {:add, n} -> State.modify(&(&1 + n))
+    end
+  )
+end
+|> State.with_handler(5)
+|> Yield.with_handler()
+|> Comp.run!()
+#=> {5, 15}
+
+# Unhandled yields propagate to outer handler (re-yield)
+{result, _env} =
+  comp do
+    Yield.respond(
+      comp do
+        x <- Yield.yield(:handled)
+        y <- Yield.yield(:not_handled)  # propagates up
+        x + y
+      end,
+      fn
+        :handled -> Comp.pure(10)
+        other -> Yield.yield(other)  # re-yield unhandled
+      end
+    )
+  end
+  |> Yield.with_handler()
+  |> Comp.run()
+
+# Suspends on :not_handled
+%Comp.Suspend{value: :not_handled, resume: resume} = result
+
+# Resume completes the computation
+{final, _} = resume.(20)
+#=> 30
+```
+
+Use cases for `Yield.respond`:
+- **Nested coroutine patterns** - Handle some yields locally while propagating others
+- **Internal request/response loops** - Build protocols within a computation
+- **Composing yield-based computations** - Layer handlers for different yield types
+
 ### FxList
 
 Effectful list operations:
