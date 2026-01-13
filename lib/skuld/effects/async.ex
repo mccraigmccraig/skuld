@@ -94,6 +94,7 @@ defmodule Skuld.Effects.Async do
 
   def_op(AsyncOp, [:comp])
   def_op(AwaitOp, [:handle])
+  def_op(CancelOp, [:handle])
   def_op(BoundaryOp, [:comp, :on_unawaited])
 
   #############################################################################
@@ -151,6 +152,30 @@ defmodule Skuld.Effects.Async do
   @spec await(Handle.t()) :: Types.computation()
   def await(%Handle{} = handle) do
     Comp.effect(@sig, %AwaitOp{handle: handle})
+  end
+
+  @doc """
+  Cancel an async task before awaiting it.
+
+  The task is terminated and removed from the boundary's unawaited set.
+  Returns `:ok`. Cancelling an already-completed or already-cancelled task
+  is a no-op.
+
+  ## Example
+
+      Async.boundary(comp do
+        h1 <- Async.async(approach_a())
+        h2 <- Async.async(approach_b())
+
+        # Use first result, cancel the other
+        result <- Async.await(h1)
+        _ <- Async.cancel(h2)
+        result
+      end)
+  """
+  @spec cancel(Handle.t()) :: Types.computation()
+  def cancel(%Handle{} = handle) do
+    Comp.effect(@sig, %CancelOp{handle: handle})
   end
 
   @doc """
@@ -403,6 +428,36 @@ defmodule Skuld.Effects.Async do
     end
   end
 
+  defp handle_task(
+         %CancelOp{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task} = handle},
+         env,
+         k
+       ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      # Cross-boundary cancel - throw error via Throw effect
+      Comp.call(Throw.throw({:error, :cancel_across_boundary}), env, k)
+    else
+      # Terminate the task
+      sup = Env.get_state(env, @supervisor_key)
+
+      if sup && Process.alive?(task.pid) do
+        Task.Supervisor.terminate_child(sup, task.pid)
+      end
+
+      # Untrack the task
+      boundaries = Env.get_state(env, @boundaries_key)
+      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
+      updated_tasks = MapSet.delete(boundary_tasks, handle)
+
+      env_untracked =
+        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
+
+      k.(:ok, env_untracked)
+    end
+  end
+
   #############################################################################
   ## Sequential Handler (Testing)
   #############################################################################
@@ -581,6 +636,40 @@ defmodule Skuld.Effects.Async do
         Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
 
       k.(result, env_untracked)
+    end
+  end
+
+  defp handle_sequential(
+         %CancelOp{
+           handle: %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref} = handle
+         },
+         env,
+         k
+       ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :cancel_across_boundary}), env, k)
+    else
+      # Remove stored result (no actual task to kill in sequential mode)
+      results = Env.get_state(env, @sequential_results_key)
+
+      env_without_result =
+        Env.put_state(env, @sequential_results_key, Map.delete(results, handle_ref))
+
+      # Untrack handle
+      boundaries = Env.get_state(env_without_result, @boundaries_key)
+      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
+      updated_tasks = MapSet.delete(boundary_tasks, handle)
+
+      env_untracked =
+        Env.put_state(
+          env_without_result,
+          @boundaries_key,
+          Map.put(boundaries, current_boundary, updated_tasks)
+        )
+
+      k.(:ok, env_untracked)
     end
   end
 

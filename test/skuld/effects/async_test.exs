@@ -319,6 +319,148 @@ defmodule Skuld.Effects.AsyncTest do
 
       assert match?({:error, {:task_failed, _}}, result)
     end
+
+    test "cancel removes task from unawaited set" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :will_be_cancelled
+                  end
+                )
+
+              _ <- Async.cancel(h)
+              :done
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      # No unawaited error because we cancelled
+      assert result == :done
+    end
+
+    test "cancel returns :ok" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :work
+                  end
+                )
+
+              cancel_result <- Async.cancel(h)
+              cancel_result
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert result == :ok
+    end
+
+    test "cancel across boundary throws error" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :outer_task
+                  end
+                )
+
+              inner_result <-
+                Async.boundary(
+                  comp do
+                    # Try to cancel outer handle from inner boundary
+                    Async.cancel(h)
+                  end
+                )
+
+              inner_result
+            end
+          )
+        catch
+          err -> {:caught, err}
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert result == {:caught, {:error, :cancel_across_boundary}}
+    end
+
+    test "cancel one task, await another" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h1 <-
+                Async.async(
+                  comp do
+                    :approach_a
+                  end
+                )
+
+              h2 <-
+                Async.async(
+                  comp do
+                    :approach_b
+                  end
+                )
+
+              r1 <- Async.await(h1)
+              _ <- Async.cancel(h2)
+              r1
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert result == :approach_a
+    end
+
+    test "cancel already-completed task is no-op" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :done
+                  end
+                )
+
+              # Await first
+              r <- Async.await(h)
+              # Then cancel (already completed and awaited)
+              cancel_result <- Async.cancel(h)
+              {r, cancel_result}
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      # Cancel returns :ok even for already-awaited tasks
+      assert result == {:done, :ok}
+    end
   end
 
   describe "with_sequential_handler (testing)" do
@@ -561,6 +703,148 @@ defmodule Skuld.Effects.AsyncTest do
       # Final state in parent is still 0 (child changes don't propagate)
       # Note: sequential handler still doesn't propagate state changes
       assert result == {0, 0, 0}
+    end
+
+    test "cancel removes task from unawaited set" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :will_be_cancelled
+                  end
+                )
+
+              _ <- Async.cancel(h)
+              :done
+            end
+          )
+        end
+        |> Async.with_sequential_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      # No unawaited error because we cancelled
+      assert result == :done
+    end
+
+    test "cancel returns :ok" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :work
+                  end
+                )
+
+              cancel_result <- Async.cancel(h)
+              cancel_result
+            end
+          )
+        end
+        |> Async.with_sequential_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert result == :ok
+    end
+
+    test "cancel across boundary throws error" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :outer_task
+                  end
+                )
+
+              inner_result <-
+                Async.boundary(
+                  comp do
+                    # Try to cancel outer handle from inner boundary
+                    Async.cancel(h)
+                  end
+                )
+
+              inner_result
+            end
+          )
+        catch
+          err -> {:caught, err}
+        end
+        |> Async.with_sequential_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert result == {:caught, {:error, :cancel_across_boundary}}
+    end
+
+    test "cancel one task, await another" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h1 <-
+                Async.async(
+                  comp do
+                    :approach_a
+                  end
+                )
+
+              h2 <-
+                Async.async(
+                  comp do
+                    :approach_b
+                  end
+                )
+
+              r1 <- Async.await(h1)
+              _ <- Async.cancel(h2)
+              r1
+            end
+          )
+        end
+        |> Async.with_sequential_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert result == :approach_a
+    end
+
+    test "cancel already-awaited task is no-op" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :done
+                  end
+                )
+
+              # Await first
+              r <- Async.await(h)
+              # Then cancel (already awaited)
+              cancel_result <- Async.cancel(h)
+              {r, cancel_result}
+            end
+          )
+        end
+        |> Async.with_sequential_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      # Cancel returns :ok even for already-awaited tasks
+      assert result == {:done, :ok}
     end
   end
 

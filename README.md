@@ -639,6 +639,27 @@ end
 #=> {:error, {:task_failed, %{kind: :error, payload: %RuntimeError{...}, ...}}}
 ```
 
+**Cancelling tasks** explicitly removes them from the boundary's unawaited set:
+
+```elixir
+comp do
+  Async.boundary(
+    comp do
+      h1 <- Async.async(comp do approach_a() end)
+      h2 <- Async.async(comp do approach_b() end)
+      
+      # Use first result, cancel the other
+      result <- Async.await(h1)
+      _ <- Async.cancel(h2)
+      result
+    end
+  )
+end
+|> Async.with_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+```
+
 **Testing handler** runs tasks sequentially for deterministic tests:
 
 ```elixir
@@ -656,7 +677,7 @@ end
 #=> :sequential
 ```
 
-Operations: `boundary/2`, `async/1`, `await/1`
+Operations: `boundary/2`, `async/1`, `await/1`, `cancel/1`
 
 > **Note**: Async computations run on the same BEAM node. Closures cannot be
 > serialized across nodes, so distributed async is not supported.
