@@ -130,24 +130,15 @@ defmodule Skuld.Effects.Yield do
       # Get the current yield handler (will be used when responder re-yields)
       outer_yield_handler = Env.get_handler(env, @sig)
 
-      # Create a unique key for storing the wrapped handler in env state
-      handler_key = {__MODULE__, :respond_handler, make_ref()}
+      # Create the wrapped handler and install it using with_handler for proper scoping
+      wrapped_handler = make_wrapped_handler(responder, outer_yield_handler)
 
-      # Create a wrapped handler that intercepts yields from the inner computation
-      wrapped_handler =
-        make_wrapped_handler(responder, outer_yield_handler, handler_key)
-
-      # Install the wrapped handler and store it in env state for self-reference
-      modified_env =
-        env
-        |> Env.with_handler(@sig, wrapped_handler)
-        |> Env.put_state(handler_key, wrapped_handler)
-
-      Comp.call(inner_comp, modified_env, outer_k)
+      wrapped_comp = Comp.with_handler(inner_comp, @sig, wrapped_handler)
+      Comp.call(wrapped_comp, env, outer_k)
     end
   end
 
-  defp make_wrapped_handler(responder, outer_yield_handler, handler_key) do
+  defp make_wrapped_handler(responder, outer_yield_handler) do
     alias Skuld.Comp.Env
 
     fn %YieldOp{value: yielded_value}, yield_env, yield_k ->
@@ -173,8 +164,7 @@ defmodule Skuld.Effects.Yield do
                 suspend.resume,
                 yield_k,
                 responder,
-                outer_yield_handler,
-                handler_key
+                outer_yield_handler
               )
 
             {%Comp.Suspend{value: suspend.value, resume: wrapped_resume}, resp_env}
@@ -185,8 +175,8 @@ defmodule Skuld.Effects.Yield do
 
           resp_value ->
             # Responder returned a value - resume the inner computation
-            # Re-install the wrapped handler for the continuation
-            wrapped_handler = Env.get_state(resp_env, handler_key)
+            # Re-install a wrapped handler for the continuation
+            wrapped_handler = make_wrapped_handler(responder, outer_yield_handler)
             resumed_env = Env.with_handler(resp_env, @sig, wrapped_handler)
             yield_k.(resp_value, resumed_env)
         end
@@ -198,7 +188,7 @@ defmodule Skuld.Effects.Yield do
   end
 
   # Wrap a resume function to continue the respond loop after the responder is resumed
-  defp wrap_respond_resume(original_resume, inner_k, responder, outer_yield_handler, handler_key) do
+  defp wrap_respond_resume(original_resume, inner_k, responder, outer_yield_handler) do
     alias Skuld.Comp.Env
 
     fn input ->
@@ -212,8 +202,7 @@ defmodule Skuld.Effects.Yield do
               suspend.resume,
               inner_k,
               responder,
-              outer_yield_handler,
-              handler_key
+              outer_yield_handler
             )
 
           {%Comp.Suspend{value: suspend.value, resume: wrapped_resume}, result_env}
@@ -224,8 +213,8 @@ defmodule Skuld.Effects.Yield do
 
         resp_value ->
           # Responder completed - resume the inner computation
-          # Re-install the wrapped handler for inner_k
-          wrapped_handler = Env.get_state(result_env, handler_key)
+          # Re-install a wrapped handler for inner_k
+          wrapped_handler = make_wrapped_handler(responder, outer_yield_handler)
           resumed_env = Env.with_handler(result_env, @sig, wrapped_handler)
           inner_k.(resp_value, resumed_env)
       end
