@@ -36,6 +36,7 @@ simpler and more coherent API, and is (arguably) easier to understand.
   - [Random](#random)
   - [AtomicState](#atomicstate)
   - [Async](#async)
+  - [Parallel](#parallel)
   - [Bracket](#bracket)
   - [DBTransaction](#dbtransaction)
   - [Query](#query)
@@ -681,6 +682,67 @@ Operations: `boundary/2`, `async/1`, `await/1`, `cancel/1`
 
 > **Note**: Async computations run on the same BEAM node. Closures cannot be
 > serialized across nodes, so distributed async is not supported.
+
+### Parallel
+
+Simple fork-join concurrency with built-in boundaries. Unlike `Async`, each operation
+is self-contained with automatic task management:
+
+```elixir
+# Run multiple computations in parallel, get all results
+comp do
+  Parallel.all([
+    comp do fetch_user(1) end,
+    comp do fetch_user(2) end,
+    comp do fetch_user(3) end
+  ])
+end
+|> Parallel.with_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+#=> [%User{id: 1}, %User{id: 2}, %User{id: 3}]
+
+# Race: return first to complete, cancel others
+comp do
+  Parallel.race([
+    comp do slow_approach() end,
+    comp do fast_approach() end
+  ])
+end
+|> Parallel.with_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+#=> :fast_result  (slow_approach cancelled)
+
+# Map over items in parallel
+comp do
+  Parallel.map(user_ids, fn id ->
+    comp do fetch_user(id) end
+  end)
+end
+|> Parallel.with_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+#=> [%User{}, %User{}, ...]
+```
+
+**Error handling**: Task failures are caught. For `all/1` and `map/2`, the first
+failure returns `{:error, {:task_failed, reason}}`. For `race/1`, failures are
+ignored unless all tasks fail.
+
+**Testing handler** runs tasks sequentially for deterministic tests:
+
+```elixir
+comp do
+  Parallel.all([comp do :a end, comp do :b end])
+end
+|> Parallel.with_sequential_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+#=> [:a, :b]
+```
+
+Operations: `all/1`, `race/1`, `map/2`
 
 ### Bracket
 
