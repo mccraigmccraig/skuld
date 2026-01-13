@@ -66,8 +66,15 @@ defmodule Skuld.Comp.SerializableStruct do
 
   defp ensure_loaded(module) do
     case Code.ensure_loaded(module) do
-      {:module, _} -> {:ok, module}
-      _ -> :error
+      {:module, _} ->
+        if function_exported?(module, :__struct__, 0) do
+          {:ok, module}
+        else
+          :error
+        end
+
+      _ ->
+        :error
     end
   end
 
