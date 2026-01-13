@@ -8,8 +8,8 @@ defmodule Skuld.Comp.Types do
   @typedoc "Any result value - opaque to the framework"
   @type result :: term()
 
-  @typedoc "Effect signature - identifies which handler handles an operation"
-  @type sig :: atom()
+  @typedoc "Effect signature - identifies which handler handles an operation. Can be a simple atom or a tuple for tagged effects."
+  @type sig :: atom() | {atom(), atom()}
 
   @typedoc "The environment carrying evidence, state, and leave-scope"
   @type env :: Skuld.Comp.Env.t()

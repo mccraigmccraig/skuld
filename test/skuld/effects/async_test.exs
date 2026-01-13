@@ -4,10 +4,13 @@ defmodule Skuld.Effects.AsyncTest do
   use Skuld.Syntax
 
   alias Skuld.Comp
-  alias Skuld.Effects.{Async, Throw, State}
+  alias Skuld.Effects.Async
+  alias Skuld.Effects.State
+  alias Skuld.Effects.Throw
 
   # Helper to avoid "pattern will never match" warning on raise
   # Using apply/3 hides the none() return type from the type checker
+  # credo:disable-for-next-line Credo.Check.Refactor.Apply
   defp boom!, do: apply(Kernel, :raise, ["boom!"])
 
   describe "with_handler (production)" do

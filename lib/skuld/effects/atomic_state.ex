@@ -138,15 +138,13 @@ defmodule Skuld.Effects.AtomicState do
       AtomicState.modify(:counter, &(&1 + 1))    # use explicit tag
   """
   @spec modify((term() -> term())) :: Types.computation()
-  @spec modify(atom(), (term() -> term())) :: Types.computation()
-  def modify(tag_or_fun, fun \\ nil)
-
-  def modify(tag, fun) when is_atom(tag) and is_function(fun, 1) do
-    Comp.effect(sig(tag), %Modify{tag: tag, fun: fun})
+  def modify(fun) when is_function(fun, 1) do
+    Comp.effect(sig(@sig), %Modify{tag: @sig, fun: fun})
   end
 
-  def modify(fun, nil) when is_function(fun, 1) do
-    Comp.effect(sig(@sig), %Modify{tag: @sig, fun: fun})
+  @spec modify(atom(), (term() -> term())) :: Types.computation()
+  def modify(tag, fun) when is_atom(tag) and is_function(fun, 1) do
+    Comp.effect(sig(tag), %Modify{tag: tag, fun: fun})
   end
 
   @doc """
@@ -160,15 +158,13 @@ defmodule Skuld.Effects.AtomicState do
       AtomicState.atomic_state(:counter, fn s -> {s, s + 1} end)
   """
   @spec atomic_state((term() -> {term(), term()})) :: Types.computation()
-  @spec atomic_state(atom(), (term() -> {term(), term()})) :: Types.computation()
-  def atomic_state(tag_or_fun, fun \\ nil)
-
-  def atomic_state(tag, fun) when is_atom(tag) and is_function(fun, 1) do
-    Comp.effect(sig(tag), %AtomicStateOp{tag: tag, fun: fun})
+  def atomic_state(fun) when is_function(fun, 1) do
+    Comp.effect(sig(@sig), %AtomicStateOp{tag: @sig, fun: fun})
   end
 
-  def atomic_state(fun, nil) when is_function(fun, 1) do
-    Comp.effect(sig(@sig), %AtomicStateOp{tag: @sig, fun: fun})
+  @spec atomic_state(atom(), (term() -> {term(), term()})) :: Types.computation()
+  def atomic_state(tag, fun) when is_atom(tag) and is_function(fun, 1) do
+    Comp.effect(sig(tag), %AtomicStateOp{tag: tag, fun: fun})
   end
 
   @doc """

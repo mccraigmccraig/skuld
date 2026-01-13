@@ -333,6 +333,6 @@ defmodule Skuld.Effects.FxFasterListTest do
   #   - Can resume through all elements
   #
   # For computations that use Yield/Suspend, use FxList.
-  # For computations that only use Throw (or no control effects), 
+  # For computations that only use Throw (or no control effects),
   # both work, but FxFasterList may have better performance for large lists.
 end

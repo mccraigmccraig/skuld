@@ -106,6 +106,10 @@ defmodule Skuld.Effects.Async do
 
     Contains the boundary it belongs to and the underlying task (or ref for sequential).
     """
+    @type t :: %__MODULE__{
+            boundary_id: reference(),
+            task_or_ref: Task.t() | reference()
+          }
     defstruct [:boundary_id, :task_or_ref]
   end
 
