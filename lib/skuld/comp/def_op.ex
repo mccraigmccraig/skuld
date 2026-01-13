@@ -53,41 +53,7 @@ defmodule Skuld.Comp.DefOp do
   """
   defmacro def_op(mod, fields \\ [], opts \\ []) do
     atom_fields = Keyword.get(opts, :atom_fields, [])
-
-    from_json_fn =
-      if atom_fields != [] do
-        quote do
-          def from_json(map) do
-            attrs =
-              Enum.reduce(unquote(fields), %{}, fn field, acc ->
-                key = Atom.to_string(field)
-
-                value =
-                  case Map.fetch(map, key) do
-                    {:ok, v} -> v
-                    :error -> Map.get(map, field)
-                  end
-
-                converted =
-                  if field in unquote(atom_fields) do
-                    case value do
-                      s when is_binary(s) -> String.to_existing_atom(s)
-                      a when is_atom(a) -> a
-                      nil -> nil
-                    end
-                  else
-                    value
-                  end
-
-                Map.put(acc, field, converted)
-              end)
-
-            struct(__MODULE__, attrs)
-          end
-        end
-      else
-        nil
-      end
+    from_json_fn = build_from_json_fn(fields, atom_fields)
 
     quote do
       defmodule unquote(mod) do
@@ -101,6 +67,41 @@ defmodule Skuld.Comp.DefOp do
           |> Skuld.Comp.SerializableStruct.encode()
           |> Jason.Encode.map(opts)
         end
+      end
+    end
+  end
+
+  @doc false
+  def build_from_json_fn(_fields, []), do: nil
+
+  def build_from_json_fn(fields, atom_fields) do
+    quote do
+      def from_json(map) do
+        attrs =
+          Enum.reduce(unquote(fields), %{}, fn field, acc ->
+            key = Atom.to_string(field)
+
+            value =
+              case Map.fetch(map, key) do
+                {:ok, v} -> v
+                :error -> Map.get(map, field)
+              end
+
+            converted =
+              if field in unquote(atom_fields) do
+                case value do
+                  s when is_binary(s) -> String.to_existing_atom(s)
+                  a when is_atom(a) -> a
+                  nil -> nil
+                end
+              else
+                value
+              end
+
+            Map.put(acc, field, converted)
+          end)
+
+        struct(__MODULE__, attrs)
       end
     end
   end
