@@ -61,7 +61,12 @@ defmodule Skuld.Comp.DefOp do
             attrs =
               Enum.reduce(unquote(fields), %{}, fn field, acc ->
                 key = Atom.to_string(field)
-                value = Map.get(map, key) || Map.get(map, field)
+
+                value =
+                  case Map.fetch(map, key) do
+                    {:ok, v} -> v
+                    :error -> Map.get(map, field)
+                  end
 
                 converted =
                   if field in unquote(atom_fields) do
