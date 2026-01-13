@@ -271,7 +271,13 @@ defmodule Skuld.Effects.AtomicState do
 
   defp handle_agent(%Modify{tag: tag, fun: fun}, env, k, tag) do
     agent = Env.get_state(env, agent_key(tag))
-    new_value = Agent.get_and_update(agent, fn v -> {fun.(v), fun.(v)} end)
+
+    new_value =
+      Agent.get_and_update(agent, fn v ->
+        result = fun.(v)
+        {result, result}
+      end)
+
     k.(new_value, env)
   end
 
