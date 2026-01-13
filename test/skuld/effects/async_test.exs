@@ -48,6 +48,32 @@ defmodule Skuld.Effects.AsyncTest do
     def stop(barrier), do: Agent.stop(barrier)
   end
 
+  # Latch for controlling task ordering - tasks wait until released
+  defmodule Latch do
+    def start do
+      {:ok, agent} = Agent.start_link(fn -> [] end)
+      agent
+    end
+
+    def wait(latch) do
+      self_pid = self()
+      Agent.update(latch, fn waiters -> [self_pid | waiters] end)
+
+      receive do
+        :released -> :ok
+      after
+        1000 -> raise "Latch timeout"
+      end
+    end
+
+    def release(latch) do
+      waiters = Agent.get(latch, & &1)
+      Enum.each(waiters, &send(&1, :released))
+    end
+
+    def stop(latch), do: Agent.stop(latch)
+  end
+
   describe "with_handler (production)" do
     test "basic async/await works" do
       result =
@@ -495,6 +521,147 @@ defmodule Skuld.Effects.AsyncTest do
       # Cancel returns :ok even for already-awaited tasks
       assert result == {:done, :ok}
     end
+
+    test "await_with_timeout returns {:ok, result} when task completes in time" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :fast_result
+                  end
+                )
+
+              Async.await_with_timeout(h, 1000)
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert result == {:ok, :fast_result}
+    end
+
+    test "await_with_timeout returns {:error, :timeout} when task is too slow" do
+      # Use a latch to make the task block until we want it to
+      latch = Latch.start()
+
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    # This will block forever (until cancelled by timeout)
+                    _ = Latch.wait(latch)
+                    :never_reached
+                  end
+                )
+
+              Async.await_with_timeout(h, 10)
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      Latch.stop(latch)
+
+      assert result == {:error, :timeout}
+    end
+
+    test "timeout convenience returns {:ok, result} when computation completes in time" do
+      result =
+        comp do
+          r <-
+            Async.timeout(
+              1000,
+              comp do
+                :quick_work
+              end
+            )
+
+          r
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert result == {:ok, :quick_work}
+    end
+
+    test "timeout convenience returns {:error, :timeout} when computation is too slow" do
+      latch = Latch.start()
+
+      result =
+        comp do
+          r <-
+            Async.timeout(
+              10,
+              comp do
+                _ = Latch.wait(latch)
+                :never_reached
+              end
+            )
+
+          r
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      Latch.stop(latch)
+
+      assert result == {:error, :timeout}
+    end
+
+    test "await_with_timeout returns {:error, {:task_failed, _}} when task raises" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    boom!()
+                  end
+                )
+
+              Async.await_with_timeout(h, 1000)
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert match?({:error, {:task_failed, _}}, result)
+    end
+
+    test "timeout convenience returns {:error, {:task_failed, _}} when computation raises" do
+      result =
+        comp do
+          r <-
+            Async.timeout(
+              1000,
+              comp do
+                boom!()
+              end
+            )
+
+          r
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert match?({:error, {:task_failed, _}}, result)
+    end
   end
 
   describe "with_sequential_handler (testing)" do
@@ -879,6 +1046,50 @@ defmodule Skuld.Effects.AsyncTest do
 
       # Cancel returns :ok even for already-awaited tasks
       assert result == {:done, :ok}
+    end
+
+    test "await_with_timeout returns {:ok, result} (sequential always succeeds)" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :fast_result
+                  end
+                )
+
+              Async.await_with_timeout(h, 1000)
+            end
+          )
+        end
+        |> Async.with_sequential_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      # In sequential mode, computation already ran, so timeout doesn't apply
+      assert result == {:ok, :fast_result}
+    end
+
+    test "timeout convenience returns {:ok, result} (sequential always succeeds)" do
+      result =
+        comp do
+          r <-
+            Async.timeout(
+              1000,
+              comp do
+                :quick_work
+              end
+            )
+
+          r
+        end
+        |> Async.with_sequential_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert result == {:ok, :quick_work}
     end
   end
 

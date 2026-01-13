@@ -94,6 +94,7 @@ defmodule Skuld.Effects.Async do
 
   def_op(AsyncOp, [:comp])
   def_op(AwaitOp, [:handle])
+  def_op(AwaitWithTimeoutOp, [:handle, :timeout_ms])
   def_op(CancelOp, [:handle])
   def_op(BoundaryOp, [:comp, :on_unawaited])
 
@@ -176,6 +177,66 @@ defmodule Skuld.Effects.Async do
   @spec cancel(Handle.t()) :: Types.computation()
   def cancel(%Handle{} = handle) do
     Comp.effect(@sig, %CancelOp{handle: handle})
+  end
+
+  @doc """
+  Wait for an async computation with a timeout.
+
+  Returns `{:ok, result}` if the task completes within the timeout,
+  or `{:error, :timeout}` if it times out. On timeout, the task is
+  automatically cancelled.
+
+  The handle must be from the current boundary.
+
+  ## Example
+
+      handle <- Async.async(slow_work())
+      case <- Async.await_with_timeout(handle, 5000)
+      case do
+        {:ok, result} -> result
+        {:error, :timeout} -> :fallback
+      end
+  """
+  @spec await_with_timeout(Handle.t(), non_neg_integer()) :: Types.computation()
+  def await_with_timeout(%Handle{} = handle, timeout_ms) when is_integer(timeout_ms) do
+    Comp.effect(@sig, %AwaitWithTimeoutOp{handle: handle, timeout_ms: timeout_ms})
+  end
+
+  @doc """
+  Run a computation with a timeout.
+
+  This is a convenience function that wraps the computation in a boundary,
+  runs it asynchronously, and awaits with a timeout. Returns `{:ok, result}`
+  if the computation completes in time, or `{:error, :timeout}` if it times out.
+
+  ## Example
+
+      result <- Async.timeout(5000, expensive_work())
+      case result do
+        {:ok, value} -> value
+        {:error, :timeout} -> :gave_up
+      end
+
+  This is equivalent to:
+
+      Async.boundary(comp do
+        h <- Async.async(expensive_work())
+        Async.await_with_timeout(h, 5000)
+      end)
+  """
+  @spec timeout(non_neg_integer(), Types.computation()) :: Types.computation()
+  def timeout(timeout_ms, inner_comp) when is_integer(timeout_ms) do
+    # Build the composed computation directly
+    timeout_body =
+      Comp.bind(
+        async(inner_comp),
+        fn handle ->
+          await_with_timeout(handle, timeout_ms)
+        end
+      )
+
+    # Wrap in a boundary that ignores unawaited (task is always awaited or timed out)
+    boundary(timeout_body, fn result, _unawaited -> result end)
   end
 
   @doc """
@@ -429,6 +490,48 @@ defmodule Skuld.Effects.Async do
   end
 
   defp handle_task(
+         %AwaitWithTimeoutOp{
+           handle: %Handle{boundary_id: handle_boundary, task_or_ref: task},
+           timeout_ms: timeout_ms
+         },
+         env,
+         k
+       ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      # Cross-boundary await - throw error via Throw effect
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # Wait for task result with timeout using Task.yield + Task.shutdown
+      result =
+        case Task.yield(task, timeout_ms) do
+          {:ok, value} ->
+            {:ok, value}
+
+          {:exit, reason} ->
+            {:error, {:task_failed, reason}}
+
+          nil ->
+            # Timeout - shutdown the task
+            Task.shutdown(task, :brutal_kill)
+            {:error, :timeout}
+        end
+
+      # Untrack the task
+      handle = %Handle{boundary_id: handle_boundary, task_or_ref: task}
+      boundaries = Env.get_state(env, @boundaries_key)
+      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
+      updated_tasks = MapSet.delete(boundary_tasks, handle)
+
+      env_untracked =
+        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
+
+      k.(result, env_untracked)
+    end
+  end
+
+  defp handle_task(
          %CancelOp{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task} = handle},
          env,
          k
@@ -636,6 +739,40 @@ defmodule Skuld.Effects.Async do
         Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
 
       k.(result, env_untracked)
+    end
+  end
+
+  defp handle_sequential(
+         %AwaitWithTimeoutOp{
+           handle: %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref},
+           timeout_ms: _timeout_ms
+         },
+         env,
+         k
+       ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # In sequential mode, computation already ran, so just get the result
+      # Timeout doesn't apply since it already completed synchronously
+      results = Env.get_state(env, @sequential_results_key)
+      result = Map.get(results, handle_ref)
+
+      # Wrap in {:ok, result} to match timeout semantics
+      wrapped_result = {:ok, result}
+
+      # Untrack handle
+      handle = %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref}
+      boundaries = Env.get_state(env, @boundaries_key)
+      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
+      updated_tasks = MapSet.delete(boundary_tasks, handle)
+
+      env_untracked =
+        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
+
+      k.(wrapped_result, env_untracked)
     end
   end
 

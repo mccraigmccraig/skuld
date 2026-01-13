@@ -661,6 +661,37 @@ end
 |> Comp.run!()
 ```
 
+**Timeouts** let you limit how long to wait for a task:
+
+```elixir
+# await_with_timeout waits with a deadline
+comp do
+  result <- Async.boundary(
+    comp do
+      h <- Async.async(comp do slow_work() end)
+      Async.await_with_timeout(h, 5000)  # 5 second timeout
+    end
+  )
+  result
+end
+|> Async.with_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:ok, :result} or {:error, :timeout}
+
+# timeout/2 is a convenience that wraps boundary + async + await_with_timeout
+comp do
+  result <- Async.timeout(5000, comp do slow_work() end)
+  case result do
+    {:ok, value} -> value
+    {:error, :timeout} -> :gave_up
+  end
+end
+|> Async.with_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+```
+
 **Testing handler** runs tasks sequentially for deterministic tests:
 
 ```elixir
