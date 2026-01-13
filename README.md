@@ -15,6 +15,40 @@ Skuld's client API looks quite similar to
 but the implementation is very different. Skuld performs better and has a
 simpler and more coherent API, and is (arguably) easier to understand.
 
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Demo Application](#demo-application)
+- [Quick Start](#quick-start)
+- [Effects](#effects)
+  - [State](#state)
+  - [Reader](#reader)
+  - [Writer](#writer)
+  - [Throw](#throw)
+  - [Pattern Matching with Else](#pattern-matching-with-else)
+  - [Combining Else and Catch](#combining-else-and-catch)
+  - [Yield](#yield)
+  - [FxList](#fxlist)
+  - [FxFasterList](#fxfasterlist)
+  - [Multiple Independent Contexts (Tagged Usage)](#multiple-independent-contexts-tagged-usage)
+  - [Fresh](#fresh)
+  - [Random](#random)
+  - [AtomicState](#atomicstate)
+  - [Async](#async)
+  - [Bracket](#bracket)
+  - [DBTransaction](#dbtransaction)
+  - [Query](#query)
+  - [Command](#command)
+  - [EventAccumulator](#eventaccumulator)
+  - [EffectLogger](#effectlogger)
+  - [EctoPersist](#ectopersist)
+- [Property-Based Testing](#property-based-testing)
+- [Architecture](#architecture)
+- [Comparison with Freyja](#comparison-with-freyja)
+- [Performance](#performance)
+- [License](#license)
+
 ## Features
 
 - **Evidence-passing style**: Handlers are looked up directly from a map in the
