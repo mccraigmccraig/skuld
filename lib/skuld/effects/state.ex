@@ -77,15 +77,14 @@ defmodule Skuld.Effects.State do
       State.put(42)              # use default tag
       State.put(:counter, 42)    # use explicit tag
   """
-  @spec put(atom(), term()) :: Types.computation()
-  def put(tag_or_value, value \\ nil)
-
-  def put(tag, value) when is_atom(tag) and value != nil do
-    Comp.effect(@sig, %Put{tag: tag, value: value})
+  @spec put(term()) :: Types.computation()
+  def put(value) do
+    Comp.effect(@sig, %Put{tag: @sig, value: value})
   end
 
-  def put(value, nil) do
-    Comp.effect(@sig, %Put{tag: @sig, value: value})
+  @spec put(atom(), term()) :: Types.computation()
+  def put(tag, value) when is_atom(tag) do
+    Comp.effect(@sig, %Put{tag: tag, value: value})
   end
 
   @doc """

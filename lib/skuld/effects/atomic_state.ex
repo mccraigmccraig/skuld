@@ -118,15 +118,13 @@ defmodule Skuld.Effects.AtomicState do
       AtomicState.put(:counter, 42)    # use explicit tag
   """
   @spec put(term()) :: Types.computation()
-  @spec put(atom(), term()) :: Types.computation()
-  def put(tag_or_value, value \\ nil)
-
-  def put(tag, value) when is_atom(tag) and value != nil do
-    Comp.effect(sig(tag), %Put{tag: tag, value: value})
+  def put(value) do
+    Comp.effect(sig(@sig), %Put{tag: @sig, value: value})
   end
 
-  def put(value, nil) do
-    Comp.effect(sig(@sig), %Put{tag: @sig, value: value})
+  @spec put(atom(), term()) :: Types.computation()
+  def put(tag, value) when is_atom(tag) do
+    Comp.effect(sig(tag), %Put{tag: tag, value: value})
   end
 
   @doc """
@@ -178,15 +176,13 @@ defmodule Skuld.Effects.AtomicState do
       AtomicState.cas(:counter, 10, 20)    # with explicit tag
   """
   @spec cas(term(), term()) :: Types.computation()
-  @spec cas(atom(), term(), term()) :: Types.computation()
-  def cas(tag_or_expected, expected_or_new, new \\ nil)
-
-  def cas(tag, expected, new) when is_atom(tag) and new != nil do
-    Comp.effect(sig(tag), %Cas{tag: tag, expected: expected, new: new})
+  def cas(expected, new) do
+    Comp.effect(sig(@sig), %Cas{tag: @sig, expected: expected, new: new})
   end
 
-  def cas(expected, new, nil) do
-    Comp.effect(sig(@sig), %Cas{tag: @sig, expected: expected, new: new})
+  @spec cas(atom(), term(), term()) :: Types.computation()
+  def cas(tag, expected, new) when is_atom(tag) do
+    Comp.effect(sig(tag), %Cas{tag: tag, expected: expected, new: new})
   end
 
   #############################################################################

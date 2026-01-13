@@ -74,15 +74,14 @@ defmodule Skuld.Effects.Writer do
       Writer.tell("message")           # use default tag
       Writer.tell(:audit, "message")   # use explicit tag
   """
-  @spec tell(atom(), term()) :: Types.computation()
-  def tell(tag_or_msg, msg \\ nil)
-
-  def tell(tag, msg) when is_atom(tag) and msg != nil do
-    Comp.effect(@sig, %Tell{tag: tag, msg: msg})
+  @spec tell(term()) :: Types.computation()
+  def tell(msg) do
+    Comp.effect(@sig, %Tell{tag: @sig, msg: msg})
   end
 
-  def tell(msg, nil) do
-    Comp.effect(@sig, %Tell{tag: @sig, msg: msg})
+  @spec tell(atom(), term()) :: Types.computation()
+  def tell(tag, msg) when is_atom(tag) do
+    Comp.effect(@sig, %Tell{tag: tag, msg: msg})
   end
 
   @doc """
