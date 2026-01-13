@@ -93,7 +93,7 @@ alias Skuld.Comp
 alias Skuld.Effects.{
   State, Reader, Writer, Throw, Yield,
   FxList, FxFasterList,
-  Fresh, Random, Bracket, Query, Command, EventAccumulator, EffectLogger,
+  Fresh, Random, AtomicState, Bracket, Query, Command, EventAccumulator, EffectLogger,
   DBTransaction, EctoPersist
 }
 alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
@@ -468,6 +468,62 @@ end
 |> Comp.run!()
 #=> {0.0, 1.0}  # cycles when exhausted
 ```
+
+### AtomicState
+
+Thread-safe state for concurrent contexts. Unlike the regular State effect which
+stores state in `env.state` (copied when forking to new processes), AtomicState
+uses external storage (Agent) that can be safely accessed from multiple processes:
+
+```elixir
+# Basic usage - similar to State but with atomic guarantees
+comp do
+  _ <- AtomicState.put(0)
+  _ <- AtomicState.modify(&(&1 + 1))
+  AtomicState.get()
+end
+|> AtomicState.with_agent_handler(0)
+|> Comp.run!()
+#=> 1
+
+# Compare-and-swap for lock-free coordination
+comp do
+  _ <- AtomicState.put(10)
+  r1 <- AtomicState.cas(10, 20)  # succeeds: current == expected
+  r2 <- AtomicState.cas(10, 30)  # fails: current is 20, not 10
+  final <- AtomicState.get()
+  {r1, r2, final}
+end
+|> AtomicState.with_agent_handler(0)
+|> Comp.run!()
+#=> {:ok, {:conflict, 20}, 20}
+
+# Multiple independent states with tags
+comp do
+  _ <- AtomicState.put(:counter, 0)
+  _ <- AtomicState.put(:cache, %{})
+  _ <- AtomicState.modify(:counter, &(&1 + 1))
+  _ <- AtomicState.modify(:cache, &Map.put(&1, :key, "value"))
+  counter <- AtomicState.get(:counter)
+  cache <- AtomicState.get(:cache)
+  {counter, cache}
+end
+|> AtomicState.with_agent_handler(0, tag: :counter)
+|> AtomicState.with_agent_handler(%{}, tag: :cache)
+|> Comp.run!()
+#=> {1, %{key: "value"}}
+
+# Testing: State-backed handler (no Agent processes)
+comp do
+  _ <- AtomicState.modify(&(&1 + 10))
+  AtomicState.get()
+end
+|> AtomicState.with_state_handler(5)
+|> Comp.run!()
+#=> 15
+```
+
+Operations: `get/1`, `put/2`, `modify/2`, `atomic_state/2` (get-and-update), `cas/3`
 
 ### Bracket
 
