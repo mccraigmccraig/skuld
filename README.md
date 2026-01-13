@@ -42,7 +42,7 @@ simpler and more coherent API, and is (arguably) easier to understand.
   - [Command](#command)
   - [EventAccumulator](#eventaccumulator)
   - [EffectLogger](#effectlogger)
-  - [EctoPersist](#ectopersist)
+  - [ChangesetPersist](#changesetpersist)
 - [Property-Based Testing](#property-based-testing)
 - [Architecture](#architecture)
 - [Comparison with Freyja](#comparison-with-freyja)
@@ -128,7 +128,7 @@ alias Skuld.Effects.{
   State, Reader, Writer, Throw, Yield,
   FxList, FxFasterList,
   Fresh, Random, AtomicState, Async, Bracket, Query, Command, EventAccumulator, EffectLogger,
-  DBTransaction, EctoPersist
+  DBTransaction, ChangesetPersist, ChangeEvent
 }
 alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
 alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
@@ -845,7 +845,7 @@ end
 ```
 
 The handler function returns a computation, so commands can use other effects
-(Fresh, EctoPersist, EventAccumulator, etc.) internally. This enables a clean
+(Fresh, ChangesetPersist, EventAccumulator, etc.) internally. This enables a clean
 separation between command dispatch and command implementation.
 
 ### EventAccumulator
@@ -1022,18 +1022,18 @@ The `with_resume/3` function:
 3. Injects the resume value at the Yield suspension point
 4. Continues fresh execution after that point
 
-### EctoPersist
+### ChangesetPersist
 
-Ecto database operations as effects (requires Ecto):
+Changeset persistence as effects (requires Ecto):
 
 ```elixir
-# Production: real database operations
+# Production: real database operations via Ecto handler
 comp do
-  user <- EctoPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
-  order <- EctoPersist.insert(Order.changeset(%Order{}, %{user_id: user.id}))
+  user <- ChangesetPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
+  order <- ChangesetPersist.insert(Order.changeset(%Order{}, %{user_id: user.id}))
   {user, order}
 end
-|> EctoPersist.with_handler(MyApp.Repo)
+|> ChangesetPersist.Ecto.with_handler(MyApp.Repo)
 |> Comp.run!()
 ```
 
@@ -1043,11 +1043,11 @@ For testing, use the test handler to stub responses and record calls:
 # Test handler applies changeset changes and records all operations
 {result, calls} =
   comp do
-    user <- EctoPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
-    _ <- EctoPersist.update(User.changeset(user, %{name: "Bob"}))
+    user <- ChangesetPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
+    _ <- ChangesetPersist.update(User.changeset(user, %{name: "Bob"}))
     user
   end
-  |> EctoPersist.with_test_handler(&EctoPersist.TestHandler.default_handler/1)
+  |> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
   |> Comp.run!()
 
 result
@@ -1058,18 +1058,18 @@ calls
 
 # Custom handler for specific test scenarios
 comp do
-  user <- EctoPersist.insert(changeset)
+  user <- ChangesetPersist.insert(changeset)
   user
 end
-|> EctoPersist.with_test_handler(fn
-  %EctoPersist.Insert{input: cs} -> %User{id: "test-id", name: "Stubbed"}
-  %EctoPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
+|> ChangesetPersist.Test.with_handler(fn
+  %ChangesetPersist.Insert{input: cs} -> %User{id: "test-id", name: "Stubbed"}
+  %ChangesetPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
 end)
 |> Comp.run!()
 #=> {%User{id: "test-id", name: "Stubbed"}, [{:insert, changeset}]}
 ```
 
-> **Note**: EctoPersist wraps Ecto Repo operations. See the module docs for
+> **Note**: ChangesetPersist wraps Ecto Repo operations. See the module docs for
 > `insert`, `update`, `delete`, `insert_all`, `update_all`, `delete_all`, and `upsert`.
 
 ## Property-Based Testing
@@ -1090,7 +1090,7 @@ defcomp handle(%ToggleTodo{id: id}) do
   ctx <- Reader.ask(CommandContext)
   todo <- Repository.get_todo!(ctx.tenant_id, id)  # Query effect
   changeset = Todo.changeset(todo, %{completed: not todo.completed})
-  updated <- EctoPersist.update(changeset)         # Persist effect
+  updated <- ChangesetPersist.update(changeset)    # Persist effect
   {:ok, updated}
 end
 ```
@@ -1101,7 +1101,7 @@ The `Run.execute/2` function composes different handler stacks based on mode:
 # Production: real database
 Run.execute(operation, mode: :database, tenant_id: tenant_id)
 # -> Query.with_handler(%{Repository.Ecto => :direct})
-# -> EctoPersist.with_handler(Repo)
+# -> ChangesetPersist.Ecto.with_handler(Repo)
 
 # Testing: pure in-memory
 Run.execute(operation, mode: :in_memory, tenant_id: tenant_id)
@@ -1142,13 +1142,13 @@ end
 
 To enable property-based testing in your project:
 
-1. **Structure domain logic with effects** - Use `Query`, `EctoPersist`, `Reader`, etc.
+1. **Structure domain logic with effects** - Use `Query`, `ChangesetPersist`, `Reader`, etc.
    instead of direct Repo calls or process dictionary access.
 
 2. **Create in-memory implementations** - For each effect that touches external state,
    provide a pure alternative. Skuld includes test handlers for common effects:
    - `Query.with_test_handler/2` - Stub query responses
-   - `EctoPersist.with_test_handler/2` - Stub persist operations  
+   - `ChangesetPersist.Test.with_handler/2` - Stub persist operations  
    - `Fresh.with_test_handler/2` - Deterministic UUID generation
 
 3. **Write domain-specific generators** - Create StreamData generators for your

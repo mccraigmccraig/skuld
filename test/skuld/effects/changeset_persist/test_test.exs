@@ -1,9 +1,9 @@
-defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
+defmodule Skuld.Effects.ChangesetPersist.TestTest do
   use ExUnit.Case, async: true
 
   use Skuld.Syntax
   alias Skuld.Comp
-  alias Skuld.Effects.EctoPersist
+  alias Skuld.Effects.ChangesetPersist
 
   # Test schema
   defmodule TestUser do
@@ -21,17 +21,17 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
     end
   end
 
-  describe "with_test_handler/2" do
+  describe "with_handler/2" do
     test "records insert calls and returns handler result" do
       changeset = TestUser.changeset(%TestUser{id: 1}, %{name: "Test"})
 
       {result, calls} =
         comp do
-          user <- EctoPersist.insert(changeset)
+          user <- ChangesetPersist.insert(changeset)
           return(user)
         end
-        |> EctoPersist.with_test_handler(fn
-          %EctoPersist.Insert{input: cs} ->
+        |> ChangesetPersist.Test.with_handler(fn
+          %ChangesetPersist.Insert{input: cs} ->
             Ecto.Changeset.apply_changes(cs) |> Map.put(:id, 42)
         end)
         |> Comp.run!()
@@ -47,11 +47,11 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, calls} =
         comp do
-          updated <- EctoPersist.update(changeset)
+          updated <- ChangesetPersist.update(changeset)
           return(updated)
         end
-        |> EctoPersist.with_test_handler(fn
-          %EctoPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
+        |> ChangesetPersist.Test.with_handler(fn
+          %ChangesetPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
         end)
         |> Comp.run!()
 
@@ -64,11 +64,11 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, calls} =
         comp do
-          deleted <- EctoPersist.delete(user)
+          deleted <- ChangesetPersist.delete(user)
           return(deleted)
         end
-        |> EctoPersist.with_test_handler(fn
-          %EctoPersist.Delete{input: s} -> {:ok, s}
+        |> ChangesetPersist.Test.with_handler(fn
+          %ChangesetPersist.Delete{input: s} -> {:ok, s}
         end)
         |> Comp.run!()
 
@@ -81,11 +81,11 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, calls} =
         comp do
-          upserted <- EctoPersist.upsert(changeset, conflict_target: :id)
+          upserted <- ChangesetPersist.upsert(changeset, conflict_target: :id)
           return(upserted)
         end
-        |> EctoPersist.with_test_handler(fn
-          %EctoPersist.Upsert{input: cs} -> Ecto.Changeset.apply_changes(cs)
+        |> ChangesetPersist.Test.with_handler(fn
+          %ChangesetPersist.Upsert{input: cs} -> Ecto.Changeset.apply_changes(cs)
         end)
         |> Comp.run!()
 
@@ -99,12 +99,12 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {_result, calls} =
         comp do
-          _u1 <- EctoPersist.insert(changeset1)
-          _u2 <- EctoPersist.insert(changeset2)
+          _u1 <- ChangesetPersist.insert(changeset1)
+          _u2 <- ChangesetPersist.insert(changeset2)
           return(:done)
         end
-        |> EctoPersist.with_test_handler(fn
-          %EctoPersist.Insert{input: cs} -> Ecto.Changeset.apply_changes(cs)
+        |> ChangesetPersist.Test.with_handler(fn
+          %ChangesetPersist.Insert{input: cs} -> Ecto.Changeset.apply_changes(cs)
         end)
         |> Comp.run!()
 
@@ -116,11 +116,11 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, _calls} =
         comp do
-          user <- EctoPersist.insert(changeset)
+          user <- ChangesetPersist.insert(changeset)
           return(user)
         end
-        |> EctoPersist.with_test_handler(
-          handler: fn %EctoPersist.Insert{input: cs} ->
+        |> ChangesetPersist.Test.with_handler(
+          handler: fn %ChangesetPersist.Insert{input: cs} ->
             Ecto.Changeset.apply_changes(cs)
           end
         )
@@ -135,11 +135,11 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
       # Only return the result, discarding calls
       result =
         comp do
-          user <- EctoPersist.insert(changeset)
+          user <- ChangesetPersist.insert(changeset)
           return(user)
         end
-        |> EctoPersist.with_test_handler(
-          handler: fn %EctoPersist.Insert{input: cs} ->
+        |> ChangesetPersist.Test.with_handler(
+          handler: fn %ChangesetPersist.Insert{input: cs} ->
             Ecto.Changeset.apply_changes(cs)
           end,
           output: fn result, _calls -> result end
@@ -159,11 +159,11 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, calls} =
         comp do
-          count <- EctoPersist.insert_all(TestUser, changesets)
+          count <- ChangesetPersist.insert_all(TestUser, changesets)
           return(count)
         end
-        |> EctoPersist.with_test_handler(fn
-          %EctoPersist.InsertAll{entries: entries} -> {length(entries), nil}
+        |> ChangesetPersist.Test.with_handler(fn
+          %ChangesetPersist.InsertAll{entries: entries} -> {length(entries), nil}
         end)
         |> Comp.run!()
 
@@ -179,11 +179,11 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, calls} =
         comp do
-          count <- EctoPersist.update_all(TestUser, changesets)
+          count <- ChangesetPersist.update_all(TestUser, changesets)
           return(count)
         end
-        |> EctoPersist.with_test_handler(fn
-          %EctoPersist.UpdateAll{entries: entries} -> {length(entries), nil}
+        |> ChangesetPersist.Test.with_handler(fn
+          %ChangesetPersist.UpdateAll{entries: entries} -> {length(entries), nil}
         end)
         |> Comp.run!()
 
@@ -199,11 +199,11 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, calls} =
         comp do
-          count <- EctoPersist.delete_all(TestUser, users)
+          count <- ChangesetPersist.delete_all(TestUser, users)
           return(count)
         end
-        |> EctoPersist.with_test_handler(fn
-          %EctoPersist.DeleteAll{entries: entries} -> {length(entries), nil}
+        |> ChangesetPersist.Test.with_handler(fn
+          %ChangesetPersist.DeleteAll{entries: entries} -> {length(entries), nil}
         end)
         |> Comp.run!()
 
@@ -218,10 +218,10 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, _calls} =
         comp do
-          user <- EctoPersist.insert(changeset)
+          user <- ChangesetPersist.insert(changeset)
           return(user)
         end
-        |> EctoPersist.with_test_handler(&EctoPersist.TestHandler.default_handler/1)
+        |> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
         |> Comp.run!()
 
       assert result.name == "Test"
@@ -232,10 +232,10 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, _calls} =
         comp do
-          user <- EctoPersist.update(changeset)
+          user <- ChangesetPersist.update(changeset)
           return(user)
         end
-        |> EctoPersist.with_test_handler(&EctoPersist.TestHandler.default_handler/1)
+        |> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
         |> Comp.run!()
 
       assert result.name == "New"
@@ -246,10 +246,10 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, _calls} =
         comp do
-          deleted <- EctoPersist.delete(user)
+          deleted <- ChangesetPersist.delete(user)
           return(deleted)
         end
-        |> EctoPersist.with_test_handler(&EctoPersist.TestHandler.default_handler/1)
+        |> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
         |> Comp.run!()
 
       assert result == {:ok, user}
@@ -263,10 +263,10 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, _calls} =
         comp do
-          count <- EctoPersist.insert_all(TestUser, changesets)
+          count <- ChangesetPersist.insert_all(TestUser, changesets)
           return(count)
         end
-        |> EctoPersist.with_test_handler(&EctoPersist.TestHandler.default_handler/1)
+        |> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
         |> Comp.run!()
 
       assert result == {2, nil}
@@ -280,10 +280,10 @@ defmodule Skuld.Effects.EctoPersist.TestHandlerTest do
 
       {result, _calls} =
         comp do
-          count <- EctoPersist.insert_all(TestUser, changesets, returning: true)
+          count <- ChangesetPersist.insert_all(TestUser, changesets, returning: true)
           return(count)
         end
-        |> EctoPersist.with_test_handler(&EctoPersist.TestHandler.default_handler/1)
+        |> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
         |> Comp.run!()
 
       assert {2, [%TestUser{name: "First"}, %TestUser{name: "Second"}]} = result

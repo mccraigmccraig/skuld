@@ -1,24 +1,24 @@
 if Code.ensure_loaded?(Ecto) do
-  defmodule Skuld.Effects.EctoPersist.TestHandler do
+  defmodule Skuld.Effects.ChangesetPersist.Test do
     @moduledoc """
-    Test handler for EctoPersist effect that records calls and returns stubbed results.
+    Test handler for ChangesetPersist effect that records calls and returns stubbed results.
 
-    Uses Writer effect internally to accumulate all EctoPersist operations,
+    Uses Writer effect internally to accumulate all ChangesetPersist operations,
     allowing tests to verify what persistence calls were made.
 
     ## Usage
 
         use Skuld.Syntax
         alias Skuld.Comp
-        alias Skuld.Effects.EctoPersist
+        alias Skuld.Effects.ChangesetPersist
 
         # Basic usage - returns {result, calls}
         {result, calls} =
           my_comp
-          |> EctoPersist.with_test_handler(fn
-            %EctoPersist.Insert{input: cs} -> Ecto.Changeset.apply_changes(cs)
-            %EctoPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
-            %EctoPersist.Delete{input: s} -> {:ok, s}
+          |> ChangesetPersist.Test.with_handler(fn
+            %ChangesetPersist.Insert{input: cs} -> Ecto.Changeset.apply_changes(cs)
+            %ChangesetPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
+            %ChangesetPersist.Delete{input: s} -> {:ok, s}
           end)
           |> Comp.run!()
 
@@ -27,7 +27,7 @@ if Code.ensure_loaded?(Ecto) do
         # Custom output transform
         result =
           my_comp
-          |> EctoPersist.with_test_handler(
+          |> ChangesetPersist.Test.with_handler(
             handler: fn op -> handle_op(op) end,
             output: fn result, _calls -> result end  # discard calls
           )
@@ -54,14 +54,18 @@ if Code.ensure_loaded?(Ecto) do
     alias Skuld.Comp
     alias Skuld.Comp.Env
     alias Skuld.Comp.Types
-    alias Skuld.Effects.EctoPersist
+    alias Skuld.Effects.ChangeEvent
+    alias Skuld.Effects.ChangesetPersist
     alias Skuld.Effects.Writer
 
-    @sig EctoPersist
     @writer_tag __MODULE__
 
+    #############################################################################
+    ## Handler Installation
+    #############################################################################
+
     @doc """
-    Install EctoPersist test handler.
+    Install ChangesetPersist test handler.
 
     ## Options
 
@@ -72,14 +76,14 @@ if Code.ensure_loaded?(Ecto) do
     ## Examples
 
         # Pass handler as first argument
-        comp |> EctoPersist.with_test_handler(fn op -> ... end) |> Comp.run!()
+        comp |> ChangesetPersist.Test.with_handler(fn op -> ... end) |> Comp.run!()
 
         # Pass handler in options
-        comp |> EctoPersist.with_test_handler(handler: fn op -> ... end) |> Comp.run!()
+        comp |> ChangesetPersist.Test.with_handler(handler: fn op -> ... end) |> Comp.run!()
 
         # Custom output
         comp
-        |> EctoPersist.with_test_handler(
+        |> ChangesetPersist.Test.with_handler(
           handler: fn op -> ... end,
           output: fn result, calls -> %{result: result, calls: calls} end
         )
@@ -110,7 +114,7 @@ if Code.ensure_loaded?(Ecto) do
 
         {modified, finally_k}
       end)
-      |> Comp.with_handler(@sig, &__MODULE__.handle/3)
+      |> Comp.with_handler(ChangesetPersist.sig(), &__MODULE__.handle/3)
       |> Writer.with_handler([],
         tag: @writer_tag,
         output: fn result, calls ->
@@ -126,27 +130,27 @@ if Code.ensure_loaded?(Ecto) do
     Useful when you don't care about specific return values:
 
         comp
-        |> EctoPersist.with_test_handler(&EctoPersist.TestHandler.default_handler/1)
+        |> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
         |> Comp.run!()
     """
     @spec default_handler(struct()) :: term()
-    def default_handler(%EctoPersist.Insert{input: input}) do
+    def default_handler(%ChangesetPersist.Insert{input: input}) do
       apply_changes(input)
     end
 
-    def default_handler(%EctoPersist.Update{input: input}) do
+    def default_handler(%ChangesetPersist.Update{input: input}) do
       apply_changes(input)
     end
 
-    def default_handler(%EctoPersist.Upsert{input: input}) do
+    def default_handler(%ChangesetPersist.Upsert{input: input}) do
       apply_changes(input)
     end
 
-    def default_handler(%EctoPersist.Delete{input: input}) do
+    def default_handler(%ChangesetPersist.Delete{input: input}) do
       {:ok, get_struct(input)}
     end
 
-    def default_handler(%EctoPersist.InsertAll{entries: entries, opts: opts}) do
+    def default_handler(%ChangesetPersist.InsertAll{entries: entries, opts: opts}) do
       if Keyword.get(opts, :returning, false) do
         structs = Enum.map(entries, &apply_changes/1)
         {length(entries), structs}
@@ -155,7 +159,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    def default_handler(%EctoPersist.UpdateAll{entries: entries, opts: opts}) do
+    def default_handler(%ChangesetPersist.UpdateAll{entries: entries, opts: opts}) do
       if Keyword.get(opts, :returning, false) do
         structs = Enum.map(entries, &apply_changes/1)
         {length(entries), structs}
@@ -164,7 +168,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    def default_handler(%EctoPersist.UpsertAll{entries: entries, opts: opts}) do
+    def default_handler(%ChangesetPersist.UpsertAll{entries: entries, opts: opts}) do
       if Keyword.get(opts, :returning, false) do
         structs = Enum.map(entries, &apply_changes/1)
         {length(entries), structs}
@@ -173,7 +177,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    def default_handler(%EctoPersist.DeleteAll{entries: entries, opts: opts}) do
+    def default_handler(%ChangesetPersist.DeleteAll{entries: entries, opts: opts}) do
       if Keyword.get(opts, :returning, false) do
         structs = Enum.map(entries, &get_struct/1)
         {length(entries), structs}
@@ -187,56 +191,72 @@ if Code.ensure_loaded?(Ecto) do
     #############################################################################
 
     @impl Skuld.Comp.IHandler
-    def handle(%EctoPersist.Insert{input: input} = op, env, k) do
+    def handle(%ChangesetPersist.Insert{input: input} = op, env, k) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:insert, normalize_input(input)}, result, env, k)
     end
 
     @impl Skuld.Comp.IHandler
-    def handle(%EctoPersist.Update{input: input} = op, env, k) do
+    def handle(%ChangesetPersist.Update{input: input} = op, env, k) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:update, normalize_input(input)}, result, env, k)
     end
 
     @impl Skuld.Comp.IHandler
-    def handle(%EctoPersist.Upsert{input: input} = op, env, k) do
+    def handle(%ChangesetPersist.Upsert{input: input} = op, env, k) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:upsert, normalize_input(input)}, result, env, k)
     end
 
     @impl Skuld.Comp.IHandler
-    def handle(%EctoPersist.Delete{input: input} = op, env, k) do
+    def handle(%ChangesetPersist.Delete{input: input} = op, env, k) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:delete, normalize_input(input)}, result, env, k)
     end
 
     @impl Skuld.Comp.IHandler
-    def handle(%EctoPersist.InsertAll{schema: schema, entries: entries, opts: opts} = op, env, k) do
+    def handle(
+          %ChangesetPersist.InsertAll{schema: schema, entries: entries, opts: opts} = op,
+          env,
+          k
+        ) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:insert_all, {schema, entries, opts}}, result, env, k)
     end
 
     @impl Skuld.Comp.IHandler
-    def handle(%EctoPersist.UpdateAll{schema: schema, entries: entries, opts: opts} = op, env, k) do
+    def handle(
+          %ChangesetPersist.UpdateAll{schema: schema, entries: entries, opts: opts} = op,
+          env,
+          k
+        ) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:update_all, {schema, entries, opts}}, result, env, k)
     end
 
     @impl Skuld.Comp.IHandler
-    def handle(%EctoPersist.UpsertAll{schema: schema, entries: entries, opts: opts} = op, env, k) do
+    def handle(
+          %ChangesetPersist.UpsertAll{schema: schema, entries: entries, opts: opts} = op,
+          env,
+          k
+        ) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:upsert_all, {schema, entries, opts}}, result, env, k)
     end
 
     @impl Skuld.Comp.IHandler
-    def handle(%EctoPersist.DeleteAll{schema: schema, entries: entries, opts: opts} = op, env, k) do
+    def handle(
+          %ChangesetPersist.DeleteAll{schema: schema, entries: entries, opts: opts} = op,
+          env,
+          k
+        ) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:delete_all, {schema, entries, opts}}, result, env, k)
@@ -248,7 +268,7 @@ if Code.ensure_loaded?(Ecto) do
 
     defp get_handler!(env) do
       case Env.get_state(env, {__MODULE__, :handler}) do
-        nil -> raise "EctoPersist.TestHandler handler not installed"
+        nil -> raise "ChangesetPersist.Test handler not installed"
         handler -> handler
       end
     end
@@ -262,12 +282,12 @@ if Code.ensure_loaded?(Ecto) do
       k.(result, new_env)
     end
 
-    # Normalize input to extract changeset from EctoEvent
-    defp normalize_input(%EctoPersist.EctoEvent{changeset: cs}), do: cs
+    # Normalize input to extract changeset from ChangeEvent
+    defp normalize_input(%ChangeEvent{changeset: cs}), do: cs
     defp normalize_input(input), do: input
 
     # Apply changes to get struct
-    defp apply_changes(%EctoPersist.EctoEvent{changeset: cs}) do
+    defp apply_changes(%ChangeEvent{changeset: cs}) do
       Ecto.Changeset.apply_changes(cs)
     end
 
@@ -278,7 +298,7 @@ if Code.ensure_loaded?(Ecto) do
     defp apply_changes(%{} = map), do: map
 
     # Get struct from input
-    defp get_struct(%EctoPersist.EctoEvent{changeset: cs}) do
+    defp get_struct(%ChangeEvent{changeset: cs}) do
       Ecto.Changeset.apply_changes(cs)
     end
 

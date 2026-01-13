@@ -9,7 +9,7 @@ defmodule Skuld.Effects.EventAccumulator do
 
   ## Example
 
-      alias Skuld.Effects.{EventAccumulator, EctoEvent}
+      alias Skuld.Effects.{EventAccumulator, ChangeEvent}
       alias Skuld.Comp
 
       use Skuld.Syntax
@@ -17,16 +17,16 @@ defmodule Skuld.Effects.EventAccumulator do
       # Accumulate events during computation
       comp do
         user_cs = User.changeset(%User{}, %{name: "Alice"})
-        _ <- EventAccumulator.emit(EctoEvent.insert(user_cs))
+        _ <- EventAccumulator.emit(ChangeEvent.insert(user_cs))
 
         order_cs = Order.changeset(%Order{}, %{user_id: 1})
-        _ <- EventAccumulator.emit(EctoEvent.insert(order_cs))
+        _ <- EventAccumulator.emit(ChangeEvent.insert(order_cs))
 
         return(:ok)
       end
       |> EventAccumulator.with_handler(output: &{&1, &2})
       |> Comp.run!()
-      #=> {:ok, [%EctoEvent{...}, %EctoEvent{...}]}
+      #=> {:ok, [%ChangeEvent{...}, %ChangeEvent{...}]}
 
   ## Options
 
@@ -46,7 +46,7 @@ defmodule Skuld.Effects.EventAccumulator do
   ## See Also
 
     * `Skuld.Effects.Writer` - The underlying effect
-    * `Skuld.Effects.EctoPersist.EctoEvent` - Generic Ecto operation wrapper
+    * `Skuld.Effects.ChangeEvent` - Generic changeset operation wrapper
   """
 
   alias Skuld.Effects.Writer
@@ -62,7 +62,7 @@ defmodule Skuld.Effects.EventAccumulator do
 
   ## Example
 
-      _ <- EventAccumulator.emit(EctoEvent.insert(changeset))
+      _ <- EventAccumulator.emit(ChangeEvent.insert(changeset))
       _ <- EventAccumulator.emit(%MyCustomEvent{data: "hello"})
   """
   @spec emit(term()) :: Types.computation()

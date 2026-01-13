@@ -1,11 +1,11 @@
-defmodule Skuld.Effects.EctoPersistTest do
+defmodule Skuld.Effects.ChangesetPersistTest do
   use ExUnit.Case, async: true
 
   import Skuld.Comp.CompBlock
 
   alias Skuld.Comp
-  alias Skuld.Effects.EctoPersist
-  alias Skuld.Effects.EctoPersist.EctoEvent
+  alias Skuld.Effects.ChangeEvent
+  alias Skuld.Effects.ChangesetPersist
   alias Skuld.Effects.Throw
 
   # Test schema
@@ -88,10 +88,10 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          user <- EctoPersist.insert(cs)
+          user <- ChangesetPersist.insert(cs)
           return(user)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       user = Comp.run!(computation)
       assert user.name == "Alice"
@@ -99,16 +99,16 @@ defmodule Skuld.Effects.EctoPersistTest do
       assert user.id != nil
     end
 
-    test "insert with EctoEvent" do
+    test "insert with ChangeEvent" do
       cs = TestUser.changeset(%{name: "Bob"})
-      event = EctoEvent.insert(cs)
+      event = ChangeEvent.insert(cs)
 
       computation =
         comp do
-          user <- EctoPersist.insert(event)
+          user <- ChangesetPersist.insert(event)
           return(user)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       user = Comp.run!(computation)
       assert user.name == "Bob"
@@ -120,10 +120,10 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          user <- EctoPersist.insert(cs)
+          user <- ChangesetPersist.insert(cs)
           return(user)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(computation)
@@ -135,12 +135,12 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          user <- EctoPersist.insert(cs)
+          user <- ChangesetPersist.insert(cs)
           return({:ok, user})
         catch
           {:invalid_changeset, changeset} -> return({:error, changeset})
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
         |> Throw.with_handler()
 
       {:error, changeset} = Comp.run!(computation)
@@ -153,10 +153,10 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          updated <- EctoPersist.update(cs)
+          updated <- ChangesetPersist.update(cs)
           return(updated)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       updated = Comp.run!(computation)
       assert updated.name == "New"
@@ -168,10 +168,10 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          user <- EctoPersist.upsert(cs)
+          user <- ChangesetPersist.upsert(cs)
           return(user)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       user = Comp.run!(computation)
       assert user.name == "Upserted"
@@ -182,26 +182,26 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          result <- EctoPersist.delete(user)
+          result <- ChangesetPersist.delete(user)
           return(result)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       {:ok, deleted} = Comp.run!(computation)
       assert deleted.id == 1
     end
 
-    test "delete with EctoEvent" do
+    test "delete with ChangeEvent" do
       user = %TestUser{id: 1, name: "ToDelete"}
       cs = Ecto.Changeset.change(user)
-      event = EctoEvent.delete(cs)
+      event = ChangeEvent.delete(cs)
 
       computation =
         comp do
-          result <- EctoPersist.delete(event)
+          result <- ChangesetPersist.delete(event)
           return(result)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       {:ok, deleted} = Comp.run!(computation)
       assert deleted.id == 1
@@ -218,10 +218,10 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          result <- EctoPersist.insert_all(TestUser, changesets)
+          result <- ChangesetPersist.insert_all(TestUser, changesets)
           return(result)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       {count, nil} = Comp.run!(computation)
       assert count == 3
@@ -235,10 +235,10 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          result <- EctoPersist.insert_all(TestUser, changesets, returning: true)
+          result <- ChangesetPersist.insert_all(TestUser, changesets, returning: true)
           return(result)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       {count, users} = Comp.run!(computation)
       assert count == 2
@@ -246,18 +246,18 @@ defmodule Skuld.Effects.EctoPersistTest do
       assert Enum.all?(users, &(&1.id != nil))
     end
 
-    test "insert_all with EctoEvents" do
+    test "insert_all with ChangeEvents" do
       events = [
-        EctoEvent.insert(TestUser.changeset(%{name: "User1"})),
-        EctoEvent.insert(TestUser.changeset(%{name: "User2"}))
+        ChangeEvent.insert(TestUser.changeset(%{name: "User1"})),
+        ChangeEvent.insert(TestUser.changeset(%{name: "User2"}))
       ]
 
       computation =
         comp do
-          result <- EctoPersist.insert_all(TestUser, events)
+          result <- ChangesetPersist.insert_all(TestUser, events)
           return(result)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       {count, nil} = Comp.run!(computation)
       assert count == 2
@@ -271,10 +271,10 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          result <- EctoPersist.insert_all(TestUser, maps)
+          result <- ChangesetPersist.insert_all(TestUser, maps)
           return(result)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       {count, nil} = Comp.run!(computation)
       assert count == 2
@@ -283,10 +283,10 @@ defmodule Skuld.Effects.EctoPersistTest do
     test "insert_all with empty list" do
       computation =
         comp do
-          result <- EctoPersist.insert_all(TestUser, [])
+          result <- ChangesetPersist.insert_all(TestUser, [])
           return(result)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       {count, nil} = Comp.run!(computation)
       assert count == 0
@@ -300,10 +300,10 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          result <- EctoPersist.delete_all(TestUser, users)
+          result <- ChangesetPersist.delete_all(TestUser, users)
           return(result)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
 
       {count, nil} = Comp.run!(computation)
       assert count == 2
@@ -329,10 +329,10 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          result <- EctoPersist.insert_all(TestUser, [other_cs])
+          result <- ChangesetPersist.insert_all(TestUser, [other_cs])
           return(result)
         end
-        |> EctoPersist.with_handler(MockRepo)
+        |> ChangesetPersist.Ecto.with_handler(MockRepo)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(computation)
@@ -346,11 +346,11 @@ defmodule Skuld.Effects.EctoPersistTest do
 
       computation =
         comp do
-          user <- EctoPersist.insert(cs)
+          user <- ChangesetPersist.insert(cs)
           return(user)
         end
 
-      assert_raise RuntimeError, ~r/handler not installed/, fn ->
+      assert_raise RuntimeError, ~r/No handler for effect signature/, fn ->
         Comp.run!(computation)
       end
     end
