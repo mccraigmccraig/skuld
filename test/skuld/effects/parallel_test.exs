@@ -8,6 +8,17 @@ defmodule Skuld.Effects.ParallelTest do
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
 
+  # Helper to raise without triggering "typing violation" warnings.
+  # Using if/else with a runtime-known value prevents the compiler from
+  # inferring that this always raises.
+  defp boom! do
+    if true, do: raise("boom!"), else: :ok
+  end
+
+  defp boom!(msg) do
+    if true, do: raise(msg), else: :ok
+  end
+
   describe "with_handler all/1" do
     test "runs multiple computations and returns all results" do
       result =
@@ -124,7 +135,7 @@ defmodule Skuld.Effects.ParallelTest do
               :ok
             end,
             comp do
-              raise "boom!"
+              boom!()
             end,
             comp do
               :also_ok
@@ -198,7 +209,7 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.race([
             comp do
-              raise "fail fast"
+              boom!("fail fast")
             end,
             comp do
               _ = Process.sleep(20)
@@ -218,10 +229,10 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.race([
             comp do
-              raise "boom1"
+              boom!("boom1")
             end,
             comp do
-              raise "boom2"
+              boom!("boom2")
             end
           ])
         end
@@ -409,7 +420,7 @@ defmodule Skuld.Effects.ParallelTest do
               :ok
             end,
             comp do
-              raise "boom!"
+              boom!()
             end,
             comp do
               :also_ok
@@ -465,7 +476,7 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.race([
             comp do
-              raise "boom!"
+              boom!()
             end,
             comp do
               :second
