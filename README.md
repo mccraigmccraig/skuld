@@ -93,7 +93,7 @@ alias Skuld.Comp
 alias Skuld.Effects.{
   State, Reader, Writer, Throw, Yield,
   FxList, FxFasterList,
-  Fresh, Bracket, Query, Command, EventAccumulator, EffectLogger,
+  Fresh, Random, Bracket, Query, Command, EventAccumulator, EffectLogger,
   DBTransaction, EctoPersist
 }
 alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
@@ -429,6 +429,44 @@ end
 |> Fresh.with_test_handler(namespace: namespace)
 |> Comp.run!()
 #=> "550e8400-..."  # same UUID every time with same namespace
+```
+
+### Random
+
+Generate random values with three handler modes:
+
+```elixir
+# Production: uses Erlang :rand module
+comp do
+  f <- Random.random()              # float in [0, 1)
+  i <- Random.random_int(1, 100)    # integer in range
+  elem <- Random.random_element([:a, :b, :c])
+  shuffled <- Random.shuffle([1, 2, 3, 4])
+  {f, i, elem, shuffled}
+end
+|> Random.with_handler()
+|> Comp.run!()
+#=> {0.723..., 42, :b, [3, 1, 4, 2]}
+
+# Testing: deterministic with seed (reproducible)
+comp do
+  a <- Random.random()
+  b <- Random.random_int(1, 10)
+  {a, b}
+end
+|> Random.with_seed_handler(seed: {42, 123, 456})
+|> Comp.run!()
+#=> {0.234..., 7}  # same result every time with this seed
+
+# Testing: fixed sequence for specific scenarios
+comp do
+  a <- Random.random()
+  b <- Random.random()
+  {a, b}
+end
+|> Random.with_fixed_handler(values: [0.0, 1.0])
+|> Comp.run!()
+#=> {0.0, 1.0}  # cycles when exhausted
 ```
 
 ### Bracket
