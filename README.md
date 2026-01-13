@@ -42,8 +42,8 @@ simpler and more coherent API, and is (arguably) easier to understand.
   - [Query](#query)
   - [Command](#command)
   - [EventAccumulator](#eventaccumulator)
-  - [EffectLogger](#effectlogger)
   - [ChangesetPersist](#changesetpersist)
+  - [EffectLogger](#effectlogger)
 - [Property-Based Testing](#property-based-testing)
 - [Architecture](#architecture)
 - [Comparison with Freyja](#comparison-with-freyja)
@@ -977,6 +977,56 @@ end
 #=> {:ok, [%{type: :user_created, id: 1}, %{type: :email_sent, to: "user@example.com"}]}
 ```
 
+### ChangesetPersist
+
+Changeset persistence as effects (requires Ecto):
+
+```elixir
+# Production: real database operations via Ecto handler
+comp do
+  user <- ChangesetPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
+  order <- ChangesetPersist.insert(Order.changeset(%Order{}, %{user_id: user.id}))
+  {user, order}
+end
+|> ChangesetPersist.Ecto.with_handler(MyApp.Repo)
+|> Comp.run!()
+```
+
+For testing, use the test handler to stub responses and record calls:
+
+```elixir
+# Test handler applies changeset changes and records all operations
+{result, calls} =
+  comp do
+    user <- ChangesetPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
+    _ <- ChangesetPersist.update(User.changeset(user, %{name: "Bob"}))
+    user
+  end
+  |> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
+  |> Comp.run!()
+
+result
+#=> %User{name: "Alice"}
+
+calls
+#=> [{:insert, %Ecto.Changeset{...}}, {:update, %Ecto.Changeset{...}}]
+
+# Custom handler for specific test scenarios
+comp do
+  user <- ChangesetPersist.insert(changeset)
+  user
+end
+|> ChangesetPersist.Test.with_handler(fn
+  %ChangesetPersist.Insert{input: cs} -> %User{id: "test-id", name: "Stubbed"}
+  %ChangesetPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
+end)
+|> Comp.run!()
+#=> {%User{id: "test-id", name: "Stubbed"}, [{:insert, changeset}]}
+```
+
+> **Note**: ChangesetPersist wraps Ecto Repo operations. See the module docs for
+> `insert`, `update`, `delete`, `insert_all`, `update_all`, `delete_all`, and `upsert`.
+
 ### EffectLogger
 
 Capture effect invocations for replay, resume, and retry:
@@ -1135,56 +1185,6 @@ The `with_resume/3` function:
 2. Replays completed effects by short-circuiting with logged values
 3. Injects the resume value at the Yield suspension point
 4. Continues fresh execution after that point
-
-### ChangesetPersist
-
-Changeset persistence as effects (requires Ecto):
-
-```elixir
-# Production: real database operations via Ecto handler
-comp do
-  user <- ChangesetPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
-  order <- ChangesetPersist.insert(Order.changeset(%Order{}, %{user_id: user.id}))
-  {user, order}
-end
-|> ChangesetPersist.Ecto.with_handler(MyApp.Repo)
-|> Comp.run!()
-```
-
-For testing, use the test handler to stub responses and record calls:
-
-```elixir
-# Test handler applies changeset changes and records all operations
-{result, calls} =
-  comp do
-    user <- ChangesetPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
-    _ <- ChangesetPersist.update(User.changeset(user, %{name: "Bob"}))
-    user
-  end
-  |> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
-  |> Comp.run!()
-
-result
-#=> %User{name: "Alice"}
-
-calls
-#=> [{:insert, %Ecto.Changeset{...}}, {:update, %Ecto.Changeset{...}}]
-
-# Custom handler for specific test scenarios
-comp do
-  user <- ChangesetPersist.insert(changeset)
-  user
-end
-|> ChangesetPersist.Test.with_handler(fn
-  %ChangesetPersist.Insert{input: cs} -> %User{id: "test-id", name: "Stubbed"}
-  %ChangesetPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
-end)
-|> Comp.run!()
-#=> {%User{id: "test-id", name: "Stubbed"}, [{:insert, changeset}]}
-```
-
-> **Note**: ChangesetPersist wraps Ecto Repo operations. See the module docs for
-> `insert`, `update`, `delete`, `insert_all`, `update_all`, `delete_all`, and `upsert`.
 
 ## Property-Based Testing
 
