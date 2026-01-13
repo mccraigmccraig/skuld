@@ -142,6 +142,11 @@ defmodule Skuld.Effects.Async do
   @doc """
   Wait for an async computation to complete and return its result.
 
+  Uses a default timeout of 5 minutes. If the task does not complete within
+  the timeout, it is cancelled and `{:error, :timeout}` is returned.
+
+  For infinite wait, use `await_with_timeout(handle, :infinity)`.
+
   The handle must be from the current boundary. Awaiting a handle from
   a different boundary will throw an error.
 
@@ -461,36 +466,16 @@ defmodule Skuld.Effects.Async do
     end
   end
 
+  # Default timeout for await/1 - 5 minutes
+  @default_await_timeout_ms 5 * 60 * 1000
+
   defp handle_task(
          %AwaitOp{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task}},
          env,
          k
        ) do
-    current_boundary = Env.get_state(env, @current_boundary_key)
-
-    if handle_boundary != current_boundary do
-      # Cross-boundary await - throw error via Throw effect
-      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
-    else
-      # Wait for task result using Task.await
-      result =
-        try do
-          Task.await(task, :infinity)
-        catch
-          :exit, reason -> {:error, {:task_failed, reason}}
-        end
-
-      # Untrack the task
-      handle = %Handle{boundary_id: handle_boundary, task_or_ref: task}
-      boundaries = Env.get_state(env, @boundaries_key)
-      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
-      updated_tasks = MapSet.delete(boundary_tasks, handle)
-
-      env_untracked =
-        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
-
-      k.(result, env_untracked)
-    end
+    # await/1 returns the result directly (or {:error, reason} on failure/timeout)
+    do_await_task(handle_boundary, task, @default_await_timeout_ms, :unwrap, env, k)
   end
 
   defp handle_task(
@@ -501,38 +486,8 @@ defmodule Skuld.Effects.Async do
          env,
          k
        ) do
-    current_boundary = Env.get_state(env, @current_boundary_key)
-
-    if handle_boundary != current_boundary do
-      # Cross-boundary await - throw error via Throw effect
-      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
-    else
-      # Wait for task result with timeout using Task.yield + Task.shutdown
-      result =
-        case Task.yield(task, timeout_ms) do
-          {:ok, value} ->
-            {:ok, value}
-
-          {:exit, reason} ->
-            {:error, {:task_failed, reason}}
-
-          nil ->
-            # Timeout - shutdown the task
-            Task.shutdown(task, :brutal_kill)
-            {:error, :timeout}
-        end
-
-      # Untrack the task
-      handle = %Handle{boundary_id: handle_boundary, task_or_ref: task}
-      boundaries = Env.get_state(env, @boundaries_key)
-      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
-      updated_tasks = MapSet.delete(boundary_tasks, handle)
-
-      env_untracked =
-        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
-
-      k.(result, env_untracked)
-    end
+    # await_with_timeout/2 returns {:ok, result} or {:error, reason}
+    do_await_task(handle_boundary, task, timeout_ms, :wrap, env, k)
   end
 
   defp handle_task(
@@ -562,6 +517,44 @@ defmodule Skuld.Effects.Async do
         Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
 
       k.(:ok, env_untracked)
+    end
+  end
+
+  defp do_await_task(handle_boundary, task, timeout_ms, wrap_mode, env, k) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      # Cross-boundary await - throw error via Throw effect
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # Wait for task result with timeout using Task.yield + Task.shutdown
+      result =
+        case Task.yield(task, timeout_ms) do
+          {:ok, value} ->
+            case wrap_mode do
+              :unwrap -> value
+              :wrap -> {:ok, value}
+            end
+
+          {:exit, reason} ->
+            {:error, {:task_failed, reason}}
+
+          nil ->
+            # Timeout - shutdown the task
+            Task.shutdown(task, :brutal_kill)
+            {:error, :timeout}
+        end
+
+      # Untrack the task
+      handle = %Handle{boundary_id: handle_boundary, task_or_ref: task}
+      boundaries = Env.get_state(env, @boundaries_key)
+      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
+      updated_tasks = MapSet.delete(boundary_tasks, handle)
+
+      env_untracked =
+        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
+
+      k.(result, env_untracked)
     end
   end
 
@@ -724,26 +717,8 @@ defmodule Skuld.Effects.Async do
          env,
          k
        ) do
-    current_boundary = Env.get_state(env, @current_boundary_key)
-
-    if handle_boundary != current_boundary do
-      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
-    else
-      # Get stored result
-      results = Env.get_state(env, @sequential_results_key)
-      result = Map.get(results, handle_ref)
-
-      # Untrack handle
-      handle = %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref}
-      boundaries = Env.get_state(env, @boundaries_key)
-      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
-      updated_tasks = MapSet.delete(boundary_tasks, handle)
-
-      env_untracked =
-        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
-
-      k.(result, env_untracked)
-    end
+    # await/1 returns the result directly
+    do_await_sequential(handle_boundary, handle_ref, :unwrap, env, k)
   end
 
   defp handle_sequential(
@@ -754,30 +729,8 @@ defmodule Skuld.Effects.Async do
          env,
          k
        ) do
-    current_boundary = Env.get_state(env, @current_boundary_key)
-
-    if handle_boundary != current_boundary do
-      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
-    else
-      # In sequential mode, computation already ran, so just get the result
-      # Timeout doesn't apply since it already completed synchronously
-      results = Env.get_state(env, @sequential_results_key)
-      result = Map.get(results, handle_ref)
-
-      # Wrap in {:ok, result} to match timeout semantics
-      wrapped_result = {:ok, result}
-
-      # Untrack handle
-      handle = %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref}
-      boundaries = Env.get_state(env, @boundaries_key)
-      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
-      updated_tasks = MapSet.delete(boundary_tasks, handle)
-
-      env_untracked =
-        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
-
-      k.(wrapped_result, env_untracked)
-    end
+    # await_with_timeout/2 returns {:ok, result} (timeout doesn't apply in sequential mode)
+    do_await_sequential(handle_boundary, handle_ref, :wrap, env, k)
   end
 
   defp handle_sequential(
@@ -811,6 +764,36 @@ defmodule Skuld.Effects.Async do
         )
 
       k.(:ok, env_untracked)
+    end
+  end
+
+  defp do_await_sequential(handle_boundary, handle_ref, wrap_mode, env, k) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # Get stored result (in sequential mode, computation already ran)
+      results = Env.get_state(env, @sequential_results_key)
+      result = Map.get(results, handle_ref)
+
+      # Wrap or unwrap based on which operation was called
+      final_result =
+        case wrap_mode do
+          :unwrap -> result
+          :wrap -> {:ok, result}
+        end
+
+      # Untrack handle
+      handle = %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref}
+      boundaries = Env.get_state(env, @boundaries_key)
+      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
+      updated_tasks = MapSet.delete(boundary_tasks, handle)
+
+      env_untracked =
+        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
+
+      k.(final_result, env_untracked)
     end
   end
 
