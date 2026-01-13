@@ -317,7 +317,14 @@ defmodule Skuld.Comp do
       # Normal exit: run finally_k then continue to outer
       # BUT if finally_k produces a throw, route through leave_scope instead
       normal_k = fn value, inner_env ->
-        {new_value, final_env} = finally_k.(value, inner_env)
+        {new_value, final_env} =
+          try do
+            finally_k.(value, inner_env)
+          catch
+            kind, payload ->
+              ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, inner_env)
+          end
+
         restored_env = Env.with_leave_scope(final_env, previous_leave_scope)
 
         case new_value do
@@ -332,7 +339,14 @@ defmodule Skuld.Comp do
 
       # Abnormal exit: run finally_k during leave-scope unwinding
       my_leave_scope = fn result, inner_env ->
-        {new_result, final_env} = finally_k.(result, inner_env)
+        {new_result, final_env} =
+          try do
+            finally_k.(result, inner_env)
+          catch
+            kind, payload ->
+              ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, inner_env)
+          end
+
         previous_leave_scope.(new_result, Env.with_leave_scope(final_env, previous_leave_scope))
       end
 
