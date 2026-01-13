@@ -252,9 +252,8 @@ defmodule Skuld.Comp do
       end
   """
   @spec each(list(), (term() -> Types.computation())) :: Types.computation()
-  def each(list, f) do
-    traverse(list, f) |> map(fn _ -> :ok end)
-  end
+  def each([], _f), do: pure(:ok)
+  def each([h | t], f), do: bind(f.(h), fn _ -> each(t, f) end)
 
   #############################################################################
   ## Scoping Primitives
