@@ -116,10 +116,14 @@ defmodule Skuld.Effects.Writer do
   @spec listen(atom(), Types.computation()) :: Types.computation()
   def listen(tag, comp) when is_atom(tag) do
     Comp.bind(peek(tag), fn initial_log ->
+      # Calculate initial length once (O(n))
+      initial_length = length(initial_log)
+
       Comp.bind(comp, fn result ->
         Comp.bind(peek(tag), fn final_log ->
           # Calculate what was added (new logs are at the front)
-          captured = Enum.take(final_log, length(final_log) - length(initial_log))
+          # Only one length call on final_log (O(n) once instead of twice)
+          captured = Enum.take(final_log, length(final_log) - initial_length)
           Comp.pure({result, captured})
         end)
       end)
@@ -144,10 +148,14 @@ defmodule Skuld.Effects.Writer do
   @spec pass(atom(), Types.computation()) :: Types.computation()
   def pass(tag, comp) when is_atom(tag) do
     Comp.bind(peek(tag), fn initial_log ->
+      # Calculate initial length once (O(n))
+      initial_length = length(initial_log)
+
       Comp.bind(comp, fn {value, transform_fn} ->
         Comp.bind(peek(tag), fn final_log ->
           # Calculate captured logs
-          captured = Enum.take(final_log, length(final_log) - length(initial_log))
+          # Only one length call on final_log (O(n) once instead of twice)
+          captured = Enum.take(final_log, length(final_log) - initial_length)
           # Apply transform
           transformed = transform_fn.(captured)
           # Replace captured logs with transformed version
