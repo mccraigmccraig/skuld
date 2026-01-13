@@ -8,10 +8,39 @@ defmodule Skuld.Effects.AsyncTest do
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
 
-  # Helper to avoid "pattern will never match" warning on raise
-  # Using apply/3 hides the none() return type from the type checker
-  # credo:disable-for-next-line Credo.Check.Refactor.Apply
-  defp boom!, do: apply(Kernel, :raise, ["boom!"])
+  # Barrier for testing concurrency - tasks signal arrival and wait for release
+  defmodule Barrier do
+    def start(n) do
+      {:ok, agent} = Agent.start_link(fn -> {0, n, []} end)
+      agent
+    end
+
+    def arrive_and_wait(barrier) do
+      # Register this process
+      self_pid = self()
+
+      Agent.update(barrier, fn {count, n, waiters} ->
+        {count + 1, n, [self_pid | waiters]}
+      end)
+
+      # Check if we should release everyone
+      {count, n, waiters} = Agent.get(barrier, & &1)
+
+      if count >= n do
+        # Release all waiters
+        Enum.each(waiters, &send(&1, :released))
+      end
+
+      # Wait for release
+      receive do
+        :released -> :ok
+      after
+        1000 -> raise "Barrier timeout - not all tasks arrived"
+      end
+    end
+
+    def stop(barrier), do: Agent.stop(barrier)
+  end
 
   describe "with_handler (production)" do
     test "basic async/await works" do
@@ -247,8 +276,9 @@ defmodule Skuld.Effects.AsyncTest do
     end
 
     test "async tasks run concurrently" do
-      # Start multiple tasks that each sleep and return
-      start_time = System.monotonic_time(:millisecond)
+      # Use a barrier to prove all 3 tasks run concurrently
+      # If they were sequential, the barrier would timeout
+      barrier = Barrier.start(3)
 
       result =
         comp do
@@ -257,7 +287,7 @@ defmodule Skuld.Effects.AsyncTest do
               h1 <-
                 Async.async(
                   comp do
-                    _ = Process.sleep(50)
+                    _ = Barrier.arrive_and_wait(barrier)
                     :a
                   end
                 )
@@ -265,7 +295,7 @@ defmodule Skuld.Effects.AsyncTest do
               h2 <-
                 Async.async(
                   comp do
-                    _ = Process.sleep(50)
+                    _ = Barrier.arrive_and_wait(barrier)
                     :b
                   end
                 )
@@ -273,7 +303,7 @@ defmodule Skuld.Effects.AsyncTest do
               h3 <-
                 Async.async(
                   comp do
-                    _ = Process.sleep(50)
+                    _ = Barrier.arrive_and_wait(barrier)
                     :c
                   end
                 )
@@ -290,11 +320,9 @@ defmodule Skuld.Effects.AsyncTest do
         |> Throw.with_handler()
         |> Comp.run!()
 
-      elapsed = System.monotonic_time(:millisecond) - start_time
+      Barrier.stop(barrier)
 
       assert result == {:a, :b, :c}
-      # If sequential, would take ~150ms. Parallel should be ~50-100ms
-      assert elapsed < 120
     end
 
     test "task failure is caught" do
@@ -305,7 +333,7 @@ defmodule Skuld.Effects.AsyncTest do
               h <-
                 Async.async(
                   comp do
-                    boom!()
+                    raise "boom!"
                   end
                 )
 

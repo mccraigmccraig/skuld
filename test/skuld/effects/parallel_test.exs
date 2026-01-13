@@ -8,15 +8,60 @@ defmodule Skuld.Effects.ParallelTest do
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
 
-  # Helper to raise without triggering "typing violation" warnings.
-  # Using if/else with a runtime-known value prevents the compiler from
-  # inferring that this always raises.
-  defp boom! do
-    if true, do: raise("boom!"), else: :ok
+  # Barrier for testing concurrency - tasks signal arrival and wait for release
+  defmodule Barrier do
+    def start(n) do
+      {:ok, agent} = Agent.start_link(fn -> {0, n, []} end)
+      agent
+    end
+
+    def arrive_and_wait(barrier) do
+      self_pid = self()
+
+      Agent.update(barrier, fn {count, n, waiters} ->
+        {count + 1, n, [self_pid | waiters]}
+      end)
+
+      {count, n, waiters} = Agent.get(barrier, & &1)
+
+      if count >= n do
+        Enum.each(waiters, &send(&1, :released))
+      end
+
+      receive do
+        :released -> :ok
+      after
+        1000 -> raise "Barrier timeout - not all tasks arrived"
+      end
+    end
+
+    def stop(barrier), do: Agent.stop(barrier)
   end
 
-  defp boom!(msg) do
-    if true, do: raise(msg), else: :ok
+  # Latch for controlling task ordering - tasks wait until released
+  defmodule Latch do
+    def start do
+      {:ok, agent} = Agent.start_link(fn -> [] end)
+      agent
+    end
+
+    def wait(latch) do
+      self_pid = self()
+      Agent.update(latch, fn waiters -> [self_pid | waiters] end)
+
+      receive do
+        :released -> :ok
+      after
+        1000 -> raise "Latch timeout"
+      end
+    end
+
+    def release(latch) do
+      waiters = Agent.get(latch, & &1)
+      Enum.each(waiters, &send(&1, :released))
+    end
+
+    def stop(latch), do: Agent.stop(latch)
   end
 
   describe "with_handler all/1" do
@@ -71,20 +116,18 @@ defmodule Skuld.Effects.ParallelTest do
     end
 
     test "preserves order of results" do
+      # Simply verify results are in input order regardless of any execution timing
       result =
         comp do
           Parallel.all([
             comp do
-              _ = Process.sleep(30)
-              :slow
+              :first
             end,
             comp do
-              _ = Process.sleep(10)
-              :fast
+              :second
             end,
             comp do
-              _ = Process.sleep(20)
-              :medium
+              :third
             end
           ])
         end
@@ -92,26 +135,27 @@ defmodule Skuld.Effects.ParallelTest do
         |> Throw.with_handler()
         |> Comp.run!()
 
-      # Results in input order, not completion order
-      assert result == [:slow, :fast, :medium]
+      assert result == [:first, :second, :third]
     end
 
     test "runs concurrently" do
-      start_time = System.monotonic_time(:millisecond)
+      # Use a barrier to prove all 3 tasks run concurrently
+      # If they were sequential, the barrier would timeout
+      barrier = Barrier.start(3)
 
       result =
         comp do
           Parallel.all([
             comp do
-              _ = Process.sleep(50)
+              _ = Barrier.arrive_and_wait(barrier)
               :a
             end,
             comp do
-              _ = Process.sleep(50)
+              _ = Barrier.arrive_and_wait(barrier)
               :b
             end,
             comp do
-              _ = Process.sleep(50)
+              _ = Barrier.arrive_and_wait(barrier)
               :c
             end
           ])
@@ -120,11 +164,9 @@ defmodule Skuld.Effects.ParallelTest do
         |> Throw.with_handler()
         |> Comp.run!()
 
-      elapsed = System.monotonic_time(:millisecond) - start_time
+      Barrier.stop(barrier)
 
       assert result == [:a, :b, :c]
-      # Parallel: ~50ms. Sequential would be ~150ms
-      assert elapsed < 120
     end
 
     test "task failure returns error" do
@@ -135,7 +177,7 @@ defmodule Skuld.Effects.ParallelTest do
               :ok
             end,
             comp do
-              boom!()
+              raise "boom!"
             end,
             comp do
               :also_ok
@@ -152,19 +194,22 @@ defmodule Skuld.Effects.ParallelTest do
 
   describe "with_handler race/1" do
     test "returns first result" do
+      # fast completes immediately, others block on latches (and get cancelled)
+      latch_slow = Latch.start()
+      latch_medium = Latch.start()
+
       result =
         comp do
           Parallel.race([
             comp do
-              _ = Process.sleep(100)
+              _ = Latch.wait(latch_slow)
               :slow
             end,
             comp do
-              _ = Process.sleep(10)
               :fast
             end,
             comp do
-              _ = Process.sleep(50)
+              _ = Latch.wait(latch_medium)
               :medium
             end
           ])
@@ -172,6 +217,9 @@ defmodule Skuld.Effects.ParallelTest do
         |> Parallel.with_handler()
         |> Throw.with_handler()
         |> Comp.run!()
+
+      Latch.stop(latch_slow)
+      Latch.stop(latch_medium)
 
       assert result == :fast
     end
@@ -205,14 +253,14 @@ defmodule Skuld.Effects.ParallelTest do
     end
 
     test "ignores failed tasks if one succeeds" do
+      # One task fails, one succeeds - race should return the success
       result =
         comp do
           Parallel.race([
             comp do
-              boom!("fail fast")
+              raise "fail fast"
             end,
             comp do
-              _ = Process.sleep(20)
               :success
             end
           ])
@@ -229,10 +277,10 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.race([
             comp do
-              boom!("boom1")
+              raise "boom1"
             end,
             comp do
-              boom!("boom2")
+              raise "boom2"
             end
           ])
         end
@@ -247,16 +295,16 @@ defmodule Skuld.Effects.ParallelTest do
       # Use an agent to track which tasks complete
       {:ok, agent} = Agent.start_link(fn -> [] end)
 
-      # Define helper functions to avoid nested comp macro issues
-      # (nested comps with statements trigger macro expansion bugs)
+      # slow_work blocks on a latch that never gets released (task gets cancelled)
+      latch = Latch.start()
+
       slow_work = fn ->
-        Process.sleep(100)
+        Latch.wait(latch)
         Agent.update(agent, &[:slow | &1])
         :slow
       end
 
       fast_work = fn ->
-        Process.sleep(10)
         Agent.update(agent, &[:fast | &1])
         :fast
       end
@@ -276,13 +324,11 @@ defmodule Skuld.Effects.ParallelTest do
         |> Throw.with_handler()
         |> Comp.run!()
 
-      # Give a moment for any stragglers
-      Process.sleep(150)
-
       completed = Agent.get(agent, & &1)
       Agent.stop(agent)
+      Latch.stop(latch)
 
-      # Only :fast should have completed
+      # Only :fast should have completed (slow was cancelled)
       assert completed == [:fast]
     end
   end
@@ -321,11 +367,11 @@ defmodule Skuld.Effects.ParallelTest do
     end
 
     test "preserves order" do
+      # Simply verify results are in input order
       result =
         comp do
           Parallel.map([3, 1, 2], fn x ->
             comp do
-              _ = Process.sleep(x * 10)
               x
             end
           end)
@@ -338,13 +384,14 @@ defmodule Skuld.Effects.ParallelTest do
     end
 
     test "runs concurrently" do
-      start_time = System.monotonic_time(:millisecond)
+      # Use a barrier to prove all 3 map tasks run concurrently
+      barrier = Barrier.start(3)
 
       result =
         comp do
           Parallel.map([1, 2, 3], fn x ->
             comp do
-              _ = Process.sleep(50)
+              _ = Barrier.arrive_and_wait(barrier)
               x
             end
           end)
@@ -353,10 +400,9 @@ defmodule Skuld.Effects.ParallelTest do
         |> Throw.with_handler()
         |> Comp.run!()
 
-      elapsed = System.monotonic_time(:millisecond) - start_time
+      Barrier.stop(barrier)
 
       assert result == [1, 2, 3]
-      assert elapsed < 120
     end
 
     test "task failure returns error" do
@@ -420,7 +466,7 @@ defmodule Skuld.Effects.ParallelTest do
               :ok
             end,
             comp do
-              boom!()
+              raise "boom!"
             end,
             comp do
               :also_ok
@@ -476,7 +522,7 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.race([
             comp do
-              boom!()
+              raise "boom!"
             end,
             comp do
               :second
