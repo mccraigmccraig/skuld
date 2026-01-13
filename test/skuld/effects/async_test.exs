@@ -8,6 +8,12 @@ defmodule Skuld.Effects.AsyncTest do
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
 
+  # Helper to raise without triggering "typing violation" warnings.
+  # Must be public (def) since async tasks run in separate processes.
+  def boom!(msg \\ "boom!") do
+    if true, do: raise(msg), else: :ok
+  end
+
   # Barrier for testing concurrency - tasks signal arrival and wait for release
   defmodule Barrier do
     def start(n) do
@@ -333,7 +339,7 @@ defmodule Skuld.Effects.AsyncTest do
               h <-
                 Async.async(
                   comp do
-                    raise "boom!"
+                    boom!()
                   end
                 )
 

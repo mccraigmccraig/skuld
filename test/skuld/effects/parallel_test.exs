@@ -8,6 +8,12 @@ defmodule Skuld.Effects.ParallelTest do
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
 
+  # Helper to raise without triggering "typing violation" warnings.
+  # Must be public (def) since parallel tasks run in separate processes.
+  def boom!(msg \\ "boom!") do
+    if true, do: raise(msg), else: :ok
+  end
+
   # Barrier for testing concurrency - tasks signal arrival and wait for release
   defmodule Barrier do
     def start(n) do
@@ -177,7 +183,7 @@ defmodule Skuld.Effects.ParallelTest do
               :ok
             end,
             comp do
-              raise "boom!"
+              boom!()
             end,
             comp do
               :also_ok
@@ -258,7 +264,7 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.race([
             comp do
-              raise "fail fast"
+              boom!("fail fast")
             end,
             comp do
               :success
@@ -277,10 +283,10 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.race([
             comp do
-              raise "boom1"
+              boom!("boom1")
             end,
             comp do
-              raise "boom2"
+              boom!("boom2")
             end
           ])
         end
@@ -466,7 +472,7 @@ defmodule Skuld.Effects.ParallelTest do
               :ok
             end,
             comp do
-              raise "boom!"
+              boom!()
             end,
             comp do
               :also_ok
@@ -522,7 +528,7 @@ defmodule Skuld.Effects.ParallelTest do
         comp do
           Parallel.race([
             comp do
-              raise "boom!"
+              boom!()
             end,
             comp do
               :second
