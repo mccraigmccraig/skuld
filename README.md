@@ -29,8 +29,8 @@ simpler and more coherent API, and is (arguably) easier to understand.
   - [Throw](#throw)
   - [Pattern Matching with Else](#pattern-matching-with-else)
   - [Combining Else and Catch](#combining-else-and-catch)
-  - [Bracket](#bracket)
   - [Yield](#yield)
+  - [Bracket](#bracket)
   - [FxList](#fxlist)
   - [FxFasterList](#fxfasterlist)
   - [Fresh](#fresh)
@@ -354,57 +354,6 @@ The semantic ordering is `catch(else(body))`, meaning:
 - `else` handles pattern match failures from the main computation
 - `catch` handles throws from both the main computation AND the else handler
 
-### Bracket
-
-Safe resource acquisition and cleanup (like try/finally):
-
-```elixir
-# Track resource lifecycle with State
-comp do
-  result <- Bracket.bracket(
-    # Acquire
-    comp do
-      _ <- State.put(:acquired)
-      :resource
-    end,
-    # Release (always runs)
-    fn _resource ->
-      comp do
-        _ <- State.put(:released)
-        :ok
-      end
-    end,
-    # Use
-    fn resource ->
-      {:used, resource}  # auto-lifted
-    end
-  )
-  final_state <- State.get()
-  {result, final_state}
-end
-|> State.with_handler(:init)
-|> Comp.run!()
-#=> {{:used, :resource}, :released}
-```
-
-Use `Bracket.finally/2` for simpler cleanup without resource passing:
-
-```elixir
-Bracket.finally(
-  comp do
-    _ <- State.put(:working)
-    :done
-  end,
-  comp do
-    _ <- State.put(:cleaned_up)
-    :ok
-  end
-)
-|> State.with_handler(:init, output: fn r, s -> {r, s} end)
-|> Comp.run!()
-#=> {:done, :cleaned_up}
-```
-
 ### Yield
 
 Coroutine-style suspension and resumption:
@@ -510,6 +459,57 @@ Use cases for `Yield.respond`:
 - **Nested coroutine patterns** - Handle some yields locally while propagating others
 - **Internal request/response loops** - Build protocols within a computation
 - **Composing yield-based computations** - Layer handlers for different yield types
+
+### Bracket
+
+Safe resource acquisition and cleanup (like try/finally):
+
+```elixir
+# Track resource lifecycle with State
+comp do
+  result <- Bracket.bracket(
+    # Acquire
+    comp do
+      _ <- State.put(:acquired)
+      :resource
+    end,
+    # Release (always runs)
+    fn _resource ->
+      comp do
+        _ <- State.put(:released)
+        :ok
+      end
+    end,
+    # Use
+    fn resource ->
+      {:used, resource}  # auto-lifted
+    end
+  )
+  final_state <- State.get()
+  {result, final_state}
+end
+|> State.with_handler(:init)
+|> Comp.run!()
+#=> {{:used, :resource}, :released}
+```
+
+Use `Bracket.finally/2` for simpler cleanup without resource passing:
+
+```elixir
+Bracket.finally(
+  comp do
+    _ <- State.put(:working)
+    :done
+  end,
+  comp do
+    _ <- State.put(:cleaned_up)
+    :ok
+  end
+)
+|> State.with_handler(:init, output: fn r, s -> {r, s} end)
+|> Comp.run!()
+#=> {:done, :cleaned_up}
+```
 
 ### FxList
 
