@@ -56,6 +56,16 @@ defmodule Skuld.Effects.Yield do
   resume value. If the responder re-yields (calls `Yield.yield`), that yield
   propagates to the outer handler.
 
+  ## Implementation Note
+
+  This implementation wraps the Yield handler in the Env to intercept yields
+  directly at the handler level. A previous implementation used a different
+  approach: replacing the leave_scope with an identity function, running the
+  inner computation to completion, then pattern matching on `%Suspend{}` results
+  to detect yields. That approach was more complex (~180 lines vs ~80 lines),
+  required manual env state merging, and interfered with other effects that
+  rely on leave_scope (such as EffectLogger).
+
   ## Example
 
       # Handle all yields internally:
@@ -117,182 +127,109 @@ defmodule Skuld.Effects.Yield do
     alias Skuld.Comp.Env
 
     fn env, outer_k ->
-      # [1] Capture outer leave_scope
-      outer_leave_scope = Env.get_leave_scope(env)
+      # Get the current yield handler (will be used when responder re-yields)
+      outer_yield_handler = Env.get_handler(env, @sig)
 
-      # [2] Create env with identity leave_scope (so yields come back to us as %Suspend{})
-      loop_env = Env.with_leave_scope(env, &Comp.identity_k/2)
+      # Create a unique key for storing the wrapped handler in env state
+      handler_key = {__MODULE__, :respond_handler, make_ref()}
 
-      # [3] Run the respond loop
-      respond_loop(inner_comp, loop_env, responder, outer_leave_scope, outer_k)
+      # Create a wrapped handler that intercepts yields from the inner computation
+      wrapped_handler =
+        make_wrapped_handler(responder, outer_yield_handler, handler_key)
+
+      # Install the wrapped handler and store it in env state for self-reference
+      modified_env =
+        env
+        |> Env.with_handler(@sig, wrapped_handler)
+        |> Env.put_state(handler_key, wrapped_handler)
+
+      Comp.call(inner_comp, modified_env, outer_k)
     end
   end
 
-  # The respond loop - runs inner_comp and handles yields
-  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
-  defp respond_loop(inner_comp, env, responder, outer_leave_scope, outer_k) do
+  defp make_wrapped_handler(responder, outer_yield_handler, handler_key) do
     alias Skuld.Comp.Env
 
-    # Run inner computation with identity leave_scope
-    {result, result_env} = Comp.call(inner_comp, env, &Comp.identity_k/2)
+    fn %YieldOp{value: yielded_value}, yield_env, yield_k ->
+      # Run the responder to get the resume value
+      responder_comp = responder.(yielded_value)
 
-    case result do
-      %Comp.Suspend{value: yielded, resume: resume} ->
-        # Inner computation yielded - run responder
-        responder_comp = responder.(yielded)
-        {resp_result, resp_env} = Comp.call(responder_comp, result_env, &Comp.identity_k/2)
-
-        case resp_result do
-          %Comp.Suspend{value: resp_yielded, resume: resp_resume} ->
-            # Responder re-yielded - escape to outer handler
-            # Wrap the resume to continue the respond loop when resumed
-            wrapped_resume = fn input ->
-              # Resume responder
-              {resumed_result, resumed_env} = resp_resume.(input)
-
-              case resumed_result do
-                %Comp.Suspend{} = still_suspended ->
-                  # Still suspended - wrap again
-                  wrap_responder_resume(
-                    still_suspended,
-                    resumed_env,
-                    resume,
-                    responder,
-                    outer_leave_scope
-                  )
-
-                %Comp.Throw{} = thrown ->
-                  # Responder threw during resume - propagate through outer leave_scope
-                  final_env = Env.with_leave_scope(resumed_env, outer_leave_scope)
-                  outer_leave_scope.(thrown, final_env)
-
-                resp_value ->
-                  # Responder completed - resume inner and continue loop
-                  # Build a continuation computation from the resume
-                  inner_cont = fn cont_env, cont_k ->
-                    {inner_result, inner_env} = resume.(resp_value)
-                    # Replace env.state with inner_env.state but keep cont_env's leave_scope
-                    merged_env = %{cont_env | state: inner_env.state}
-                    cont_k.(inner_result, merged_env)
-                  end
-
-                  respond_loop(
-                    inner_cont,
-                    resumed_env,
-                    responder,
-                    outer_leave_scope,
-                    &Comp.identity_k/2
-                  )
-              end
-            end
-
-            # Return suspend with outer leave_scope restored
-            final_env = Env.with_leave_scope(resp_env, outer_leave_scope)
-            {%Comp.Suspend{value: resp_yielded, resume: wrapped_resume}, final_env}
-
-          %Comp.Throw{} = thrown ->
-            # Responder threw - propagate through outer leave_scope
-            final_env = Env.with_leave_scope(resp_env, outer_leave_scope)
-            outer_leave_scope.(thrown, final_env)
-
-          resp_value ->
-            # Responder returned a value - resume inner computation and loop
-            {resumed_result, resumed_env} = resume.(resp_value)
-            # Merge state: use responder's state (which may have been modified)
-            # but keep handlers and leave_scope from resumed_env
-            merged_env = %{resumed_env | state: resp_env.state}
-
-            case resumed_result do
-              %Comp.Suspend{} = inner_suspend ->
-                # Inner computation yielded again - continue loop
-                # Wrap as a computation to continue the loop
-                inner_cont = fn _cont_env, cont_k ->
-                  cont_k.(inner_suspend, merged_env)
-                end
-
-                respond_loop(inner_cont, merged_env, responder, outer_leave_scope, outer_k)
-
-              %Comp.Throw{} = thrown ->
-                # Inner threw after resume - propagate through outer leave_scope
-                final_env = Env.with_leave_scope(merged_env, outer_leave_scope)
-                outer_leave_scope.(thrown, final_env)
-
-              value ->
-                # Inner completed - restore outer leave_scope and finish
-                final_env = Env.with_leave_scope(merged_env, outer_leave_scope)
-                outer_k.(value, final_env)
-            end
+      # Restore the outer handler for the responder (so re-yields go outward)
+      responder_env =
+        if outer_yield_handler do
+          Env.with_handler(yield_env, @sig, outer_yield_handler)
+        else
+          Env.delete_handler(yield_env, @sig)
         end
 
-      %Comp.Throw{} = thrown ->
-        # Inner threw - propagate through outer leave_scope
-        final_env = Env.with_leave_scope(result_env, outer_leave_scope)
-        outer_leave_scope.(thrown, final_env)
+      # The responder's continuation: when responder completes, resume the inner computation
+      responder_k = fn resp_result, resp_env ->
+        case resp_result do
+          %Comp.Suspend{} = suspend ->
+            # Responder re-yielded - we need to wrap the resume to continue
+            # responding when eventually resumed
+            wrapped_resume =
+              wrap_respond_resume(
+                suspend.resume,
+                yield_k,
+                responder,
+                outer_yield_handler,
+                handler_key
+              )
 
-      value ->
-        # Inner completed without yielding - restore outer leave_scope and finish
-        final_env = Env.with_leave_scope(result_env, outer_leave_scope)
-        outer_k.(value, final_env)
+            {%Comp.Suspend{value: suspend.value, resume: wrapped_resume}, resp_env}
+
+          %Comp.Throw{} = thrown ->
+            # Responder threw - propagate directly
+            {thrown, resp_env}
+
+          resp_value ->
+            # Responder returned a value - resume the inner computation
+            # Re-install the wrapped handler for the continuation
+            wrapped_handler = Env.get_state(resp_env, handler_key)
+            resumed_env = Env.with_handler(resp_env, @sig, wrapped_handler)
+            yield_k.(resp_value, resumed_env)
+        end
+      end
+
+      # Run the responder with its continuation (with outer handler)
+      Comp.call(responder_comp, responder_env, responder_k)
     end
   end
 
-  # Wrap a still-suspended responder resume to continue the respond loop
-  defp wrap_responder_resume(suspend, env, inner_resume, responder, outer_leave_scope) do
+  # Wrap a resume function to continue the respond loop after the responder is resumed
+  defp wrap_respond_resume(original_resume, inner_k, responder, outer_yield_handler, handler_key) do
     alias Skuld.Comp.Env
 
-    wrapped_resume = fn input ->
-      {result, result_env} = suspend.resume.(input)
+    fn input ->
+      {result, result_env} = original_resume.(input)
 
       case result do
-        %Comp.Suspend{} = still_suspended ->
-          wrap_responder_resume(
-            still_suspended,
-            result_env,
-            inner_resume,
-            responder,
-            outer_leave_scope
-          )
+        %Comp.Suspend{} = suspend ->
+          # Still suspended - wrap again
+          wrapped_resume =
+            wrap_respond_resume(
+              suspend.resume,
+              inner_k,
+              responder,
+              outer_yield_handler,
+              handler_key
+            )
+
+          {%Comp.Suspend{value: suspend.value, resume: wrapped_resume}, result_env}
 
         %Comp.Throw{} = thrown ->
-          final_env = Env.with_leave_scope(result_env, outer_leave_scope)
-          outer_leave_scope.(thrown, final_env)
+          # Responder threw during resume
+          {thrown, result_env}
 
         resp_value ->
-          # Responder completed - resume inner and continue loop
-          {inner_result, inner_env} = inner_resume.(resp_value)
-          # Merge state: use responder's state (result_env) with inner's handlers
-          merged_env = %{inner_env | state: result_env.state}
-
-          case inner_result do
-            %Comp.Suspend{value: yielded, resume: next_resume} ->
-              # Inner yielded again - need to continue respond loop
-              # But we're in a resume context, so just return the suspend for now
-              # The outer driver will call this resume, continuing the loop
-              inner_cont = fn _cont_env, cont_k ->
-                cont_k.(%Comp.Suspend{value: yielded, resume: next_resume}, merged_env)
-              end
-
-              respond_loop(
-                inner_cont,
-                merged_env,
-                responder,
-                outer_leave_scope,
-                &Comp.identity_k/2
-              )
-
-            %Comp.Throw{} = thrown ->
-              final_env = Env.with_leave_scope(merged_env, outer_leave_scope)
-              outer_leave_scope.(thrown, final_env)
-
-            value ->
-              final_env = Env.with_leave_scope(merged_env, outer_leave_scope)
-              {value, final_env}
-          end
+          # Responder completed - resume the inner computation
+          # Re-install the wrapped handler for inner_k
+          wrapped_handler = Env.get_state(result_env, handler_key)
+          resumed_env = Env.with_handler(result_env, @sig, wrapped_handler)
+          inner_k.(resp_value, resumed_env)
       end
     end
-
-    final_env = Env.with_leave_scope(env, outer_leave_scope)
-    {%Comp.Suspend{value: suspend.value, resume: wrapped_resume}, final_env}
   end
 
   #############################################################################
