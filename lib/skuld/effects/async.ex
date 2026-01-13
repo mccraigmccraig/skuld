@@ -327,7 +327,11 @@ defmodule Skuld.Effects.Async do
         sup = Env.get_state(e, @supervisor_key)
 
         if sup && Process.alive?(sup) do
-          Supervisor.stop(sup, :normal)
+          try do
+            Supervisor.stop(sup, :normal)
+          catch
+            :exit, _ -> :ok
+          end
         end
 
         cleaned =
