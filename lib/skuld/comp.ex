@@ -220,22 +220,33 @@ defmodule Skuld.Comp do
     end
   end
 
-  @doc "Sequence a list of computations"
-  @spec sequence([Types.computation()]) :: Types.computation()
-  def sequence([]), do: pure([])
+  @doc """
+  Sequence a list of computations.
 
-  def sequence([comp | rest]) do
-    bind(comp, fn a ->
-      bind(sequence(rest), fn as ->
-        pure([a | as])
-      end)
-    end)
+  Runs each computation in order, collecting results into a list.
+  Uses a tail-recursive accumulator to avoid stack overflow on large lists.
+  """
+  @spec sequence([Types.computation()]) :: Types.computation()
+  def sequence(comps), do: sequence_acc(comps, [])
+
+  defp sequence_acc([], acc), do: pure(Enum.reverse(acc))
+
+  defp sequence_acc([comp | rest], acc) do
+    bind(comp, fn a -> sequence_acc(rest, [a | acc]) end)
   end
 
-  @doc "Apply f to each element, sequence the resulting computations"
+  @doc """
+  Apply f to each element, sequence the resulting computations.
+
+  Uses a tail-recursive accumulator to avoid stack overflow on large lists.
+  """
   @spec traverse(list(), (term() -> Types.computation())) :: Types.computation()
-  def traverse(list, f) do
-    sequence(Enum.map(list, f))
+  def traverse(list, f), do: traverse_acc(list, f, [])
+
+  defp traverse_acc([], _f, acc), do: pure(Enum.reverse(acc))
+
+  defp traverse_acc([h | t], f, acc) do
+    bind(f.(h), fn a -> traverse_acc(t, f, [a | acc]) end)
   end
 
   @doc """
