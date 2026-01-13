@@ -25,13 +25,13 @@ simpler and more coherent API, and is (arguably) easier to understand.
   - [State](#state)
   - [Reader](#reader)
   - [Writer](#writer)
+  - [Multiple Independent Contexts (Tagged Usage)](#multiple-independent-contexts-tagged-usage)
   - [Throw](#throw)
   - [Pattern Matching with Else](#pattern-matching-with-else)
   - [Combining Else and Catch](#combining-else-and-catch)
   - [Yield](#yield)
   - [FxList](#fxlist)
   - [FxFasterList](#fxfasterlist)
-  - [Multiple Independent Contexts (Tagged Usage)](#multiple-independent-contexts-tagged-usage)
   - [Fresh](#fresh)
   - [Random](#random)
   - [AtomicState](#atomicstate)
@@ -177,6 +177,50 @@ end
 |> Writer.with_handler([], output: fn result, log -> {result, Enum.reverse(log)} end)
 |> Comp.run!()
 #=> {:done, ["step 1", "step 2"]}
+```
+
+### Multiple Independent Contexts (Tagged Usage)
+
+State, Reader, and Writer all support explicit tags for multiple independent instances.
+Use an atom as the first argument to operations, and `tag: :name` in the handler:
+
+```elixir
+# Multiple independent state values
+comp do
+  _ <- State.put(:counter, 0)
+  _ <- State.modify(:counter, &(&1 + 1))
+  count <- State.get(:counter)
+  _ <- State.put(:name, "alice")
+  name <- State.get(:name)
+  {count, name}
+end
+|> State.with_handler(0, tag: :counter)
+|> State.with_handler("", tag: :name)
+|> Comp.run!()
+#=> {1, "alice"}
+
+# Multiple independent reader contexts
+comp do
+  db <- Reader.ask(:db)
+  api <- Reader.ask(:api)
+  {db, api}
+end
+|> Reader.with_handler(%{host: "localhost"}, tag: :db)
+|> Reader.with_handler(%{url: "https://api.example.com"}, tag: :api)
+|> Comp.run!()
+#=> {%{host: "localhost"}, %{url: "https://api.example.com"}}
+
+# Multiple independent writer logs
+comp do
+  _ <- Writer.tell(:audit, "user logged in")
+  _ <- Writer.tell(:metrics, {:counter, :login})
+  _ <- Writer.tell(:audit, "viewed dashboard")
+  :ok
+end
+|> Writer.with_handler([], tag: :audit, output: fn r, log -> {r, Enum.reverse(log)} end)
+|> Writer.with_handler([], tag: :metrics, output: fn r, log -> {r, Enum.reverse(log)} end)
+|> Comp.run!()
+#=> {{:ok, ["user logged in", "viewed dashboard"]}, [{:counter, :login}]}
 ```
 
 ### Throw
@@ -384,50 +428,6 @@ end
 
 > **Note**: FxFasterList is ~2x faster than FxList but has limited Yield/Suspend support.
 > Use it when performance is critical and you only use Throw for error handling.
-
-### Multiple Independent Contexts (Tagged Usage)
-
-State, Reader, and Writer all support explicit tags for multiple independent instances.
-Use an atom as the first argument to operations, and `tag: :name` in the handler:
-
-```elixir
-# Multiple independent state values
-comp do
-  _ <- State.put(:counter, 0)
-  _ <- State.modify(:counter, &(&1 + 1))
-  count <- State.get(:counter)
-  _ <- State.put(:name, "alice")
-  name <- State.get(:name)
-  {count, name}
-end
-|> State.with_handler(0, tag: :counter)
-|> State.with_handler("", tag: :name)
-|> Comp.run!()
-#=> {1, "alice"}
-
-# Multiple independent reader contexts
-comp do
-  db <- Reader.ask(:db)
-  api <- Reader.ask(:api)
-  {db, api}
-end
-|> Reader.with_handler(%{host: "localhost"}, tag: :db)
-|> Reader.with_handler(%{url: "https://api.example.com"}, tag: :api)
-|> Comp.run!()
-#=> {%{host: "localhost"}, %{url: "https://api.example.com"}}
-
-# Multiple independent writer logs
-comp do
-  _ <- Writer.tell(:audit, "user logged in")
-  _ <- Writer.tell(:metrics, {:counter, :login})
-  _ <- Writer.tell(:audit, "viewed dashboard")
-  :ok
-end
-|> Writer.with_handler([], tag: :audit, output: fn r, log -> {r, Enum.reverse(log)} end)
-|> Writer.with_handler([], tag: :metrics, output: fn r, log -> {r, Enum.reverse(log)} end)
-|> Comp.run!()
-#=> {{:ok, ["user logged in", "viewed dashboard"]}, [{:counter, :login}]}
-```
 
 ### Fresh
 
