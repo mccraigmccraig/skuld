@@ -126,7 +126,7 @@ defmodule Skuld.Comp do
     end
   end
 
-  @doc "identity cntinuation - for initial continuation & default leave-scope"
+  @doc "identity continuation - for initial continuation & default leave-scope"
   def identity_k(val, env), do: {val, env}
 
   @doc """
