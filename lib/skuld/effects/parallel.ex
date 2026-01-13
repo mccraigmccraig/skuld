@@ -69,9 +69,9 @@ defmodule Skuld.Effects.Parallel do
   ## Operation Structs
   #############################################################################
 
-  def_op(AllOp, [:comps])
-  def_op(RaceOp, [:comps])
-  def_op(MapOp, [:items, :fun])
+  def_op(All, [:comps])
+  def_op(Race, [:comps])
+  def_op(ParallelMap, [:items, :fun])
 
   #############################################################################
   ## Public Operations
@@ -94,7 +94,7 @@ defmodule Skuld.Effects.Parallel do
   """
   @spec all(list(Types.computation())) :: Types.computation()
   def all(comps) when is_list(comps) do
-    Comp.effect(@sig, %AllOp{comps: comps})
+    Comp.effect(@sig, %All{comps: comps})
   end
 
   @doc """
@@ -114,7 +114,7 @@ defmodule Skuld.Effects.Parallel do
   """
   @spec race(list(Types.computation())) :: Types.computation()
   def race(comps) when is_list(comps) do
-    Comp.effect(@sig, %RaceOp{comps: comps})
+    Comp.effect(@sig, %Race{comps: comps})
   end
 
   @doc """
@@ -135,7 +135,7 @@ defmodule Skuld.Effects.Parallel do
   """
   @spec map(list(term()), (term() -> Types.computation())) :: Types.computation()
   def map(items, fun) when is_list(items) and is_function(fun, 1) do
-    Comp.effect(@sig, %MapOp{items: items, fun: fun})
+    Comp.effect(@sig, %ParallelMap{items: items, fun: fun})
   end
 
   #############################################################################
@@ -189,7 +189,7 @@ defmodule Skuld.Effects.Parallel do
     |> Comp.with_handler(@sig, &handle_parallel/3)
   end
 
-  defp handle_parallel(%AllOp{comps: comps}, env, k) do
+  defp handle_parallel(%All{comps: comps}, env, k) do
     sup = Env.get_state(env, @supervisor_key)
 
     # Isolate task env from parent's leave_scope to prevent scope cleanup cross-talk
@@ -210,7 +210,7 @@ defmodule Skuld.Effects.Parallel do
     k.(results, env)
   end
 
-  defp handle_parallel(%RaceOp{comps: comps}, env, k) do
+  defp handle_parallel(%Race{comps: comps}, env, k) do
     sup = Env.get_state(env, @supervisor_key)
 
     # Isolate task env from parent's leave_scope to prevent scope cleanup cross-talk
@@ -231,7 +231,7 @@ defmodule Skuld.Effects.Parallel do
     k.(result, env)
   end
 
-  defp handle_parallel(%MapOp{items: items, fun: fun}, env, k) do
+  defp handle_parallel(%ParallelMap{items: items, fun: fun}, env, k) do
     sup = Env.get_state(env, @supervisor_key)
 
     # Isolate task env from parent's leave_scope to prevent scope cleanup cross-talk
@@ -387,7 +387,7 @@ defmodule Skuld.Effects.Parallel do
     Comp.with_handler(comp, @sig, &handle_sequential/3)
   end
 
-  defp handle_sequential(%AllOp{comps: comps}, env, k) do
+  defp handle_sequential(%All{comps: comps}, env, k) do
     result = run_all_sequential(comps, env, [])
 
     case result do
@@ -396,7 +396,7 @@ defmodule Skuld.Effects.Parallel do
     end
   end
 
-  defp handle_sequential(%RaceOp{comps: comps}, env, k) do
+  defp handle_sequential(%Race{comps: comps}, env, k) do
     # In sequential mode, "race" just returns the first one
     case comps do
       [] ->
@@ -415,7 +415,7 @@ defmodule Skuld.Effects.Parallel do
     end
   end
 
-  defp handle_sequential(%MapOp{items: items, fun: fun}, env, k) do
+  defp handle_sequential(%ParallelMap{items: items, fun: fun}, env, k) do
     comps = Enum.map(items, fun)
     result = run_all_sequential(comps, env, [])
 

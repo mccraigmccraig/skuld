@@ -26,7 +26,7 @@ defmodule Skuld.Effects.Yield do
   ## Operation Structs
   #############################################################################
 
-  def_op(YieldOp, [:value])
+  def_op(Yield, [:value])
 
   #############################################################################
   ## Operations
@@ -35,7 +35,7 @@ defmodule Skuld.Effects.Yield do
   @doc "Yield a value and suspend, waiting for input to resume"
   @spec yield(term()) :: Types.computation()
   def yield(value) do
-    Comp.effect(@sig, %YieldOp{value: value})
+    Comp.effect(@sig, %Yield{value: value})
   end
 
   @doc "Yield without a value"
@@ -141,7 +141,7 @@ defmodule Skuld.Effects.Yield do
   defp make_wrapped_handler(responder, outer_yield_handler) do
     alias Skuld.Comp.Env
 
-    fn %YieldOp{value: yielded_value}, yield_env, yield_k ->
+    fn %Yield{value: yielded_value}, yield_env, yield_k ->
       # Run the responder to get the resume value
       responder_comp = responder.(yielded_value)
 
@@ -263,7 +263,7 @@ defmodule Skuld.Effects.Yield do
   and invokes leave_scope when the resumed computation completes.
   """
   @impl Skuld.Comp.IHandler
-  def handle(%YieldOp{value: value}, env, k) do
+  def handle(%Yield{value: value}, env, k) do
     captured_resume = fn input ->
       {result, final_env} = k.(input, env)
 

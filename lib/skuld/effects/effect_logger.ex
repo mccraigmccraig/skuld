@@ -175,7 +175,7 @@ defmodule Skuld.Effects.EffectLogger do
   ## Operation Structs
   #############################################################################
 
-  defmodule MarkLoopOp do
+  defmodule MarkLoop do
     @moduledoc """
     Operation struct for loop iteration marks.
 
@@ -214,7 +214,7 @@ defmodule Skuld.Effects.EffectLogger do
     end
   end
 
-  defimpl Jason.Encoder, for: Skuld.Effects.EffectLogger.MarkLoopOp do
+  defimpl Jason.Encoder, for: Skuld.Effects.EffectLogger.MarkLoop do
     def encode(value, opts) do
       value
       |> Skuld.Comp.SerializableStruct.encode()
@@ -261,7 +261,7 @@ defmodule Skuld.Effects.EffectLogger do
   @spec mark_loop(atom()) :: Types.computation()
   def mark_loop(loop_id) when is_atom(loop_id) do
     # env_state will be captured by wrap_handler when this effect is logged
-    Comp.effect(@sig, %MarkLoopOp{loop_id: loop_id, env_state: nil})
+    Comp.effect(@sig, %MarkLoop{loop_id: loop_id, env_state: nil})
   end
 
   @doc """
@@ -278,10 +278,10 @@ defmodule Skuld.Effects.EffectLogger do
   Handle EffectLogger operations.
 
   Currently handles:
-  - `MarkLoopOp` - Records loop iteration boundary, returns `:ok`
+  - `MarkLoop` - Records loop iteration boundary, returns `:ok`
   """
   @spec handle(term(), Types.env(), Types.k()) :: {Types.result(), Types.env()}
-  def handle(%MarkLoopOp{}, env, k) do
+  def handle(%MarkLoop{}, env, k) do
     # The mark is recorded by the logging wrapper.
     # This handler just returns :ok to continue the computation.
     k.(:ok, env)
@@ -365,9 +365,9 @@ defmodule Skuld.Effects.EffectLogger do
       # Generate unique ID for this entry
       entry_id = generate_id()
 
-      # For MarkLoopOp, capture current env.state as a serializable snapshot
+      # For MarkLoop, capture current env.state as a serializable snapshot
       entry_data =
-        if sig == __MODULE__ and match?(%MarkLoopOp{}, args) do
+        if sig == __MODULE__ and match?(%MarkLoop{}, args) do
           %{args | env_state: capture_state_snapshot(env_with_root)}
         else
           args
@@ -388,7 +388,7 @@ defmodule Skuld.Effects.EffectLogger do
       end
 
       # Track whether this is a mark_loop effect for eager pruning
-      is_mark_loop = sig == __MODULE__ and match?(%MarkLoopOp{}, args)
+      is_mark_loop = sig == __MODULE__ and match?(%MarkLoop{}, args)
 
       # Create wrapped continuation that marks entry as executed
       wrapped_k = fn value, inner_env ->
@@ -972,7 +972,7 @@ defmodule Skuld.Effects.EffectLogger do
         EffectLogEntry.new(
           generate_id(),
           __MODULE__,
-          %MarkLoopOp{loop_id: @root_loop_id, env_state: capture_state_snapshot(env)}
+          %MarkLoop{loop_id: @root_loop_id, env_state: capture_state_snapshot(env)}
         )
         |> EffectLogEntry.set_executed(:ok)
 
@@ -997,14 +997,14 @@ defmodule Skuld.Effects.EffectLogger do
     end
   end
 
-  # Skip any MarkLoopOp entries at the front of the queue during replay.
+  # Skip any MarkLoop entries at the front of the queue during replay.
   # These are checkpoints for state restoration, not user effects.
   # If divergence is not allowed, validates that current state matches checkpoint.
   defp skip_loop_marks(env) do
     log = get_log(env) || Log.new()
 
     case Log.peek_queue(log) do
-      %EffectLogEntry{sig: sig, data: %MarkLoopOp{env_state: checkpoint_state}} = entry
+      %EffectLogEntry{sig: sig, data: %MarkLoop{env_state: checkpoint_state}} = entry
       when sig == __MODULE__ ->
         # Pop the mark entry
         {_entry, updated_log} = Log.pop_queue(log)

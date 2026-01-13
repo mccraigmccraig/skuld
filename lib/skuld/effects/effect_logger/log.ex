@@ -534,7 +534,7 @@ defmodule Skuld.Effects.EffectLogger.Log do
   @doc """
   Find the most recent mark entry in the log queue (for cold resume).
 
-  Returns the MarkLoopOp entry with the most recent env_state, or nil.
+  Returns the MarkLoop entry with the most recent env_state, or nil.
   """
   @spec find_latest_checkpoint(t()) :: EffectLogEntry.t() | nil
   def find_latest_checkpoint(%__MODULE__{} = log) do

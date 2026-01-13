@@ -92,11 +92,11 @@ defmodule Skuld.Effects.Async do
   ## Operation Structs
   #############################################################################
 
-  def_op(AsyncOp, [:comp])
-  def_op(AwaitOp, [:handle])
-  def_op(AwaitWithTimeoutOp, [:handle, :timeout_ms])
-  def_op(CancelOp, [:handle])
-  def_op(BoundaryOp, [:comp, :on_unawaited])
+  def_op(Async, [:comp])
+  def_op(Await, [:handle])
+  def_op(AwaitWithTimeout, [:handle, :timeout_ms])
+  def_op(Cancel, [:handle])
+  def_op(Boundary, [:comp, :on_unawaited])
 
   #############################################################################
   ## Handle Structure
@@ -136,7 +136,7 @@ defmodule Skuld.Effects.Async do
   """
   @spec async(Types.computation()) :: Types.computation()
   def async(comp) do
-    Comp.effect(@sig, %AsyncOp{comp: comp})
+    Comp.effect(@sig, %Async{comp: comp})
   end
 
   @doc """
@@ -157,7 +157,7 @@ defmodule Skuld.Effects.Async do
   """
   @spec await(Handle.t()) :: Types.computation()
   def await(%Handle{} = handle) do
-    Comp.effect(@sig, %AwaitOp{handle: handle})
+    Comp.effect(@sig, %Await{handle: handle})
   end
 
   @doc """
@@ -181,7 +181,7 @@ defmodule Skuld.Effects.Async do
   """
   @spec cancel(Handle.t()) :: Types.computation()
   def cancel(%Handle{} = handle) do
-    Comp.effect(@sig, %CancelOp{handle: handle})
+    Comp.effect(@sig, %Cancel{handle: handle})
   end
 
   @doc """
@@ -204,7 +204,7 @@ defmodule Skuld.Effects.Async do
   """
   @spec await_with_timeout(Handle.t(), non_neg_integer()) :: Types.computation()
   def await_with_timeout(%Handle{} = handle, timeout_ms) when is_integer(timeout_ms) do
-    Comp.effect(@sig, %AwaitWithTimeoutOp{handle: handle, timeout_ms: timeout_ms})
+    Comp.effect(@sig, %AwaitWithTimeout{handle: handle, timeout_ms: timeout_ms})
   end
 
   @doc """
@@ -291,7 +291,7 @@ defmodule Skuld.Effects.Async do
           Throw.throw({:unawaited_tasks, length(unawaited)})
         end
 
-    Comp.effect(@sig, %BoundaryOp{comp: comp, on_unawaited: on_unawaited})
+    Comp.effect(@sig, %Boundary{comp: comp, on_unawaited: on_unawaited})
   end
 
   #############################################################################
@@ -357,7 +357,7 @@ defmodule Skuld.Effects.Async do
     |> Comp.with_handler(@sig, &handle_task/3)
   end
 
-  defp handle_task(%BoundaryOp{comp: inner_comp, on_unawaited: on_unawaited}, env, k) do
+  defp handle_task(%Boundary{comp: inner_comp, on_unawaited: on_unawaited}, env, k) do
     # Generate unique boundary ID
     boundary_id = make_ref()
 
@@ -436,7 +436,7 @@ defmodule Skuld.Effects.Async do
     Comp.call(scoped_comp, env, k)
   end
 
-  defp handle_task(%AsyncOp{comp: comp}, env, k) do
+  defp handle_task(%Async{comp: comp}, env, k) do
     current_boundary = Env.get_state(env, @current_boundary_key)
 
     if current_boundary == nil do
@@ -470,7 +470,7 @@ defmodule Skuld.Effects.Async do
   @default_await_timeout_ms 5 * 60 * 1000
 
   defp handle_task(
-         %AwaitOp{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task}},
+         %Await{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task}},
          env,
          k
        ) do
@@ -479,7 +479,7 @@ defmodule Skuld.Effects.Async do
   end
 
   defp handle_task(
-         %AwaitWithTimeoutOp{
+         %AwaitWithTimeout{
            handle: %Handle{boundary_id: handle_boundary, task_or_ref: task},
            timeout_ms: timeout_ms
          },
@@ -491,7 +491,7 @@ defmodule Skuld.Effects.Async do
   end
 
   defp handle_task(
-         %CancelOp{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task} = handle},
+         %Cancel{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task} = handle},
          env,
          k
        ) do
@@ -609,7 +609,7 @@ defmodule Skuld.Effects.Async do
     |> Comp.with_handler(@sig, &handle_sequential/3)
   end
 
-  defp handle_sequential(%BoundaryOp{comp: inner_comp, on_unawaited: on_unawaited}, env, k) do
+  defp handle_sequential(%Boundary{comp: inner_comp, on_unawaited: on_unawaited}, env, k) do
     # Generate unique boundary ID
     boundary_id = make_ref()
 
@@ -678,7 +678,7 @@ defmodule Skuld.Effects.Async do
     Comp.call(scoped_comp, env, k)
   end
 
-  defp handle_sequential(%AsyncOp{comp: comp}, env, k) do
+  defp handle_sequential(%Async{comp: comp}, env, k) do
     current_boundary = Env.get_state(env, @current_boundary_key)
 
     if current_boundary == nil do
@@ -713,7 +713,7 @@ defmodule Skuld.Effects.Async do
   end
 
   defp handle_sequential(
-         %AwaitOp{handle: %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref}},
+         %Await{handle: %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref}},
          env,
          k
        ) do
@@ -722,7 +722,7 @@ defmodule Skuld.Effects.Async do
   end
 
   defp handle_sequential(
-         %AwaitWithTimeoutOp{
+         %AwaitWithTimeout{
            handle: %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref},
            timeout_ms: _timeout_ms
          },
@@ -734,7 +734,7 @@ defmodule Skuld.Effects.Async do
   end
 
   defp handle_sequential(
-         %CancelOp{
+         %Cancel{
            handle: %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref} = handle
          },
          env,

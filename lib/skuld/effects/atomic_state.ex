@@ -89,7 +89,7 @@ defmodule Skuld.Effects.AtomicState do
   def_op(Get, [:tag], atom_fields: [:tag])
   def_op(Put, [:tag, :value], atom_fields: [:tag])
   def_op(Modify, [:tag, :fun], atom_fields: [:tag])
-  def_op(AtomicStateOp, [:tag, :fun], atom_fields: [:tag])
+  def_op(AtomicState, [:tag, :fun], atom_fields: [:tag])
   def_op(Cas, [:tag, :expected, :new], atom_fields: [:tag])
 
   #############################################################################
@@ -157,12 +157,12 @@ defmodule Skuld.Effects.AtomicState do
   """
   @spec atomic_state((term() -> {term(), term()})) :: Types.computation()
   def atomic_state(fun) when is_function(fun, 1) do
-    Comp.effect(sig(@sig), %AtomicStateOp{tag: @sig, fun: fun})
+    Comp.effect(sig(@sig), %AtomicState{tag: @sig, fun: fun})
   end
 
   @spec atomic_state(atom(), (term() -> {term(), term()})) :: Types.computation()
   def atomic_state(tag, fun) when is_atom(tag) and is_function(fun, 1) do
-    Comp.effect(sig(tag), %AtomicStateOp{tag: tag, fun: fun})
+    Comp.effect(sig(tag), %AtomicState{tag: tag, fun: fun})
   end
 
   @doc """
@@ -277,7 +277,7 @@ defmodule Skuld.Effects.AtomicState do
     k.(new_value, env)
   end
 
-  defp handle_agent(%AtomicStateOp{tag: tag, fun: fun}, env, k, tag) do
+  defp handle_agent(%AtomicState{tag: tag, fun: fun}, env, k, tag) do
     agent = Env.get_state(env, agent_key(tag))
 
     result =
@@ -382,7 +382,7 @@ defmodule Skuld.Effects.AtomicState do
     k.(new_value, new_env)
   end
 
-  defp handle_state(%AtomicStateOp{tag: tag, fun: fun}, env, k, tag) do
+  defp handle_state(%AtomicState{tag: tag, fun: fun}, env, k, tag) do
     key = state_key(tag)
     current = Env.get_state(env, key)
     {result, new_state} = fun.(current)

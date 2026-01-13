@@ -28,7 +28,7 @@ defmodule Skuld.Effects.Throw do
   ## Operation Structs
   #############################################################################
 
-  def_op(ThrowOp, [:error])
+  def_op(Throw, [:error])
 
   #############################################################################
   ## Operations
@@ -37,7 +37,7 @@ defmodule Skuld.Effects.Throw do
   @doc "Throw an error - does not resume"
   @spec throw(term()) :: Types.computation()
   def throw(error) do
-    Comp.effect(@sig, %ThrowOp{error: error})
+    Comp.effect(@sig, %Throw{error: error})
   end
 
   @doc """
@@ -169,7 +169,7 @@ defmodule Skuld.Effects.Throw do
 
   @doc "Default handler - return Throw struct as result (does not call k)"
   @impl Skuld.Comp.IHandler
-  def handle(%ThrowOp{error: error}, env, _k) do
+  def handle(%Throw{error: error}, env, _k) do
     {%Comp.Throw{error: error}, env}
   end
 end
