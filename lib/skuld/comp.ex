@@ -315,9 +315,19 @@ defmodule Skuld.Comp do
       {modified_env, finally_k} = setup.(env)
 
       # Normal exit: run finally_k then continue to outer
+      # BUT if finally_k produces a throw, route through leave_scope instead
       normal_k = fn value, inner_env ->
         {new_value, final_env} = finally_k.(value, inner_env)
-        outer_k.(new_value, Env.with_leave_scope(final_env, previous_leave_scope))
+        restored_env = Env.with_leave_scope(final_env, previous_leave_scope)
+
+        case new_value do
+          %__MODULE__.Throw{} ->
+            # finally_k produced a throw - route through leave_scope
+            previous_leave_scope.(new_value, restored_env)
+
+          _ ->
+            outer_k.(new_value, restored_env)
+        end
       end
 
       # Abnormal exit: run finally_k during leave-scope unwinding

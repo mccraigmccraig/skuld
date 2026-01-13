@@ -93,7 +93,7 @@ alias Skuld.Comp
 alias Skuld.Effects.{
   State, Reader, Writer, Throw, Yield,
   FxList, FxFasterList,
-  Fresh, Random, AtomicState, Bracket, Query, Command, EventAccumulator, EffectLogger,
+  Fresh, Random, AtomicState, Async, Bracket, Query, Command, EventAccumulator, EffectLogger,
   DBTransaction, EctoPersist
 }
 alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
@@ -524,6 +524,108 @@ end
 ```
 
 Operations: `get/1`, `put/2`, `modify/2`, `atomic_state/2` (get-and-update), `cas/3`
+
+### Async
+
+Structured concurrent computation with async/await and boundaries:
+
+```elixir
+# Basic async/await within a boundary
+comp do
+  result <- Async.boundary(
+    comp do
+      # Start concurrent tasks
+      h1 <- Async.async(comp do :result_1 end)
+      h2 <- Async.async(comp do :result_2 end)
+      
+      # Await both results
+      r1 <- Async.await(h1)
+      r2 <- Async.await(h2)
+      {r1, r2}
+    end
+  )
+  result
+end
+|> Async.with_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:result_1, :result_2}
+```
+
+**Boundaries** provide structured concurrency—all tasks must be awaited or explicitly
+handled before the boundary exits:
+
+```elixir
+# Unawaited tasks throw by default
+comp do
+  Async.boundary(
+    comp do
+      _ <- Async.async(comp do :ignored end)  # Not awaited!
+      :done
+    end
+  )
+catch
+  err -> {:caught, err}
+end
+|> Async.with_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:caught, {:unawaited_tasks, 1}}
+
+# Custom on_unawaited handler - ignore unawaited tasks
+comp do
+  Async.boundary(
+    comp do
+      _ <- Async.async(comp do :ignored end)
+      :done
+    end,
+    fn result, _unawaited -> result end  # Just return result
+  )
+end
+|> Async.with_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+#=> :done
+```
+
+**Task failures** are caught and returned as errors:
+
+```elixir
+comp do
+  Async.boundary(
+    comp do
+      h <- Async.async(comp do raise "boom!" end)
+      Async.await(h)
+    end
+  )
+end
+|> Async.with_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:error, {:task_failed, %{kind: :error, payload: %RuntimeError{...}, ...}}}
+```
+
+**Testing handler** runs tasks sequentially for deterministic tests:
+
+```elixir
+comp do
+  Async.boundary(
+    comp do
+      h <- Async.async(comp do :sequential end)
+      Async.await(h)
+    end
+  )
+end
+|> Async.with_sequential_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+#=> :sequential
+```
+
+Operations: `boundary/2`, `async/1`, `await/1`
+
+> **Note**: Async computations run on the same BEAM node. Closures cannot be
+> serialized across nodes, so distributed async is not supported.
 
 ### Bracket
 
