@@ -135,7 +135,8 @@ alias Skuld.Comp
 alias Skuld.Effects.{
   State, Reader, Writer, Throw, Yield,
   FxList, FxFasterList,
-  Fresh, Random, AtomicState, Async, Bracket, Query, Command, EventAccumulator, EffectLogger,
+  Fresh, Random, AtomicState, Async, Parallel, Bracket, Query, Command, 
+  EventAccumulator, EffectLogger,
   DBTransaction, ChangesetPersist, ChangeEvent
 }
 alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
@@ -864,38 +865,38 @@ is self-contained with automatic task management:
 # Run multiple computations in parallel, get all results
 comp do
   Parallel.all([
-    comp do fetch_user(1) end,
-    comp do fetch_user(2) end,
-    comp do fetch_user(3) end
+    comp do %{id: 1, name: "Alice"} end,
+    comp do %{id: 2, name: "Bob"} end,
+    comp do %{id: 3, name: "Carol"} end
   ])
 end
 |> Parallel.with_handler()
 |> Throw.with_handler()
 |> Comp.run!()
-#=> [%User{id: 1}, %User{id: 2}, %User{id: 3}]
+#=> [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}, %{id: 3, name: "Carol"}]
 
 # Race: return first to complete, cancel others
 comp do
   Parallel.race([
-    comp do slow_approach() end,
-    comp do fast_approach() end
+    comp do :slow_result end,
+    comp do :fast_result end
   ])
 end
 |> Parallel.with_handler()
 |> Throw.with_handler()
 |> Comp.run!()
-#=> :fast_result  (slow_approach cancelled)
+#=> :slow_result or :fast_result (first to complete wins)
 
 # Map over items in parallel
 comp do
-  Parallel.map(user_ids, fn id ->
-    comp do fetch_user(id) end
+  Parallel.map([1, 2, 3], fn id ->
+    comp do %{id: id, name: "User #{id}"} end
   end)
 end
 |> Parallel.with_handler()
 |> Throw.with_handler()
 |> Comp.run!()
-#=> [%User{}, %User{}, ...]
+#=> [%{id: 1, name: "User 1"}, %{id: 2, name: "User 2"}, %{id: 3, name: "User 3"}]
 ```
 
 **Error handling**: Task failures are caught. For `all/1` and `map/2`, the first
