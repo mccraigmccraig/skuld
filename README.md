@@ -1246,44 +1246,43 @@ ProcessLoop.process(["a", "b", "c", "d"])
 When a computation suspends via `Yield`, you can serialize the log and resume later:
 
 ```elixir
-# Computation that yields for user input
-defcomp conversation() do
-  _ <- EffectLogger.mark_loop(ConversationLoop)
-  count <- State.get()
-  _ <- State.put(count + 1)
+# Define a computation that yields for user input
+defmodule Conversation do
+  use Skuld.Syntax
+  alias Skuld.Effects.{State, Writer, Yield, EffectLogger}
 
-  # Yield for input, then continue
-  input <- Yield.yield({:prompt, "Message #{count}:"})
-  _ <- Writer.tell("User said: #{input}")
+  defcomp run() do
+    _ <- EffectLogger.mark_loop(ConversationLoop)
+    count <- State.get()
+    _ <- State.put(count + 1)
 
-  conversation()  # Loop forever, yielding each iteration
+    # Yield for input, then continue
+    input <- Yield.yield({:prompt, "Message #{count}:"})
+    _ <- Writer.tell("User said: #{input}")
+
+    run()  # Loop forever, yielding each iteration
+  end
 end
 
 # First run - suspends at first yield (pruning is enabled by default)
-{suspended, env} =
-  conversation()
-  |> EffectLogger.with_logging()
-  |> Yield.with_handler()
-  |> State.with_handler(0)
-  |> Writer.with_handler([])
-  |> Comp.run()
+Conversation.run()
+|> EffectLogger.with_logging()
+|> Yield.with_handler()
+|> State.with_handler(0)
+|> Writer.with_handler([])
+|> Comp.run()
+#=> {%Comp.Suspend{value: {:prompt, "Message 0:"}, ...}, env}
 
-# Extract and serialize the log
-log = EffectLogger.get_log(env) |> EffectLogger.Log.finalize()
-json = Jason.encode!(log)
-
-# Later... deserialize and cold resume with user's response
-cold_log = json |> Jason.decode!() |> EffectLogger.Log.from_json()
-
-{suspended2, env2} =
-  conversation()
-  |> EffectLogger.with_resume(cold_log, "Hello!")  # Inject resume value
-  |> Yield.with_handler()
-  |> State.with_handler(999)  # State restored from checkpoint, not this value
-  |> Writer.with_handler([])
-  |> Comp.run()
-
-# Continues from where it left off, state properly restored
+# To continue: extract and serialize the log, then cold resume with user's response
+# log = EffectLogger.get_log(env) |> EffectLogger.Log.finalize()
+# json = Jason.encode!(log)
+# cold_log = json |> Jason.decode!() |> EffectLogger.Log.from_json()
+# Conversation.run()
+# |> EffectLogger.with_resume(cold_log, "Hello!")
+# |> Yield.with_handler()
+# |> State.with_handler(999)  # State restored from checkpoint, not this value
+# |> Writer.with_handler([])
+# |> Comp.run()
 ```
 
 The `with_resume/3` function:
