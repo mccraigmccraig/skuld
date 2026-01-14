@@ -185,25 +185,26 @@ defmodule Skuld.Effects.Random do
   """
   @spec with_handler(Types.computation()) :: Types.computation()
   def with_handler(comp) do
-    Comp.with_handler(comp, @sig, &handle_rand/3)
+    Comp.with_handler(comp, @sig, &handle/3)
   end
 
-  defp handle_rand(%RandomFloat{}, env, k) do
+  @impl Skuld.Comp.IHandler
+  def handle(%RandomFloat{}, env, k) do
     k.(:rand.uniform(), env)
   end
 
-  defp handle_rand(%RandomInt{min: min, max: max}, env, k) do
+  def handle(%RandomInt{min: min, max: max}, env, k) do
     # :rand.uniform(n) returns 1..n, so adjust for min..max range
     value = min + :rand.uniform(max - min + 1) - 1
     k.(value, env)
   end
 
-  defp handle_rand(%RandomElement{list: list}, env, k) do
+  def handle(%RandomElement{list: list}, env, k) do
     index = :rand.uniform(length(list)) - 1
     k.(Enum.at(list, index), env)
   end
 
-  defp handle_rand(%Shuffle{list: list}, env, k) do
+  def handle(%Shuffle{list: list}, env, k) do
     k.(Enum.shuffle(list), env)
   end
 
@@ -399,14 +400,5 @@ defmodule Skuld.Effects.Random do
 
     new_env = Env.put_state(env, @sig, %{state | values: remaining})
     {value, new_env}
-  end
-
-  #############################################################################
-  ## IHandler Implementation (not used directly)
-  #############################################################################
-
-  @impl Skuld.Comp.IHandler
-  def handle(_op, _env, _k) do
-    raise "Random.handle/3 should not be called directly - use with_handler/1, with_seed_handler/2, or with_fixed_handler/2"
   end
 end

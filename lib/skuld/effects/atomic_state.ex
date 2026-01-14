@@ -69,8 +69,6 @@ defmodule Skuld.Effects.AtomicState do
       #=> 1
   """
 
-  @behaviour Skuld.Comp.IHandler
-
   import Skuld.Comp.DefOp
 
   alias Skuld.Comp
@@ -401,13 +399,4 @@ defmodule Skuld.Effects.AtomicState do
   """
   @spec state_key(atom()) :: {module(), :state, atom()}
   def state_key(tag), do: {@sig, :state, tag}
-
-  #############################################################################
-  ## IHandler Implementation (not used directly)
-  #############################################################################
-
-  @impl Skuld.Comp.IHandler
-  def handle(_op, _env, _k) do
-    raise "AtomicState.handle/3 should not be called directly - use with_agent_handler/3 or with_state_handler/3"
-  end
 end

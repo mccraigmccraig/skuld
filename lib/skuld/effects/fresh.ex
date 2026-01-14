@@ -128,10 +128,11 @@ defmodule Skuld.Effects.Fresh do
   """
   @spec with_uuid7_handler(Types.computation()) :: Types.computation()
   def with_uuid7_handler(comp) do
-    Comp.with_handler(comp, @sig, &handle_uuid7/3)
+    Comp.with_handler(comp, @sig, &handle/3)
   end
 
-  defp handle_uuid7(%FreshUUID{}, env, k) do
+  @impl Skuld.Comp.IHandler
+  def handle(%FreshUUID{}, env, k) do
     uuid = Uniq.UUID.uuid7()
     k.(uuid, env)
   end
@@ -204,14 +205,5 @@ defmodule Skuld.Effects.Fresh do
     uuid = Uniq.UUID.uuid5(namespace, Integer.to_string(counter))
     new_env = Env.put_state(env, @sig, %{state | counter: counter + 1})
     k.(uuid, new_env)
-  end
-
-  #############################################################################
-  ## IHandler Implementation (not used directly - handlers use private fns)
-  #############################################################################
-
-  @impl Skuld.Comp.IHandler
-  def handle(%FreshUUID{}, _env, _k) do
-    raise "Fresh.handle/3 should not be called directly - use with_uuid7_handler/2 or with_test_handler/2"
   end
 end

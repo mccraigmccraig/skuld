@@ -48,8 +48,6 @@ defmodule Skuld.Effects.Command do
   other approach.
   """
 
-  @behaviour Skuld.Comp.IHandler
-
   import Skuld.Comp.DefOp
 
   alias Skuld.Comp
@@ -121,14 +119,5 @@ defmodule Skuld.Effects.Command do
       # Run the computation with our continuation
       Comp.call(command_computation, env, k)
     end)
-  end
-
-  #############################################################################
-  ## IHandler Implementation (for direct use if needed)
-  #############################################################################
-
-  @impl Skuld.Comp.IHandler
-  def handle(%Execute{command: _command}, _env, _k) do
-    raise "Command.handle/3 should not be called directly - use with_handler/2"
   end
 end

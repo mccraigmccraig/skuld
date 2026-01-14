@@ -186,10 +186,11 @@ defmodule Skuld.Effects.Parallel do
 
       {modified, finally_k}
     end)
-    |> Comp.with_handler(@sig, &handle_parallel/3)
+    |> Comp.with_handler(@sig, &handle/3)
   end
 
-  defp handle_parallel(%All{comps: comps}, env, k) do
+  @impl Skuld.Comp.IHandler
+  def handle(%All{comps: comps}, env, k) do
     sup = Env.get_state(env, @supervisor_key)
 
     # Isolate task env from parent's leave_scope to prevent scope cleanup cross-talk
@@ -210,7 +211,7 @@ defmodule Skuld.Effects.Parallel do
     k.(results, env)
   end
 
-  defp handle_parallel(%Race{comps: comps}, env, k) do
+  def handle(%Race{comps: comps}, env, k) do
     sup = Env.get_state(env, @supervisor_key)
 
     # Isolate task env from parent's leave_scope to prevent scope cleanup cross-talk
@@ -231,7 +232,7 @@ defmodule Skuld.Effects.Parallel do
     k.(result, env)
   end
 
-  defp handle_parallel(%ParallelMap{items: items, fun: fun}, env, k) do
+  def handle(%ParallelMap{items: items, fun: fun}, env, k) do
     sup = Env.get_state(env, @supervisor_key)
 
     # Isolate task env from parent's leave_scope to prevent scope cleanup cross-talk
@@ -437,14 +438,5 @@ defmodule Skuld.Effects.Parallel do
       _ ->
         run_all_sequential(rest, new_env, [result | acc])
     end
-  end
-
-  #############################################################################
-  ## IHandler Implementation (not used directly)
-  #############################################################################
-
-  @impl Skuld.Comp.IHandler
-  def handle(_op, _env, _k) do
-    raise "Parallel.handle/3 should not be called directly - use with_handler/1 or with_sequential_handler/1"
   end
 end
