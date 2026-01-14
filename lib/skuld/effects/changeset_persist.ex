@@ -57,8 +57,6 @@ if Code.ensure_loaded?(Ecto) do
         |> Comp.run!()
     """
 
-    @behaviour Skuld.Comp.IHandler
-
     import Skuld.Comp.DefOp
 
     alias Skuld.Comp
@@ -224,16 +222,6 @@ if Code.ensure_loaded?(Ecto) do
             Types.computation()
     def delete_all(schema, entries, opts \\ []) do
       Comp.effect(@sig, %DeleteAll{schema: schema, entries: entries, opts: opts})
-    end
-
-    #############################################################################
-    ## IHandler - Not implemented here (use Ecto or Test handlers)
-    #############################################################################
-
-    @impl Skuld.Comp.IHandler
-    def handle(_op, _env, _k) do
-      raise "ChangesetPersist.handle/3 should not be called directly. " <>
-              "Use ChangesetPersist.Ecto.with_handler/2 or ChangesetPersist.Test.with_handler/2"
     end
   end
 end
