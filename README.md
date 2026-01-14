@@ -1088,33 +1088,43 @@ end
 For testing, use the test handler to stub responses and record calls:
 
 ```elixir
-# Test handler applies changeset changes and records all operations
-{result, calls} =
-  comp do
-    user <- ChangesetPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
-    _ <- ChangesetPersist.update(User.changeset(user, %{name: "Bob"}))
-    user
+# Define a simple schema for testing
+defmodule User do
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  embedded_schema do
+    field :name, :string
   end
-  |> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
-  |> Comp.run!()
 
-result
-#=> %User{name: "Alice"}
+  def changeset(user, attrs) do
+    user |> cast(attrs, [:name]) |> validate_required([:name])
+  end
+end
 
-calls
-#=> [{:insert, %Ecto.Changeset{...}}, {:update, %Ecto.Changeset{...}}]
+# Test handler applies changeset changes and records all operations
+comp do
+  user <- ChangesetPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
+  _ <- ChangesetPersist.update(User.changeset(user, %{name: "Bob"}))
+  user
+end
+|> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
+|> Comp.run!()
+#=> {%User{name: "Alice"}, [{:insert, %Ecto.Changeset{...}}, {:update, %Ecto.Changeset{...}}]}
 
 # Custom handler for specific test scenarios
+changeset = User.changeset(%User{}, %{name: "Test"})
+
 comp do
   user <- ChangesetPersist.insert(changeset)
   user
 end
 |> ChangesetPersist.Test.with_handler(fn
-  %ChangesetPersist.Insert{input: cs} -> %User{id: "test-id", name: "Stubbed"}
+  %ChangesetPersist.Insert{input: _cs} -> %User{id: "test-id", name: "Stubbed"}
   %ChangesetPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
 end)
 |> Comp.run!()
-#=> {%User{id: "test-id", name: "Stubbed"}, [{:insert, changeset}]}
+#=> {%User{id: "test-id", name: "Stubbed"}, [{:insert, %Ecto.Changeset{...}}]}
 ```
 
 > **Note**: ChangesetPersist wraps Ecto Repo operations. See the module docs for
