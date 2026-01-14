@@ -328,41 +328,44 @@ defmodule Skuld.Comp.CompBlock do
       end
     end
 
-    # Build the else handler function
-    # Catches MatchFailed, re-throws other errors
-    defp build_else_handler_fn(else_block) do
-      clauses = extract_clauses(else_block)
+    # Common logic for rewriting clause bodies and ensuring a catch-all clause exists.
+    # Takes the block, extracts clauses, rewrites bodies, and appends a default clause if needed.
+    defp rewrite_and_ensure_catch_all(block, default_clause) do
+      clauses = extract_clauses(block)
 
-      # Rewrite each clause body (they're comp blocks too, but no else support nested)
-      # Note: else clause bodies don't have caller context for line numbers
+      # Rewrite each clause body (they're comp blocks too)
+      # Note: catch/else clause bodies don't have caller context for line numbers,
+      # so we pass nil - bare expressions in these bodies won't have precise line info
       rewritten_clauses =
         Enum.map(clauses, fn {:->, meta, [patterns, body]} ->
           rewritten_body = rewrite_block(nil, body, false)
           {:->, meta, [patterns, rewritten_body]}
         end)
 
-      # Check if there's a catch-all clause
-      has_catch_all = has_catch_all_clause?(clauses)
+      # Add default clause if user didn't provide catch-all
+      if has_catch_all_clause?(clauses) do
+        rewritten_clauses
+      else
+        rewritten_clauses ++ [default_clause]
+      end
+    end
 
-      # Add a default re-throw clause if user didn't provide catch-all
-      final_clauses =
-        if has_catch_all do
-          rewritten_clauses
-        else
-          rewritten_clauses ++
-            [
-              {:->, [],
-               [
-                 [quote(do: __skuld_unhandled_match__)],
-                 quote(
-                   do:
-                     Skuld.Effects.Throw.throw(%Skuld.Comp.MatchFailed{
-                       value: __skuld_unhandled_match__
-                     })
-                 )
-               ]}
-            ]
-        end
+    # Build the else handler function
+    # Catches MatchFailed, re-throws other errors
+    defp build_else_handler_fn(else_block) do
+      default_clause =
+        {:->, [],
+         [
+           [quote(do: __skuld_unhandled_match__)],
+           quote(
+             do:
+               Skuld.Effects.Throw.throw(%Skuld.Comp.MatchFailed{
+                 value: __skuld_unhandled_match__
+               })
+           )
+         ]}
+
+      final_clauses = rewrite_and_ensure_catch_all(else_block, default_clause)
 
       # Build the function that catches MatchFailed, re-throws others
       quote do
@@ -382,34 +385,14 @@ defmodule Skuld.Comp.CompBlock do
 
     # Build the error handler function from catch block clauses
     defp build_catch_handler_fn(catch_block) do
-      clauses = extract_clauses(catch_block)
+      default_clause =
+        {:->, [],
+         [
+           [quote(do: __skuld_unhandled_error__)],
+           quote(do: Skuld.Effects.Throw.throw(__skuld_unhandled_error__))
+         ]}
 
-      # Rewrite each clause body (they're comp blocks too)
-      # Note: catch/else clause bodies don't have caller context for line numbers,
-      # so we pass nil - bare expressions in these bodies won't have precise line info
-      rewritten_clauses =
-        Enum.map(clauses, fn {:->, meta, [patterns, body]} ->
-          rewritten_body = rewrite_block(nil, body, false)
-          {:->, meta, [patterns, rewritten_body]}
-        end)
-
-      # Check if there's a catch-all clause
-      has_catch_all = has_catch_all_clause?(clauses)
-
-      # Add a default re-throw clause if user didn't provide catch-all
-      final_clauses =
-        if has_catch_all do
-          rewritten_clauses
-        else
-          rewritten_clauses ++
-            [
-              {:->, [],
-               [
-                 [quote(do: __skuld_unhandled_error__)],
-                 quote(do: Skuld.Effects.Throw.throw(__skuld_unhandled_error__))
-               ]}
-            ]
-        end
+      final_clauses = rewrite_and_ensure_catch_all(catch_block, default_clause)
 
       # Build the function: fn err -> case err do ... end end
       quote do
