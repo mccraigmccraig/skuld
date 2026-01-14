@@ -89,7 +89,7 @@ defmodule Skuld.Comp.Env do
   end
 
   @doc "Get the current leave-scope handler"
-  @spec get_leave_scope(Skuld.Comp.Types.env()) :: Skuld.Comp.Types.leave_scope()
+  @spec get_leave_scope(Skuld.Comp.Types.env()) :: Skuld.Comp.Types.leave_scope() | nil
   def get_leave_scope(env) do
     env.leave_scope
   end
