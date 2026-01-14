@@ -15,35 +15,42 @@ Skuld's client API looks quite similar to
 but the implementation is very different. Skuld performs better and has a
 simpler and more coherent API, and is (arguably) easier to understand.
 
-## Table of Contents
+## Contents
 
 - [Features](#features)
 - [Installation](#installation)
 - [Demo Application](#demo-application)
 - [Quick Start](#quick-start)
 - [Effects](#effects)
-  - [State](#state)
-  - [Reader](#reader)
-  - [Writer](#writer)
-  - [Multiple Independent Contexts (Tagged Usage)](#multiple-independent-contexts-tagged-usage)
-  - [Throw](#throw)
-  - [Pattern Matching with Else](#pattern-matching-with-else)
-  - [Combining Else and Catch](#combining-else-and-catch)
-  - [Yield](#yield)
-  - [Bracket](#bracket)
-  - [FxList](#fxlist)
-  - [FxFasterList](#fxfasterlist)
-  - [Fresh](#fresh)
-  - [Random](#random)
-  - [AtomicState](#atomicstate)
-  - [Async](#async)
-  - [Parallel](#parallel)
-  - [DBTransaction](#dbtransaction)
-  - [Query](#query)
-  - [Command](#command)
-  - [EventAccumulator](#eventaccumulator)
-  - [ChangesetPersist](#changesetpersist)
-  - [EffectLogger](#effectlogger)
+  - [State & Environment](#state--environment)
+    - [State](#state)
+    - [Reader](#reader)
+    - [Writer](#writer)
+    - [Multiple Independent Contexts (Tagged Usage)](#multiple-independent-contexts-tagged-usage)
+  - [Control Flow](#control-flow)
+    - [Throw](#throw)
+    - [Pattern Matching with Else](#pattern-matching-with-else)
+    - [Combining Else and Catch](#combining-else-and-catch)
+    - [Bracket](#bracket)
+    - [Yield](#yield)
+  - [Collection Iteration](#collection-iteration)
+    - [FxList](#fxlist)
+    - [FxFasterList](#fxfasterlist)
+  - [Value Generation](#value-generation)
+    - [Fresh](#fresh)
+    - [Random](#random)
+  - [Concurrency](#concurrency)
+    - [AtomicState](#atomicstate)
+    - [Async](#async)
+    - [Parallel](#parallel)
+  - [Persistence & Data](#persistence--data)
+    - [DBTransaction](#dbtransaction)
+    - [Query](#query)
+    - [Command](#command)
+    - [EventAccumulator](#eventaccumulator)
+    - [ChangesetPersist](#changesetpersist)
+  - [Replay & Logging](#replay--logging)
+    - [EffectLogger](#effectlogger)
 - [Property-Based Testing](#property-based-testing)
 - [Architecture](#architecture)
 - [Comparison with Freyja](#comparison-with-freyja)
@@ -135,7 +142,9 @@ alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
 alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
 ```
 
-### State
+### State & Environment
+
+#### State
 
 Mutable state within a computation:
 
@@ -150,7 +159,7 @@ end
 #=> {0, {:final_state, 1}}
 ```
 
-### Reader
+#### Reader
 
 Read-only environment:
 
@@ -164,7 +173,7 @@ end
 #=> "Hello, World!"
 ```
 
-### Writer
+#### Writer
 
 Accumulating output (use `output:` to include the log in the result):
 
@@ -179,7 +188,7 @@ end
 #=> {:done, ["step 1", "step 2"]}
 ```
 
-### Multiple Independent Contexts (Tagged Usage)
+#### Multiple Independent Contexts (Tagged Usage)
 
 State, Reader, and Writer all support explicit tags for multiple independent instances.
 Use an atom as the first argument to operations, and `tag: :name` in the handler:
@@ -223,7 +232,9 @@ end
 #=> {{:ok, ["user logged in", "viewed dashboard"]}, [{:counter, :login}]}
 ```
 
-### Throw
+### Control Flow
+
+#### Throw
 
 Error handling with the `catch` clause:
 
@@ -292,7 +303,7 @@ end
 The converted error is a map with `:kind`, `:payload`, and `:stacktrace` keys,
 allowing you to handle different error types uniformly.
 
-### Pattern Matching with Else
+#### Pattern Matching with Else
 
 The `else` clause handles pattern match failures in `<-` bindings. Since `else`
 uses the Throw effect internally, you need a Throw handler:
@@ -309,7 +320,7 @@ end
 #=> {:match_failed, "something went wrong"}
 ```
 
-### Combining Else and Catch
+#### Combining Else and Catch
 
 Both clauses can be used together. The `else` must come before `catch`:
 
@@ -354,7 +365,58 @@ The semantic ordering is `catch(else(body))`, meaning:
 - `else` handles pattern match failures from the main computation
 - `catch` handles throws from both the main computation AND the else handler
 
-### Yield
+#### Bracket
+
+Safe resource acquisition and cleanup (like try/finally):
+
+```elixir
+# Track resource lifecycle with State
+comp do
+  result <- Bracket.bracket(
+    # Acquire
+    comp do
+      _ <- State.put(:acquired)
+      :resource
+    end,
+    # Release (always runs)
+    fn _resource ->
+      comp do
+        _ <- State.put(:released)
+        :ok
+      end
+    end,
+    # Use
+    fn resource ->
+      {:used, resource}  # auto-lifted
+    end
+  )
+  final_state <- State.get()
+  {result, final_state}
+end
+|> State.with_handler(:init)
+|> Comp.run!()
+#=> {{:used, :resource}, :released}
+```
+
+Use `Bracket.finally/2` for simpler cleanup without resource passing:
+
+```elixir
+Bracket.finally(
+  comp do
+    _ <- State.put(:working)
+    :done
+  end,
+  comp do
+    _ <- State.put(:cleaned_up)
+    :ok
+  end
+)
+|> State.with_handler(:init, output: fn r, s -> {r, s} end)
+|> Comp.run!()
+#=> {:done, :cleaned_up}
+```
+
+#### Yield
 
 Coroutine-style suspension and resumption:
 
@@ -460,58 +522,9 @@ Use cases for `Yield.respond`:
 - **Internal request/response loops** - Build protocols within a computation
 - **Composing yield-based computations** - Layer handlers for different yield types
 
-### Bracket
+### Collection Iteration
 
-Safe resource acquisition and cleanup (like try/finally):
-
-```elixir
-# Track resource lifecycle with State
-comp do
-  result <- Bracket.bracket(
-    # Acquire
-    comp do
-      _ <- State.put(:acquired)
-      :resource
-    end,
-    # Release (always runs)
-    fn _resource ->
-      comp do
-        _ <- State.put(:released)
-        :ok
-      end
-    end,
-    # Use
-    fn resource ->
-      {:used, resource}  # auto-lifted
-    end
-  )
-  final_state <- State.get()
-  {result, final_state}
-end
-|> State.with_handler(:init)
-|> Comp.run!()
-#=> {{:used, :resource}, :released}
-```
-
-Use `Bracket.finally/2` for simpler cleanup without resource passing:
-
-```elixir
-Bracket.finally(
-  comp do
-    _ <- State.put(:working)
-    :done
-  end,
-  comp do
-    _ <- State.put(:cleaned_up)
-    :ok
-  end
-)
-|> State.with_handler(:init, output: fn r, s -> {r, s} end)
-|> Comp.run!()
-#=> {:done, :cleaned_up}
-```
-
-### FxList
+#### FxList
 
 Effectful list operations:
 
@@ -534,7 +547,7 @@ end
 > **Note**: For large iteration counts (10,000+), use `Yield`-based coroutines instead
 > of `FxList` for better performance. See the FxList module docs for details.
 
-### FxFasterList
+#### FxFasterList
 
 High-performance variant of FxList using `Enum.reduce_while`:
 
@@ -557,7 +570,9 @@ end
 > **Note**: FxFasterList is ~2x faster than FxList but has limited Yield/Suspend support.
 > Use it when performance is critical and you only use Throw for error handling.
 
-### Fresh
+### Value Generation
+
+#### Fresh
 
 Generate fresh UUIDs with two handler modes:
 
@@ -594,7 +609,7 @@ end
 #=> "550e8400-..."  # same UUID every time with same namespace
 ```
 
-### Random
+#### Random
 
 Generate random values with three handler modes:
 
@@ -632,7 +647,9 @@ end
 #=> {0.0, 1.0}  # cycles when exhausted
 ```
 
-### AtomicState
+### Concurrency
+
+#### AtomicState
 
 Thread-safe state for concurrent contexts. Unlike the regular State effect which
 stores state in `env.state` (copied when forking to new processes), AtomicState
@@ -688,7 +705,7 @@ end
 
 Operations: `get/1`, `put/2`, `modify/2`, `atomic_state/2` (get-and-update), `cas/3`
 
-### Async
+#### Async
 
 Structured concurrent computation with async/await and boundaries:
 
@@ -842,7 +859,7 @@ Operations: `boundary/2`, `async/1`, `await/1`, `cancel/1`
 > **Note**: Async computations run on the same BEAM node. Closures cannot be
 > serialized across nodes, so distributed async is not supported.
 
-### Parallel
+#### Parallel
 
 Simple fork-join concurrency with built-in boundaries. Unlike `Async`, each operation
 is self-contained with automatic task management:
@@ -903,7 +920,9 @@ end
 
 Operations: `all/1`, `race/1`, `map/2`
 
-### DBTransaction
+### Persistence & Data
+
+#### DBTransaction
 
 Database transactions with automatic commit/rollback:
 
@@ -960,7 +979,7 @@ create_order.(123, [:item_a, :item_b])
 #=> %{id: 1, user_id: 123, items: [:item_a, :item_b]}
 ```
 
-### Query
+#### Query
 
 Backend-agnostic data queries with pluggable handlers:
 
@@ -992,7 +1011,7 @@ end
 #=> %{id: 456, name: "Stubbed"}
 ```
 
-### Command
+#### Command
 
 Dispatch commands (mutations) through a unified handler:
 
@@ -1039,7 +1058,7 @@ The handler function returns a computation, so commands can use other effects
 (Fresh, ChangesetPersist, EventAccumulator, etc.) internally. This enables a clean
 separation between command dispatch and command implementation.
 
-### EventAccumulator
+#### EventAccumulator
 
 Accumulate domain events during computation (built on Writer):
 
@@ -1054,7 +1073,7 @@ end
 #=> {:ok, [%{type: :user_created, id: 1}, %{type: :email_sent, to: "user@example.com"}]}
 ```
 
-### ChangesetPersist
+#### ChangesetPersist
 
 Changeset persistence as effects (requires Ecto):
 
@@ -1104,7 +1123,9 @@ end)
 > **Note**: ChangesetPersist wraps Ecto Repo operations. See the module docs for
 > `insert`, `update`, `delete`, `insert_all`, `update_all`, `delete_all`, and `upsert`.
 
-### EffectLogger
+### Replay & Logging
+
+#### EffectLogger
 
 Capture effect invocations for replay, resume, and retry:
 
