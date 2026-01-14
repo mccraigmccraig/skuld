@@ -1178,37 +1178,38 @@ grow unboundedly. Use `mark_loop/1` to mark iteration boundaries - pruning is en
 by default and happens eagerly after each mark, keeping memory bounded:
 
 ```elixir
-# A recursive computation that processes items
-defcomp process_loop(items) do
-  # Mark the start of each iteration - captures current state for cold resume
-  # Pruning happens immediately after this mark executes
-  _ <- EffectLogger.mark_loop(ProcessLoop)
+# Define a recursive computation that processes items
+defmodule ProcessLoop do
+  use Skuld.Syntax
+  alias Skuld.Effects.{State, Writer, EffectLogger}
 
-  case items do
-    [] ->
-      State.get()  # Return final count
+  defcomp process(items) do
+    # Mark the start of each iteration - captures current state for cold resume
+    # Pruning happens immediately after this mark executes
+    _ <- EffectLogger.mark_loop(ProcessLoop)
 
-    [item | rest] ->
-      comp do
-        count <- State.get()
-        _ <- State.put(count + 1)
-        _ <- Writer.tell("Processed: #{item}")
-        process_loop(rest)
-      end
+    case items do
+      [] ->
+        State.get()  # Return final count
+
+      [item | rest] ->
+        comp do
+          count <- State.get()
+          _ <- State.put(count + 1)
+          _ <- Writer.tell("Processed: #{item}")
+          process(rest)
+        end
+    end
   end
 end
 
 # Pruning is enabled by default - log stays bounded during execution
-{{result, log}, _env} =
-  process_loop(["a", "b", "c", "d"])
-  |> EffectLogger.with_logging()  # prune_loops: true is the default
-  |> State.with_handler(0)
-  |> Writer.with_handler([])
-  |> Comp.run()
-
-result
-#=> 4
-
+ProcessLoop.process(["a", "b", "c", "d"])
+|> EffectLogger.with_logging()  # prune_loops: true is the default
+|> State.with_handler(0)
+|> Writer.with_handler([])
+|> Comp.run()
+#=> {{4, %EffectLogger.Log{...}}, _env}
 # Log is small - only root mark + last iteration's effects
 # Memory never grew beyond O(1 iteration) during execution
 ```
@@ -1222,12 +1223,12 @@ To disable pruning and keep all entries (e.g., for debugging), use `prune_loops:
 
 ```elixir
 # Keep all entries for debugging
-{{result, log}, _env} =
-  process_loop(["a", "b", "c", "d"])
-  |> EffectLogger.with_logging(prune_loops: false)
-  |> State.with_handler(0)
-  |> Writer.with_handler([])
-  |> Comp.run()
+ProcessLoop.process(["a", "b", "c", "d"])
+|> EffectLogger.with_logging(prune_loops: false)
+|> State.with_handler(0)
+|> Writer.with_handler([])
+|> Comp.run()
+#=> {{4, %EffectLogger.Log{...}}, _env}
 ```
 
 #### Cold Resume with Yield
