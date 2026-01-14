@@ -12,11 +12,27 @@ handlers, composable effect stacks, and a library of useful effects.
 
 Algebraic effects add an architectural layer between pure and side-effecting code:
 instead of just pure functions and side-effecting functions, you have pure functions,
-effectful functions, and side-effecting handlers. Domain code is in the effectful 
-layer and is written with effects, but remains pure - the same code runs with test
-handlers (pure, in-memory) or production handlers (real I/O). This enables things like 
-clean separation of concerns, property-based testing, and effect logging for resume
-and replay.
+effectful functions, and side-effecting handlers. Domain code is written with effects
+but remains pure - the same code runs with test handlers (pure, in-memory) or
+production handlers (real I/O). This enables clean separation of concerns,
+property-based testing, and effect logging for resume and replay.
+
+Skuld's library of effects aims to provide primitives broad enough that most domain
+computations can use effectful operations instead of side-effecting ones. Here are
+some common side-effecting operations and their effectful equivalents:
+
+| Side-effecting operation | Effectful equivalent |
+|--------------------------|---------------------|
+| Configuration / environment | Reader |
+| Process dictionary | State, Writer |
+| Random values | Random |
+| Generating IDs (UUIDs) | Fresh |
+| Async tasks / parallel work | Async, Parallel |
+| Database transactions | DBTransaction |
+| Database queries | Query |
+| Ecto Repo operations | ChangesetPersist |
+| Raising exceptions | Throw |
+| Resource cleanup (try/finally) | Bracket |
 
 ## Contents
 
