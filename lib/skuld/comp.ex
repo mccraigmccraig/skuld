@@ -110,6 +110,23 @@ defmodule Skuld.Comp do
     k.(value, env)
   end
 
+  @doc """
+  Call a continuation (k or leave_scope) with exception handling.
+
+  Continuations have signature `(value, env) -> {value, env}`. Unlike `call/3`
+  which handles computations, this handles the simpler continuation case where
+  we just need to catch Elixir exceptions and convert them to Throw effects.
+
+  Used in `scoped/2` to wrap calls to finally_k.
+  """
+  @spec call_k(Types.k(), term(), Types.env()) :: {Types.result(), Types.env()}
+  def call_k(k, value, env) do
+    k.(value, env)
+  catch
+    kind, payload ->
+      ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, env)
+  end
+
   @doc "Sequence computations"
   @spec bind(Types.computation(), (term() -> Types.computation())) :: Types.computation()
   def bind(comp, f) do
@@ -327,14 +344,7 @@ defmodule Skuld.Comp do
       # Normal exit: run finally_k then continue to outer
       # BUT if finally_k produces a throw, route through leave_scope instead
       normal_k = fn value, inner_env ->
-        {new_value, final_env} =
-          try do
-            finally_k.(value, inner_env)
-          catch
-            kind, payload ->
-              ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, inner_env)
-          end
-
+        {new_value, final_env} = call_k(finally_k, value, inner_env)
         restored_env = Env.with_leave_scope(final_env, previous_leave_scope)
 
         case new_value do
@@ -349,14 +359,7 @@ defmodule Skuld.Comp do
 
       # Abnormal exit: run finally_k during leave-scope unwinding
       my_leave_scope = fn result, inner_env ->
-        {new_result, final_env} =
-          try do
-            finally_k.(result, inner_env)
-          catch
-            kind, payload ->
-              ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, inner_env)
-          end
-
+        {new_result, final_env} = call_k(finally_k, result, inner_env)
         previous_leave_scope.(new_result, Env.with_leave_scope(final_env, previous_leave_scope))
       end
 
