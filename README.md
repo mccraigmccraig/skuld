@@ -785,8 +785,8 @@ end
 comp do
   Async.boundary(
     comp do
-      h1 <- Async.async(comp do approach_a() end)
-      h2 <- Async.async(comp do approach_b() end)
+      h1 <- Async.async(comp do :approach_a_result end)
+      h2 <- Async.async(comp do :approach_b_result end)
       
       # Use first result, cancel the other
       result <- Async.await(h1)
@@ -798,6 +798,7 @@ end
 |> Async.with_handler()
 |> Throw.with_handler()
 |> Comp.run!()
+#=> :approach_a_result
 ```
 
 **Timeouts** let you limit how long to wait for a task:
@@ -807,7 +808,7 @@ end
 comp do
   result <- Async.boundary(
     comp do
-      h <- Async.async(comp do slow_work() end)
+      h <- Async.async(comp do :fast_result end)
       Async.await_with_timeout(h, 5000)  # 5 second timeout
     end
   )
@@ -816,11 +817,11 @@ end
 |> Async.with_handler()
 |> Throw.with_handler()
 |> Comp.run!()
-#=> {:ok, :result} or {:error, :timeout}
+#=> {:ok, :fast_result}
 
 # timeout/2 is a convenience that wraps boundary + async + await_with_timeout
 comp do
-  result <- Async.timeout(5000, comp do slow_work() end)
+  result <- Async.timeout(5000, comp do :quick_work end)
   case result do
     {:ok, value} -> value
     {:error, :timeout} -> :gave_up
@@ -829,6 +830,7 @@ end
 |> Async.with_handler()
 |> Throw.with_handler()
 |> Comp.run!()
+#=> :quick_work
 ```
 
 **Testing handler** runs tasks sequentially for deterministic tests:
