@@ -21,18 +21,22 @@ Skuld's library of effects aims to provide primitives broad enough that most dom
 computations can use effectful operations instead of side-effecting ones. Here are
 some common side-effecting operations and their effectful equivalents:
 
-| Side-effecting operation | Effectful equivalent |
-|--------------------------|---------------------|
-| Configuration / environment | Reader |
-| Process dictionary | State, Writer |
-| Random values | Random |
-| Generating IDs (UUIDs) | Fresh |
-| Async tasks / parallel work | Async, Parallel |
-| Database transactions | DBTransaction |
-| Database queries | Query |
-| Ecto Repo operations | ChangesetPersist |
-| Raising exceptions | Throw |
-| Resource cleanup (try/finally) | Bracket |
+| Side-effecting operation        | Effectful equivalent         |
+|---------------------------------|------------------------------|
+| Configuration / environment     | Reader                       |
+| Process dictionary              | State, Writer                |
+| Random values                   | Random                       |
+| Generating IDs (UUIDs)          | Fresh                        |
+| Async tasks / parallel work     | Async, Parallel, AtomicState |
+| Database transactions           | DBTransaction                |
+| Database queries                | Query                        |
+| Ecto Repo operations            | ChangesetPersist             |
+| Decider pattern                 | Command, EventAccumulator    |
+| Tracing, replay & resume        | EffectLogger                 |
+| Raising exceptions              | Throw                        |
+| Resource cleanup (try/finally)  | Bracket                      |
+| Control flow                    | Yield                        |
+| Lists of effectful computations | FxList, FxFasterList         |
 
 ## Contents
 
