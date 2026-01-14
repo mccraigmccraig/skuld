@@ -90,7 +90,7 @@ some common side-effecting operations and their effectful equivalents:
   cleanup
 - **Composable**: Multiple effects can be stacked and composed naturally
 - **Single type**: Single unified `computation` type and `comp` macro for all
-  effectful code (unlike Freyja, there's no first-order / higher-order split)
+  effectful code - ideal for dynamic languages
 - **Auto-lifting**: Plain values are automatically lifted to computations,
   enabling ergonomic patterns like `if` without `else` and implicit final returns
 
