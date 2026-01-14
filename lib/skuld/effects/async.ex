@@ -354,10 +354,11 @@ defmodule Skuld.Effects.Async do
 
       {modified, finally_k}
     end)
-    |> Comp.with_handler(@sig, &handle_task/3)
+    |> Comp.with_handler(@sig, &handle/3)
   end
 
-  defp handle_task(%Boundary{comp: inner_comp, on_unawaited: on_unawaited}, env, k) do
+  @impl Skuld.Comp.IHandler
+  def handle(%Boundary{comp: inner_comp, on_unawaited: on_unawaited}, env, k) do
     # Generate unique boundary ID
     boundary_id = make_ref()
 
@@ -436,7 +437,7 @@ defmodule Skuld.Effects.Async do
     Comp.call(scoped_comp, env, k)
   end
 
-  defp handle_task(%Async{comp: comp}, env, k) do
+  def handle(%Async{comp: comp}, env, k) do
     current_boundary = Env.get_state(env, @current_boundary_key)
 
     if current_boundary == nil do
@@ -469,32 +470,32 @@ defmodule Skuld.Effects.Async do
   # Default timeout for await/1 - 5 minutes
   @default_await_timeout_ms 5 * 60 * 1000
 
-  defp handle_task(
-         %Await{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task}},
-         env,
-         k
-       ) do
+  def handle(
+        %Await{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task}},
+        env,
+        k
+      ) do
     # await/1 returns the result directly (or {:error, reason} on failure/timeout)
     do_await_task(handle_boundary, task, @default_await_timeout_ms, :unwrap, env, k)
   end
 
-  defp handle_task(
-         %AwaitWithTimeout{
-           handle: %Handle{boundary_id: handle_boundary, task_or_ref: task},
-           timeout_ms: timeout_ms
-         },
-         env,
-         k
-       ) do
+  def handle(
+        %AwaitWithTimeout{
+          handle: %Handle{boundary_id: handle_boundary, task_or_ref: task},
+          timeout_ms: timeout_ms
+        },
+        env,
+        k
+      ) do
     # await_with_timeout/2 returns {:ok, result} or {:error, reason}
     do_await_task(handle_boundary, task, timeout_ms, :wrap, env, k)
   end
 
-  defp handle_task(
-         %Cancel{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task} = handle},
-         env,
-         k
-       ) do
+  def handle(
+        %Cancel{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task} = handle},
+        env,
+        k
+      ) do
     current_boundary = Env.get_state(env, @current_boundary_key)
 
     if handle_boundary != current_boundary do
@@ -795,14 +796,5 @@ defmodule Skuld.Effects.Async do
 
       k.(final_result, env_untracked)
     end
-  end
-
-  #############################################################################
-  ## IHandler Implementation (not used directly)
-  #############################################################################
-
-  @impl Skuld.Comp.IHandler
-  def handle(_op, _env, _k) do
-    raise "Async.handle/3 should not be called directly - use with_handler/1 or with_sequential_handler/1"
   end
 end
