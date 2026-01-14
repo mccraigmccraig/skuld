@@ -8,12 +8,15 @@ Evidence-passing Algebraic Effects for Elixir.
 
 Skuld is a clean, efficient implementation of Algebraic Effects using evidence-passing
 style with CPS (continuation-passing style) for control effects. It provides scoped
-handlers, coroutines via Yield, and composable effect stacks.
+handlers, composable effect stacks, and a library of useful effects.
 
-Skuld's client API looks quite similar to
-[Freyja](https://github.com/mccraigmccraig/freyja),
-but the implementation is very different. Skuld performs better and has a
-simpler and more coherent API, and is (arguably) easier to understand.
+Algebraic effects add an architectural layer between pure and side-effecting code:
+instead of just pure functions and side-effecting functions, you have pure functions,
+effectful functions, and side-effecting handlers. Domain code is in the effectful 
+layer and is written with effects, but remains pure - the same code runs with test
+handlers (pure, in-memory) or production handlers (real I/O). This enables things like 
+clean separation of concerns, property-based testing, and effect logging for resume
+and replay.
 
 ## Contents
 
@@ -1391,7 +1394,11 @@ Skuld uses evidence-passing style where:
 
 ## Comparison with Freyja
 
-Skuld is a cleaner, faster alternative to Freyja:
+Skuld was built after [Freyja](https://github.com/mccraigmccraig/freyja) proved to
+have significant limitations, including performance issues and requiring two monad
+types (`Freer` and `Hefty`), with all the additional complexity and mental load
+that imposes. Skuld's client API looks quite similar to Freyja, but the implementation
+is very different - Skuld performs better and has a simpler, more coherent API.
 
 | Aspect | Freyja | Skuld |
 |--------|--------|-------|
