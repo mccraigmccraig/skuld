@@ -492,29 +492,23 @@ end
 #=> {5, 15}
 
 # Unhandled yields propagate to outer handler (re-yield)
-{result, _env} =
-  comp do
-    Yield.respond(
-      comp do
-        x <- Yield.yield(:handled)
-        y <- Yield.yield(:not_handled)  # propagates up
-        x + y
-      end,
-      fn
-        :handled -> Comp.pure(10)
-        other -> Yield.yield(other)  # re-yield unhandled
-      end
-    )
-  end
-  |> Yield.with_handler()
-  |> Comp.run()
-
-# Suspends on :not_handled
-%Comp.Suspend{value: :not_handled, resume: resume} = result
-
-# Resume completes the computation
-{final, _} = resume.(20)
-#=> 30
+comp do
+  Yield.respond(
+    comp do
+      x <- Yield.yield(:handled)
+      y <- Yield.yield(:not_handled)  # propagates up
+      x + y
+    end,
+    fn
+      :handled -> Comp.pure(10)
+      other -> Yield.yield(other)  # re-yield unhandled
+    end
+  )
+end
+|> Yield.with_handler()
+|> Comp.run()
+#=> {%Comp.Suspend{value: :not_handled, resume: resume}, _env}
+#   Call resume.(20) to complete: {30, _env}
 ```
 
 Use cases for `Yield.respond`:
