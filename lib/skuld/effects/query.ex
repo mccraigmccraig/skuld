@@ -236,22 +236,7 @@ defmodule Skuld.Effects.Query do
   @spec with_handler(Types.computation(), registry()) :: Types.computation()
   def with_handler(comp, registry \\ %{}) do
     comp
-    |> Comp.scoped(fn env ->
-      previous = Env.get_state(env, @state_key)
-      modified = Env.put_state(env, @state_key, {:runtime, registry})
-
-      finally_k = fn v, e ->
-        restored_env =
-          case previous do
-            nil -> %{e | state: Map.delete(e.state, @state_key)}
-            val -> Env.put_state(e, @state_key, val)
-          end
-
-        {v, restored_env}
-      end
-
-      {modified, finally_k}
-    end)
+    |> Comp.with_scoped_state(@state_key, {:runtime, registry})
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 
@@ -280,22 +265,7 @@ defmodule Skuld.Effects.Query do
   @spec with_test_handler(Types.computation(), map()) :: Types.computation()
   def with_test_handler(comp, responses) when is_map(responses) do
     comp
-    |> Comp.scoped(fn env ->
-      previous = Env.get_state(env, @state_key)
-      modified = Env.put_state(env, @state_key, {:test, responses})
-
-      finally_k = fn v, e ->
-        restored_env =
-          case previous do
-            nil -> %{e | state: Map.delete(e.state, @state_key)}
-            val -> Env.put_state(e, @state_key, val)
-          end
-
-        {v, restored_env}
-      end
-
-      {modified, finally_k}
-    end)
+    |> Comp.with_scoped_state(@state_key, {:test, responses})
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 

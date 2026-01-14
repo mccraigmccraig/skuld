@@ -187,33 +187,10 @@ defmodule Skuld.Effects.State do
     tag = Keyword.get(opts, :tag, @sig)
     output = Keyword.get(opts, :output)
     state_key = state_key(tag)
+    opts = if output, do: [output: output], else: []
 
     comp
-    |> Comp.scoped(fn env ->
-      previous = Env.get_state(env, state_key)
-      modified = Env.put_state(env, state_key, initial)
-
-      finally_k = fn value, e ->
-        final_state = Env.get_state(e, state_key)
-
-        restored_env =
-          case previous do
-            nil -> %{e | state: Map.delete(e.state, state_key)}
-            val -> Env.put_state(e, state_key, val)
-          end
-
-        transformed_value =
-          if output do
-            output.(value, final_state)
-          else
-            value
-          end
-
-        {transformed_value, restored_env}
-      end
-
-      {modified, finally_k}
-    end)
+    |> Comp.with_scoped_state(state_key, initial, opts)
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 

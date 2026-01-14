@@ -337,23 +337,7 @@ defmodule Skuld.Effects.AtomicState do
     state_key = state_key(tag)
 
     comp
-    |> Comp.scoped(fn env ->
-      # Initialize state via State effect's storage
-      previous = Env.get_state(env, state_key)
-      modified = Env.put_state(env, state_key, initial)
-
-      finally_k = fn value, e ->
-        restored_env =
-          case previous do
-            nil -> %{e | state: Map.delete(e.state, state_key)}
-            val -> Env.put_state(e, state_key, val)
-          end
-
-        {value, restored_env}
-      end
-
-      {modified, finally_k}
-    end)
+    |> Comp.with_scoped_state(state_key, initial)
     |> Comp.with_handler(sig(tag), make_state_handler(tag))
   end
 

@@ -184,32 +184,18 @@ defmodule Skuld.Effects.Fresh do
 
     initial_state = %TestState{counter: 0, namespace: namespace}
 
-    comp
-    |> Comp.scoped(fn env ->
-      previous = Env.get_state(env, @sig)
-      modified = Env.put_state(env, @sig, initial_state)
-
-      finally_k = fn value, e ->
-        %TestState{counter: final_counter} = Env.get_state(e, @sig)
-
-        restored_env =
-          case previous do
-            nil -> %{e | state: Map.delete(e.state, @sig)}
-            val -> Env.put_state(e, @sig, val)
-          end
-
-        transformed_value =
-          if output do
-            output.(value, final_counter)
-          else
-            value
-          end
-
-        {transformed_value, restored_env}
+    # Wrap user's output function to extract counter from state struct
+    wrapped_output =
+      if output do
+        fn value, %TestState{counter: final_counter} -> output.(value, final_counter) end
+      else
+        nil
       end
 
-      {modified, finally_k}
-    end)
+    opts = if wrapped_output, do: [output: wrapped_output], else: []
+
+    comp
+    |> Comp.with_scoped_state(@sig, initial_state, opts)
     |> Comp.with_handler(@sig, &handle_test/3)
   end
 

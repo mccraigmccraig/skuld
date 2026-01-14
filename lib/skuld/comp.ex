@@ -417,4 +417,65 @@ defmodule Skuld.Comp do
       end
     )
   end
+
+  @doc """
+  Install scoped state for a computation with automatic save/restore.
+
+  This is a common pattern used by effect handlers to manage state that should
+  be isolated to a computation scope. On entry, saves previous state (if any)
+  and sets initial state. On exit (normal or throw), restores previous state
+  or removes it if there was none.
+
+  ## Options
+
+  - `:output` - optional function `(result, final_state) -> new_result` to
+    transform the result using the final state value before returning.
+  - `:default` - default value when reading final state (default: nil)
+
+  ## Example
+
+      # Simple usage - state is saved/restored automatically
+      comp
+      |> Comp.with_scoped_state(state_key, initial_value)
+      |> Comp.with_handler(sig, handler)
+
+      # With output transformation - include final state in result
+      comp
+      |> Comp.with_scoped_state(state_key, initial, output: fn result, final -> {result, final} end)
+      |> Comp.with_handler(sig, handler)
+  """
+  @spec with_scoped_state(Types.computation(), term(), term(), keyword()) :: Types.computation()
+  def with_scoped_state(comp, state_key, initial, opts \\ []) do
+    output = Keyword.get(opts, :output)
+    default = Keyword.get(opts, :default)
+
+    scoped(
+      comp,
+      fn env ->
+        previous = Env.get_state(env, state_key)
+        modified = Env.put_state(env, state_key, initial)
+
+        finally_k = fn value, e ->
+          final_state = Env.get_state(e, state_key, default)
+
+          restored_env =
+            case previous do
+              nil -> %{e | state: Map.delete(e.state, state_key)}
+              val -> Env.put_state(e, state_key, val)
+            end
+
+          transformed_value =
+            if output do
+              output.(value, final_state)
+            else
+              value
+            end
+
+          {transformed_value, restored_env}
+        end
+
+        {modified, finally_k}
+      end
+    )
+  end
 end

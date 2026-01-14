@@ -244,22 +244,7 @@ defmodule Skuld.Effects.Random do
     initial_state = %SeededState{rand_state: initial_rand_state}
 
     comp
-    |> Comp.scoped(fn env ->
-      previous = Env.get_state(env, @sig)
-      modified = Env.put_state(env, @sig, initial_state)
-
-      finally_k = fn value, e ->
-        restored_env =
-          case previous do
-            nil -> %{e | state: Map.delete(e.state, @sig)}
-            val -> Env.put_state(e, @sig, val)
-          end
-
-        {value, restored_env}
-      end
-
-      {modified, finally_k}
-    end)
+    |> Comp.with_scoped_state(@sig, initial_state)
     |> Comp.with_handler(@sig, &handle_seeded/3)
   end
 
@@ -370,22 +355,7 @@ defmodule Skuld.Effects.Random do
     initial_state = %FixedState{values: values, original: values}
 
     comp
-    |> Comp.scoped(fn env ->
-      previous = Env.get_state(env, @sig)
-      modified = Env.put_state(env, @sig, initial_state)
-
-      finally_k = fn value, e ->
-        restored_env =
-          case previous do
-            nil -> %{e | state: Map.delete(e.state, @sig)}
-            val -> Env.put_state(e, @sig, val)
-          end
-
-        {value, restored_env}
-      end
-
-      {modified, finally_k}
-    end)
+    |> Comp.with_scoped_state(@sig, initial_state)
     |> Comp.with_handler(@sig, &handle_fixed/3)
   end
 
