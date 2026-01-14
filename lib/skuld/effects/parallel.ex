@@ -56,6 +56,7 @@ defmodule Skuld.Effects.Parallel do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
+  alias Skuld.Effects.Helpers.TaskHelpers
 
   @sig __MODULE__
 
@@ -170,14 +171,7 @@ defmodule Skuld.Effects.Parallel do
 
       finally_k = fn value, e ->
         sup = Env.get_state(e, @supervisor_key)
-
-        if sup && Process.alive?(sup) do
-          try do
-            Supervisor.stop(sup, :normal)
-          catch
-            :exit, _ -> :ok
-          end
-        end
+        TaskHelpers.stop_supervisor(sup)
 
         cleaned = %{e | state: Map.delete(e.state, @supervisor_key)}
 
