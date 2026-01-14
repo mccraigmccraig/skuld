@@ -879,6 +879,26 @@ defmodule Skuld.Effects.EffectLogger do
     end)
   end
 
+  # Predicate: entry matches and can be short-circuited (return cached value)
+  defp can_short_circuit_entry?(entry, sig, args) do
+    EffectLogEntry.matches?(entry, sig, args) and EffectLogEntry.can_short_circuit?(entry)
+  end
+
+  # Predicate: entry is a Yield suspension point that should be resumed
+  defp yield_suspension_to_resume?(entry, sig, args, env) do
+    EffectLogEntry.matches?(entry, sig, args) and
+      sig == Skuld.Effects.Yield and
+      entry.state == :started and
+      has_resume_value?(env)
+  end
+
+  # Predicate: entry matches but needs re-execution (can't short-circuit)
+  defp matches_but_needs_reexecution?(entry, sig, args) do
+    EffectLogEntry.matches?(entry, sig, args)
+  end
+
+  defp has_resume_value?(env), do: get_resume_value(env) != :not_set
+
   @doc """
   Wrap a handler for resume mode.
 
@@ -897,7 +917,6 @@ defmodule Skuld.Effects.EffectLogger do
   A wrapped handler function.
   """
   @spec wrap_resume_handler(module(), Types.handler()) :: Types.handler()
-  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def wrap_resume_handler(sig, handler) do
     fn args, env, k ->
       # Skip any loop marks at front of queue, validating state consistency
@@ -907,41 +926,17 @@ defmodule Skuld.Effects.EffectLogger do
       case Log.peek_queue(log) do
         %EffectLogEntry{} = entry ->
           cond do
-            # Can short-circuit: pop and return logged value
-            EffectLogEntry.matches?(entry, sig, args) and
-                EffectLogEntry.can_short_circuit?(entry) ->
-              {_entry, updated_log} = Log.pop_queue(log)
-              env_with_updated_log = put_log(env_after_marks, updated_log)
-              k.(entry.value, env_with_updated_log)
+            can_short_circuit_entry?(entry, sig, args) ->
+              short_circuit_entry(entry, log, env_after_marks, k)
 
-            # Yield suspension point with resume value: inject it
-            EffectLogEntry.matches?(entry, sig, args) and
-              sig == Skuld.Effects.Yield and
-              entry.state == :started and
-                get_resume_value(env_after_marks) != :not_set ->
-              {:ok, resume_value} = get_resume_value(env_after_marks)
-              {_entry, updated_log} = Log.pop_queue(log)
-              env_with_updated_log = put_log(env_after_marks, updated_log)
-              # Clear resume value so subsequent Yields execute normally
-              env_cleared = clear_resume_value(env_with_updated_log)
-              # Log this as a new executed entry (the resumed Yield)
-              entry_id = generate_id()
+            yield_suspension_to_resume?(entry, sig, args, env_after_marks) ->
+              resume_yield_suspension(entry, sig, args, log, env_after_marks, k)
 
-              resumed_entry =
-                EffectLogEntry.new(entry_id, sig, args)
-                |> EffectLogEntry.set_executed(resume_value)
+            matches_but_needs_reexecution?(entry, sig, args) ->
+              reexecute_entry(sig, handler, args, log, env_after_marks, k)
 
-              env_with_entry = update_log(env_cleared, &Log.push_entry(&1, resumed_entry))
-              k.(resume_value, env_with_entry)
-
-            # Matches but can't short-circuit - pop and re-execute
-            EffectLogEntry.matches?(entry, sig, args) ->
-              {_entry, updated_log} = Log.pop_queue(log)
-              env_with_updated_log = put_log(env_after_marks, updated_log)
-              wrap_handler(sig, handler).(args, env_with_updated_log, k)
-
-            # Doesn't match - divergence, execute normally without popping
             true ->
+              # Doesn't match - divergence, execute normally without popping
               wrap_handler(sig, handler).(args, env_after_marks, k)
           end
 
@@ -950,6 +945,38 @@ defmodule Skuld.Effects.EffectLogger do
           wrap_handler(sig, handler).(args, env_after_marks, k)
       end
     end
+  end
+
+  # Short-circuit: pop entry and return its cached value
+  defp short_circuit_entry(entry, log, env, k) do
+    {_entry, updated_log} = Log.pop_queue(log)
+    env_with_updated_log = put_log(env, updated_log)
+    k.(entry.value, env_with_updated_log)
+  end
+
+  # Resume a Yield suspension: inject the resume value and log the resumed entry
+  defp resume_yield_suspension(_entry, sig, args, log, env, k) do
+    {:ok, resume_value} = get_resume_value(env)
+    {_entry, updated_log} = Log.pop_queue(log)
+    env_with_updated_log = put_log(env, updated_log)
+    # Clear resume value so subsequent Yields execute normally
+    env_cleared = clear_resume_value(env_with_updated_log)
+    # Log this as a new executed entry (the resumed Yield)
+    entry_id = generate_id()
+
+    resumed_entry =
+      EffectLogEntry.new(entry_id, sig, args)
+      |> EffectLogEntry.set_executed(resume_value)
+
+    env_with_entry = update_log(env_cleared, &Log.push_entry(&1, resumed_entry))
+    k.(resume_value, env_with_entry)
+  end
+
+  # Re-execute: pop entry and call the wrapped handler
+  defp reexecute_entry(sig, handler, args, log, env, k) do
+    {_entry, updated_log} = Log.pop_queue(log)
+    env_with_updated_log = put_log(env, updated_log)
+    wrap_handler(sig, handler).(args, env_with_updated_log, k)
   end
 
   #############################################################################
