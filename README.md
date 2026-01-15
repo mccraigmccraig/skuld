@@ -28,6 +28,7 @@ some common side-effecting operations and their effectful equivalents:
 | Random values                   | Random                       |
 | Generating IDs (UUIDs)          | Fresh                        |
 | Async tasks / parallel work     | Async, Parallel, AtomicState |
+| Run effects from LiveView       | AsyncRunner                  |
 | Database transactions           | DBTransaction                |
 | Database queries                | Query                        |
 | Ecto Repo operations            | ChangesetPersist             |
@@ -66,6 +67,7 @@ some common side-effecting operations and their effectful equivalents:
     - [AtomicState](#atomicstate)
     - [Async](#async)
     - [Parallel](#parallel)
+    - [AsyncRunner](#asyncrunner)
   - [Persistence & Data](#persistence--data)
     - [DBTransaction](#dbtransaction)
     - [Query](#query)
@@ -939,6 +941,80 @@ end
 ```
 
 Operations: `all/1`, `race/1`, `map/2`
+
+#### AsyncRunner
+
+Run effectful computations from non-effectful code (e.g., LiveView), bridging yields,
+throws, and results back via messages:
+
+```elixir
+# Build a computation with handlers
+computation =
+  comp do
+    name <- Yield.yield(:get_name)
+    email <- Yield.yield(:get_email)
+    {:ok, %{name: name, email: email}}
+  end
+  |> Reader.with_handler(%{tenant_id: "t-123"})
+
+# Start async - returns immediately
+{:ok, runner} = Skuld.AsyncRunner.start(computation, tag: :create_user)
+
+# Messages arrive as {tag, status, value}:
+# - {:create_user, :yield, :get_name}     <- computation yielded
+# - {:create_user, :result, value}        <- computation completed
+# - {:create_user, :throw, error}         <- computation threw
+# - {:create_user, :stopped, reason}      <- cancelled
+
+# Resume a yielded computation
+Skuld.AsyncRunner.resume(runner, "Alice")
+
+# Cancel if needed
+Skuld.AsyncRunner.cancel(runner)
+```
+
+**LiveView example:**
+
+```elixir
+def handle_event("start_wizard", _params, socket) do
+  computation =
+    comp do
+      name <- Yield.yield(%{step: 1, prompt: "Enter name"})
+      email <- Yield.yield(%{step: 2, prompt: "Enter email"})
+      {:ok, %{name: name, email: email}}
+    end
+    |> MyApp.with_domain_handlers()
+
+  {:ok, runner} = Skuld.AsyncRunner.start(computation, tag: :wizard)
+  {:noreply, assign(socket, runner: runner, step: nil)}
+end
+
+def handle_info({:wizard, :yield, %{step: step, prompt: prompt}}, socket) do
+  {:noreply, assign(socket, step: step, prompt: prompt)}
+end
+
+def handle_info({:wizard, :result, {:ok, user}}, socket) do
+  {:noreply, socket |> assign(user: user, runner: nil) |> put_flash(:info, "Created!")}
+end
+
+def handle_info({:wizard, :throw, error}, socket) do
+  {:noreply, socket |> assign(runner: nil) |> put_flash(:error, inspect(error))}
+end
+
+def handle_event("submit_step", %{"value" => value}, socket) do
+  Skuld.AsyncRunner.resume(socket.assigns.runner, value)
+  {:noreply, socket}
+end
+```
+
+**Key points:**
+
+- Adds `Throw.with_handler/1` and `Yield.with_handler/1` automatically
+- Exceptions in computations become `{tag, :throw, %{kind: :error, payload: exception}}` messages
+- Linked by default (use `link: false` for unlinked)
+- Use this for non-effectful callers; use `Async` effect when inside a computation
+
+Operations: `start/2`, `resume/2`, `cancel/1`
 
 ### Persistence & Data
 
