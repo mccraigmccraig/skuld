@@ -561,113 +561,219 @@ alias Skuld.Effects.Yield
 # result == 30
 #+end_src
 
-** serializable coroutines
+* Real-world example: TodosMcp
 
-Serialiable coroutines combine Coroutines with the EffectLogger, and
-allow computations to be suspended waiting for a value, serialized, and
-deserialized and resumed some time later
+Let's look at a real application built with Skuld - a todo app with
+command/query separation, multi-tenancy, and property-based testing.
 
+** Domain logic - pure and simple
 
+Here's a command handler for toggling a todo's completion status.
+Notice what's *not* here: no Repo calls, no GenServer, no process dictionary.
 
-- mapper returns lists of changesets
-- write changesets in bulk
-
-- <insert a plain Elixir example>
 #+begin_src elixir
-defmodule Anon do
+defmodule TodosMcp.Todos.Handlers do
   use Skuld.Syntax
 
-  defcomp anonymize_user(user) do
-    return(nil)
-  end
+  defcomp handle(%ToggleTodo{id: id}) do
+    # Get tenant context (Reader effect)
+    ctx <- Reader.ask(CommandContext)
 
-  defcomp anonymise_org(org) do
-    return(nil)
+    # Fetch the todo (Query effect)
+    todo <- Repository.get_todo!(ctx.tenant_id, id)
+
+    # Build the changeset (pure)
+    changeset = Todo.changeset(todo, %{completed: not todo.completed})
+
+    # Persist the change (ChangesetPersist effect)
+    updated <- ChangesetPersist.update(changeset)
+
+    {:ok, updated}
   end
 end
-
-
-    defcomp anonymize_user(user) do
-      changeset = User.anonymize_changeset(user)
-
-      # Record the change (effect!)
-      _ <- EctoFx.Changes.update(changeset)
-
-      # Return the result of applying the changeset
-      return(Ecto.Changeset.apply_changes(changeset))
-    end
-
-    defcomp anonymize_users_with_capture(user_ids) do
-      # (effect!)
-      users <- EctoFx.query(Queries, :find_users_by_ids, %{ids: user_ids})
-
-      # capture all the EctoFx.Change.update calls (effect!)
-      {anonymized_users, captured_changes} <-
-        users
-        |> FxList.fx_map(&anonymize_user/1)
-        |> EctoFx.capture()
-
-      return({anonymized_users, captured_changes})
-    end
 #+end_src
 
-1. side-load parameters (reader pattern)
-   -
+This is *domain logic*. It describes *what* needs to happen, not *how*.
+The "how" is provided by handlers - and handlers can be swapped.
 
-3. accumulate state (state pattern)
-   - accumulate without awkward accumulator patterns
+** The handler swap - same code, different storage
 
-4. coroutines keep the computation going
+The `Run` module wires up different handlers based on mode:
 
-5. serializable coroutines!
+#+begin_src elixir
+defmodule TodosMcp.Run do
+  # ... setup ...
 
-6. debugging with the data that failed in prod
+  def execute(operation, opts \\ []) do
+    mode = Keyword.get(opts, :mode, storage_mode())
+    context = get_context(opts)
 
+    comp do
+      result <- Command.execute(operation)
+      result
+    end
+    |> Command.with_handler(&Handlers.handle/1)
+    |> Reader.with_handler(context, tag: CommandContext)
+    |> with_storage_handlers(mode)  # <-- this is the key line
+    |> Fresh.with_uuid7_handler()
+    |> Throw.with_handler()
+    |> Comp.run()
+    |> extract_result()
+  end
 
-* Why would I want to use them
-- You are fed up of side-effects being mixed inextricably with your domain logic
-- You came across the functional-core/imperative-shell pattern, and it sounded
-  great, but you found it hard to put into practice
-- You would like to investigate generative testing a.k.a. property-based testing
-- You really like coroutines
-- You would like your domain model to be pure
-- You would like to make your unit-tests run 10,000 times faster - by making your domain logic "effectful" rather than "side-effecting" and running pure handlers in tests
-- You would like to write functions without data-shuffling parameters
-- You want all the logging for a multi-process backend operation to be gathered together
-- You want to replay failed computations
-- You want to write simple domain code without concerns for effect plumbing
-- You want automatic logging without having to think about it
+  # Production: real Ecto/Postgres
+  defp with_storage_handlers(comp, :database) do
+    comp
+    |> Query.with_handler(%{Repository.Ecto => :direct})
+    |> ChangesetPersist.Ecto.with_handler(Repo)
+  end
 
+  # Testing: pure in-memory storage
+  defp with_storage_handlers(comp, :in_memory) do
+    comp
+    |> Query.with_handler(%{Repository.Ecto => {Repository.InMemory, :delegate}})
+    |> InMemoryPersist.with_handler()
+  end
+end
+#+end_src
 
-* How do they work
-- There are several ways they can work
-- Skuld uses an evidence-passing approach with continuation-passing style (CPS)
-- Computations are functions, handlers are stored in an environment,
-  and effects are dispatched by looking up handlers in the evidence map
+The domain handler code doesn't change. The *same* `ToggleTodo` handler runs
+against Postgres in production and against an in-memory map in tests.
 
-* What can they do
-- Reader: side-load configuration/context without parameter drilling
-- Writer: accumulate logs/events from anywhere in the call stack
-- State: thread mutable state through pure functions
-- TaggedReader/Writer/State: multiple independent instances of the above
-- Throw/Catch: structured error handling
-- Yield: coroutines and suspendable computations
-- FxList: effectful list operations (map, reduce, filter, etc.)
-- Bracket: resource acquisition and cleanup (like try/finally)
-- EffectLogger: logging, replay, and debugging of effect sequences
+** The testing payoff - property-based testing
 
-* What are the problems
-** Performance
-- There's inherent overhead in the effect dispatch mechanism
-- Pure Elixir code is always faster than effectful code
-- The tradeoff is worthwhile for I/O-bound code where the structure benefits
-  outweigh the performance cost
+With pure handlers, we can run thousands of test iterations in milliseconds:
 
-** Skuld's approach
-- Based on evidence-passing + continuation-passing style (CPS)
-- Represents effects as "evidence" functions in an environment map
-- Doesn't create data structures for each effect - makes direct function calls
-- Uses CPS to support control effects (throw, catch, yield)
-- ~4x slower than a pure reduce, ~4x faster than Freyja
-- Koka (a research language) avoids some overhead by using the type-system
-  to identify when continuations can be avoided
+#+begin_src elixir
+defmodule TodosMcp.Todos.HandlersPropertyTest do
+  use ExUnit.Case, async: true
+  use ExUnitProperties
+
+  property "ToggleTodo is self-inverse (toggle twice = original)" do
+    check all(cmd <- Generators.create_todo(), max_runs: 100) do
+      # Create a todo (in-memory, no database!)
+      {:ok, original} = create_and_get(cmd)
+      original_completed = original.completed
+
+      # Toggle once
+      {:ok, toggled} =
+        Run.execute(%ToggleTodo{id: original.id}, mode: :in_memory, tenant_id: @test_tenant)
+      assert toggled.completed == not original_completed
+
+      # Toggle again - should restore original state
+      {:ok, restored} =
+        Run.execute(%ToggleTodo{id: original.id}, mode: :in_memory, tenant_id: @test_tenant)
+      assert restored.completed == original_completed
+    end
+  end
+
+  property "CompleteAll only affects incomplete todos" do
+    check all(todos <- Generators.todos(max_length: 20), max_runs: 100) do
+      incomplete_count = Enum.count(todos, &(not &1.completed))
+
+      {:ok, result} = run_with_todos(%CompleteAll{}, todos)
+
+      assert result.updated == incomplete_count
+    end
+  end
+
+  property "GetStats: total = active + completed" do
+    check all(todos <- Generators.todos(max_length: 50), max_runs: 100) do
+      {:ok, stats} = run_with_todos(%GetStats{}, todos)
+
+      assert stats.total == stats.active + stats.completed
+    end
+  end
+end
+#+end_src
+
+100 iterations. Milliseconds. No database setup, no cleanup, no flaky tests.
+
+This is *impossible* with traditional side-effecting code. With algebraic
+effects, it's the default way of testing.
+
+** Scaling up: what this means for CI
+
+Skuld's own test suite runs ~600 tests in 0.4 seconds.
+
+Scale that up: a 30,000 test codebase would run in ~20 seconds.
+
+Compare that to a typical imperative test suite of that size: 5 minutes
+across 5 parallel runners. That's *75x slower*.
+
+The difference is I/O. Database round-trips, network calls, process
+setup/teardown - all of that disappears when your domain logic runs
+against pure in-memory handlers.
+
+Fast tests mean:
+- Faster CI pipelines
+- More property test iterations (find more bugs)
+- Developers actually run tests locally
+- Less flakiness (no network, no database state)
+
+** What we've seen
+
+1. *Domain logic is pure* - handlers describe what, not how
+2. *Handlers are swappable* - one config change switches storage backends
+3. *Testing is fast* - property tests run thousands of iterations in seconds
+4. *Same code, different contexts* - production and test share domain logic
+
+* The key insight
+
+Traditional Elixir code has two layers:
+- *Pure functions* - easy to test, easy to reason about
+- *Side-effecting functions* - hard to test, effects mixed with logic
+
+Algebraic effects add a third layer:
+- *Pure functions* - unchanged
+- *Effectful functions* - describe effects without performing them
+- *Effect handlers* - perform the actual I/O (swappable!)
+
+Domain logic moves from the side-effecting layer to the effectful layer.
+It becomes *pure* - testable, composable, and independent of infrastructure.
+
+The side effects are pushed to the edge, into thin handler wrappers.
+Your domain logic doesn't know or care whether it's talking to Postgres,
+an in-memory map, or a mock.
+
+* When to use Skuld
+
+** Good fit
+- I/O-bound services where testability matters
+- Complex domain logic with many effects (DB, external APIs, etc.)
+- When you want property-based testing of domain logic
+- When you need effect logging for debugging/replay
+- Multi-tenant systems (Reader effect for context)
+
+** Maybe not
+- CPU-bound computation where every microsecond counts
+- Simple scripts with minimal side effects
+- When the team isn't bought in (it's a paradigm shift)
+
+* Getting started
+
+1. Start small: use *Reader* for configuration, *State* for accumulation
+2. Wrap existing side-effects: create effect signatures for your Repo calls
+3. Write one property test: see the testing benefits firsthand
+4. Expand gradually: more effects as you see the value
+
+Resources:
+- Skuld: https://github.com/mccraigmccraig/skuld
+- TodosMcp demo: https://github.com/mccraigmccraig/todos_mcp
+- Live demo: https://todos-mcp-lu6h.onrender.com/
+
+* Summary
+
+Algebraic effects let you write code that describes *what* it needs,
+not *how* to get it.
+
+The "how" becomes a deployment decision, not a coding decision.
+
+Your domain logic becomes a pure function from commands to results.
+Side effects are pushed to the edge.
+Testing becomes fast and deterministic.
+
+#+begin_quote
+"Make the effectful layer as large as possible,
+ the side-effecting layer as thin as possible."
+#+end_quote
