@@ -1,60 +1,478 @@
 #+title: Algebraic Effects in Elixir
 
-* What are Algebraic Effects
-- Algebrauc Effects allow *pure* programs to *describe* the side-effects
-  they need without specifying *how* they are to be achieved
-- They provide a mechanism for these descriptions of side-effects to be
-  interpreted in different ways
-- They are called "algebraic" because the descriptions of side-effects
-  are values in algebras formed by effect operations - similar to aithmetic
-  fields
+* The Problem
 
-* Why
-- Most programs have some pure functions and some side-effecting functions.
-  The pure parts of the program are nicer to work with, and one generally
-  strives to make as much of a program pure as reasonably possible
-- Patterns such as functional-core/imperative-shell aim in this dirextion
-  - the pattern is easy enough initially, but gets hard as call
-    stacks get deeper, recursion bites and effect dependencies compound
+You've probably experienced these pain points:
 
-- Algebraic Effects ntroduce some useful additional structure to programs
-  which helps with making programs more pure:
-  1. fully pure functions remain
-     - not much change here
-  2. "effectful" functions are introduced
-     - these are a new kind of thing, and most of the previously side-effecting
-       functions in a program can be replaced with effectful functions.
-       Effectful functions compose sequences of "effect" requests - which are
-       like function calls without a specified implementation. Implementation is
-       provided by handlers, and can be changed for different contexts -
-       e.g. a pure storage implementation to run in test contexts without a
-       database
-  3. impure "effect handlers"
-     - the small parts of the program which truly need to be impure - because
-       they do I/O or deal with randomness or async &c - are relegated to
-       "effect handlers"
-     - effect handlers are thin, easily testable, wrappers which provide
-       implementations for the effect descriptions that effectful functions
-       request
-     - it's entirely up to a handler _how_ a particular operation in an effect
-       is to be implemented. Handlers can be pure or sode-effecting, and can be
-       changed statically or dynamically - the effectful functions don't care,
-       they just program against the "effect" APIs
+** Slow tests
 
-* Where
-- I/O bound programs struggling to manage complexity, improve testability, and
-  make it easy to impleemnt
+Domain logic calls =Repo.get!/2= directly. Most tests hits the database.
+Property-based testing? No chance - 1000 iterations would take minutes.
 
-* The cost
-- Freyja (an earlier Algebraic Effects lib) was pretty slow - benchmarked at
-  17x slower than a simple state monad for in-memory computation
-- Skuld is considerably faster - 4x slower than a simple state monad
-  - this seems reasonable for I/O bound processes - it represents a
-    worst-case, if a computation did nothing useful, spending all its effort
-    exercising the Algebraic Effects coordination machinery
+** Context threading is painful
 
-* Aliases
-- use these aliases to run all the code examples in IEx
+You need =tenant_id= in a function 8 levels deep. You add it as a parameter
+to every function in the chain. Then you need =user_id=. Then =request_id=.
+Your function signatures grow. Your call sites get noisy.
+
+** Mocking is awkward
+
+You create a behaviour, implement it twice, configure Mox, add
+=Mox.verify_on_exit!= to every test. For every external dependency.
+And the mocks don't compose - you end up with test setup that's longer
+than the test itself.
+
+** The functional-core/imperative-shell dream
+
+You've heard it: "keep business logic pure, push I/O to the edges."
+
+But how? Your domain logic /needs/ to query the database. It /needs/
+to call external APIs. The pattern is easy at first, but gets hard as
+call stacks get deeper, recursion bites, and dependencies compound.
+
+* What if...
+
+What if you could write domain logic that:
+
+- Describes *what* it needs (fetch a record, save a change, get config)
+- Without specifying *how* (which database, which API, real or fake)
+- And the "how" was a deployment decision, not a coding decision?
+
+That's what Algebraic Effects give you.
+
+* The Payoff: Same Code, Different Backends
+
+Here's real code from a todo app. This handler toggles a todo's completion:
+
+#+begin_src elixir
+defcomp handle(%ToggleTodo{id: id}) do
+  # Get tenant context - could come from anywhere
+  ctx <- Reader.ask(CommandContext)
+
+  # Fetch the todo - doesn't specify how
+  todo <- Repository.get_todo!(ctx.tenant_id, id)
+
+  # Pure business logic
+  changeset = Todo.changeset(todo, %{completed: not todo.completed})
+
+  # Persist - doesn't specify where
+  updated <- ChangesetPersist.update(changeset)
+
+  {:ok, updated}
+end
+#+end_src
+
+Notice what's /not/ here: no =Repo= calls, no GenServer, no process dictionary.
+
+This is *domain logic*. It describes *what* needs to happen, not *how*.
+
+** The handler swap
+
+The same code runs against different backends:
+
+#+begin_src elixir
+# Production: real Ecto/Postgres
+defp with_storage_handlers(comp, :database) do
+  comp
+  |> Query.with_handler(%{Repository => :direct})
+  |> ChangesetPersist.Ecto.with_handler(Repo)
+end
+
+# Testing: pure in-memory storage
+defp with_storage_handlers(comp, :in_memory) do
+  comp
+  |> Query.with_handler(%{Repository => {Repository.InMemory, :delegate}})
+  |> InMemoryPersist.with_handler()
+end
+#+end_src
+
+One line changes the storage backend. The domain handler doesn't change at all.
+
+* The Testing Payoff
+
+With pure handlers, property-based testing becomes practical:
+
+#+begin_src elixir
+property "ToggleTodo is self-inverse" do
+  check all(cmd <- Generators.create_todo(), max_runs: 100) do
+    {:ok, original} = create_and_get(cmd)
+
+    # Toggle once
+    {:ok, toggled} = Run.execute(%ToggleTodo{id: original.id}, mode: :in_memory)
+    assert toggled.completed == not original.completed
+
+    # Toggle again - should restore original state
+    {:ok, restored} = Run.execute(%ToggleTodo{id: original.id}, mode: :in_memory)
+    assert restored.completed == original.completed
+  end
+end
+#+end_src
+
+100 iterations. Milliseconds. No database setup, no cleanup, no flaky tests.
+
+** Scaling up
+
+Skuld's own test suite runs ~600 tests in 0.4 seconds.
+
+Scale that up: a 30,000 test codebase would run in ~20 seconds.
+
+Compare to a typical database-backed test suite: 5 minutes across 5 parallel
+runners. That's *75x slower*.
+
+Fast tests mean:
+- Faster CI pipelines
+- More property test iterations (find more bugs)
+- Developers actually run tests locally
+- Less flakiness (no network, no database state)
+
+* How It Works: The 30-Second Version
+
+Algebraic Effects split your code into three layers:
+
+| Layer     | What it does                         | Example                         |
+|-----------+--------------------------------------+---------------------------------|
+| Pure      | Regular functions, no effects        | =String.upcase/1=               |
+| Effectful | Describes effects without doing them | Your domain logic               |
+| Handlers  | Actually performs the I/O            | Thin wrappers around Repo, HTTP |
+
+Domain logic moves from "side-effecting" to "effectful".
+It becomes pure - testable, composable, independent of infrastructure.
+
+* The =comp= Macro
+
+The =comp= macro is like =with=, but for effects:
+
+#+begin_src elixir
+comp do
+  x <- Reader.ask()        # "I need some config"
+  y <- State.get()         # "I need some state"
+  return(x + y)            # "Here's my result"
+end
+|> Reader.with_handler(5)  # "Config is 5"
+|> State.with_handler(10)  # "State is 10"
+|> Comp.run!()             # "Go!"
+
+#> 15
+#+end_src
+
+The =<-= arrow means "I need this effect interpreted". The value on the right
+is a description of what you need. The handler decides how to provide it.
+
+** =defcomp= for functions
+
+#+begin_src elixir
+defmodule MyApp do
+  use Skuld.Syntax
+
+  defcomp add_to_config(x) do
+    y <- Reader.ask()
+    return(x + y)
+  end
+end
+
+MyApp.add_to_config(5)
+|> Reader.with_handler(10)
+|> Comp.run!()
+
+#> 15
+#+end_src
+
+Effectful functions compose - call them from other =defcomp= functions,
+and effects bubble up to wherever you install handlers.
+
+* Building Blocks
+
+Skuld provides several foundational effects. Think of these as
+capabilities you can request from anywhere in your call stack.
+
+** Reader: Config without parameter threading
+
+Need =tenant_id= deep in a call stack? Don't thread it through every function:
+
+#+begin_src elixir
+# Deep in your code, just ask for it:
+defcomp do_something() do
+  ctx <- Reader.ask(TenantContext)
+  # use ctx.tenant_id
+end
+
+# At the top level, provide it once:
+do_something()
+|> Reader.with_handler(%{tenant_id: "tenant_123"}, tag: TenantContext)
+|> Comp.run!()
+#+end_src
+
+Multiple readers with different tags for different contexts.
+
+** State: Accumulation without threading
+
+Need to track state through a computation? Don't pass accumulators:
+
+#+begin_src elixir
+defcomp count_items(items) do
+  _ <- State.put(0)
+
+  FxList.fx_each(items, fn item ->
+    comp do
+      count <- State.get()
+      _ <- State.put(count + 1)
+      return(:ok)
+    end
+  end)
+
+  State.get()  # return final count
+end
+
+count_items([1, 2, 3, 4, 5])
+|> State.with_handler(0)
+|> Comp.run!()
+
+#> 5
+#+end_src
+
+** Writer: Logging from anywhere
+
+Accumulate values from deep in a call stack:
+
+#+begin_src elixir
+defcomp process_with_audit(items) do
+  FxList.fx_map(items, fn item ->
+    comp do
+      _ <- Writer.tell({:processed, item})
+      return(item * 2)
+    end
+  end)
+end
+
+process_with_audit([1, 2, 3])
+|> Writer.with_handler()
+|> Comp.run!()
+
+#> {[2, 4, 6], [{:processed, 1}, {:processed, 2}, {:processed, 3}]}
+#+end_src
+
+** Throw: Error handling that composes
+
+#+begin_src elixir
+defcomp maybe_fail(x) do
+  if Integer.is_odd(x) do
+    Throw.throw(:validation_failed)
+  else
+    return(x * 2)
+  end
+end
+
+defcomp safe_process(x) do
+  maybe_fail(x)
+catch
+  :validation_failed -> return(:skipped)
+end
+#+end_src
+
+Errors propagate up the effectful call stack until caught.
+
+* Pattern Matching with =else=
+
+Like =with=, you can pattern match and handle failures:
+
+#+begin_src elixir
+defcomp process(a, b, c) do
+  {:ok, ar} <- do_the_thing(:a, a)
+  {:ok, br} <- do_the_thing(:b, b)
+  {:ok, cr} <- do_the_thing(:c, c)
+  return({:ok, [ar, br, cr]})
+else
+  {step, _} -> return({:error, "failed at: #{step}"})
+end
+#+end_src
+
+* Advanced: Effect Logging and Replay
+
+The EffectLogger records every effect in a computation:
+
+#+begin_src elixir
+defcomp maybe_fail(version) do
+  _ <- State.put(10)
+  _ <- case version do
+    :original -> Throw.throw(:validation_failed)
+    :patched -> return(:ok)
+  end
+  x <- State.get()
+  return(x)
+end
+
+# Run with logging
+{{:throw, :validation_failed}, log} =
+  maybe_fail(:original)
+  |> EffectLogger.with_logging()
+  |> Throw.with_handler()
+  |> State.with_handler(0)
+  |> Comp.run()
+  |> elem(0)
+
+# The log captured everything up to the failure
+# Fix the bug, replay from the exact failure point
+#+end_src
+
+The log is JSON-serializable. Write it to disk, inspect it, replay later.
+
+** Cold resume across servers
+
+#+begin_src elixir
+# Server 1: computation suspends
+log = EffectLogger.get_log(env) |> EffectLogger.Log.finalize()
+json = Jason.encode!(log)
+# Store in Redis/database...
+
+# Server 2 (hours later, different node):
+cold_log = Jason.decode!(json) |> EffectLogger.Log.from_json()
+
+computation
+|> EffectLogger.with_resume(cold_log, new_input)
+|> Comp.run()
+# Continues from exactly where it left off
+#+end_src
+
+* Advanced: Coroutines with Yield
+
+Computations can suspend and request values from their caller:
+
+#+begin_src elixir
+defcomp interactive_sum() do
+  x <- Yield.yield("Enter first number:")
+  y <- Yield.yield("Enter second number:")
+  return(x + y)
+end
+
+{:done, result, _yields, _env} =
+  interactive_sum()
+  |> Yield.with_handler()
+  |> Yield.feed([10, 20])
+
+#> result == 30
+#+end_src
+
+** Real example: LLM conversation loop
+
+#+begin_src elixir
+defcomp run() do
+  config <- Reader.ask(ConversationComp)
+  state <- State.get(ConversationComp)
+
+  # Suspend, wait for user input
+  user_message <- Yield.yield(:await_user_input)
+
+  messages = state.messages ++ [%{role: "user", content: user_message}]
+  result <- conversation_turn(messages, config.tools)
+
+  case result do
+    {:ok, response_text, final_messages, tool_executions} ->
+      comp do
+        _ <- Yield.yield(%{type: :response, text: response_text})
+        _ <- State.put(ConversationComp, %{state | messages: final_messages})
+        run()  # loop
+      end
+
+    {:error, reason} ->
+      comp do
+        _ <- Yield.yield(%{type: :error, reason: reason})
+        run()
+      end
+  end
+end
+#+end_src
+
+The conversation is a single computation that yields for input, calls the LLM,
+yields responses, and loops forever. The caller drives it by resuming with values.
+
+Try implementing this with GenServer - you'd need manual state machines,
+explicit serialization, callback management. With effects, the computation
+/is/ the state machine.
+
+* The Cost
+
+Algebraic Effects aren't free:
+
+- *Performance overhead*: Skuld is ~4x slower than hand-threaded state for
+  pure computation. For I/O-bound code (database, HTTP), this is negligible.
+
+- *Learning curve*: It's a different way of thinking. The =comp= macro takes
+  getting used to.
+
+- *Team buy-in*: Everyone needs to understand the pattern, or you get
+  a mix of effectful and side-effecting code.
+
+The tradeoff is worth it when:
+- Testability matters more than microseconds
+- You have complex domain logic with many effects
+- You want property-based testing
+- You need effect logging for debugging
+
+* When To Use Skuld
+
+** Good fit
+- I/O-bound services where testability matters
+- Complex domain logic with many effects (DB, external APIs)
+- When you want property-based testing of domain logic
+- When you need effect logging for debugging/replay
+- Multi-tenant systems (Reader effect for context)
+
+** Maybe not
+- CPU-bound computation where every microsecond counts
+- Simple scripts with minimal side effects
+- When the team isn't bought in
+
+* Getting Started
+
+1. *Start small*: Use Reader for configuration that you're currently threading
+2. *Wrap one side-effect*: Create an effect signature for your Repo calls
+3. *Write one property test*: See the testing benefits firsthand
+4. *Expand gradually*: Add more effects as you see the value
+
+#+begin_src elixir
+# Add to mix.exs
+{:skuld, "~> 0.1"}
+
+# In your module
+use Skuld.Syntax
+
+defcomp my_first_effectful_function() do
+  config <- Reader.ask()
+  return(config.some_value)
+end
+#+end_src
+
+* Summary
+
+Algebraic Effects let you write code that describes *what* it needs,
+not *how* to get it.
+
+| Traditional                       | With Effects                       |
+|-----------------------------------+------------------------------------|
+| Domain logic calls Repo directly  | Domain logic requests effects      |
+| Tests hit the database            | Tests use in-memory handlers       |
+| Mocking requires behaviours + Mox | Swap handlers in one line          |
+| Context threaded through params   | Reader effect provides it anywhere |
+
+The "how" becomes a deployment decision, not a coding decision.
+
+Your domain logic becomes pure. Side effects are pushed to the edge.
+Testing becomes fast and deterministic.
+
+#+begin_quote
+"Make the effectful layer as large as possible,
+ the side-effecting layer as thin as possible."
+#+end_quote
+
+* Resources
+
+- Skuld: https://github.com/mccraigmccraig/skuld
+- TodosMcp demo: https://github.com/mccraigmccraig/todos_mcp
+- Live demo: https://todos-mcp-lu6h.onrender.com/
+
+* Appendix: Setup for Live Examples
+
+Use these aliases to run code examples in IEx:
 
 #+begin_src elixir
 alias Skuld.Comp
@@ -71,18 +489,64 @@ require Integer
 use Skuld.Syntax
 #+end_src
 
-* Effect signatures
-- Here's a few simple foundational effect signatures
-- each Effect signature defines one or more operations in the effect,
-  and each operation signifies a request for some value without
-  specfying how that value is to be obtained.
-- in Skuld, each operation function creates a simple data structure,
-  detailing the request, and wraps it in a computation using `Comp.effect`...
+* Appendix: How It Really Works
 
-** Reader
-pure functions can ask for a value anywhere in the call stack without
-additional params
-  - values can be system-wide config, or operation-specific config
+For those who want to understand the internals...
+
+** Computations are functions
+
+In Skuld, a computation is a function: =(env, continuation) -> {result, env}=
+
+#+begin_src elixir
+@type computation :: (env(), k() -> {result(), env()})
+@type k :: (term(), env() -> {result(), env()})
+#+end_src
+
+** The environment tracks handlers
+
+#+begin_src elixir
+%Skuld.Comp.Env{
+  evidence: %{sig => handler_fn},  # maps effect signatures to handlers
+  state: %{key => value},          # effect state (Reader value, etc.)
+  leave_scope: fn result, env -> {result, env} end
+}
+#+end_src
+
+** Effect operations look up handlers
+
+=Comp.effect(sig, args)= creates a computation that:
+1. Looks up the handler for =sig= in the environment
+2. Calls the handler with the operation args
+3. Handler calls the continuation with the result
+
+#+begin_src elixir
+Reader.ask()
+# Returns a computation that, when run:
+# 1. Looks up Reader handler in env.evidence
+# 2. Handler reads value from env.state
+# 3. Handler calls continuation with that value
+#+end_src
+
+** The =comp= macro expands to chained calls
+
+#+begin_src elixir
+comp do
+  x <- Reader.ask()
+  y <- State.get()
+  return(x + y)
+end
+
+# Expands to:
+Comp.chain(Reader.ask(), fn x ->
+  Comp.chain(State.get(), fn y ->
+    Comp.pure(x + y)
+  end)
+end)
+#+end_src
+
+** Effect signatures
+
+Each effect defines operations as simple data structures:
 
 #+begin_src elixir
 defmodule Skuld.Effects.Reader do
@@ -92,29 +556,7 @@ defmodule Skuld.Effects.Reader do
   @sig __MODULE__
   def ask, do: Comp.effect(@sig, %Ask{})
 end
-#+end_src
 
-** Writer
-pure functions can accumluate values to a log from anywhere in the call stack,
-without accumulator params
- - capture changes from deep within a call stack
-
-#+begin_src elixir
-defmodule Skuld.Effects.Writer do
-  import Skuld.Comp.DefOp
-  def_op(Tell, [:msg])
-
-  @sig __MODULE__
-  def tell(msg), do: Comp.effect(@sig, %Tell{msg: msg})
-end
-#+end_src
-
-** State
-pure functions can maniuplate a state variable from anywhere in the call stack,
-without additional params
-  - state could come from memory, database, cache - anywhere
-
-#+begin_src elixir
 defmodule Skuld.Effects.State do
   import Skuld.Comp.DefOp
   def_op(Get)
@@ -126,786 +568,5 @@ defmodule Skuld.Effects.State do
 end
 #+end_src
 
-** what does Comp.effect do ?
-In Skuld, computations are represented as functions using continuation-passing
-style (CPS). A computation is a function `(env, k) -> {result, env}` where:
-- `env` is the environment containing handler evidence and state
-- `k` is the continuation to call with the result
-
-*** Computations as functions
-Unlike Freyja's data-structure approach (Freer monads), Skuld represents
-computations directly as functions. This avoids creating intermediate
-structs and is significantly faster.
-
-#+begin_src elixir
-# A computation has this shape:
-@type computation :: (env(), k() -> {result(), env()})
-@type k :: (term(), env() -> {result(), env()})
-#+end_src
-
-*** The environment
-The environment tracks installed handlers and their state:
-
-#+begin_src elixir
-%Skuld.Comp.Env{
-  evidence: %{sig => handler_fn},  # maps effect signatures to handlers
-  state: %{key => value},          # effect state (Reader value, Writer log, etc.)
-  leave_scope: fn result, env -> {result, env} end  # cleanup chain
-}
-#+end_src
-
-*** Comp.effect
-- `Comp.effect(sig, args)` creates a computation that looks up the handler
-  for `sig` in the environment and calls it with the operation args
-- The handler is responsible for calling the continuation with the result
-
-#+begin_src elixir
-Reader.ask()
-# Returns a computation function that, when run:
-# 1. Looks up the Reader handler in env.evidence
-# 2. Calls the handler with %Ask{}, env, and continuation k
-# 3. Handler reads value from env.state and calls k.(value, env)
-
-State.put(100)
-# Returns a computation function that, when run:
-# 1. Looks up the State handler in env.evidence
-# 2. Calls the handler with %Put{value: 100}, env, and continuation k
-# 3. Handler updates env.state and calls k.(:ok, new_env)
-#+end_src
-
-
-* How can we use effects
-- some simple example Skuld code introducing how
-  effects can be combined into programs
-
-** we can "handle" an effect
-- Handlers provide an interpreter for a particular effect's operations
-
-#+begin_src elixir
-Reader.ask()
-|> Reader.with_handler(42)
-|> Comp.run!()
-
-#>   42
-
-#+end_src
-
-** We can sequence and compose effect operations
-using values from previous effects to request new effects
-
-We use the `&Comp.bind/2` function, which takes a computation,
-and a function `(term -> computation)` of an interpreted effect value, and
-returns another computation - you'll see why the function is called `bind`
-soon. We also use `&Comp.pure/1` which returns a simple value as a computation.
-
-This computation requests two effects before returning a result:
-
-#+begin_src elixir
-Comp.bind(
-  Reader.ask(),
-  fn x ->
-    Comp.bind(
-      State.get(),
-      fn y -> Comp.pure(x + y) end)
-  end)
-  |> Reader.with_handler(5)
-  |> State.with_handler(10)
-  |> Comp.run!()
-
-#>   15
-
-#+end_src
-
-but (unless you were a fan of pre-async/await JavaScript), this probably looks
-pretty ugly to you, and the nesting makes it hard to understand what's
-happening...
-
-** so, with a little macro sugar
-This code is exactly equivalent to the previous sequence of nested
-function calls, and makes the intent much clearer - the bound/matched
-forms on the left of `<-` expressions end up as the anonymous function
-parameters of the same name above, so the `comp` block behaves like
-a generalized `with` expression - binding (hence the name) interpreted effect
-values to variables at each step
-
-#+begin_src elixir
-comp do
-  x <- Reader.ask()
-  y <- State.get()
-  return(x + y)
-end
-|> Reader.with_handler(5)
-|> State.with_handler(10)
-|> Comp.run!()
-
-#>    15
-
-#+end_src
-
-
-* So what's actually going on here
-- let's trace through how Skuld executes a computation
-
-#+begin_src elixir
-c = comp do
-  x <- Reader.ask()
-  y <- State.get()
-  return(x + y)
-end
-#+end_src
-
-- `c` is *not* the result of the computation - `c` is a *function* with spec:
-   `(env, k) -> {result, env}`
-- `c` captures the pure "essence" of the computation, without specifying any
-  of the "how" - the `Reader.state()` and `State.get()` effect requests
-  remain unimplemented, and will cause errors if we try to run the
-  computation now
-- we can supply implementations for the effect operations later
-
-#+begin_src elixir
-Comp.run(c)
-#+end_src
-
-
-** the `comp` macri creates a computation function
-It expands to nested `Comp.bind` calls, according to a simple pattern.
-
-The `comp` block above is exactly equivalent to:
-
-#+begin_src elixir
-c = Comp.bind(Reader.ask(), fn x ->
-  Comp.bind(State.get(), fn y ->
-    Comp.pure(x + y)
-  end)
-end)
-#+end_src
-
-and if we look at the implementation of `bind` we can see it just returns a
-function:
-
-#+begin_src elixir
-def bind(comp, f) do
-  fn env, k ->
-    call(comp, env, fn a, env2 ->
-      call(f.(a), env2, k)
-    end)
-  end
-end
-#+end_src
-
-** when we install handlers and run
-each `with_handler` wraps the computation with handler "evidence" which
-supplies handlers for effects
-
-#+begin_src elixir
-c
-|> Reader.with_handler(5)   # installs Reader handler, sets reader value to 5
-|> State.with_handler(10)   # installs State handler, sets state to 10
-|> Comp.run!()              # runs the computation
-#+end_src
-
-** execution flow
-1. `Comp.run!` calls the computation with an initial env and an identity
-   final continuation
-2. First effect: `Reader.ask()` looks up the Reader handler in env
-3. Handler reads value `5` from env.state and calls continuation with it
-4. Continuation binds `x = 5` and proceeds to next effect
-5. Second effect: `State.get()` looks up State handler
-6. Handler reads value `10` from env.state and calls continuation with it
-7. Continuation binds `y = 10` and evaluates `Comp.pure(x + y)`
-8. `Comp.pure(15)` calls the final continuation with result `15`
-
-** What have we seen
-- the `comp` macro rearranges a `with`-like syntax into nested
-  `bind` function calls
-- program logic is captured in *pure* continuation functions
-- pure program logic can call effect operations to make effectful requests
-- handlers can interpret those requests however they like - pure or impure
-- this encding of Algebraic Effects uses CPS and "evidence" in a dynamic
-  environment
-
-* getting more real-world
-
-- introducing some new concepts
-
-** defcomp
-the `comp` macro makes sequencing effect requests into a computation easy.
-`defcomp` does the same for functions
-
-#+begin_src elixir
-defmodule Ex1 do
-  use Skuld.Syntax
-
-  defcomp foo(x) do
-    y <- Reader.ask()
-    return(x + y)
-  end
-
-end
-
-Ex1.foo(5)
-|> Reader.with_handler(10)
-|> Comp.run!()
-#+end_src
-
-** turtles
-
-#+begin_src elixir
-defmodule Ex2 do
-  use Skuld.Syntax
-
-  defcomp bar(x) do
-    z <- Ex1.foo(x)
-    return(z)
-  end
-
-end
-
-Ex2.bar(5)
-|> Reader.with_handler(10)
-|> Comp.run!()
-#+end_src
-
-** higher and higher
-
-So far, we've only seen "first order" effects - effects which *do not* take
-computations as parameters... but there are higher-order effects which *do* take
-computations as parameters too.
-
-In Skuld, unlike Freyja, there's no distinction between first-order and
-higher-order effects at the syntax level - `comp` and `defcomp` work for both.
-This is because Skuld uses CPS which naturally handles higher-order effects.
-
-#+begin_src elixir
-defmodule Ex3 do
-  use Skuld.Syntax
-
-  defcomp first() do
-    _ <- TaggedWriter.tell(:foo, 100)
-    return(:first)
-  end
-
-  defcomp second() do
-    _ <- TaggedWriter.tell(:foo, 200)
-    return(:second)
-  end
-
-  defcomp call_them() do
-    _ <- first()
-    second()
-  end
-
-  defcomp collect() do
-    # listen is a higher-order operation - it takes a computation as parameter
-    val <- TaggedWriter.listen(:foo, call_them())
-    return(val)
-  end
-
-end
-
-Ex3.collect()
-|> TaggedWriter.with_handler(:foo)
-|> Comp.run!()
-#+end_src
-
-
-** and the rest
-
-Now we can introduce `Throw` for error handling. There's special `catch`
-syntax in `comp` blocks for catching thrown errors.
-
-#+begin_src elixir
-defmodule Ex4 do
-  use Skuld.Syntax
-
-  defcomp will_it_throw(x) do
-    if Integer.is_odd(x) do
-      Throw.throw(:boom)
-    else
-      return(x * 2)
-    end
-  end
-
-  defcomp safe_will_it_throw(x) do
-    will_it_throw(x)
-  catch
-    :boom -> return(:oops)
-  end
-
-  defcomp do_stuff_to_list(l) do
-    FxList.fx_map(l, &safe_will_it_throw/1)
-  end
-end
-
-Ex4.do_stuff_to_list([1,2,3,4,5])
-|> Throw.with_handler()
-|> Comp.run!()
-
-#+end_src
-
-** and and
-
-There's also an `else` syntax in `comp` for `with` style pattern matching
-
-#+begin_src elixir
-defmodule Ex5 do
-  use Skuld.Syntax
-
-  defcomp do_the_thing(k, x) do
-    if Integer.is_odd(x) do
-      return({:ok, x * 2})
-    else
-      return({k, x})
-    end
-  end
-
-  defcomp process(a,b,c) do
-    {:ok, ar} <- do_the_thing(:a, a)
-    {:ok, br} <- do_the_thing(:b, b)
-    {:ok, cr} <- do_the_thing(:c, c)
-    return {:ok, [ar, br, cr]}
-  else
-    {step, _} -> return("failed at: #{step}")
-  end
-end
-
-Ex5.process(1,2,3)
-|> Comp.run!()
-
-#+end_src
-
-* more effects
-
-We've looked at some simple effects - Reader, Writer, State, some
-slightly more complex higher-order effects like Catch and Else ...
-now we'll have a brief look at some other effects
-
-** logging, replay and recovery
-
-The EffectLogger is an advanced effect handler which observes all the
-effects in a computation and records them in a structured log. The
-log is serializable data, and can be written to and read from JSON.
-More - the log contains all the serialized interpreted effect values,
-so is enough to run the pure parts of the computation bypassing
-effect handlers. If a computation failed part-way, the log can be used
-to resume it with the exact values that caused the failure
-
-#+begin_src elixir
-defmodule Ex6 do
-  use Skuld.Syntax
-
-  defcomp maybe_fail(version) do
-    _ <- State.put(10)
-
-    _ <- case version do
-      :original -> Throw.throw(:validation_failed)
-      :patched -> return(:ok)
-    end
-
-    x <- State.get()
-    return(x)
-  end
-
-  def run_with_logging(version) do
-    maybe_fail(version)
-    |> EffectLogger.with_logging()  # must be innermost
-    |> Throw.with_handler()
-    |> State.with_handler(0)
-    |> Comp.run()
-  end
-
-end
-
-# Run the original (which throws)
-{{:throw, :validation_failed}, log1} = Ex6.run_with_logging(:original) |> elem(0)
-
-# The log captures all effects up to the throw
-IO.inspect(log1)
-
-# Run the patched version
-{{:ok, 10}, log2} = Ex6.run_with_logging(:patched) |> elem(0)
-
-# Can replay from a log to reproduce exact behavior
-{replayed_result, _env} =
-  Ex6.maybe_fail(:patched)
-  |> EffectLogger.with_replay(log2)
-  |> Comp.run()
-
-#+end_src
-
-** coroutines
-
-Coroutines (via the Yield effect) allow a computation to suspend and
-request a value from its caller
-
-#+begin_src elixir
-defmodule CoroutineEx do
-  use Skuld.Syntax
-  alias Skuld.Effects.Yield
-
-  defcomp interactive_sum() do
-    x <- Yield.yield("Enter first number:")
-    y <- Yield.yield("Enter second number:")
-    return(x + y)
-  end
-end
-
-# Drive the coroutine by feeding inputs
-alias Skuld.Effects.Yield
-
-{:done, result, _yields, _env} =
-  CoroutineEx.interactive_sum()
-  |> Yield.with_handler()
-  |> Yield.feed([10, 20])  # feed inputs to each yield
-
-# result == 30
-#+end_src
-
-* Real-world example: TodosMcp
-
-Let's look at a real application built with Skuld - a todo app with
-command/query separation, multi-tenancy, and property-based testing.
-
-** Domain logic - pure and simple
-
-Here's a command handler for toggling a todo's completion status.
-Notice what's *not* here: no Repo calls, no GenServer, no process dictionary.
-
-#+begin_src elixir
-defmodule TodosMcp.Todos.Handlers do
-  use Skuld.Syntax
-
-  defcomp handle(%ToggleTodo{id: id}) do
-    # Get tenant context (Reader effect)
-    ctx <- Reader.ask(CommandContext)
-
-    # Fetch the todo (Query effect)
-    todo <- Repository.get_todo!(ctx.tenant_id, id)
-
-    # Build the changeset (pure)
-    changeset = Todo.changeset(todo, %{completed: not todo.completed})
-
-    # Persist the change (ChangesetPersist effect)
-    updated <- ChangesetPersist.update(changeset)
-
-    {:ok, updated}
-  end
-end
-#+end_src
-
-This is *domain logic*. It describes *what* needs to happen, not *how*.
-The "how" is provided by handlers - and handlers can be swapped.
-
-** The handler swap - same code, different storage
-
-The `Run` module wires up different handlers based on mode:
-
-#+begin_src elixir
-defmodule TodosMcp.Run do
-  # ... setup ...
-
-  def execute(operation, opts \\ []) do
-    mode = Keyword.get(opts, :mode, storage_mode())
-    context = get_context(opts)
-
-    comp do
-      result <- Command.execute(operation)
-      result
-    end
-    |> Command.with_handler(&Handlers.handle/1)
-    |> Reader.with_handler(context, tag: CommandContext)
-    |> with_storage_handlers(mode)  # <-- this is the key line
-    |> Fresh.with_uuid7_handler()
-    |> Throw.with_handler()
-    |> Comp.run()
-    |> extract_result()
-  end
-
-  # Production: real Ecto/Postgres
-  defp with_storage_handlers(comp, :database) do
-    comp
-    |> Query.with_handler(%{Repository.Ecto => :direct})
-    |> ChangesetPersist.Ecto.with_handler(Repo)
-  end
-
-  # Testing: pure in-memory storage
-  defp with_storage_handlers(comp, :in_memory) do
-    comp
-    |> Query.with_handler(%{Repository.Ecto => {Repository.InMemory, :delegate}})
-    |> InMemoryPersist.with_handler()
-  end
-end
-#+end_src
-
-The domain handler code doesn't change. The *same* `ToggleTodo` handler runs
-against Postgres in production and against an in-memory map in tests.
-
-** The testing payoff - property-based testing
-
-With pure handlers, we can run thousands of test iterations in milliseconds:
-
-#+begin_src elixir
-defmodule TodosMcp.Todos.HandlersPropertyTest do
-  use ExUnit.Case, async: true
-  use ExUnitProperties
-
-  property "ToggleTodo is self-inverse (toggle twice = original)" do
-    check all(cmd <- Generators.create_todo(), max_runs: 100) do
-      # Create a todo (in-memory, no database!)
-      {:ok, original} = create_and_get(cmd)
-      original_completed = original.completed
-
-      # Toggle once
-      {:ok, toggled} =
-        Run.execute(%ToggleTodo{id: original.id}, mode: :in_memory, tenant_id: @test_tenant)
-      assert toggled.completed == not original_completed
-
-      # Toggle again - should restore original state
-      {:ok, restored} =
-        Run.execute(%ToggleTodo{id: original.id}, mode: :in_memory, tenant_id: @test_tenant)
-      assert restored.completed == original_completed
-    end
-  end
-
-  property "CompleteAll only affects incomplete todos" do
-    check all(todos <- Generators.todos(max_length: 20), max_runs: 100) do
-      incomplete_count = Enum.count(todos, &(not &1.completed))
-
-      {:ok, result} = run_with_todos(%CompleteAll{}, todos)
-
-      assert result.updated == incomplete_count
-    end
-  end
-
-  property "GetStats: total = active + completed" do
-    check all(todos <- Generators.todos(max_length: 50), max_runs: 100) do
-      {:ok, stats} = run_with_todos(%GetStats{}, todos)
-
-      assert stats.total == stats.active + stats.completed
-    end
-  end
-end
-#+end_src
-
-100 iterations. Milliseconds. No database setup, no cleanup, no flaky tests.
-
-This is *impossible* with traditional side-effecting code. With algebraic
-effects, it's the default way of testing.
-
-** Scaling up: what this means for CI
-
-Skuld's own test suite runs ~600 tests in 0.4 seconds.
-
-Scale that up: a 30,000 test codebase would run in ~20 seconds.
-
-Compare that to a typical imperative test suite of that size: 5 minutes
-across 5 parallel runners. That's *75x slower*.
-
-The difference is I/O. Database round-trips, network calls, process
-setup/teardown - all of that disappears when your domain logic runs
-against pure in-memory handlers.
-
-Fast tests mean:
-- Faster CI pipelines
-- More property test iterations (find more bugs)
-- Developers actually run tests locally
-- Less flakiness (no network, no database state)
-
-** What we've seen
-
-1. *Domain logic is pure* - handlers describe what, not how
-2. *Handlers are swappable* - one config change switches storage backends
-3. *Testing is fast* - property tests run thousands of iterations in seconds
-4. *Same code, different contexts* - production and test share domain logic
-
-* Bonus: LLM conversation as an effectful computation
-
-TodosMcp also has an LLM integration - you can talk to the app and it
-uses Claude/Gemini to manage your todos. The conversation loop itself is
-written as an effectful computation.
-
-** The conversation loop
-
-#+begin_src elixir
-defmodule TodosMcp.Llm.ConversationComp do
-  use Skuld.Syntax
-
-  defcomp run() do
-    # Mark loop for EffectLogger pruning (bounded memory)
-    _ <- EffectLogger.mark_loop(ConversationLoop)
-
-    # Get config (via Reader) and state (via State)
-    config <- Reader.ask(ConversationComp)
-    state <- State.get(ConversationComp)
-
-    # YIELD: wait for user input
-    user_message <- Yield.yield(:await_user_input)
-
-    # Add to history, call LLM
-    messages = state.messages ++ [%{role: "user", content: user_message}]
-    result <- conversation_turn(messages, config.tools)
-
-    case result do
-      {:ok, response_text, final_messages, tool_executions} ->
-        comp do
-          # YIELD: notify UI of response
-          _ <- Yield.yield(%{type: :response, text: response_text, tool_executions: tool_executions})
-          # Update state and loop
-          _ <- State.put(ConversationComp, %{state | messages: final_messages})
-          run()
-        end
-
-      {:error, reason} ->
-        comp do
-          _ <- Yield.yield(%{type: :error, reason: reason})
-          run()
-        end
-    end
-  end
-
-  # conversation_turn calls LLM, may yield for tool execution, loops until done
-  defcompp conversation_turn(messages, tools) do
-    response <- LlmCall.send_messages(messages, tools: tools)
-
-    if response.needs_tools do
-      comp do
-        # YIELD: ask environment to execute tools
-        tool_results <- Yield.yield(%{type: :execute_tools, tool_uses: response.tool_uses})
-        # Continue with tool results
-        conversation_turn(messages ++ [response, tool_results], tools)
-      end
-    else
-      {:ok, response.text, messages, []}
-    end
-  end
-end
-#+end_src
-
-** What's happening here
-
-The conversation is a *single computation* that:
-1. Yields to wait for user input
-2. Calls the LLM (via LlmCall effect)
-3. If tools needed, yields to request tool execution, then continues
-4. Yields to send the response
-5. Loops forever
-
-The *caller* drives the conversation by resuming with values:
-
-#+begin_src elixir
-# Start conversation - suspends at :await_user_input
-{%Suspend{value: :await_user_input, resume: resume}, env} = Comp.run(conversation)
-
-# User types something - resume, get response
-{%Suspend{value: %{type: :response, text: "Done!", ...}, resume: resume2}, env2} =
-  resume.("Create a todo for groceries")
-
-# Acknowledge response - back to waiting
-{%Suspend{value: :await_user_input, resume: resume3}, env3} = resume2.(:ok)
-
-# And so on...
-#+end_src
-
-** Why this matters
-
-Try implementing this with GenServer:
-- Manual state machine with explicit states
-- Serialize/deserialize conversation state by hand
-- Handle tool execution callbacks
-- Manage message history threading
-
-With effects:
-- The computation *is* the state machine
-- EffectLogger captures state automatically (for cold resume)
-- Tool execution is just another yield/resume
-- Message history is just State effect
-
-And the kicker: the EffectLogger captures *everything*. If a conversation
-fails mid-turn, you can serialize the log, inspect it, fix the bug, and
-*replay from exactly that point*.
-
-** Cold resume across servers
-
-Because the effect log is JSON-serializable:
-
-#+begin_src elixir
-# Server 1: conversation suspends waiting for user input
-{suspended, env} = Comp.run(conversation)
-log = EffectLogger.get_log(env) |> EffectLogger.Log.finalize()
-json = Jason.encode!(log)
-# Store json in Redis/database...
-
-# Server 2 (maybe hours later, maybe different node):
-cold_log = Jason.decode!(json) |> EffectLogger.Log.from_json()
-
-# Resume with the user's message
-conversation
-|> EffectLogger.with_resume(cold_log, "Yes, add milk to the list")
-|> Yield.with_handler()
-|> Comp.run()
-# Continues from exactly where it left off
-#+end_src
-
-State restored. History intact. No manual serialization code.
-
-This is genuinely hard to do without algebraic effects or similar machinery.
-
-* The key insight
-
-Traditional Elixir code has two layers:
-- *Pure functions* - easy to test, easy to reason about
-- *Side-effecting functions* - hard to test, effects mixed with logic
-
-Algebraic effects add a third layer:
-- *Pure functions* - unchanged
-- *Effectful functions* - describe effects without performing them
-- *Effect handlers* - perform the actual I/O (swappable!)
-
-Domain logic moves from the side-effecting layer to the effectful layer.
-It becomes *pure* - testable, composable, and independent of infrastructure.
-
-The side effects are pushed to the edge, into thin handler wrappers.
-Your domain logic doesn't know or care whether it's talking to Postgres,
-an in-memory map, or a mock.
-
-* When to use Skuld
-
-** Good fit
-- I/O-bound services where testability matters
-- Complex domain logic with many effects (DB, external APIs, etc.)
-- When you want property-based testing of domain logic
-- When you need effect logging for debugging/replay
-- Multi-tenant systems (Reader effect for context)
-
-** Maybe not
-- CPU-bound computation where every microsecond counts
-- Simple scripts with minimal side effects
-- When the team isn't bought in (it's a paradigm shift)
-
-* Getting started
-
-1. Start small: use *Reader* for configuration, *State* for accumulation
-2. Wrap existing side-effects: create effect signatures for your Repo calls
-3. Write one property test: see the testing benefits firsthand
-4. Expand gradually: more effects as you see the value
-
-Resources:
-- Skuld: https://github.com/mccraigmccraig/skuld
-- TodosMcp demo: https://github.com/mccraigmccraig/todos_mcp
-- Live demo: https://todos-mcp-lu6h.onrender.com/
-
-* Summary
-
-Algebraic effects let you write code that describes *what* it needs,
-not *how* to get it.
-
-The "how" becomes a deployment decision, not a coding decision.
-
-Your domain logic becomes a pure function from commands to results.
-Side effects are pushed to the edge.
-Testing becomes fast and deterministic.
-
-#+begin_quote
-"Make the effectful layer as large as possible,
- the side-effecting layer as thin as possible."
-#+end_quote
+Handlers interpret these operation structs however they like - that's
+the "algebra" part: operations are just data until a handler gives them meaning.
