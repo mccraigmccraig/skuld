@@ -718,6 +718,138 @@ Fast tests mean:
 3. *Testing is fast* - property tests run thousands of iterations in seconds
 4. *Same code, different contexts* - production and test share domain logic
 
+* Bonus: LLM conversation as an effectful computation
+
+TodosMcp also has an LLM integration - you can talk to the app and it
+uses Claude/Gemini to manage your todos. The conversation loop itself is
+written as an effectful computation.
+
+** The conversation loop
+
+#+begin_src elixir
+defmodule TodosMcp.Llm.ConversationComp do
+  use Skuld.Syntax
+
+  defcomp run() do
+    # Mark loop for EffectLogger pruning (bounded memory)
+    _ <- EffectLogger.mark_loop(ConversationLoop)
+
+    # Get config (via Reader) and state (via State)
+    config <- Reader.ask(ConversationComp)
+    state <- State.get(ConversationComp)
+
+    # YIELD: wait for user input
+    user_message <- Yield.yield(:await_user_input)
+
+    # Add to history, call LLM
+    messages = state.messages ++ [%{role: "user", content: user_message}]
+    result <- conversation_turn(messages, config.tools)
+
+    case result do
+      {:ok, response_text, final_messages, tool_executions} ->
+        comp do
+          # YIELD: notify UI of response
+          _ <- Yield.yield(%{type: :response, text: response_text, tool_executions: tool_executions})
+          # Update state and loop
+          _ <- State.put(ConversationComp, %{state | messages: final_messages})
+          run()
+        end
+
+      {:error, reason} ->
+        comp do
+          _ <- Yield.yield(%{type: :error, reason: reason})
+          run()
+        end
+    end
+  end
+
+  # conversation_turn calls LLM, may yield for tool execution, loops until done
+  defcompp conversation_turn(messages, tools) do
+    response <- LlmCall.send_messages(messages, tools: tools)
+
+    if response.needs_tools do
+      comp do
+        # YIELD: ask environment to execute tools
+        tool_results <- Yield.yield(%{type: :execute_tools, tool_uses: response.tool_uses})
+        # Continue with tool results
+        conversation_turn(messages ++ [response, tool_results], tools)
+      end
+    else
+      {:ok, response.text, messages, []}
+    end
+  end
+end
+#+end_src
+
+** What's happening here
+
+The conversation is a *single computation* that:
+1. Yields to wait for user input
+2. Calls the LLM (via LlmCall effect)
+3. If tools needed, yields to request tool execution, then continues
+4. Yields to send the response
+5. Loops forever
+
+The *caller* drives the conversation by resuming with values:
+
+#+begin_src elixir
+# Start conversation - suspends at :await_user_input
+{%Suspend{value: :await_user_input, resume: resume}, env} = Comp.run(conversation)
+
+# User types something - resume, get response
+{%Suspend{value: %{type: :response, text: "Done!", ...}, resume: resume2}, env2} =
+  resume.("Create a todo for groceries")
+
+# Acknowledge response - back to waiting
+{%Suspend{value: :await_user_input, resume: resume3}, env3} = resume2.(:ok)
+
+# And so on...
+#+end_src
+
+** Why this matters
+
+Try implementing this with GenServer:
+- Manual state machine with explicit states
+- Serialize/deserialize conversation state by hand
+- Handle tool execution callbacks
+- Manage message history threading
+
+With effects:
+- The computation *is* the state machine
+- EffectLogger captures state automatically (for cold resume)
+- Tool execution is just another yield/resume
+- Message history is just State effect
+
+And the kicker: the EffectLogger captures *everything*. If a conversation
+fails mid-turn, you can serialize the log, inspect it, fix the bug, and
+*replay from exactly that point*.
+
+** Cold resume across servers
+
+Because the effect log is JSON-serializable:
+
+#+begin_src elixir
+# Server 1: conversation suspends waiting for user input
+{suspended, env} = Comp.run(conversation)
+log = EffectLogger.get_log(env) |> EffectLogger.Log.finalize()
+json = Jason.encode!(log)
+# Store json in Redis/database...
+
+# Server 2 (maybe hours later, maybe different node):
+cold_log = Jason.decode!(json) |> EffectLogger.Log.from_json()
+
+# Resume with the user's message
+conversation
+|> EffectLogger.with_resume(cold_log, "Yes, add milk to the list")
+|> Yield.with_handler()
+|> Comp.run()
+# Continues from exactly where it left off
+#+end_src
+
+State restored. History intact. No manual serialization code.
+
+This is genuinely hard to do without algebraic effects or similar machinery.
+
 * The key insight
 
 Traditional Elixir code has two layers:
