@@ -42,13 +42,16 @@
        they just program against the "effect" APIs
 
 * Where
-- I/O bound programs struggling to manage complexity
+- I/O bound programs struggling to manage complexity, improve testability, and
+  make it easy to impleemnt
 
 * The cost
-- Freyja (an earlier Algebraic Effects lib) was pretty slow - benchmarked at 17x slower than a simple state monad for
-  in-memory computation
+- Freyja (an earlier Algebraic Effects lib) was pretty slow - benchmarked at
+  17x slower than a simple state monad for in-memory computation
 - Skuld is considerably faster - 4x slower than a simple state monad
-  - this seems reasonable for heavily I/O bound processes - it represents a worst-case, if a computation did nothing useful and just exercised the Algebraic Effects coordination machinery
+  - this seems reasonable for I/O bound processes - it represents a
+    worst-case, if a computation did nothing useful, spending all its effort
+    exercising the Algebraic Effects coordination machinery
 
 * Aliases
 - use these aliases to run all the code examples in IEx
@@ -471,11 +474,11 @@ Ex5.process(1,2,3)
 
 #+end_src
 
-* more advanced effects
+* more effects
 
 We've looked at some simple effects - Reader, Writer, State, some
 slightly more complex higher-order effects like Catch and Else ...
-now we'll have a brief look at some more advanced effects
+now we'll have a brief look at some other effects
 
 ** logging, replay and recovery
 
