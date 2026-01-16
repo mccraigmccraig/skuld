@@ -85,6 +85,96 @@ defmodule Skuld.AsyncRunnerTest do
     end
   end
 
+  describe "resume_sync/3" do
+    test "waits for next yield" do
+      computation =
+        comp do
+          x <- Yield.yield(:first)
+          y <- Yield.yield(:second)
+          return(x + y)
+        end
+
+      {:ok, runner} = AsyncRunner.start(computation, tag: :sync_yield)
+
+      # First yield comes via message
+      assert_receive {:sync_yield, :yield, :first}
+
+      # Resume sync and wait for second yield
+      assert {:yield, :second} = AsyncRunner.resume_sync(runner, 10)
+
+      # Resume sync and wait for result
+      assert {:result, 42} = AsyncRunner.resume_sync(runner, 32)
+    end
+
+    test "returns result when computation completes" do
+      computation =
+        comp do
+          x <- Yield.yield(:get_value)
+          return({:ok, x * 2})
+        end
+
+      {:ok, runner} = AsyncRunner.start(computation, tag: :sync_result)
+
+      assert_receive {:sync_result, :yield, :get_value}
+      assert {:result, {:ok, 42}} = AsyncRunner.resume_sync(runner, 21)
+    end
+
+    test "returns throw on error" do
+      computation =
+        comp do
+          x <- Yield.yield(:get_value)
+          _ <- if x < 0, do: Throw.throw(:negative)
+          return(x)
+        end
+
+      {:ok, runner} = AsyncRunner.start(computation, tag: :sync_throw)
+
+      assert_receive {:sync_throw, :yield, :get_value}
+      assert {:throw, :negative} = AsyncRunner.resume_sync(runner, -5)
+    end
+
+    test "respects custom timeout" do
+      # Create a computation where we can control timing
+      computation =
+        comp do
+          _ <- Yield.yield(:ready)
+          return(:done)
+        end
+
+      {:ok, runner} = AsyncRunner.start(computation, tag: :custom_timeout)
+
+      assert_receive {:custom_timeout, :yield, :ready}
+
+      # This should succeed quickly
+      assert {:result, :done} = AsyncRunner.resume_sync(runner, :go, timeout: 1000)
+    end
+
+    test "mixed sync and async resumes" do
+      computation =
+        comp do
+          a <- Yield.yield(:a)
+          b <- Yield.yield(:b)
+          c <- Yield.yield(:c)
+          return(a + b + c)
+        end
+
+      {:ok, runner} = AsyncRunner.start(computation, tag: :mixed)
+
+      # First yield via message
+      assert_receive {:mixed, :yield, :a}
+
+      # Async resume
+      AsyncRunner.resume(runner, 1)
+      assert_receive {:mixed, :yield, :b}
+
+      # Sync resume
+      assert {:yield, :c} = AsyncRunner.resume_sync(runner, 2)
+
+      # Sync resume to completion
+      assert {:result, 6} = AsyncRunner.resume_sync(runner, 3)
+    end
+  end
+
   describe "cancel/1" do
     test "cancels a yielded computation" do
       computation =
@@ -100,7 +190,7 @@ defmodule Skuld.AsyncRunnerTest do
       AsyncRunner.cancel(runner)
 
       assert_receive {:cancellable, :stopped, :cancelled}
-      refute_receive {:cancellable, :result, _}
+      refute_receive {:cancellable, :result, _}, 10
     end
   end
 
@@ -112,9 +202,10 @@ defmodule Skuld.AsyncRunnerTest do
 
       assert_receive {:lifecycle, :result, :done}
 
-      # Give process time to exit
-      Process.sleep(10)
-      refute Process.alive?(runner.pid)
+      # Wait for process to exit via monitor (already set up in start/2)
+      # :noproc means process already exited before monitor was set up (fast exit)
+      assert_receive {:DOWN, _, :process, pid, reason}
+                     when pid == runner.pid and reason in [:normal, :noproc]
     end
 
     test "exceptions in computation become throw messages" do
@@ -135,9 +226,10 @@ defmodule Skuld.AsyncRunnerTest do
 
       assert_receive {:exits_normally, :throw, _error}
 
-      # Runner should exit normally (not crash)
-      Process.sleep(10)
-      refute Process.alive?(runner.pid)
+      # Wait for process to exit normally via monitor
+      # :noproc means process already exited before monitor was set up (fast exit)
+      assert_receive {:DOWN, _, :process, pid, reason}
+                     when pid == runner.pid and reason in [:normal, :noproc]
     end
   end
 

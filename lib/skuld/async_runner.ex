@@ -117,14 +117,68 @@ defmodule Skuld.AsyncRunner do
   end
 
   @doc """
-  Resume a yielded computation with a value.
+  Resume a yielded computation with a value (async).
 
   Call this after receiving a `{tag, :yield, value}` message.
+  The next response will arrive via message to the caller.
   """
   @spec resume(t(), term()) :: :ok
   def resume(%__MODULE__{ref: ref, pid: pid}, value) do
     send(pid, {:async_resume, ref, value})
     :ok
+  end
+
+  @doc """
+  Resume a yielded computation and wait synchronously for the next response.
+
+  Blocks until the computation yields again, completes, throws, or times out.
+
+  ## Options
+
+  - `:timeout` - Maximum time to wait in ms (default: 5000)
+
+  ## Returns
+
+  - `{:yield, value}` - computation yielded again
+  - `{:result, value}` - computation completed
+  - `{:throw, error}` - computation threw
+  - `{:stopped, reason}` - computation was cancelled
+  - `{:error, :timeout}` - timed out waiting for response
+
+  ## Example
+
+      {:ok, runner} = AsyncRunner.start(computation, tag: :cmd)
+
+      # First yield arrives via message
+      receive do
+        {:cmd, :yield, :ready} -> :ok
+      end
+
+      # Now resume and wait synchronously
+      case AsyncRunner.resume_sync(runner, %SomeCommand{}) do
+        {:yield, :ready} -> # ready for next command
+        {:result, final} -> # computation finished
+        {:throw, error} -> # something went wrong
+      end
+  """
+  @spec resume_sync(t(), term(), keyword()) ::
+          {:yield, term()}
+          | {:result, term()}
+          | {:throw, term()}
+          | {:stopped, term()}
+          | {:error, :timeout}
+  def resume_sync(%__MODULE__{ref: ref, pid: pid, tag: tag}, value, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 5000)
+    send(pid, {:async_resume, ref, value})
+
+    receive do
+      {^tag, :yield, yielded} -> {:yield, yielded}
+      {^tag, :result, result} -> {:result, result}
+      {^tag, :throw, error} -> {:throw, error}
+      {^tag, :stopped, reason} -> {:stopped, reason}
+    after
+      timeout -> {:error, :timeout}
+    end
   end
 
   @doc """

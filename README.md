@@ -966,8 +966,16 @@ computation =
 # - {:create_user, :throw, error}         <- computation threw
 # - {:create_user, :stopped, reason}      <- cancelled
 
-# Resume a yielded computation
+# Resume async - returns immediately, next response via message
 Skuld.AsyncRunner.resume(runner, "Alice")
+
+# Resume sync - blocks until next yield/result/throw
+case Skuld.AsyncRunner.resume_sync(runner, "Alice", timeout: 5000) do
+  {:yield, next_prompt} -> # computation yielded again
+  {:result, value} -> # computation completed
+  {:throw, error} -> # computation threw
+  {:error, :timeout} -> # timed out
+end
 
 # Cancel if needed
 Skuld.AsyncRunner.cancel(runner)
@@ -1014,7 +1022,7 @@ end
 - Linked by default (use `link: false` for unlinked)
 - Use this for non-effectful callers; use `Async` effect when inside a computation
 
-Operations: `start/2`, `resume/2`, `cancel/1`
+Operations: `start/2`, `resume/2`, `resume_sync/3`, `cancel/1`
 
 ### Persistence & Data
 
