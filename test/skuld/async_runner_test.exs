@@ -3,7 +3,10 @@ defmodule Skuld.AsyncRunnerTest do
   use Skuld.Syntax
 
   alias Skuld.AsyncRunner
-  alias Skuld.Effects.{State, Reader, Throw, Yield}
+  alias Skuld.Effects.Reader
+  alias Skuld.Effects.State
+  alias Skuld.Effects.Throw
+  alias Skuld.Effects.Yield
 
   describe "start/2" do
     test "runs a simple computation and sends result" do

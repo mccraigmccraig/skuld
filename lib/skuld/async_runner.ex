@@ -72,7 +72,8 @@ defmodule Skuld.AsyncRunner do
       end
   """
 
-  alias Skuld.Effects.{Yield, Throw}
+  alias Skuld.Effects.Throw
+  alias Skuld.Effects.Yield
 
   defstruct [:tag, :ref, :pid, :monitor_ref, :caller]
 
