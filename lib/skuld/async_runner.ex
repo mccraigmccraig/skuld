@@ -103,7 +103,6 @@ defmodule Skuld.AsyncRunner do
   """
   @spec start(Skuld.Comp.Types.computation(), keyword()) :: {:ok, t()}
   def start(computation, opts) do
-    _tag = Keyword.fetch!(opts, :tag)
     tag = Keyword.fetch!(opts, :tag)
     caller = Keyword.get(opts, :caller, self())
     link? = Keyword.get(opts, :link, true)
@@ -176,11 +175,16 @@ defmodule Skuld.AsyncRunner do
   Resume a yielded computation with a value (async).
 
   Call this after receiving a `{tag, :yield, value}` message.
-  The next response will arrive via message to the caller.
+  The next response will arrive via message to the caller (or `:reply_to` if specified).
+
+  ## Options
+
+  - `:reply_to` - Process to send the response to (default: original caller from start)
   """
-  @spec resume(t(), term()) :: :ok
-  def resume(%__MODULE__{ref: ref, pid: pid}, value) do
-    send(pid, {:async_resume, ref, value})
+  @spec resume(t(), term(), keyword()) :: :ok
+  def resume(%__MODULE__{ref: ref, pid: pid}, value, opts \\ []) do
+    reply_to = Keyword.get(opts, :reply_to)
+    send(pid, {:async_resume, ref, value, reply_to})
     :ok
   end
 
@@ -188,6 +192,9 @@ defmodule Skuld.AsyncRunner do
   Resume a yielded computation and wait synchronously for the next response.
 
   Blocks until the computation yields again, completes, throws, or times out.
+
+  This can be called from any process - the response will be sent to the calling
+  process, not necessarily the original caller from `start/2`.
 
   ## Options
 
@@ -225,7 +232,8 @@ defmodule Skuld.AsyncRunner do
           | {:error, :timeout}
   def resume_sync(%__MODULE__{ref: ref, pid: pid, tag: tag}, value, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5000)
-    send(pid, {:async_resume, ref, value})
+    # Send self() as reply_to so response comes back to us, not original caller
+    send(pid, {:async_resume, ref, value, self()})
 
     receive do
       {^tag, :yield, yielded} -> {:yield, yielded}
@@ -258,27 +266,47 @@ defmodule Skuld.AsyncRunner do
       |> Throw.with_handler()
       |> Yield.with_handler()
 
-    # Run with a driver that bridges messages to the caller
+    # Track the current reply_to (can be overridden per-resume)
+    # Start with the original caller
+    reply_to_ref = make_ref()
+    Process.put(reply_to_ref, caller)
+
+    # Run with a driver that bridges messages to the caller (or reply_to override)
     result =
       Yield.run_with_driver(comp, fn yielded_value ->
-        send(caller, {tag, :yield, yielded_value})
+        current_reply_to = Process.get(reply_to_ref)
+        send(current_reply_to, {tag, :yield, yielded_value})
+
+        # Reset to original caller after sending - any override only affects ONE yield
+        Process.put(reply_to_ref, caller)
 
         receive do
-          {:async_resume, ^ref, value} -> {:continue, value}
-          {:async_cancel, ^ref} -> {:stop, :cancelled}
+          {:async_resume, ^ref, value, nil} ->
+            # No override - keep using caller for next yield
+            {:continue, value}
+
+          {:async_resume, ^ref, value, override_reply_to} ->
+            # Override for NEXT yield only (will be reset after that yield)
+            Process.put(reply_to_ref, override_reply_to)
+            {:continue, value}
+
+          {:async_cancel, ^ref} ->
+            {:stop, :cancelled}
         end
       end)
 
-    # Send final result
+    # Send final result to current reply_to
+    final_reply_to = Process.get(reply_to_ref)
+
     case result do
       {:done, value, _env} ->
-        send(caller, {tag, :result, value})
+        send(final_reply_to, {tag, :result, value})
 
       {:stopped, reason, _env} ->
-        send(caller, {tag, :stopped, reason})
+        send(final_reply_to, {tag, :stopped, reason})
 
       {:thrown, error, _env} ->
-        send(caller, {tag, :throw, error})
+        send(final_reply_to, {tag, :throw, error})
     end
   end
 end
