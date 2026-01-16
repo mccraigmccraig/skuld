@@ -957,8 +957,12 @@ computation =
   end
   |> Reader.with_handler(%{tenant_id: "t-123"})
 
-# Start async - returns immediately
+# Start async - returns immediately, first response via message
 {:ok, runner} = Skuld.AsyncRunner.start(computation, tag: :create_user)
+
+# Start sync - blocks until first yield/result/throw (for fast-yielding computations)
+{:ok, runner, {:yield, :get_name}} =
+  Skuld.AsyncRunner.start_sync(computation, tag: :create_user, timeout: 5000)
 
 # Messages arrive as {tag, status, value}:
 # - {:create_user, :yield, :get_name}     <- computation yielded

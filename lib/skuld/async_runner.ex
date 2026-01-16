@@ -30,6 +30,9 @@ defmodule Skuld.AsyncRunner do
       # Start async - will add Yield and Throw handlers
       {:ok, runner} = AsyncRunner.start(computation, tag: :create_todo)
 
+      # Or start sync for fast-yielding computations
+      {:ok, runner, {:yield, :ready}} = AsyncRunner.start_sync(computation, tag: :create_todo)
+
       # In handle_info:
       def handle_info({:create_todo, :result, {:ok, todo}}, socket) do
         {:noreply, handle_success(socket, todo)}
@@ -99,6 +102,7 @@ defmodule Skuld.AsyncRunner do
   """
   @spec start(Skuld.Comp.Types.computation(), keyword()) :: {:ok, t()}
   def start(computation, opts) do
+    _tag = Keyword.fetch!(opts, :tag)
     tag = Keyword.fetch!(opts, :tag)
     caller = Keyword.get(opts, :caller, self())
     link? = Keyword.get(opts, :link, true)
@@ -114,6 +118,57 @@ defmodule Skuld.AsyncRunner do
     monitor_ref = Process.monitor(pid)
 
     {:ok, %__MODULE__{tag: tag, ref: ref, pid: pid, monitor_ref: monitor_ref, caller: caller}}
+  end
+
+  @doc """
+  Start a computation and wait synchronously for the first response.
+
+  Use this when you know the computation will quickly yield after setup
+  (e.g., a command processor that immediately yields waiting for commands).
+  Avoids dealing with async messages for the initial handshake.
+
+  ## Options
+
+  Same as `start/2`, plus:
+
+  - `:timeout` - Maximum time to wait in ms (default: 5000)
+
+  ## Returns
+
+  - `{:ok, runner, {:yield, value}}` - computation yielded, use runner to continue
+  - `{:ok, runner, {:result, value}}` - computation completed immediately
+  - `{:ok, runner, {:throw, error}}` - computation threw immediately
+  - `{:ok, runner, {:stopped, reason}}` - computation stopped
+  - `{:error, :timeout}` - timed out waiting for first response
+
+  ## Example
+
+      # Command processor that yields immediately for commands
+      {:ok, runner, {:yield, :ready}} =
+        command_processor
+        |> Reader.with_handler(context)
+        |> AsyncRunner.start_sync(tag: :processor)
+
+      # Now resume synchronously for quick commands
+      {:yield, :ready} = AsyncRunner.resume_sync(runner, %QuickCommand{})
+  """
+  @spec start_sync(Skuld.Comp.Types.computation(), keyword()) ::
+          {:ok, t(), {:yield, term()} | {:result, term()} | {:throw, term()} | {:stopped, term()}}
+          | {:error, :timeout}
+  def start_sync(computation, opts) do
+    timeout = Keyword.get(opts, :timeout, 5000)
+    tag = Keyword.fetch!(opts, :tag)
+
+    {:ok, runner} = start(computation, opts)
+
+    receive do
+      {^tag, :yield, yielded} -> {:ok, runner, {:yield, yielded}}
+      {^tag, :result, result} -> {:ok, runner, {:result, result}}
+      {^tag, :throw, error} -> {:ok, runner, {:throw, error}}
+      {^tag, :stopped, reason} -> {:ok, runner, {:stopped, reason}}
+    after
+      timeout -> {:error, :timeout}
+    end
   end
 
   @doc """

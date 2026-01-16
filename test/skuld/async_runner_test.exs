@@ -85,6 +85,90 @@ defmodule Skuld.AsyncRunnerTest do
     end
   end
 
+  describe "start_sync/2" do
+    test "returns first yield synchronously" do
+      computation =
+        comp do
+          x <- Yield.yield(:ready)
+          return(x * 2)
+        end
+
+      {:ok, runner, {:yield, :ready}} = AsyncRunner.start_sync(computation, tag: :sync_start)
+
+      # Can continue with resume_sync
+      assert {:result, 42} = AsyncRunner.resume_sync(runner, 21)
+    end
+
+    test "returns result when computation completes immediately" do
+      computation = comp(do: return({:ok, 42}))
+
+      {:ok, _runner, {:result, {:ok, 42}}} =
+        AsyncRunner.start_sync(computation, tag: :immediate_result)
+    end
+
+    test "returns throw when computation throws immediately" do
+      computation =
+        comp do
+          _ <- Throw.throw(:immediate_error)
+          return(:never)
+        end
+
+      {:ok, _runner, {:throw, :immediate_error}} =
+        AsyncRunner.start_sync(computation, tag: :immediate_throw)
+    end
+
+    test "works with effects" do
+      computation =
+        comp do
+          base <- Reader.ask()
+          multiplier <- Yield.yield(:get_multiplier)
+          return(base * multiplier)
+        end
+        |> Reader.with_handler(21)
+
+      {:ok, runner, {:yield, :get_multiplier}} =
+        AsyncRunner.start_sync(computation, tag: :with_effects)
+
+      assert {:result, 42} = AsyncRunner.resume_sync(runner, 2)
+    end
+
+    test "respects custom timeout" do
+      computation =
+        comp do
+          x <- Yield.yield(:first)
+          return(x)
+        end
+
+      # Should succeed quickly with reasonable timeout
+      {:ok, runner, {:yield, :first}} =
+        AsyncRunner.start_sync(computation, tag: :custom_timeout, timeout: 1000)
+
+      assert {:result, :done} = AsyncRunner.resume_sync(runner, :done)
+    end
+
+    test "command processor pattern - sync start then sync resume loop" do
+      # Simulates a command processor that yields ready, processes commands, yields ready again
+      processor =
+        comp do
+          cmd1 <- Yield.yield(:ready)
+          result1 = {:processed, cmd1}
+          cmd2 <- Yield.yield({:ready, result1})
+          result2 = {:processed, cmd2}
+          return({:done, result1, result2})
+        end
+
+      # Start sync - get first :ready yield
+      {:ok, runner, {:yield, :ready}} = AsyncRunner.start_sync(processor, tag: :processor)
+
+      # Send first command, get back ready with result
+      {:yield, {:ready, {:processed, :cmd_a}}} = AsyncRunner.resume_sync(runner, :cmd_a)
+
+      # Send second command, get final result
+      {:result, {:done, {:processed, :cmd_a}, {:processed, :cmd_b}}} =
+        AsyncRunner.resume_sync(runner, :cmd_b)
+    end
+  end
+
   describe "resume_sync/3" do
     test "waits for next yield" do
       computation =
