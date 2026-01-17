@@ -1,0 +1,600 @@
+#+title: Skuld Implementation: The Gory Details
+
+* Outline (for discussion)
+
+This presentation dives deep into Skuld's implementation. Where =effects.org=
+focuses on the "what" and "why", this covers the "how" - the monadic CPS
+and evidence-passing implementation that makes this encoding of algebraic
+effects work in Elixir.
+
+** Proposed sections
+
+1. *Foundations*
+   - What is a computation? (function, not data)
+   - The computation type: =(env, k) -> {result, env}=
+   - Continuations and CPS basics
+
+2. *The Environment*
+   - =Env= struct fields: =evidence=, =state=, =leave_scope=, =transform_suspend=
+   - Evidence map: effect signature -> handler function
+   - State map: scoped state storage
+   - Scope management functions
+
+3. *Effect Operations*
+   - =Comp.effect/2=: creating effect requests
+   - Handler lookup and invocation
+   - The handler function signature: =(args, env, k) -> {result, env}=
+
+4. *Sequencing: The Monadic Core*
+   - =Comp.pure/1=: lifting values
+   - =Comp.bind/2= (chain): the monadic bind operation
+   - Why =bind= returns a function, not a result
+   - The =comp= macro expansion
+
+5. *Installing Handlers*
+   - =Comp.with_handler/3=: evidence installation
+   - =Comp.scoped/2=: scope setup with cleanup
+   - =Comp.with_scoped_state/4=: state management pattern
+   - The =leave_scope= chain for cleanup
+
+6. *Running Computations*
+   - =Comp.run/1= and =Comp.run!/1=
+   - The identity continuation
+   - How results bubble up
+
+7. *Control Effects: Why CPS Matters*
+   - First-order effects: handler calls continuation once
+   - Control effects: handler manipulates continuation
+   - Throw: discarding the continuation
+   - Yield: capturing and storing the continuation
+   - Catch: wrapping continuations for error recovery
+
+8. *Higher-Order Effects*
+   - Effects that take computations as parameters
+   - Examples: =Throw.catch_error/2=, =Writer.listen/2=
+   - How CPS makes higher-order effects natural
+
+9. *Scoped State and Cleanup*
+   - The =leave_scope= mechanism
+   - Composition of cleanup functions
+   - =unwind_scopes/2=: controlled cleanup
+   - The =:output= option for result transformation
+
+10. *Suspend Decoration*
+    - The =transform_suspend= mechanism
+    - The =:suspend= option for suspend-time decoration
+    - =Suspend.data= field for effect decorations
+    - How EffectLogger attaches logs to suspends
+
+11. *Execution Flow: A Complete Trace*
+    - Step-by-step walkthrough of a multi-effect computation
+    - Handler installation, effect dispatch, continuation chaining
+    - Scope entry and exit
+
+12. *Performance Considerations*
+    - Cost of CPS vs direct style
+    - Closure allocation
+    - Why evidence-passing beats Freer monads
+    - Comparison with Freyja
+
+** Questions for discussion
+
+- What level of detail is appropriate for the audience?
+- Should we include actual Skuld source code, or simplified versions?
+- Are there specific effects whose implementation would be instructive?
+- Should we cover the =defcomp= macro expansion?
+- How much to cover about =ISentinel= and the sentinel pattern?
+
+* Foundations: Computations as Functions
+
+** The core insight
+
+Unlike Freyja (which used Freer monads with explicit data structures), Skuld
+represents computations directly as functions. This eliminates intermediate
+allocations and provides significant performance benefits.
+
+** The computation type
+
+A computation is a function that takes an environment and a continuation,
+and returns a result paired with a (possibly modified) environment:
+
+#+begin_src elixir
+@type computation :: (env(), k() -> {result(), env()})
+@type k :: (term(), env() -> {result(), env()})
+#+end_src
+
+The continuation =k= is "what to do next" - it receives the result of this
+computation step and the current environment, and produces the final result.
+
+** Why continuation-passing style?
+
+CPS gives us the ability to manipulate control flow:
+
+- *Normal effects*: Handler computes a value and calls the continuation once
+- *Throw*: Handler discards the continuation entirely
+- *Yield*: Handler captures the continuation and returns it for later resumption
+- *Catch*: Handler wraps the continuation to intercept errors
+
+Direct-style (non-CPS) can handle normal effects, but control effects require
+the ability to decide whether/when/how to invoke the continuation.
+
+* The Environment
+
+The environment carries everything a computation needs:
+
+#+begin_src elixir
+%Skuld.Comp.Env{
+  evidence: %{sig => handler_fn},     # effect signature -> handler
+  state: %{key => value},             # scoped state storage
+  leave_scope: fn result, env -> ... end,  # cleanup chain
+  transform_suspend: fn suspend, env -> ... end  # suspend decoration
+}
+#+end_src
+
+** Evidence: Handler lookup
+
+The =evidence= map provides O(1) handler lookup by effect signature.
+Each effect module defines a unique signature (typically the module itself):
+
+#+begin_src elixir
+# In Skuld.Effects.State:
+@sig __MODULE__
+
+# When State.get() executes, it looks up @sig in env.evidence
+#+end_src
+
+** State: Scoped storage
+
+The =state= map holds effect state. Keys are typically tuples like
+={EffectModule, tag}= to support multiple instances of the same effect:
+
+#+begin_src elixir
+# Two independent State handlers:
+State.with_handler(0, tag: :counter)
+State.with_handler("", tag: :name)
+
+# Creates state keys:
+# {State, :counter} => 0
+# {State, :name} => ""
+#+end_src
+
+** leave_scope: Cleanup chain
+
+When handlers are installed with scoping, they add cleanup functions to
+=leave_scope=. These compose - inner handlers clean up before outer ones:
+
+#+begin_src elixir
+# Initial: identity function
+leave_scope = fn result, env -> {result, env} end
+
+# After installing State handler with output transformation:
+leave_scope = fn result, env ->
+  state = get_state(env)
+  transformed = output_fn.(result, state)
+  old_leave_scope.(transformed, cleaned_env)
+end
+#+end_src
+
+* Effect Operations
+
+** Comp.effect/2
+
+Creates a computation that invokes an effect handler:
+
+#+begin_src elixir
+def effect(sig, args) do
+  fn env, k ->
+    handler = Map.fetch!(env.evidence, sig)
+    handler.(args, env, k)
+  end
+end
+#+end_src
+
+This is remarkably simple:
+1. Look up the handler for this effect signature
+2. Call the handler with the operation args, environment, and continuation
+3. The handler is responsible for eventually calling =k= (or not, for control effects)
+
+** Handler function signature
+
+Handlers have the signature: =(args, env, k) -> {result, env}=
+
+#+begin_src elixir
+# A simple Reader handler:
+def reader_handler(value) do
+  fn
+    %Ask{}, env, k -> k.(value, env)  # just call continuation with the value
+  end
+end
+
+# A State handler with mutable state:
+def state_handler(state_key) do
+  fn
+    %Get{}, env, k ->
+      value = Map.get(env.state, state_key)
+      k.(value, env)
+
+    %Put{value: v}, env, k ->
+      new_env = %{env | state: Map.put(env.state, state_key, v)}
+      k.(:ok, new_env)
+  end
+end
+#+end_src
+
+* Sequencing: The Monadic Core
+
+** Comp.pure/1
+
+Lifts a plain value into a computation:
+
+#+begin_src elixir
+def pure(value) do
+  fn _env, k -> k.(value, _env) end
+end
+#+end_src
+
+Simply calls the continuation with the value - no effects, no environment changes.
+
+** Comp.bind/2 (chain)
+
+The heart of effect sequencing. Takes a computation and a function that
+produces the next computation:
+
+#+begin_src elixir
+def bind(comp, f) do
+  fn env, k ->
+    call(comp, env, fn a, env2 ->
+      call(f.(a), env2, k)
+    end)
+  end
+end
+#+end_src
+
+This is the monadic bind operation:
+1. Run the first computation =comp=
+2. When it produces value =a=, call =f.(a)= to get the next computation
+3. Run that computation with the original continuation =k=
+
+The key insight: =bind= returns a *function*, not a result. The computation
+isn't executed until someone calls it with an environment and continuation.
+
+** The comp macro
+
+The =comp= macro transforms sequential-looking code into nested =bind= calls:
+
+#+begin_src elixir
+comp do
+  x <- Reader.ask()
+  y <- State.get()
+  return(x + y)
+end
+
+# Expands to:
+Comp.bind(Reader.ask(), fn x ->
+  Comp.bind(State.get(), fn y ->
+    Comp.pure(x + y)
+  end)
+end)
+#+end_src
+
+Each =<-= becomes a =bind= call. The bound variable becomes the parameter
+to the continuation function.
+
+* Installing Handlers
+
+** Comp.with_handler/3
+
+Installs a handler in the evidence map:
+
+#+begin_src elixir
+def with_handler(comp, sig, handler) do
+  fn env, k ->
+    new_env = %{env | evidence: Map.put(env.evidence, sig, handler)}
+    call(comp, new_env, k)
+  end
+end
+#+end_src
+
+Simple: update the evidence map, then run the computation.
+
+** Comp.scoped/2
+
+Installs a handler with setup and cleanup:
+
+#+begin_src elixir
+def scoped(comp, setup_fn) do
+  fn env, k ->
+    {env_with_handler, finally_k} = setup_fn.(env)
+
+    call(comp, env_with_handler, fn result, final_env ->
+      {transformed_result, cleaned_env} = finally_k.(result, final_env)
+      k.(transformed_result, cleaned_env)
+    end)
+  end
+end
+#+end_src
+
+The =setup_fn= returns both the modified environment AND a cleanup function.
+The cleanup function runs after the computation completes, before the
+outer continuation.
+
+** with_scoped_state/4
+
+The common pattern for effects with mutable state:
+
+#+begin_src elixir
+def with_scoped_state(comp, state_key, initial_value, opts) do
+  output_fn = Keyword.get(opts, :output, fn result, _state -> result end)
+  suspend_fn = Keyword.get(opts, :suspend)
+
+  scoped(comp, fn env ->
+    # Setup: install state, maybe compose transform_suspend
+    env_with_state = put_state(env, state_key, initial_value)
+    env_final = maybe_install_suspend_transform(env_with_state, suspend_fn)
+
+    finally_k = fn result, final_env ->
+      state = get_state(final_env, state_key)
+      transformed = output_fn.(result, state)
+      cleaned_env = cleanup_state(final_env, state_key)
+      {transformed, cleaned_env}
+    end
+
+    {env_final, finally_k}
+  end)
+end
+#+end_src
+
+* Running Computations
+
+** Comp.run/1
+
+Executes a computation with an initial environment and identity continuation:
+
+#+begin_src elixir
+def run(comp) do
+  initial_env = %Env{evidence: %{}, state: %{}, leave_scope: &identity/2}
+
+  # The final continuation just returns the result
+  final_k = fn result, env -> {result, env} end
+
+  call(comp, initial_env, final_k)
+end
+#+end_src
+
+** Execution flow example
+
+#+begin_src elixir
+comp do
+  x <- Reader.ask()
+  y <- State.get()
+  return(x + y)
+end
+|> Reader.with_handler(5)
+|> State.with_handler(10)
+|> Comp.run!()
+#+end_src
+
+Step by step:
+
+1. =Comp.run!= calls the outermost computation with initial env and identity k
+2. =State.with_handler= installs State handler, passes to inner computation
+3. =Reader.with_handler= installs Reader handler, passes to the comp body
+4. First effect: =Reader.ask()= looks up Reader handler, calls it
+5. Reader handler returns =5=, calls continuation with =(5, env)=
+6. Continuation binds =x = 5=, proceeds to next =bind=
+7. Second effect: =State.get()= looks up State handler, calls it
+8. State handler returns =10=, calls continuation with =(10, env)=
+9. Continuation binds =y = 10=, evaluates =Comp.pure(5 + 10)=
+10. =Comp.pure(15)= calls the final continuation with =15=
+11. Result bubbles up through all the handler wrappers
+
+* Control Effects: Why CPS Matters
+
+** Normal effects: Call continuation once
+
+#+begin_src elixir
+# Reader just provides a value
+fn %Ask{}, env, k -> k.(value, env) end
+#+end_src
+
+** Throw: Discard the continuation
+
+#+begin_src elixir
+# Throw does NOT call k - the continuation is abandoned
+def throw(error) do
+  fn env, _k ->
+    # Return a Throw struct instead of calling continuation
+    {%Throw{error: error}, env}
+  end
+end
+#+end_src
+
+The continuation =k= represents "what would have happened next". By not
+calling it, Throw short-circuits the entire rest of the computation.
+
+** Yield: Capture the continuation
+
+#+begin_src elixir
+# Yield packages k into a Suspend struct
+def yield(value) do
+  fn env, k ->
+    resume_fn = fn input ->
+      k.(input, env)  # captured continuation
+    end
+    {%Suspend{value: value, resume: resume_fn}, env}
+  end
+end
+#+end_src
+
+The continuation is captured in =resume_fn=. The caller can later call
+=resume_fn.(some_value)= to continue the computation from where it yielded.
+
+** Catch: Wrap the continuation
+
+#+begin_src elixir
+def catch_error(comp, handler_fn) do
+  fn env, k ->
+    call(comp, env, fn result, env2 ->
+      case result do
+        %Throw{error: error} ->
+          # Error: run the handler instead of k
+          recovery_comp = handler_fn.(error)
+          call(recovery_comp, env2, k)
+
+        _ ->
+          # No error: proceed normally
+          k.(result, env2)
+      end
+    end)
+  end
+end
+#+end_src
+
+Catch wraps the continuation to intercept errors. If the computation
+throws, the handler function runs instead of the original continuation.
+
+* Higher-Order Effects
+
+Some effects take computations as parameters. CPS handles these naturally
+because computations are just functions.
+
+** Writer.listen/2
+
+Captures what a computation writes:
+
+#+begin_src elixir
+def listen(tag, comp) do
+  fn env, k ->
+    # Save current log
+    old_log = get_log(env, tag)
+
+    # Run comp with empty log
+    env_fresh = put_log(env, tag, [])
+    call(comp, env_fresh, fn result, env2 ->
+      # Capture what was written
+      captured_log = get_log(env2, tag)
+
+      # Restore old log
+      env_restored = put_log(env2, tag, old_log)
+
+      # Return result paired with captured writes
+      k.({result, captured_log}, env_restored)
+    end)
+  end
+end
+#+end_src
+
+** Yield.respond/2
+
+Handle yields within a computation:
+
+#+begin_src elixir
+def respond(comp, responder_fn) do
+  fn env, k ->
+    call(comp, env, fn result, env2 ->
+      case result do
+        %Suspend{value: value, resume: resume} ->
+          # Yield occurred - generate response
+          response_comp = responder_fn.(value)
+          call(response_comp, env2, fn response, env3 ->
+            # Resume with the response, recursively handle more yields
+            {continued, env4} = resume.(response)
+            call(respond(Comp.pure(continued), responder_fn), env4, k)
+          end)
+
+        _ ->
+          # No yield, pass through
+          k.(result, env2)
+      end
+    end)
+  end
+end
+#+end_src
+
+* Suspend Decoration: transform_suspend
+
+When a computation yields, effects can attach data to the =Suspend= struct.
+
+** The mechanism
+
+The =transform_suspend= field in =Env= holds a function that decorates suspends:
+
+#+begin_src elixir
+# Default: identity
+transform_suspend = fn suspend, env -> {suspend, env} end
+
+# With EffectLogger:
+transform_suspend = fn suspend, env ->
+  log = get_log(env)
+  data = suspend.data || %{}
+  new_suspend = %{suspend | data: Map.put(data, EffectLogger, log)}
+  {new_suspend, env}
+end
+#+end_src
+
+** Applied in ISentinel.run/2
+
+When a Suspend reaches the outermost level:
+
+#+begin_src elixir
+defimpl Skuld.Comp.ISentinel, for: Skuld.Comp.Suspend do
+  def run(suspend, env) do
+    transform = Env.get_transform_suspend(env)
+    transform.(suspend, env)
+  end
+end
+#+end_src
+
+** Composition via :suspend option
+
+Effects can add their own suspend decoration:
+
+#+begin_src elixir
+State.with_handler(initial,
+  suspend: fn suspend, env ->
+    state = get_state(env)
+    data = suspend.data || %{}
+    {%{suspend | data: Map.put(data, :state_snapshot, state)}, env}
+  end
+)
+#+end_src
+
+Multiple decorators compose - inner ones run first.
+
+* Performance Considerations
+
+** CPS overhead
+
+Each effect invocation involves:
+- Handler lookup (O(1) map access)
+- Closure creation for the continuation
+- Function call overhead
+
+This is much faster than Freyja's approach of building explicit data
+structures (Freer monads) that required allocation and later interpretation.
+
+** Evidence-passing vs Freer monads
+
+| Approach | Effect dispatch | Continuation | Memory |
+|----------|-----------------|--------------|--------|
+| Freer monad | Build data structure, interpret later | Explicit queue | High - allocates per effect |
+| Evidence-passing | Direct function call | Closures (CPS) | Lower - no intermediate structs |
+
+Skuld is ~4x faster than Freyja for pure effect-heavy computations.
+
+** When it matters
+
+For I/O-bound code (database queries, HTTP calls), the effect overhead is
+negligible compared to I/O latency. The overhead matters most for:
+- Tight loops with many effect calls
+- CPU-bound computation using effects for state
+
+For these cases, consider =FxFasterList= or Yield-based iteration which
+batch effect overhead.
+
+* Resources
+
+- [[https://www.microsoft.com/en-us/research/publication/generalized-evidence-passing-for-effect-handlers/][Generalized Evidence Passing for Effect Handlers]] - The academic paper
+  that inspired Skuld's approach (Xie, Leijen, et al.)
+- [[https://github.com/mccraigmccraig/skuld][Skuld source code]] - Read the actual implementation
+- [[https://github.com/mccraigmccraig/freyja][Freyja]] - The earlier Freer-monad based implementation for comparison
