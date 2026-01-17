@@ -162,6 +162,7 @@ defmodule Skuld.Effects.EffectLogger do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
+  alias Skuld.Comp.Suspend
   alias Skuld.Comp.Types
   alias Skuld.Effects.EffectLogger.EffectLogEntry
   alias Skuld.Effects.EffectLogger.EnvStateSnapshot
@@ -326,6 +327,16 @@ defmodule Skuld.Effects.EffectLogger do
     EnvStateSnapshot.capture(env.state, state_keys: state_keys)
   end
 
+  # Decorate a Suspend with the current log in Suspend.data
+  defp decorate_suspend_with_log(%Suspend{} = suspend, env) do
+    log = get_log(env)
+    finalized_log = if log, do: Log.finalize(log), else: nil
+
+    data = suspend.data || %{}
+    decorated = %{suspend | data: Map.put(data, __MODULE__, finalized_log)}
+    {decorated, env}
+  end
+
   #############################################################################
   ## Handler Wrapping
   #############################################################################
@@ -474,6 +485,9 @@ defmodule Skuld.Effects.EffectLogger do
         state_keys: [{Skuld.Effects.State, MyApp.Counter}]
 
     This only captures the specified State keys, excluding Reader/other constant state.
+  - `:decorate_suspend` - If true (default), attach the current finalized log to
+    `Suspend.data[EffectLogger]` when yielding. This allows AsyncRunner callers to
+    access the log without needing the full env. Set to `false` to disable.
 
   ## Example - Fresh Logging
 
@@ -517,6 +531,7 @@ defmodule Skuld.Effects.EffectLogger do
     effects_to_log = Keyword.get(opts, :effects, :all)
     prune_loops = Keyword.get(opts, :prune_loops, true)
     state_keys = Keyword.get(opts, :state_keys, :all)
+    decorate_suspend = Keyword.get(opts, :decorate_suspend, true)
 
     Comp.scoped(comp, fn env ->
       # Install EffectLogger's own handler (for mark_loop operations)
@@ -552,6 +567,21 @@ defmodule Skuld.Effects.EffectLogger do
 
       env_with_log = put_log(env_with_wrapped, initial_log)
 
+      # If decorate_suspend, compose transform_suspend to attach log to Suspend.data
+      {env_final, previous_transform} =
+        if decorate_suspend do
+          old_transform = Env.get_transform_suspend(env_with_log)
+
+          new_transform = fn suspend, e ->
+            {suspend1, e1} = old_transform.(suspend, e)
+            decorate_suspend_with_log(suspend1, e1)
+          end
+
+          {Env.with_transform_suspend(env_with_log, new_transform), old_transform}
+        else
+          {env_with_log, nil}
+        end
+
       finally_k = fn value, final_env ->
         # Extract and finalize the log
         log = get_log(final_env) || Log.new()
@@ -580,11 +610,19 @@ defmodule Skuld.Effects.EffectLogger do
             Env.with_handler(acc_env, sig, original)
           end)
 
+        # Restore previous transform_suspend if we modified it
+        restored_env =
+          if previous_transform do
+            Env.with_transform_suspend(restored_env, previous_transform)
+          else
+            restored_env
+          end
+
         # Return result paired with log
         {{value, output_log}, restored_env}
       end
 
-      {env_with_log, finally_k}
+      {env_final, finally_k}
     end)
   end
 
@@ -596,6 +634,7 @@ defmodule Skuld.Effects.EffectLogger do
     allow_divergence = Keyword.get(opts, :allow_divergence, false)
     prune_loops = Keyword.get(opts, :prune_loops, true)
     state_keys = Keyword.get(opts, :state_keys, :all)
+    decorate_suspend = Keyword.get(opts, :decorate_suspend, true)
 
     Comp.scoped(comp, fn env ->
       # Install EffectLogger's own handler (for mark_loop operations)
@@ -634,6 +673,21 @@ defmodule Skuld.Effects.EffectLogger do
 
       env_with_log = put_log(env_with_wrapped, replay_log)
 
+      # If decorate_suspend, compose transform_suspend to attach log to Suspend.data
+      {env_final, previous_transform} =
+        if decorate_suspend do
+          old_transform = Env.get_transform_suspend(env_with_log)
+
+          new_transform = fn suspend, e ->
+            {suspend1, e1} = old_transform.(suspend, e)
+            decorate_suspend_with_log(suspend1, e1)
+          end
+
+          {Env.with_transform_suspend(env_with_log, new_transform), old_transform}
+        else
+          {env_with_log, nil}
+        end
+
       finally_k = fn value, final_env ->
         # Extract and finalize the log
         final_log = get_log(final_env) || Log.new()
@@ -662,11 +716,19 @@ defmodule Skuld.Effects.EffectLogger do
             Env.with_handler(acc_env, sig, original)
           end)
 
+        # Restore previous transform_suspend if we modified it
+        restored_env =
+          if previous_transform do
+            Env.with_transform_suspend(restored_env, previous_transform)
+          else
+            restored_env
+          end
+
         # Return result paired with log
         {{value, output_log}, restored_env}
       end
 
-      {env_with_log, finally_k}
+      {env_final, finally_k}
     end)
   end
 

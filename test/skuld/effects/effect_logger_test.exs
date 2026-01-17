@@ -779,4 +779,105 @@ defmodule Skuld.Effects.EffectLoggerTest do
       assert result == {:value1, :value2}
     end
   end
+
+  describe "decorate_suspend option" do
+    alias Skuld.Comp.Suspend
+
+    test "by default, suspends are decorated with effect log" do
+      computation =
+        comp do
+          _ <- State.put(42)
+          input <- Yield.yield(:waiting)
+          return({:got, input})
+        end
+
+      {%Suspend{value: :waiting, data: data}, _env} =
+        computation
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      assert is_map(data)
+      assert Map.has_key?(data, EffectLogger)
+      assert %Log{} = data[EffectLogger]
+
+      # Log should have recorded effects including the State.put before the yield
+      entries = user_entries(data[EffectLogger])
+      state_entries = Enum.filter(entries, &(&1.sig == State))
+      assert length(state_entries) == 1
+      assert %State.Put{value: 42} = hd(state_entries).data
+    end
+
+    test "decorate_suspend: false disables decoration" do
+      computation = Yield.yield(:waiting)
+
+      {%Suspend{value: :waiting, data: data}, _env} =
+        computation
+        |> EffectLogger.with_logging(decorate_suspend: false)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      assert data == nil
+    end
+
+    test "decoration works with replay logging" do
+      computation =
+        comp do
+          _ <- State.put(42)
+          input <- Yield.yield(:waiting)
+          return({:got, input})
+        end
+
+      # First run - get the log
+      {%Suspend{data: data1}, _env} =
+        computation
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      log1 = data1[EffectLogger]
+
+      # Replay with existing log
+      {%Suspend{value: :waiting, data: data}, _env} =
+        computation
+        |> EffectLogger.with_logging(log1)
+        |> State.with_handler(0)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      assert is_map(data)
+      assert Map.has_key?(data, EffectLogger)
+    end
+
+    test "decoration is restored after scope exits" do
+      # Inner scope with EffectLogger, outer without
+      inner =
+        comp do
+          _ <- State.put(42)
+          input <- Yield.yield(:inner)
+          return({:inner_got, input})
+        end
+        |> EffectLogger.with_logging()
+
+      outer =
+        comp do
+          result <- inner
+          # After inner scope, EffectLogger's transform_suspend should be gone
+          next <- Yield.yield(:outer)
+          return({result, next})
+        end
+        |> State.with_handler(0)
+        |> Yield.with_handler()
+
+      # First yield is from inner scope - should have decoration
+      {%Suspend{value: :inner, data: inner_data, resume: resume}, _env} = Comp.run(outer)
+      assert Map.has_key?(inner_data, EffectLogger)
+
+      # Resume inner, then outer yields - should NOT have decoration
+      {%Suspend{value: :outer, data: outer_data}, _env} = resume.(:resumed)
+      assert outer_data == nil
+    end
+  end
 end
