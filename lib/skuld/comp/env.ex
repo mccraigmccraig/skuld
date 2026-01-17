@@ -6,25 +6,30 @@ defmodule Skuld.Comp.Env do
   It supports extension fields - arbitrary atom keys can be added via `Map.put/3`.
   """
 
+  alias Skuld.Comp.Types
+
   @typedoc """
   The environment struct. Supports extension fields beyond the core struct keys
   (structs are maps, so `Map.put(env, :custom_key, value)` works).
   """
   @type t :: %__MODULE__{
-          evidence: %{Skuld.Comp.Types.sig() => Skuld.Comp.Types.handler()},
+          evidence: %{Types.sig() => Types.handler()},
           state: %{term() => term()},
-          leave_scope: Skuld.Comp.Types.leave_scope() | nil
+          leave_scope: Types.leave_scope() | nil,
+          transform_suspend: Types.transform_suspend() | nil
         }
 
   defstruct evidence: %{},
             state: %{},
-            leave_scope: nil
+            leave_scope: nil,
+            transform_suspend: nil
 
-  @doc "Create a fresh environment with identity leave-scope"
+  @doc "Create a fresh environment with identity leave-scope and transform-suspend"
   @spec new() :: Skuld.Comp.Types.env()
   def new do
     %__MODULE__{
-      leave_scope: fn result, env -> {result, env} end
+      leave_scope: fn result, env -> {result, env} end,
+      transform_suspend: fn suspend, env -> {suspend, env} end
     }
   end
 
@@ -92,5 +97,17 @@ defmodule Skuld.Comp.Env do
   @spec get_leave_scope(Skuld.Comp.Types.env()) :: Skuld.Comp.Types.leave_scope() | nil
   def get_leave_scope(env) do
     env.leave_scope
+  end
+
+  @doc "Install a new transform-suspend handler"
+  @spec with_transform_suspend(t(), Types.transform_suspend()) :: t()
+  def with_transform_suspend(env, new_transform_suspend) do
+    %{env | transform_suspend: new_transform_suspend}
+  end
+
+  @doc "Get the current transform-suspend handler (returns identity if nil)"
+  @spec get_transform_suspend(t()) :: Types.transform_suspend()
+  def get_transform_suspend(env) do
+    env.transform_suspend || fn suspend, e -> {suspend, e} end
   end
 end
