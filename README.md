@@ -51,6 +51,7 @@ some common side-effecting operations and their effectful equivalents:
     - [Reader](#reader)
     - [Writer](#writer)
     - [Multiple Independent Contexts (Tagged Usage)](#multiple-independent-contexts-tagged-usage)
+    - [Scoped State Transformation](#scoped-state-transformation)
   - [Control Flow](#control-flow)
     - [Throw](#throw)
     - [Pattern Matching with Else](#pattern-matching-with-else)
@@ -257,6 +258,76 @@ end
 |> Comp.run!()
 #=> {{:ok, ["user logged in", "viewed dashboard"]}, [{:counter, :login}]}
 ```
+
+#### Scoped State Transformation
+
+Effects that use scoped state (State, Writer, Reader, Fresh, Random, Query, AtomicState)
+support `:output` and `:suspend` options for transforming values at scope boundaries:
+
+**`:output` - Transform result when leaving scope**
+
+When a computation completes, the `:output` function receives the result and final
+state, returning a transformed result. This lets you include effect state in the
+return value:
+
+```elixir
+# Include final state in result
+comp do
+  _ <- State.put(42)
+  :done
+end
+|> State.with_handler(0, output: fn result, state -> {result, {:final_state, state}} end)
+|> Comp.run!()
+#=> {:done, {:final_state, 42}}
+
+# Include accumulated log in result
+comp do
+  _ <- Writer.tell("step 1")
+  _ <- Writer.tell("step 2")
+  :done
+end
+|> Writer.with_handler([], output: fn result, log -> {result, Enum.reverse(log)} end)
+|> Comp.run!()
+#=> {:done, ["step 1", "step 2"]}
+```
+
+**`:suspend` - Decorate Suspend values when yielding**
+
+When a computation yields (via the Yield effect), the `:suspend` function can attach
+effect state to the `Suspend.data` field. This is useful for:
+- Exposing effect state to external runners (like AsyncRunner)
+- Debugging and logging
+- Cold resume scenarios
+
+```elixir
+alias Skuld.Comp.Suspend
+
+# Attach state to suspend.data when yielding
+comp do
+  _ <- State.put(42)
+  _ <- Yield.yield(:checkpoint)
+  :done
+end
+|> State.with_handler(0,
+  suspend: fn suspend, env ->
+    state = Skuld.Comp.Env.get_state(env, Skuld.Effects.State.state_key())
+    data = suspend.data || %{}
+    {%{suspend | data: Map.put(data, :state_snapshot, state)}, env}
+  end
+)
+|> Yield.with_handler()
+|> Comp.run()
+#=> {%Suspend{value: :checkpoint, data: %{state_snapshot: 42}, ...}, _env}
+```
+
+The suspend decorator receives the `Suspend` struct and the current `env`, returning
+a potentially modified `{suspend, env}` tuple. Multiple handlers with `:suspend`
+options compose—inner handlers decorate first, outer handlers see and can further
+modify the result.
+
+EffectLogger uses this mechanism automatically when `:decorate_suspend` is true
+(the default), attaching the current log to `Suspend.data[EffectLogger]` for
+access by AsyncRunner callers.
 
 ### Control Flow
 
@@ -961,21 +1032,22 @@ computation =
 {:ok, runner} = Skuld.AsyncRunner.start(computation, tag: :create_user)
 
 # Start sync - blocks until first yield/result/throw (for fast-yielding computations)
-{:ok, runner, {:yield, :get_name}} =
+{:ok, runner, {:yield, :get_name, data}} =
   Skuld.AsyncRunner.start_sync(computation, tag: :create_user, timeout: 5000)
+# `data` contains any decorations from scoped effects (e.g., EffectLogger log)
 
-# Messages arrive as {tag, status, value}:
-# - {:create_user, :yield, :get_name}     <- computation yielded
-# - {:create_user, :result, value}        <- computation completed
-# - {:create_user, :throw, error}         <- computation threw
-# - {:create_user, :stopped, reason}      <- cancelled
+# Messages arrive as {tag, status, value} or {tag, status, value, data}:
+# - {:create_user, :yield, :get_name, data}  <- computation yielded (data has effect decorations)
+# - {:create_user, :result, value}           <- computation completed
+# - {:create_user, :throw, error}            <- computation threw
+# - {:create_user, :stopped, reason}         <- cancelled
 
 # Resume async - returns immediately, next response via message
 Skuld.AsyncRunner.resume(runner, "Alice")
 
 # Resume sync - blocks until next yield/result/throw
 case Skuld.AsyncRunner.resume_sync(runner, "Alice", timeout: 5000) do
-  {:yield, next_prompt} -> # computation yielded again
+  {:yield, next_prompt, data} -> # computation yielded again
   {:result, value} -> # computation completed
   {:throw, error} -> # computation threw
   {:error, :timeout} -> # timed out
@@ -1001,7 +1073,7 @@ def handle_event("start_wizard", _params, socket) do
   {:noreply, assign(socket, runner: runner, step: nil)}
 end
 
-def handle_info({:wizard, :yield, %{step: step, prompt: prompt}}, socket) do
+def handle_info({:wizard, :yield, %{step: step, prompt: prompt}, _data}, socket) do
   {:noreply, assign(socket, step: step, prompt: prompt)}
 end
 
@@ -1024,9 +1096,10 @@ end
 - Adds `Throw.with_handler/1` and `Yield.with_handler/1` automatically
 - Exceptions in computations become `{tag, :throw, %{kind: :error, payload: exception}}` messages
 - Linked by default (use `link: false` for unlinked)
+- Yield messages include `data` containing decorations from scoped effects (e.g., `data[EffectLogger]` has the current log when using `EffectLogger.with_logging/2`)
 - Use this for non-effectful callers; use `Async` effect when inside a computation
 
-Operations: `start/2`, `resume/2`, `resume_sync/3`, `cancel/1`
+Operations: `start/2`, `start_sync/2`, `resume/2`, `resume_sync/3`, `cancel/1`
 
 ### Persistence & Data
 
