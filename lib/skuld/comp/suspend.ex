@@ -16,7 +16,12 @@ defmodule Skuld.Comp.Suspend do
   # resume :: (input -> {result, env})
 
   defimpl Skuld.Comp.ISentinel do
-    def run(suspend, env), do: {suspend, env}
+    alias Skuld.Comp.Env
+
+    def run(suspend, env) do
+      transform = Env.get_transform_suspend(env)
+      transform.(suspend, env)
+    end
 
     def run!(%Skuld.Comp.Suspend{}) do
       raise "Computation suspended unexpectedly"
