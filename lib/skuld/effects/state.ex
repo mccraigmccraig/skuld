@@ -186,11 +186,16 @@ defmodule Skuld.Effects.State do
   def with_handler(comp, initial, opts \\ []) do
     tag = Keyword.get(opts, :tag, @sig)
     output = Keyword.get(opts, :output)
+    suspend = Keyword.get(opts, :suspend)
     state_key = state_key(tag)
-    opts = if output, do: [output: output], else: []
+
+    scoped_opts =
+      []
+      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
+      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
 
     comp
-    |> Comp.with_scoped_state(state_key, initial, opts)
+    |> Comp.with_scoped_state(state_key, initial, scoped_opts)
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 

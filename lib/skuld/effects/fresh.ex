@@ -182,6 +182,7 @@ defmodule Skuld.Effects.Fresh do
   def with_test_handler(comp, opts \\ []) do
     namespace = Keyword.get(opts, :namespace, @default_namespace)
     output = Keyword.get(opts, :output)
+    suspend = Keyword.get(opts, :suspend)
 
     initial_state = %TestState{counter: 0, namespace: namespace}
 
@@ -193,10 +194,13 @@ defmodule Skuld.Effects.Fresh do
         nil
       end
 
-    opts = if wrapped_output, do: [output: wrapped_output], else: []
+    scoped_opts =
+      []
+      |> then(fn o -> if wrapped_output, do: Keyword.put(o, :output, wrapped_output), else: o end)
+      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
 
     comp
-    |> Comp.with_scoped_state(@sig, initial_state, opts)
+    |> Comp.with_scoped_state(@sig, initial_state, scoped_opts)
     |> Comp.with_handler(@sig, &handle_test/3)
   end
 

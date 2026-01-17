@@ -151,10 +151,17 @@ defmodule Skuld.Effects.Reader do
   @spec with_handler(Types.computation(), term(), keyword()) :: Types.computation()
   def with_handler(comp, value, opts \\ []) do
     tag = Keyword.get(opts, :tag, @sig)
+    output = Keyword.get(opts, :output)
+    suspend = Keyword.get(opts, :suspend)
     state_key = state_key(tag)
 
+    scoped_opts =
+      []
+      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
+      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
+
     comp
-    |> Comp.with_scoped_state(state_key, value)
+    |> Comp.with_scoped_state(state_key, value, scoped_opts)
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 

@@ -332,10 +332,17 @@ defmodule Skuld.Effects.AtomicState do
   @spec with_state_handler(Types.computation(), term(), keyword()) :: Types.computation()
   def with_state_handler(comp, initial, opts \\ []) do
     tag = Keyword.get(opts, :tag, @sig)
+    output = Keyword.get(opts, :output)
+    suspend = Keyword.get(opts, :suspend)
     state_key = state_key(tag)
 
+    scoped_opts =
+      []
+      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
+      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
+
     comp
-    |> Comp.with_scoped_state(state_key, initial)
+    |> Comp.with_scoped_state(state_key, initial, scoped_opts)
     |> Comp.with_handler(sig(tag), make_state_handler(tag))
   end
 

@@ -240,12 +240,19 @@ defmodule Skuld.Effects.Random do
   def with_seed_handler(comp, opts \\ []) do
     seed = Keyword.get(opts, :seed, {1, 2, 3})
     algorithm = Keyword.get(opts, :algorithm, :exsss)
+    output = Keyword.get(opts, :output)
+    suspend = Keyword.get(opts, :suspend)
 
     initial_rand_state = :rand.seed_s(algorithm, seed)
     initial_state = %SeededState{rand_state: initial_rand_state}
 
+    scoped_opts =
+      []
+      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
+      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
+
     comp
-    |> Comp.with_scoped_state(@sig, initial_state)
+    |> Comp.with_scoped_state(@sig, initial_state, scoped_opts)
     |> Comp.with_handler(@sig, &handle_seeded/3)
   end
 
@@ -352,11 +359,18 @@ defmodule Skuld.Effects.Random do
   @spec with_fixed_handler(Types.computation(), keyword()) :: Types.computation()
   def with_fixed_handler(comp, opts \\ []) do
     values = Keyword.get(opts, :values, [0.5])
+    output = Keyword.get(opts, :output)
+    suspend = Keyword.get(opts, :suspend)
 
     initial_state = %FixedState{values: values, original: values}
 
+    scoped_opts =
+      []
+      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
+      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
+
     comp
-    |> Comp.with_scoped_state(@sig, initial_state)
+    |> Comp.with_scoped_state(@sig, initial_state, scoped_opts)
     |> Comp.with_handler(@sig, &handle_fixed/3)
   end
 

@@ -233,10 +233,18 @@ defmodule Skuld.Effects.Query do
       })
       |> Comp.run!()
   """
-  @spec with_handler(Types.computation(), registry()) :: Types.computation()
-  def with_handler(comp, registry \\ %{}) do
+  @spec with_handler(Types.computation(), registry(), keyword()) :: Types.computation()
+  def with_handler(comp, registry \\ %{}, opts \\ []) do
+    output = Keyword.get(opts, :output)
+    suspend = Keyword.get(opts, :suspend)
+
+    scoped_opts =
+      []
+      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
+      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
+
     comp
-    |> Comp.with_scoped_state(@state_key, {:runtime, registry})
+    |> Comp.with_scoped_state(@state_key, {:runtime, registry}, scoped_opts)
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 
@@ -262,10 +270,18 @@ defmodule Skuld.Effects.Query do
       |> Throw.with_handler()
       |> Comp.run!()
   """
-  @spec with_test_handler(Types.computation(), map()) :: Types.computation()
-  def with_test_handler(comp, responses) when is_map(responses) do
+  @spec with_test_handler(Types.computation(), map(), keyword()) :: Types.computation()
+  def with_test_handler(comp, responses, opts \\ []) when is_map(responses) do
+    output = Keyword.get(opts, :output)
+    suspend = Keyword.get(opts, :suspend)
+
+    scoped_opts =
+      []
+      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
+      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
+
     comp
-    |> Comp.with_scoped_state(@state_key, {:test, responses})
+    |> Comp.with_scoped_state(@state_key, {:test, responses}, scoped_opts)
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 
