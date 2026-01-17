@@ -8,9 +8,11 @@ defmodule Skuld.AsyncRunner do
 
   ## Messages
 
-  The runner sends messages to the caller in the form `{tag, status, value}`:
+  The runner sends messages to the caller in the form `{tag, status, value}` or 
+  `{tag, status, value, data}`:
 
-  - `{tag, :yield, value}` - computation yielded, waiting for resume
+  - `{tag, :yield, value, data}` - computation yielded, waiting for resume. `data` contains
+    any decorations added by scoped effects (e.g., EffectLogger attaches its log here)
   - `{tag, :result, value}` - computation completed successfully
   - `{tag, :throw, error}` - computation threw an error
   - `{tag, :stopped, reason}` - computation was cancelled/stopped
@@ -55,14 +57,14 @@ defmodule Skuld.AsyncRunner do
 
       {:ok, runner} = AsyncRunner.start(computation, tag: :create_user)
 
-      # Handle yields
-      def handle_info({:create_user, :yield, :get_name}, socket) do
+      # Handle yields (data contains any scoped effect decorations)
+      def handle_info({:create_user, :yield, :get_name, _data}, socket) do
         # Maybe wait for user input, then:
         AsyncRunner.resume(runner, "Alice")
         {:noreply, socket}
       end
 
-      def handle_info({:create_user, :yield, :get_email}, socket) do
+      def handle_info({:create_user, :yield, :get_email, _data}, socket) do
         AsyncRunner.resume(runner, "alice@example.com")
         {:noreply, socket}
       end
@@ -135,7 +137,7 @@ defmodule Skuld.AsyncRunner do
 
   ## Returns
 
-  - `{:ok, runner, {:yield, value}}` - computation yielded, use runner to continue
+  - `{:ok, runner, {:yield, value, data}}` - computation yielded, use runner to continue
   - `{:ok, runner, {:result, value}}` - computation completed immediately
   - `{:ok, runner, {:throw, error}}` - computation threw immediately
   - `{:ok, runner, {:stopped, reason}}` - computation stopped
@@ -144,16 +146,20 @@ defmodule Skuld.AsyncRunner do
   ## Example
 
       # Command processor that yields immediately for commands
-      {:ok, runner, {:yield, :ready}} =
+      {:ok, runner, {:yield, :ready, _data}} =
         command_processor
         |> Reader.with_handler(context)
         |> AsyncRunner.start_sync(tag: :processor)
 
       # Now resume synchronously for quick commands
-      {:yield, :ready} = AsyncRunner.resume_sync(runner, %QuickCommand{})
+      {:yield, :ready, _data} = AsyncRunner.resume_sync(runner, %QuickCommand{})
   """
   @spec start_sync(Skuld.Comp.Types.computation(), keyword()) ::
-          {:ok, t(), {:yield, term()} | {:result, term()} | {:throw, term()} | {:stopped, term()}}
+          {:ok, t(),
+           {:yield, term(), map() | nil}
+           | {:result, term()}
+           | {:throw, term()}
+           | {:stopped, term()}}
           | {:error, :timeout}
   def start_sync(computation, opts) do
     timeout = Keyword.get(opts, :timeout, 5000)
@@ -162,7 +168,7 @@ defmodule Skuld.AsyncRunner do
     {:ok, runner} = start(computation, opts)
 
     receive do
-      {^tag, :yield, yielded} -> {:ok, runner, {:yield, yielded}}
+      {^tag, :yield, yielded, data} -> {:ok, runner, {:yield, yielded, data}}
       {^tag, :result, result} -> {:ok, runner, {:result, result}}
       {^tag, :throw, error} -> {:ok, runner, {:throw, error}}
       {^tag, :stopped, reason} -> {:ok, runner, {:stopped, reason}}
@@ -202,7 +208,7 @@ defmodule Skuld.AsyncRunner do
 
   ## Returns
 
-  - `{:yield, value}` - computation yielded again
+  - `{:yield, value, data}` - computation yielded again
   - `{:result, value}` - computation completed
   - `{:throw, error}` - computation threw
   - `{:stopped, reason}` - computation was cancelled
@@ -214,18 +220,18 @@ defmodule Skuld.AsyncRunner do
 
       # First yield arrives via message
       receive do
-        {:cmd, :yield, :ready} -> :ok
+        {:cmd, :yield, :ready, _data} -> :ok
       end
 
       # Now resume and wait synchronously
       case AsyncRunner.resume_sync(runner, %SomeCommand{}) do
-        {:yield, :ready} -> # ready for next command
+        {:yield, :ready, _data} -> # ready for next command
         {:result, final} -> # computation finished
         {:throw, error} -> # something went wrong
       end
   """
   @spec resume_sync(t(), term(), keyword()) ::
-          {:yield, term()}
+          {:yield, term(), map() | nil}
           | {:result, term()}
           | {:throw, term()}
           | {:stopped, term()}
@@ -236,7 +242,7 @@ defmodule Skuld.AsyncRunner do
     send(pid, {:async_resume, ref, value, self()})
 
     receive do
-      {^tag, :yield, yielded} -> {:yield, yielded}
+      {^tag, :yield, yielded, data} -> {:yield, yielded, data}
       {^tag, :result, result} -> {:result, result}
       {^tag, :throw, error} -> {:throw, error}
       {^tag, :stopped, reason} -> {:stopped, reason}
@@ -273,9 +279,9 @@ defmodule Skuld.AsyncRunner do
 
     # Run with a driver that bridges messages to the caller (or reply_to override)
     result =
-      Yield.run_with_driver(comp, fn yielded_value ->
+      Yield.run_with_driver(comp, fn yielded_value, data ->
         current_reply_to = Process.get(reply_to_ref)
-        send(current_reply_to, {tag, :yield, yielded_value})
+        send(current_reply_to, {tag, :yield, yielded_value, data})
 
         # Reset to original caller after sending - any override only affects ONE yield
         Process.put(reply_to_ref, caller)

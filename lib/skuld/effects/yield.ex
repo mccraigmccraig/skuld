@@ -295,15 +295,15 @@ defmodule Skuld.Effects.Yield do
   """
   @spec run_with_driver(
           Types.computation(),
-          (term() -> {:continue, term()} | {:stop, term()})
+          (value :: term(), data :: map() | nil -> {:continue, term()} | {:stop, term()})
         ) ::
           {:done, term(), Types.env()}
           | {:stopped, term(), Types.env()}
           | {:thrown, term(), Types.env()}
   def run_with_driver(comp, driver) do
     case Comp.run(comp) do
-      {%Comp.Suspend{value: yielded, resume: resume}, suspended_env} ->
-        case driver.(yielded) do
+      {%Comp.Suspend{value: yielded, data: data, resume: resume}, suspended_env} ->
+        case driver.(yielded, data) do
           {:continue, input} ->
             # Resume returns {result, env} with leave_scope already applied
             {result, new_env} = resume.(input)
@@ -322,8 +322,12 @@ defmodule Skuld.Effects.Yield do
   end
 
   # Continue processing after a resume
-  defp continue_with_driver(%Comp.Suspend{value: yielded, resume: resume}, env, driver) do
-    case driver.(yielded) do
+  defp continue_with_driver(
+         %Comp.Suspend{value: yielded, data: data, resume: resume},
+         env,
+         driver
+       ) do
+    case driver.(yielded, data) do
       {:continue, input} ->
         {result, new_env} = resume.(input)
         continue_with_driver(result, new_env, driver)
