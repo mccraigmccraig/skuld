@@ -1,6 +1,18 @@
 defmodule Skuld.Comp.Suspend do
-  @moduledoc "Sentinel that bypasses leave-scope chain"
-  defstruct [:value, :resume]
+  @moduledoc """
+  Sentinel that bypasses leave-scope chain.
+
+  The `:data` field holds decorations added by scoped effects via `transform_suspend`.
+  Default is `nil` to distinguish "no decorations" from "empty decorations map".
+  """
+
+  @type t :: %__MODULE__{
+          value: term(),
+          resume: (term() -> {term(), Skuld.Comp.Env.t()}) | nil,
+          data: map() | nil
+        }
+
+  defstruct [:value, :resume, :data]
   # resume :: (input -> {result, env})
 
   defimpl Skuld.Comp.ISentinel do
@@ -18,8 +30,12 @@ defmodule Skuld.Comp.Suspend do
       %Skuld.Comp.Suspend{suspend | resume: new_resume}
     end
 
-    def serializable_payload(%Skuld.Comp.Suspend{value: value}) do
+    def serializable_payload(%Skuld.Comp.Suspend{value: value, data: nil}) do
       %{yielded: value}
+    end
+
+    def serializable_payload(%Skuld.Comp.Suspend{value: value, data: data}) do
+      %{yielded: value, data: data}
     end
   end
 end
