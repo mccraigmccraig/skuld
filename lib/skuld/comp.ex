@@ -433,6 +433,8 @@ defmodule Skuld.Comp do
 
   - `:output` - optional function `(result, final_state) -> new_result` to
     transform the result using the final state value before returning.
+  - `:suspend` - optional function `(Suspend.t(), env) -> {Suspend.t(), env}` to
+    decorate Suspend values when yielding. Allows attaching scoped state to suspends.
   - `:default` - default value when reading final state (default: nil)
 
   ## Example
@@ -446,25 +448,60 @@ defmodule Skuld.Comp do
       comp
       |> Comp.with_scoped_state(state_key, initial, output: fn result, final -> {result, final} end)
       |> Comp.with_handler(sig, handler)
+
+      # With suspend decoration - attach state to Suspend.data when yielding
+      comp
+      |> Comp.with_scoped_state(state_key, initial,
+        suspend: fn s, env ->
+          state = Env.get_state(env, state_key)
+          data = s.data || %{}
+          {%{s | data: Map.put(data, :my_state, state)}, env}
+        end
+      )
   """
   @spec with_scoped_state(Types.computation(), term(), term(), keyword()) :: Types.computation()
   def with_scoped_state(comp, state_key, initial, opts \\ []) do
     output = Keyword.get(opts, :output)
+    suspend = Keyword.get(opts, :suspend)
     default = Keyword.get(opts, :default)
 
     scoped(
       comp,
       fn env ->
-        previous = Env.get_state(env, state_key)
-        modified = Env.put_state(env, state_key, initial)
+        previous_state = Env.get_state(env, state_key)
+        env_with_state = Env.put_state(env, state_key, initial)
+
+        # If :suspend option provided, compose into transform_suspend
+        {modified_env, previous_transform} =
+          if suspend do
+            old_transform = Env.get_transform_suspend(env_with_state)
+
+            new_transform = fn susp, e ->
+              {susp1, e1} = old_transform.(susp, e)
+              suspend.(susp1, e1)
+            end
+
+            {Env.with_transform_suspend(env_with_state, new_transform), old_transform}
+          else
+            {env_with_state, nil}
+          end
 
         finally_k = fn value, e ->
           final_state = Env.get_state(e, state_key, default)
 
+          # Restore previous state
           restored_env =
-            case previous do
+            case previous_state do
               nil -> %{e | state: Map.delete(e.state, state_key)}
               val -> Env.put_state(e, state_key, val)
+            end
+
+          # Restore previous transform_suspend if we modified it
+          restored_env =
+            if previous_transform do
+              Env.with_transform_suspend(restored_env, previous_transform)
+            else
+              restored_env
             end
 
           transformed_value =
@@ -477,7 +514,7 @@ defmodule Skuld.Comp do
           {transformed_value, restored_env}
         end
 
-        {modified, finally_k}
+        {modified_env, finally_k}
       end
     )
   end

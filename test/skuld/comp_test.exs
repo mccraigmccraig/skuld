@@ -438,4 +438,97 @@ defmodule Skuld.CompTest do
       assert {:caught, 100} = result
     end
   end
+
+  describe "with_scoped_state :suspend option" do
+    alias Skuld.Comp.Suspend
+    alias Skuld.Effects.{State, Yield}
+
+    @state_key {State, State}
+
+    test "suspend option decorates Suspend.data when yielding" do
+      comp =
+        Yield.yield(:hello)
+        |> Comp.with_scoped_state(@state_key, 42,
+          suspend: fn s, env ->
+            state = Env.get_state(env, @state_key)
+            data = s.data || %{}
+            {%{s | data: Map.put(data, :my_state, state)}, env}
+          end
+        )
+        |> State.with_handler(0)
+        |> Yield.with_handler()
+
+      {%Suspend{value: :hello, data: data}, _env} = Comp.run(comp)
+
+      assert data == %{my_state: 42}
+    end
+
+    test "suspend decorations compose - inner decorates first" do
+      comp =
+        Yield.yield(:hello)
+        |> Comp.with_scoped_state(:inner_key, :inner_value,
+          suspend: fn s, env ->
+            state = Env.get_state(env, :inner_key)
+            data = s.data || %{}
+            {%{s | data: Map.put(data, :inner, state)}, env}
+          end
+        )
+        |> Comp.with_scoped_state(:outer_key, :outer_value,
+          suspend: fn s, env ->
+            state = Env.get_state(env, :outer_key)
+            data = s.data || %{}
+            {%{s | data: Map.put(data, :outer, state)}, env}
+          end
+        )
+        |> Yield.with_handler()
+
+      {%Suspend{value: :hello, data: data}, _env} = Comp.run(comp)
+
+      # Both decorations should be present
+      assert data == %{inner: :inner_value, outer: :outer_value}
+    end
+
+    test "suspend option is restored after scope exits" do
+      # Create an inner scope with suspend decoration
+      inner =
+        Yield.yield(:inner_yield)
+        |> Comp.with_scoped_state(:inner_key, :inner_value,
+          suspend: fn s, env ->
+            data = s.data || %{}
+            {%{s | data: Map.put(data, :from_inner, true)}, env}
+          end
+        )
+
+      # Outer scope without suspend decoration
+      comp =
+        Comp.bind(inner, fn input ->
+          # After inner scope, the inner's suspend transform should be gone
+          # This yield should NOT have :from_inner decoration
+          Yield.yield({:outer_yield, input})
+        end)
+        |> Yield.with_handler()
+
+      # First run - get inner yield
+      {%Suspend{value: :inner_yield, data: inner_data, resume: resume}, _env} = Comp.run(comp)
+      assert inner_data == %{from_inner: true}
+
+      # Resume - inner scope exits, then outer yield happens
+      {%Suspend{value: {:outer_yield, :resumed}, data: outer_data}, _env} = resume.(:resumed)
+
+      # Outer yield should NOT have the inner decoration
+      assert outer_data == nil
+    end
+
+    test "without suspend option, Suspend.data remains nil" do
+      comp =
+        Yield.yield(:hello)
+        |> Comp.with_scoped_state(@state_key, 42)
+        |> State.with_handler(0)
+        |> Yield.with_handler()
+
+      {%Suspend{value: :hello, data: data}, _env} = Comp.run(comp)
+
+      assert data == nil
+    end
+  end
 end
