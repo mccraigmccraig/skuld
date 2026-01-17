@@ -534,93 +534,19 @@ defmodule Skuld.Effects.EffectLogger do
     decorate_suspend = Keyword.get(opts, :decorate_suspend, true)
 
     Comp.scoped(comp, fn env ->
-      # Install EffectLogger's own handler (for mark_loop operations)
-      env_with_self = Env.with_handler(env, @sig, &__MODULE__.handle/3)
+      env_with_config = setup_logging_env(env, state_keys)
+      sigs_to_wrap = sigs_to_wrap(effects_to_log, env_with_config)
 
-      # Store state_keys filter for use in snapshots
-      env_with_config = put_state_keys(env_with_self, state_keys)
-
-      # Determine which handlers to wrap (including our own handler)
-      sigs_to_wrap =
-        case effects_to_log do
-          :all -> Map.keys(env_with_config.evidence)
-          list when is_list(list) -> [@sig | list] |> Enum.uniq()
-        end
-
-      # Wrap each handler with logging and install
       {env_with_wrapped, original_handlers} =
-        Enum.reduce(sigs_to_wrap, {env_with_config, %{}}, fn sig, {acc_env, originals} ->
-          case Env.get_handler(acc_env, sig) do
-            nil ->
-              {acc_env, originals}
+        install_wrapped_handlers(env_with_config, sigs_to_wrap, &wrap_handler/2)
 
-            handler ->
-              wrapped = wrap_handler(sig, handler)
-              new_env = Env.with_handler(acc_env, sig, wrapped)
-              {new_env, Map.put(originals, sig, handler)}
-          end
-        end)
-
-      # Initialize empty log with prune_on_mark enabled if prune_loops is true
-      initial_log =
-        if prune_loops, do: Log.enable_prune_on_mark(Log.new()), else: Log.new()
-
+      initial_log = init_log_with_prune(Log.new(), prune_loops)
       env_with_log = put_log(env_with_wrapped, initial_log)
 
-      # If decorate_suspend, compose transform_suspend to attach log to Suspend.data
       {env_final, previous_transform} =
-        if decorate_suspend do
-          old_transform = Env.get_transform_suspend(env_with_log)
+        maybe_setup_suspend_decoration(env_with_log, decorate_suspend)
 
-          new_transform = fn suspend, e ->
-            {suspend1, e1} = old_transform.(suspend, e)
-            decorate_suspend_with_log(suspend1, e1)
-          end
-
-          {Env.with_transform_suspend(env_with_log, new_transform), old_transform}
-        else
-          {env_with_log, nil}
-        end
-
-      finally_k = fn value, final_env ->
-        # Extract and finalize the log
-        log = get_log(final_env) || Log.new()
-        finalized_log = Log.finalize(log)
-
-        # Final prune (may be redundant if eager pruning is enabled, but ensures consistency)
-        output_log =
-          if prune_loops do
-            Log.prune_completed_loops(finalized_log)
-          else
-            finalized_log
-          end
-
-        # Clean up EffectLogger internal state from env
-        cleaned_env = %{
-          final_env
-          | state:
-              final_env.state
-              |> Map.delete(@state_key)
-              |> Map.delete(@state_keys_key)
-        }
-
-        # Restore original handlers
-        restored_env =
-          Enum.reduce(original_handlers, cleaned_env, fn {sig, original}, acc_env ->
-            Env.with_handler(acc_env, sig, original)
-          end)
-
-        # Restore previous transform_suspend if we modified it
-        restored_env =
-          if previous_transform do
-            Env.with_transform_suspend(restored_env, previous_transform)
-          else
-            restored_env
-          end
-
-        # Return result paired with log
-        {{value, output_log}, restored_env}
-      end
+      finally_k = build_finally_k(prune_loops, original_handlers, previous_transform)
 
       {env_final, finally_k}
     end)
@@ -637,100 +563,103 @@ defmodule Skuld.Effects.EffectLogger do
     decorate_suspend = Keyword.get(opts, :decorate_suspend, true)
 
     Comp.scoped(comp, fn env ->
-      # Install EffectLogger's own handler (for mark_loop operations)
-      env_with_self = Env.with_handler(env, @sig, &__MODULE__.handle/3)
+      env_with_config = setup_logging_env(env, state_keys)
+      sigs_to_wrap = sigs_to_wrap(effects_to_log, env_with_config)
 
-      # Store state_keys filter for use in snapshots
-      env_with_config = put_state_keys(env_with_self, state_keys)
-
-      # Determine which handlers to wrap (including our own handler)
-      sigs_to_wrap =
-        case effects_to_log do
-          :all -> Map.keys(env_with_config.evidence)
-          list when is_list(list) -> [@sig | list] |> Enum.uniq()
-        end
-
-      # Wrap each handler with replay logging and install
       {env_with_wrapped, original_handlers} =
-        Enum.reduce(sigs_to_wrap, {env_with_config, %{}}, fn sig, {acc_env, originals} ->
-          case Env.get_handler(acc_env, sig) do
-            nil ->
-              {acc_env, originals}
+        install_wrapped_handlers(env_with_config, sigs_to_wrap, &wrap_replay_handler/2)
 
-            handler ->
-              wrapped = wrap_replay_handler(sig, handler)
-              new_env = Env.with_handler(acc_env, sig, wrapped)
-              {new_env, Map.put(originals, sig, handler)}
-          end
-        end)
-
-      # Initialize with existing log (prepared for replay)
-      # Enable prune_on_mark if prune_loops is true (or preserve from log)
-      replay_log =
-        log
-        |> then(fn l -> if prune_loops, do: Log.enable_prune_on_mark(l), else: l end)
-        |> then(fn l -> if allow_divergence, do: Log.allow_divergence(l), else: l end)
-
+      replay_log = init_replay_log(log, prune_loops, allow_divergence)
       env_with_log = put_log(env_with_wrapped, replay_log)
 
-      # If decorate_suspend, compose transform_suspend to attach log to Suspend.data
       {env_final, previous_transform} =
-        if decorate_suspend do
-          old_transform = Env.get_transform_suspend(env_with_log)
+        maybe_setup_suspend_decoration(env_with_log, decorate_suspend)
 
-          new_transform = fn suspend, e ->
-            {suspend1, e1} = old_transform.(suspend, e)
-            decorate_suspend_with_log(suspend1, e1)
-          end
-
-          {Env.with_transform_suspend(env_with_log, new_transform), old_transform}
-        else
-          {env_with_log, nil}
-        end
-
-      finally_k = fn value, final_env ->
-        # Extract and finalize the log
-        final_log = get_log(final_env) || Log.new()
-        finalized_log = Log.finalize(final_log)
-
-        # Final prune (may be redundant if eager pruning is enabled, but ensures consistency)
-        output_log =
-          if prune_loops do
-            Log.prune_completed_loops(finalized_log)
-          else
-            finalized_log
-          end
-
-        # Clean up EffectLogger internal state from env
-        cleaned_env = %{
-          final_env
-          | state:
-              final_env.state
-              |> Map.delete(@state_key)
-              |> Map.delete(@state_keys_key)
-        }
-
-        # Restore original handlers
-        restored_env =
-          Enum.reduce(original_handlers, cleaned_env, fn {sig, original}, acc_env ->
-            Env.with_handler(acc_env, sig, original)
-          end)
-
-        # Restore previous transform_suspend if we modified it
-        restored_env =
-          if previous_transform do
-            Env.with_transform_suspend(restored_env, previous_transform)
-          else
-            restored_env
-          end
-
-        # Return result paired with log
-        {{value, output_log}, restored_env}
-      end
+      finally_k = build_finally_k(prune_loops, original_handlers, previous_transform)
 
       {env_final, finally_k}
     end)
   end
+
+  # Private helpers to reduce cyclomatic complexity
+
+  defp setup_logging_env(env, state_keys) do
+    env
+    |> Env.with_handler(@sig, &__MODULE__.handle/3)
+    |> put_state_keys(state_keys)
+  end
+
+  defp sigs_to_wrap(:all, env), do: Map.keys(env.evidence)
+  defp sigs_to_wrap(list, _env) when is_list(list), do: [@sig | list] |> Enum.uniq()
+
+  defp install_wrapped_handlers(env, sigs, wrapper_fn) do
+    Enum.reduce(sigs, {env, %{}}, fn sig, {acc_env, originals} ->
+      case Env.get_handler(acc_env, sig) do
+        nil ->
+          {acc_env, originals}
+
+        handler ->
+          wrapped = wrapper_fn.(sig, handler)
+          new_env = Env.with_handler(acc_env, sig, wrapped)
+          {new_env, Map.put(originals, sig, handler)}
+      end
+    end)
+  end
+
+  defp init_log_with_prune(log, true), do: Log.enable_prune_on_mark(log)
+  defp init_log_with_prune(log, false), do: log
+
+  defp init_replay_log(log, prune_loops, allow_divergence) do
+    log
+    |> init_log_with_prune(prune_loops)
+    |> maybe_allow_divergence(allow_divergence)
+  end
+
+  defp maybe_allow_divergence(log, true), do: Log.allow_divergence(log)
+  defp maybe_allow_divergence(log, false), do: log
+
+  defp maybe_setup_suspend_decoration(env, false), do: {env, nil}
+
+  defp maybe_setup_suspend_decoration(env, true) do
+    old_transform = Env.get_transform_suspend(env)
+
+    new_transform = fn suspend, e ->
+      {suspend1, e1} = old_transform.(suspend, e)
+      decorate_suspend_with_log(suspend1, e1)
+    end
+
+    {Env.with_transform_suspend(env, new_transform), old_transform}
+  end
+
+  defp build_finally_k(prune_loops, original_handlers, previous_transform) do
+    fn value, final_env ->
+      log = get_log(final_env) || Log.new()
+      finalized_log = Log.finalize(log)
+      output_log = maybe_prune_log(finalized_log, prune_loops)
+
+      cleaned_env = cleanup_logger_state(final_env)
+      restored_env = restore_original_handlers(cleaned_env, original_handlers)
+      restored_env = maybe_restore_transform(restored_env, previous_transform)
+
+      {{value, output_log}, restored_env}
+    end
+  end
+
+  defp maybe_prune_log(log, true), do: Log.prune_completed_loops(log)
+  defp maybe_prune_log(log, false), do: log
+
+  defp cleanup_logger_state(env) do
+    %{env | state: env.state |> Map.delete(@state_key) |> Map.delete(@state_keys_key)}
+  end
+
+  defp restore_original_handlers(env, original_handlers) do
+    Enum.reduce(original_handlers, env, fn {sig, original}, acc_env ->
+      Env.with_handler(acc_env, sig, original)
+    end)
+  end
+
+  defp maybe_restore_transform(env, nil), do: env
+  defp maybe_restore_transform(env, transform), do: Env.with_transform_suspend(env, transform)
 
   #############################################################################
   ## Replay Handler

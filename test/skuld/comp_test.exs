@@ -441,7 +441,8 @@ defmodule Skuld.CompTest do
 
   describe "with_scoped_state :suspend option" do
     alias Skuld.Comp.Suspend
-    alias Skuld.Effects.{State, Yield}
+    alias Skuld.Effects.State
+    alias Skuld.Effects.Yield
 
     @state_key {State, State}
 
