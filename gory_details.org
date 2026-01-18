@@ -380,7 +380,12 @@ Key mechanism:
 
 ** The catch clause
 
-The =catch= clause handles thrown errors:
+The =catch= clause supports two forms:
+
+1. *Interception*: ={Module, pattern} -> body= - intercepts effects via =Module.intercept/2=
+2. *Installation*: =Module -> config= - installs handlers via =Module.__handle__/2=
+
+*** Simple interception example
 
 #+begin_src elixir
 comp do
@@ -388,23 +393,203 @@ comp do
   _ <- if x < 0, do: Throw.throw(:negative)
   return(x * 2)
 catch
-  :negative -> return(0)
+  {Throw, :negative} -> return(0)
 end
 #+end_src
 
 Expands to:
 
 #+begin_src elixir
-Skuld.Effects.Throw.catch_error(
-  # ... the main computation ...
-  fn error ->
-    case error do
+Skuld.Effects.Throw.intercept(
+  Comp.bind(State.get(), fn x ->
+    Comp.bind(
+      if(x < 0, do: Throw.throw(:negative)),
+      fn _ -> Comp.pure(x * 2) end
+    )
+  end),
+  fn __skuld_caught_value__ ->
+    case __skuld_caught_value__ do
       :negative -> Comp.pure(0)
+      __skuld_unhandled__ -> Skuld.Effects.Throw.throw(__skuld_unhandled__)
+    end
+  end
+)
+#+end_src
+
+Key points:
+- The tagged pattern ={Throw, :negative}= extracts the module (=Throw=) and inner pattern (=:negative=)
+- The handler function receives the thrown value directly (not the tuple)
+- Unhandled values are automatically re-thrown (default re-dispatch)
+
+*** Simple installation example
+
+#+begin_src elixir
+comp do
+  x <- State.get()
+  config <- Reader.ask()
+  {x, config}
+catch
+  State -> 0
+  Reader -> %{timeout: 5000}
+end
+#+end_src
+
+Expands to:
+
+#+begin_src elixir
+Skuld.Effects.Reader.__handle__(
+  Skuld.Effects.State.__handle__(
+    Comp.bind(State.get(), fn x ->
+      Comp.bind(Reader.ask(), fn config ->
+        Comp.pure({x, config})
+      end)
+    end),
+    0
+  ),
+  %{timeout: 5000}
+)
+#+end_src
+
+Key points:
+- Bare module patterns call =Module.__handle__(comp, config)=
+- First clause becomes innermost handler, last clause outermost
+- The config value (right side of =->=) is passed to =__handle__/2=
+
+*** Complex example: Mixed Throw and Yield interception
+
+#+begin_src elixir
+comp do
+  config <- Yield.yield(:get_config)
+  result <- risky_operation(config)
+  result
+catch
+  {Yield, :get_config} -> return(%{default: true})
+  {Throw, :timeout} -> return(:retry_later)
+  {Throw, err} -> Throw.throw({:wrapped, err})
+end
+#+end_src
+
+Expands to (showing structure):
+
+#+begin_src elixir
+# Outer layer: Throw interception (catches :timeout and wraps others)
+Skuld.Effects.Throw.intercept(
+  # Middle layer: Yield interception (responds to :get_config)
+  Skuld.Effects.Yield.intercept(
+    # Inner: the main computation
+    Comp.bind(Yield.yield(:get_config), fn config ->
+      Comp.bind(risky_operation(config), fn result ->
+        Comp.pure(result)
+      end)
+    end),
+    # Yield handler
+    fn __skuld_caught_value__ ->
+      case __skuld_caught_value__ do
+        :get_config -> Comp.pure(%{default: true})
+        __skuld_unhandled__ -> Skuld.Effects.Yield.yield(__skuld_unhandled__)
+      end
+    end
+  ),
+  # Throw handler
+  fn __skuld_caught_value__ ->
+    case __skuld_caught_value__ do
+      :timeout -> Comp.pure(:retry_later)
+      err -> Skuld.Effects.Throw.throw({:wrapped, err})
+    end
+  end
+)
+#+end_src
+
+*** Consecutive clause grouping
+
+Consecutive same-module clauses are grouped into one handler:
+
+#+begin_src elixir
+comp do
+  computation()
+catch
+  {Throw, :a} -> handle_a()   # ─┐ group 1 (inner)
+  {Throw, :b} -> handle_b()   # ─┘
+  {Yield, :x} -> handle_x()   # ─── group 2 (middle)
+  {Throw, :c} -> handle_c()   # ─── group 3 (outer)
+end
+#+end_src
+
+Expands to:
+
+#+begin_src elixir
+# Group 3: outer Throw handler (catches :c)
+Skuld.Effects.Throw.intercept(
+  # Group 2: Yield handler (responds to :x)
+  Skuld.Effects.Yield.intercept(
+    # Group 1: inner Throw handler (catches :a and :b)
+    Skuld.Effects.Throw.intercept(
+      computation(),
+      fn val ->
+        case val do
+          :a -> handle_a()
+          :b -> handle_b()
+          other -> Skuld.Effects.Throw.throw(other)
+        end
+      end
+    ),
+    fn val ->
+      case val do
+        :x -> handle_x()
+        other -> Skuld.Effects.Yield.yield(other)
+      end
+    end
+  ),
+  fn val ->
+    case val do
+      :c -> handle_c()
       other -> Skuld.Effects.Throw.throw(other)
     end
   end
 )
 #+end_src
+
+This grouping enables control over error propagation: a throw from the Yield
+handler (group 2) would be caught by group 3, not group 1.
+
+*** Mixed interception and installation
+
+#+begin_src elixir
+comp do
+  result <- risky_operation()
+  result
+catch
+  {Throw, :recoverable} -> return(:fallback)  # Interception
+  State -> 0                                   # Installation
+  Throw -> nil                                 # Installation
+end
+#+end_src
+
+Expands to:
+
+#+begin_src elixir
+# Outermost: Throw handler installation
+Skuld.Effects.Throw.__handle__(
+  # Middle: State handler installation
+  Skuld.Effects.State.__handle__(
+    # Inner: Throw interception
+    Skuld.Effects.Throw.intercept(
+      Comp.bind(risky_operation(), fn result -> Comp.pure(result) end),
+      fn val ->
+        case val do
+          :recoverable -> Comp.pure(:fallback)
+          other -> Skuld.Effects.Throw.throw(other)
+        end
+      end
+    ),
+    0
+  ),
+  nil
+)
+#+end_src
+
+The interception (={Throw, :recoverable}=) catches locally, while the installation
+(=Throw -> nil=) provides the outer handler that processes uncaught throws.
 
 ** Combined else and catch
 
