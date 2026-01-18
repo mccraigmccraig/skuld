@@ -7,6 +7,7 @@ defmodule Skuld.Comp.CompBlockTest do
   alias Skuld.Effects.State
   alias Skuld.Effects.Reader
   alias Skuld.Effects.Throw
+  alias Skuld.Effects.Yield
 
   describe "comp macro" do
     test "single return" do
@@ -1006,6 +1007,154 @@ defmodule Skuld.Comp.CompBlockTest do
 
       # State changes before the exception should be preserved
       assert Comp.run!(computation) == {:caught, "boom!", 11}
+    end
+  end
+
+  describe "Yield interception via catch" do
+    test "single Yield pattern intercepts yield" do
+      computation =
+        comp do
+          x <- Yield.yield(:question)
+          return({:got, x})
+        catch
+          {Yield, :question} -> return(42)
+        end
+        |> Yield.with_handler()
+
+      # The yield is intercepted and returns 42 as resume input
+      assert Comp.run!(computation) == {:got, 42}
+    end
+
+    test "multiple Yield patterns" do
+      computation =
+        comp do
+          x <- Yield.yield(:first)
+          y <- Yield.yield(:second)
+          return({x, y})
+        catch
+          {Yield, :first} -> return(10)
+          {Yield, :second} -> return(20)
+        end
+        |> Yield.with_handler()
+
+      assert Comp.run!(computation) == {10, 20}
+    end
+
+    test "unhandled yields are re-yielded by default" do
+      computation =
+        comp do
+          x <- Yield.yield(:handled)
+          y <- Yield.yield(:not_handled)
+          return({x, y})
+        catch
+          {Yield, :handled} -> return(10)
+        end
+        |> Yield.with_handler()
+
+      # :not_handled is re-yielded, so we get a Suspend
+      {result, _env} = Comp.run(computation)
+      assert %Comp.Suspend{value: :not_handled} = result
+    end
+
+    test "Yield handler can use effects" do
+      computation =
+        comp do
+          x <- Yield.yield(:need_state)
+          return({:got, x})
+        catch
+          {Yield, :need_state} ->
+            s <- State.get()
+            return(s * 2)
+        end
+        |> State.with_handler(21)
+        |> Yield.with_handler()
+
+      assert Comp.run!(computation) == {:got, 42}
+    end
+
+    test "Yield handler that throws is caught by outer Throw catch" do
+      computation =
+        comp do
+          x <- Yield.yield(:will_throw)
+          return({:got, x})
+        catch
+          {Yield, :will_throw} ->
+            _ <- Throw.throw(:yield_handler_threw)
+            return(:never)
+
+          {Throw, :yield_handler_threw} ->
+            return(:caught_from_yield_handler)
+        end
+        |> Yield.with_handler()
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == :caught_from_yield_handler
+    end
+
+    test "mixed Throw and Yield in same catch block" do
+      computation =
+        comp do
+          x <- Yield.yield(:get_value)
+          _ <- if x < 0, do: Throw.throw(:negative), else: Comp.pure(:ok)
+          return(x * 2)
+        catch
+          {Yield, :get_value} -> return(-5)
+          {Throw, :negative} -> return(:was_negative)
+        end
+        |> Yield.with_handler()
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == :was_negative
+    end
+
+    test "mixed Throw and Yield - success path" do
+      computation =
+        comp do
+          x <- Yield.yield(:get_value)
+          _ <- if x < 0, do: Throw.throw(:negative), else: Comp.pure(:ok)
+          return(x * 2)
+        catch
+          {Yield, :get_value} -> return(5)
+          {Throw, :negative} -> return(:was_negative)
+        end
+        |> Yield.with_handler()
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == 10
+    end
+
+    test "Yield catch-all pattern" do
+      computation =
+        comp do
+          x <- Yield.yield(:any_value)
+          return({:got, x})
+        catch
+          {Yield, value} -> return({:responded_to, value})
+        end
+        |> Yield.with_handler()
+
+      assert Comp.run!(computation) == {:got, {:responded_to, :any_value}}
+    end
+
+    test "re-yield to propagate to outer handler" do
+      inner =
+        comp do
+          x <- Yield.yield(:inner_question)
+          return({:inner_got, x})
+        catch
+          {Yield, :handled_locally} -> return(:local)
+          {Yield, other} -> Yield.yield({:forwarded, other})
+        end
+
+      computation =
+        comp do
+          result <- inner
+          return({:outer_got, result})
+        end
+        |> Yield.with_handler()
+
+      {result, _env} = Comp.run(computation)
+      assert %Comp.Suspend{value: {:forwarded, :inner_question}} = result
     end
   end
 end
