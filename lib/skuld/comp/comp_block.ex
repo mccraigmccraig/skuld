@@ -258,7 +258,7 @@ defmodule Skuld.Comp.CompBlock do
       # Wrap with catch if present (outermost)
       result =
         if catch_block do
-          wrap_with_catch(with_else, catch_block)
+          wrap_with_catch(caller, with_else, catch_block)
         else
           with_else
         end
@@ -316,56 +316,190 @@ defmodule Skuld.Comp.CompBlock do
       end
     end
 
-    # Wrap the body computation in Throw.catch_error for catch handling
-    defp wrap_with_catch(body, catch_block) do
-      catch_handler_fn = build_catch_handler_fn(catch_block)
+    # Wrap the body computation with effect interceptors based on catch clauses.
+    # Catch clauses use tagged patterns: {Module, pattern} -> body
+    # Groups clauses by module and composes interceptors in the right order.
+    defp wrap_with_catch(caller, body, catch_block) do
+      clauses = extract_clauses(catch_block)
 
-      quote do
-        Skuld.Effects.Throw.catch_error(
-          unquote(body),
-          unquote(catch_handler_fn)
-        )
+      # Parse and group clauses by effect module
+      grouped = group_catch_clauses_by_module(caller, clauses)
+
+      # Compose interceptors: non-Throw effects first (inner), Throw last (outer)
+      # This ensures Throw can catch errors from other effect handlers
+      compose_catch_interceptors(body, grouped)
+    end
+
+    # Parse a tagged catch clause: {Module, pattern} -> body
+    # Returns {module_ast, pattern, meta, body} or raises on invalid syntax
+    defp parse_tagged_catch_clause(caller, {:->, meta, [[pattern], body]}) do
+      case pattern do
+        {module_ast, inner_pattern} when not is_nil(module_ast) ->
+          {module_ast, inner_pattern, meta, body}
+
+        _ ->
+          line = Keyword.get(meta, :line) || (caller && caller.line) || 0
+          file = (caller && caller.file) || "nofile"
+
+          raise CompileError,
+            file: file,
+            line: line,
+            description:
+              "invalid catch clause pattern: expected {Module, pattern}, got: #{Macro.to_string(pattern)}"
       end
     end
 
-    # Common logic for rewriting clause bodies and ensuring a catch-all clause exists.
-    # Takes the block, extracts clauses, rewrites bodies, and appends a default clause if needed.
-    defp rewrite_and_ensure_catch_all(block, default_clause) do
-      clauses = extract_clauses(block)
+    # Group catch clauses by their effect module
+    defp group_catch_clauses_by_module(caller, clauses) do
+      clauses
+      |> Enum.map(&parse_tagged_catch_clause(caller, &1))
+      |> Enum.group_by(fn {module_ast, _pattern, _meta, _body} -> module_ast end)
+    end
 
-      # Rewrite each clause body (they're comp blocks too)
-      # Note: catch/else clause bodies don't have caller context for line numbers,
-      # so we pass nil - bare expressions in these bodies won't have precise line info
+    # Compose interceptors around the body
+    # Order: non-Throw effects first (inner), Throw last (outer)
+    defp compose_catch_interceptors(body, grouped) do
+      # Separate Throw from other effects
+      {throw_clauses, other_effects} =
+        Enum.split_with(grouped, fn {module_ast, _clauses} ->
+          module_is_throw?(module_ast)
+        end)
+
+      # Compose: body |> other_effects... |> Throw (if present)
+      result =
+        Enum.reduce(other_effects, body, fn {module_ast, module_clauses}, acc ->
+          handler_fn = build_module_handler_fn(module_ast, module_clauses)
+
+          quote do
+            unquote(module_ast).intercept(unquote(acc), unquote(handler_fn))
+          end
+        end)
+
+      # Add Throw interceptor last (outermost)
+      case throw_clauses do
+        [{module_ast, module_clauses}] ->
+          handler_fn = build_module_handler_fn(module_ast, module_clauses)
+
+          quote do
+            unquote(module_ast).intercept(unquote(result), unquote(handler_fn))
+          end
+
+        [] ->
+          result
+      end
+    end
+
+    # Check if module AST refers to Throw
+    defp module_is_throw?({:__aliases__, _, [:Throw]}), do: true
+    defp module_is_throw?({:__aliases__, _, [Skuld, Effects, Throw]}), do: true
+    defp module_is_throw?(Skuld.Effects.Throw), do: true
+    defp module_is_throw?(_), do: false
+
+    # Build handler function for a module's catch clauses
+    defp build_module_handler_fn(module_ast, module_clauses) do
+      # Build case clauses from the module's patterns
+      case_clauses =
+        Enum.map(module_clauses, fn {_module, pattern, meta, body} ->
+          rewritten_body = rewrite_block(nil, body, false)
+          {:->, meta, [[pattern], rewritten_body]}
+        end)
+
+      # Add default re-dispatch clause if no catch-all
+      final_clauses =
+        if has_catch_all_clause_for_patterns?(module_clauses) do
+          case_clauses
+        else
+          case_clauses ++ [default_redispatch_clause(module_ast)]
+        end
+
+      # Build: fn value -> import BaseOps; case value do ... end end
+      quote do
+        fn __skuld_caught_value__ ->
+          import Skuld.Comp.BaseOps
+
+          case __skuld_caught_value__ do
+            unquote(final_clauses)
+          end
+        end
+      end
+    end
+
+    # Check if any clause has a catch-all pattern (variable or _)
+    defp has_catch_all_clause_for_patterns?(module_clauses) do
+      Enum.any?(module_clauses, fn {_module, pattern, _meta, _body} ->
+        catch_all_pattern?(pattern)
+      end)
+    end
+
+    # Check if a pattern is a catch-all (variable or underscore)
+    defp catch_all_pattern?({var, _, context})
+         when is_atom(var) and is_atom(context) and var != :^ do
+      true
+    end
+
+    defp catch_all_pattern?({:_, _, _}), do: true
+    defp catch_all_pattern?(_), do: false
+
+    # Build default re-dispatch clause for unhandled values
+    # Throw: re-throw, Yield: re-yield
+    defp default_redispatch_clause(module_ast) do
+      redispatch_call =
+        cond do
+          module_is_throw?(module_ast) ->
+            quote do: Skuld.Effects.Throw.throw(__skuld_unhandled__)
+
+          module_is_yield?(module_ast) ->
+            quote do: Skuld.Effects.Yield.yield(__skuld_unhandled__)
+
+          true ->
+            # For unknown effects, raise a helpful error at runtime
+            # Users should provide catch-all patterns for custom effects
+            quote do
+              raise ArgumentError,
+                    "unhandled catch value for #{inspect(unquote(module_ast))}: #{inspect(__skuld_unhandled__)}"
+            end
+        end
+
+      {:->, [], [[quote(do: __skuld_unhandled__)], redispatch_call]}
+    end
+
+    # Check if module AST refers to Yield
+    defp module_is_yield?({:__aliases__, _, [:Yield]}), do: true
+    defp module_is_yield?({:__aliases__, _, [Skuld, Effects, Yield]}), do: true
+    defp module_is_yield?(Skuld.Effects.Yield), do: true
+    defp module_is_yield?(_), do: false
+
+    # Build the else handler function
+    # Catches MatchFailed, re-throws other errors
+    defp build_else_handler_fn(else_block) do
+      clauses = extract_clauses(else_block)
+
+      # Rewrite clause bodies
       rewritten_clauses =
         Enum.map(clauses, fn {:->, meta, [patterns, body]} ->
           rewritten_body = rewrite_block(nil, body, false)
           {:->, meta, [patterns, rewritten_body]}
         end)
 
-      # Add default clause if user didn't provide catch-all
-      if has_catch_all_clause?(clauses) do
-        rewritten_clauses
-      else
-        rewritten_clauses ++ [default_clause]
-      end
-    end
+      # Add default re-throw clause if no catch-all
+      final_clauses =
+        if has_catch_all_clause?(clauses) do
+          rewritten_clauses
+        else
+          default_clause =
+            {:->, [],
+             [
+               [quote(do: __skuld_unhandled_match__)],
+               quote(
+                 do:
+                   Skuld.Effects.Throw.throw(%Skuld.Comp.MatchFailed{
+                     value: __skuld_unhandled_match__
+                   })
+               )
+             ]}
 
-    # Build the else handler function
-    # Catches MatchFailed, re-throws other errors
-    defp build_else_handler_fn(else_block) do
-      default_clause =
-        {:->, [],
-         [
-           [quote(do: __skuld_unhandled_match__)],
-           quote(
-             do:
-               Skuld.Effects.Throw.throw(%Skuld.Comp.MatchFailed{
-                 value: __skuld_unhandled_match__
-               })
-           )
-         ]}
-
-      final_clauses = rewrite_and_ensure_catch_all(else_block, default_clause)
+          rewritten_clauses ++ [default_clause]
+        end
 
       # Build the function that catches MatchFailed, re-throws others
       quote do
@@ -379,29 +513,6 @@ defmodule Skuld.Comp.CompBlock do
 
           __skuld_other_error__ ->
             Skuld.Effects.Throw.throw(__skuld_other_error__)
-        end
-      end
-    end
-
-    # Build the error handler function from catch block clauses
-    defp build_catch_handler_fn(catch_block) do
-      default_clause =
-        {:->, [],
-         [
-           [quote(do: __skuld_unhandled_error__)],
-           quote(do: Skuld.Effects.Throw.throw(__skuld_unhandled_error__))
-         ]}
-
-      final_clauses = rewrite_and_ensure_catch_all(catch_block, default_clause)
-
-      # Build the function: fn err -> case err do ... end end
-      quote do
-        fn __skuld_error__ ->
-          import Skuld.Comp.BaseOps
-
-          case __skuld_error__ do
-            unquote(final_clauses)
-          end
         end
       end
     end
