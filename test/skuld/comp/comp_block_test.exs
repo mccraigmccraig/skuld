@@ -1157,4 +1157,156 @@ defmodule Skuld.Comp.CompBlockTest do
       assert %Comp.Suspend{value: {:forwarded, :inner_question}} = result
     end
   end
+
+  describe "catch clause ordering - consecutive grouping" do
+    test "consecutive same-module clauses are grouped into one handler" do
+      # Throw, Throw -> one catch_error with both patterns
+      computation =
+        comp do
+          x <- Throw.throw(:first)
+          return({:got, x})
+        catch
+          {Throw, :first} -> return(:caught_first)
+          {Throw, :second} -> return(:caught_second)
+        end
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == :caught_first
+    end
+
+    test "interleaved modules create separate interceptor layers" do
+      # {Throw, :a}, {Yield, :b}, {Throw, :c} creates three layers:
+      # catch_error(respond(catch_error(body, a_handler), b_handler), c_handler)
+
+      # The Yield handler throws, which should be caught by the OUTER Throw handler
+      computation =
+        comp do
+          x <- Yield.yield(:need_value)
+          return({:got, x})
+        catch
+          # First Throw layer (inner)
+          {Throw, :from_body} ->
+            return(:caught_from_body)
+
+          # Yield layer (middle)
+          {Yield, :need_value} ->
+            _ <- Throw.throw(:from_yield_handler)
+            return(:never)
+
+          # Second Throw layer (outer) - catches throws from Yield handler
+          {Throw, :from_yield_handler} ->
+            return(:caught_from_yield_handler)
+        end
+        |> Yield.with_handler()
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == :caught_from_yield_handler
+    end
+
+    test "Throw-first ordering: Throw catches before Yield responds" do
+      # When Throw comes first, body throws are caught before Yield is checked
+      computation =
+        comp do
+          _ <- Throw.throw(:early_error)
+          x <- Yield.yield(:never_reached)
+          return({:got, x})
+        catch
+          # Throw first (inner) - catches body throws
+          {Throw, :early_error} -> return(:caught_early)
+          # Yield second (outer) - never sees anything
+          {Yield, :never_reached} -> return(:responded)
+        end
+        |> Yield.with_handler()
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == :caught_early
+    end
+
+    test "Yield-first ordering: Yield handler throw goes to outer Throw" do
+      # When Yield comes first and its handler throws, outer Throw catches it
+      computation =
+        comp do
+          x <- Yield.yield(:get_value)
+          return({:got, x})
+        catch
+          # Yield first (inner)
+          {Yield, :get_value} ->
+            _ <- Throw.throw(:yield_threw)
+            return(:never)
+
+          # Throw second (outer) - catches throws from Yield handler
+          {Throw, :yield_threw} ->
+            return(:outer_caught)
+        end
+        |> Yield.with_handler()
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == :outer_caught
+    end
+
+    test "multiple alternating layers" do
+      # Throw, Yield, Throw, Yield creates four layers
+      # This tests that each module switch creates a new layer
+
+      computation =
+        comp do
+          # This yield will be caught by first Yield layer
+          x <- Yield.yield(:first_yield)
+          return({:got, x})
+        catch
+          # Layer 1: Throw (inner)
+          {Throw, :layer1} ->
+            return(:from_layer1)
+
+          # Layer 2: Yield
+          {Yield, :first_yield} ->
+            # This throw will be caught by layer 3, not layer 1
+            _ <- Throw.throw(:from_layer2)
+            return(:never)
+
+          # Layer 3: Throw
+          {Throw, :from_layer2} ->
+            # This yield will be caught by layer 4
+            Yield.yield(:from_layer3)
+
+          # Layer 4: Yield (outer)
+          {Yield, :from_layer3} ->
+            return(:from_layer4)
+        end
+        |> Yield.with_handler()
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == :from_layer4
+    end
+
+    test "clause order determines which Throw layer catches" do
+      # First: {Throw, :a} - inner
+      # Then: {Yield, :x}
+      # Then: {Throw, :b} - outer
+      # A throw of :b from Yield handler should be caught by outer, not inner
+
+      computation =
+        comp do
+          x <- Yield.yield(:trigger)
+          return({:got, x})
+        catch
+          # Inner Throw - handles :a only
+          {Throw, :a} ->
+            return(:inner_caught_a)
+
+          # Yield - throws :b
+          {Yield, :trigger} ->
+            _ <- Throw.throw(:b)
+            return(:never)
+
+          # Outer Throw - handles :b
+          {Throw, :b} ->
+            return(:outer_caught_b)
+        end
+        |> Yield.with_handler()
+        |> Throw.with_handler()
+
+      assert Comp.run!(computation) == :outer_caught_b
+    end
+  end
 end

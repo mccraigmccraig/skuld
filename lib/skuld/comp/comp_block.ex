@@ -95,8 +95,19 @@ defmodule Skuld.Comp.CompBlock do
         {Throw, err} -> Throw.throw({:wrapped, err})
       end
 
-  Composition order: Yield handlers (inner) wrap before Throw handlers (outer).
-  This means throws from Yield handlers can be caught by Throw patterns.
+  ### Composition Order
+
+  Consecutive same-module clauses are grouped into one handler. Each time the
+  module changes, a new interceptor layer is added. First group is innermost:
+
+      catch
+        {Throw, :a} -> ...   # ─┐ group 1 (inner)
+        {Throw, :b} -> ...   # ─┘
+        {Yield, :x} -> ...   # ─── group 2 (middle)
+        {Throw, :c} -> ...   # ─── group 3 (outer)
+
+  This gives you full control - a throw from the Yield handler (group 2)
+  would be caught by group 3, not group 1.
 
   ## Combined Else and Catch
 
@@ -367,16 +378,16 @@ defmodule Skuld.Comp.CompBlock do
 
     # Wrap the body computation with effect interceptors based on catch clauses.
     # Catch clauses use tagged patterns: {Module, pattern} -> body
-    # Groups clauses by module and composes interceptors in the right order.
+    # Consecutive same-module clauses are grouped into one handler.
+    # Clause order determines composition order (first group innermost).
     defp wrap_with_catch(caller, body, catch_block) do
       clauses = extract_clauses(catch_block)
 
-      # Parse and group clauses by effect module
-      grouped = group_catch_clauses_by_module(caller, clauses)
+      # Parse and chunk consecutive clauses by effect module
+      chunks = chunk_consecutive_catch_clauses(caller, clauses)
 
-      # Compose interceptors: non-Throw effects first (inner), Throw last (outer)
-      # This ensures Throw can catch errors from other effect handlers
-      compose_catch_interceptors(body, grouped)
+      # Compose interceptors in chunk order (first chunk innermost)
+      compose_catch_interceptors(body, chunks)
     end
 
     # Parse a tagged catch clause: {Module, pattern} -> body
@@ -398,14 +409,20 @@ defmodule Skuld.Comp.CompBlock do
       end
     end
 
-    # Group catch clauses by their effect module
-    # We normalize the module AST for grouping since different occurrences
+    # Chunk consecutive catch clauses by their effect module
+    # We normalize the module AST for comparison since different occurrences
     # have different metadata (line numbers, counters)
-    defp group_catch_clauses_by_module(caller, clauses) do
+    # Returns a list of {original_module_ast, [clauses]} tuples in order
+    defp chunk_consecutive_catch_clauses(caller, clauses) do
       clauses
       |> Enum.map(&parse_tagged_catch_clause(caller, &1))
-      |> Enum.group_by(fn {module_ast, _pattern, _meta, _body} ->
+      |> Enum.chunk_by(fn {module_ast, _pattern, _meta, _body} ->
         normalize_module_ast(module_ast)
+      end)
+      |> Enum.map(fn chunk ->
+        # Get the original module AST from the first clause for code generation
+        {original_module_ast, _, _, _} = hd(chunk)
+        {original_module_ast, chunk}
       end)
     end
 
@@ -413,43 +430,18 @@ defmodule Skuld.Comp.CompBlock do
     defp normalize_module_ast({:__aliases__, _meta, parts}), do: {:__aliases__, [], parts}
     defp normalize_module_ast(other), do: other
 
-    # Compose interceptors around the body
-    # Order: non-Throw effects first (inner), Throw last (outer)
-    defp compose_catch_interceptors(body, grouped) do
-      # Separate Throw from other effects (using normalized keys)
-      {throw_clauses, other_effects} =
-        Enum.split_with(grouped, fn {normalized_module, _clauses} ->
-          module_is_throw?(normalized_module)
-        end)
+    # Compose interceptors around the body in chunk order (first chunk innermost)
+    defp compose_catch_interceptors(body, chunks) do
+      Enum.reduce(chunks, body, fn {module_ast, module_clauses}, acc ->
+        handler_fn = build_module_handler_fn(module_ast, module_clauses)
 
-      # Compose: body |> other_effects... |> Throw (if present)
-      result =
-        Enum.reduce(other_effects, body, fn {_normalized, module_clauses}, acc ->
-          # Get the original module AST from the first clause for code generation
-          {original_module_ast, _, _, _} = hd(module_clauses)
-          handler_fn = build_module_handler_fn(original_module_ast, module_clauses)
-
-          quote do
-            unquote(original_module_ast).intercept(unquote(acc), unquote(handler_fn))
-          end
-        end)
-
-      # Add Throw interceptor last (outermost)
-      case throw_clauses do
-        [{_normalized, module_clauses}] ->
-          {original_module_ast, _, _, _} = hd(module_clauses)
-          handler_fn = build_module_handler_fn(original_module_ast, module_clauses)
-
-          quote do
-            unquote(original_module_ast).intercept(unquote(result), unquote(handler_fn))
-          end
-
-        [] ->
-          result
-      end
+        quote do
+          unquote(module_ast).intercept(unquote(acc), unquote(handler_fn))
+        end
+      end)
     end
 
-    # Check if module AST refers to Throw
+    # Check if module AST refers to Throw (used for default re-dispatch)
     defp module_is_throw?({:__aliases__, _, [:Throw]}), do: true
     defp module_is_throw?({:__aliases__, _, [Skuld, Effects, Throw]}), do: true
     defp module_is_throw?(Skuld.Effects.Throw), do: true

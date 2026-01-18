@@ -301,9 +301,20 @@ The `catch` clause desugars to calls to `Module.intercept/2`:
 - `{Throw, pattern}` → `Throw.catch_error/2`
 - `{Yield, pattern}` → `Yield.respond/2`
 
-**Composition order:** When both Yield and Throw patterns are present, Yield
-interceptors wrap first (innermost), so throws from Yield handlers can be caught
-by Throw patterns.
+**Composition order:** Consecutive same-module clauses are grouped into one
+handler. Each time the module changes, a new interceptor layer is added. First
+group is innermost, last group is outermost:
+
+```elixir
+catch
+  {Throw, :a} -> ...   # ─┐ group 1 (inner)
+  {Throw, :b} -> ...   # ─┘
+  {Yield, :x} -> ...   # ─── group 2 (middle)
+  {Throw, :c} -> ...   # ─── group 3 (outer)
+```
+
+This gives you full control over interception layering - a throw from the Yield
+handler in group 2 would be caught by group 3, not group 1.
 
 **Default re-dispatch:** Patterns without a catch-all automatically re-dispatch
 unhandled values (re-throw for Throw, re-yield for Yield).
@@ -841,8 +852,8 @@ catch
 end
 ```
 
-When both Yield and Throw patterns are present, Yield interceptors wrap first (innermost),
-so throws from Yield handlers can be caught by Throw patterns.
+Clause order determines composition: consecutive same-module clauses are grouped,
+and each module switch creates a new interceptor layer (first group innermost).
 
 ### Collection Iteration
 
