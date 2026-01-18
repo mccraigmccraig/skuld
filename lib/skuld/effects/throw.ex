@@ -130,6 +130,18 @@ defmodule Skuld.Effects.Throw do
     )
   end
 
+  @doc """
+  Intercept thrown errors locally within a computation.
+
+  This is the `IHandler.intercept/2` implementation for Throw, enabling
+  `{Throw, pattern}` clauses in `comp` block `catch` sections.
+
+  Delegates to `catch_error/2`.
+  """
+  @impl Skuld.Comp.IHandler
+  @spec intercept(Types.computation(), (term() -> Types.computation())) :: Types.computation()
+  defdelegate intercept(comp, handler), to: __MODULE__, as: :catch_error
+
   #############################################################################
   ## Handler Installation
   #############################################################################

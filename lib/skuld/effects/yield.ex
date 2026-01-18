@@ -221,6 +221,18 @@ defmodule Skuld.Effects.Yield do
     end
   end
 
+  @doc """
+  Intercept yields locally within a computation.
+
+  This is the `IHandler.intercept/2` implementation for Yield, enabling
+  `{Yield, pattern}` clauses in `comp` block `catch` sections.
+
+  Delegates to `respond/2`.
+  """
+  @impl Skuld.Comp.IHandler
+  @spec intercept(Types.computation(), (term() -> Types.computation())) :: Types.computation()
+  defdelegate intercept(comp, handler), to: __MODULE__, as: :respond
+
   #############################################################################
   ## Handler Installation
   #############################################################################
