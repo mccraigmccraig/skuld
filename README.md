@@ -45,6 +45,12 @@ some common side-effecting operations and their effectful equivalents:
 - [Installation](#installation)
 - [Demo Application](#demo-application)
 - [Quick Start](#quick-start)
+- [Syntax](#syntax)
+  - [The comp Block](#the-comp-block)
+  - [Effectful Binds and Pure Matches](#effectful-binds-and-pure-matches)
+  - [Auto-Lifting](#auto-lifting)
+  - [The else Clause](#the-else-clause)
+  - [The catch Clause](#the-catch-clause)
 - [Effects](#effects)
   - [State & Environment](#state--environment)
     - [State](#state)
@@ -150,6 +156,195 @@ Example.example()
 
 #=> {{{:my_config, 0}, {:final_state, 1}}, {:log, ["processed item 0"]}}
 ```
+
+## Syntax
+
+The `comp` macro is the primary way to write effectful code in Skuld. It provides
+a clean syntax for sequencing effectful operations, handling failures, and locally
+intercepting effects.
+
+### The comp Block
+
+A `comp` block sequences effectful operations, similar to Haskell's `do` notation
+or F#'s computation expressions:
+
+```elixir
+comp do
+  # Sequence of expressions
+  x <- effect_operation()
+  y = pure_computation(x)
+  another_effect(y)
+end
+```
+
+The block returns a **computation** - a suspended effectful program that only
+executes when run with `Comp.run!/1` or `Comp.run/1`. This lazy evaluation
+enables composition and handler installation before execution.
+
+### Effectful Binds and Pure Matches
+
+The `comp` block supports two binding forms:
+
+**Effectful bind (`<-`)** - Extracts the result of an effectful computation:
+
+```elixir
+comp do
+  count <- State.get()        # Run State.get effect, bind result to count
+  name <- Reader.ask()        # Run Reader.ask effect, bind result to name
+  {count, name}
+end
+```
+
+**Pure match (`=`)** - Standard Elixir pattern matching on pure values:
+
+```elixir
+comp do
+  data <- fetch_data()
+  %{name: name, age: age} = data    # Pure destructuring
+  formatted = "#{name} (#{age})"    # Pure computation
+  formatted
+end
+```
+
+Both forms support pattern matching. The difference is in failure handling:
+- `=` failures raise `MatchError` (converted to Throw effect)
+- `<-` failures can be handled by the `else` clause
+
+### Auto-Lifting
+
+Plain values are automatically lifted to computations, enabling ergonomic patterns:
+
+```elixir
+comp do
+  x <- State.get()
+  x * 2                           # Plain value auto-lifted to Comp.pure(x * 2)
+end
+
+comp do
+  _ <- if should_log?, do: Writer.tell("logging")   # nil auto-lifted when false
+  :done
+end
+```
+
+This means you can use `if` without `else`, `cond`, `case`, and other Elixir
+constructs naturally - any non-computation value becomes `Comp.pure(value)`.
+
+### The else Clause
+
+The `else` clause handles pattern match failures in `<-` bindings, similar to
+Elixir's `with` expression:
+
+```elixir
+comp do
+  {:ok, user} <- fetch_user(id)
+  {:ok, profile} <- fetch_profile(user.id)
+  {user, profile}
+else
+  {:error, :not_found} -> {:error, "User not found"}
+  {:error, :profile_missing} -> {:error, "Profile not found"}
+  other -> {:error, {:unexpected, other}}
+end
+|> Throw.with_handler()
+|> Comp.run!()
+```
+
+When a `<-` binding fails to match, the unmatched value is passed to the `else`
+clauses. Without an `else` clause, match failures throw a `%MatchFailed{}` error.
+
+**Note:** The `else` clause uses the Throw effect internally, so you need a
+Throw handler installed.
+
+### The catch Clause
+
+The `catch` clause installs scoped effect interceptors using tagged patterns
+`{Module, pattern}`. This provides local handling of effects like Throw and Yield:
+
+**Catching throws:**
+
+```elixir
+comp do
+  result <- risky_operation()
+  process(result)
+catch
+  {Throw, :timeout} -> {:error, :timed_out}
+  {Throw, {:validation, reason}} -> {:error, {:invalid, reason}}
+  {Throw, err} -> Throw.throw({:wrapped, err})   # Re-throw with context
+end
+```
+
+**Intercepting yields:**
+
+```elixir
+comp do
+  config <- Yield.yield(:need_config)
+  process(config)
+catch
+  {Yield, :need_config} -> return(%{default: true})
+  {Yield, other} -> Yield.yield(other)           # Re-yield unhandled
+end
+```
+
+**Combining multiple effects:**
+
+```elixir
+comp do
+  config <- Yield.yield(:get_config)
+  result <- might_fail(config)
+  result
+catch
+  {Yield, :get_config} -> return(load_default_config())
+  {Throw, :recoverable} -> return(:fallback)
+  {Throw, err} -> Throw.throw(err)
+end
+```
+
+The `catch` clause desugars to calls to `Module.intercept/2`:
+- `{Throw, pattern}` → `Throw.catch_error/2`
+- `{Yield, pattern}` → `Yield.respond/2`
+
+**Composition order:** When both Yield and Throw patterns are present, Yield
+interceptors wrap first (innermost), so throws from Yield handlers can be caught
+by Throw patterns.
+
+**Default re-dispatch:** Patterns without a catch-all automatically re-dispatch
+unhandled values (re-throw for Throw, re-yield for Yield).
+
+### Combining else and catch
+
+Both clauses can be used together. The `else` must come before `catch`:
+
+```elixir
+comp do
+  {:ok, x} <- might_fail_or_mismatch()
+  x * 2
+else
+  {:error, reason} -> {:match_failed, reason}
+catch
+  {Throw, err} -> {:caught_throw, err}
+end
+```
+
+The semantic ordering is `catch(else(body))`:
+- `else` handles pattern match failures from `<-` bindings
+- `catch` wraps the else-handled computation, catching throws from both
+
+### defcomp
+
+For defining named effectful functions, use `defcomp`:
+
+```elixir
+defmodule MyDomain do
+  use Skuld.Syntax
+
+  defcomp fetch_user_data(user_id) do
+    user <- Query.request(Users, :find, %{id: user_id})
+    profile <- Query.request(Profiles, :find, %{user_id: user_id})
+    {user, profile}
+  end
+end
+```
+
+This is equivalent to `def fetch_user_data(user_id), do: comp do ... end`.
 
 ## Effects
 
