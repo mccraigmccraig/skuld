@@ -518,7 +518,7 @@ end
 
 ** The ISentinel protocol
 
-=ISentinel= (I for "introspectable") is a protocol that determines how
+=ISentinel= (I for "interface") is a protocol that determines how
 results are finalized:
 
 #+begin_src elixir
@@ -947,10 +947,10 @@ Each effect invocation involves:
 
 ** Evidence-passing vs Freer monads
 
-| Approach | Effect dispatch | Continuation | Memory |
-|----------|-----------------|--------------|--------|
-| Freer monad | Build data, interpret later | Explicit queue | High - allocates per effect |
-| Evidence-passing | Direct function call | Closures (CPS) | Lower - no intermediate structs |
+| Approach         | Effect dispatch             | Continuation   | Memory                          |
+|------------------+-----------------------------+----------------+---------------------------------|
+| Freer monad      | Build data, interpret later | Explicit queue | High - allocates per effect     |
+| Evidence-passing | Direct function call        | Closures (CPS) | Lower - no intermediate structs |
 
 Skuld is ~4x faster than Freyja for pure effect-heavy computations.
 
@@ -966,13 +966,13 @@ batch effect overhead.
 
 ** Benchmark summary
 
-| Approach | 1000 ops | Per-op |
-|----------|----------|--------|
-| Pure recursion | 28 µs | 0.028 µs |
-| Simple state monad | 55 µs | 0.055 µs |
-| Skuld (nested bind) | 255 µs | 0.255 µs |
-| Skuld (FxFasterList) | 97 µs | 0.097 µs |
-| Freyja | ~1000 µs | ~1 µs |
+| Approach             | 1000 ops | Per-op   |
+|----------------------+----------+----------|
+| Pure recursion       | 28 µs    | 0.028 µs |
+| Simple state monad   | 55 µs    | 0.055 µs |
+| Skuld (nested bind)  | 255 µs   | 0.255 µs |
+| Skuld (FxFasterList) | 97 µs    | 0.097 µs |
+| Freyja               | ~1000 µs | ~1 µs    |
 
 Skuld is 4-5x slower than hand-written state threading, but 4x faster than
 Freyja. For real workloads with I/O, this overhead is negligible.
