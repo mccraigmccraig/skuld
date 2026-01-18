@@ -206,10 +206,8 @@ comp do
 end
 ```
 
-Both forms support pattern matching, and both can have failures handled by the
-`else` clause. The difference is in what value the `else` clause receives:
-- `<-` failures pass the **unmatched value** to `else`
-- `=` failures pass a `%MatchError{}` struct to `else`
+Both forms support pattern matching. Match failures from either form can be
+handled by the `else` clause, which receives the unmatched value.
 
 ### Auto-Lifting
 
