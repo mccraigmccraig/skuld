@@ -120,4 +120,15 @@ defmodule Skuld.Effects.Command do
       Comp.call(command_computation, env, k)
     end)
   end
+
+  @doc """
+  Install Command handler via catch clause syntax.
+
+  Config is the handler function:
+
+      catch
+        Command -> &MyHandler.handle/1
+  """
+  def __handle__(comp, handler_fn) when is_function(handler_fn, 1),
+    do: with_handler(comp, handler_fn)
 end

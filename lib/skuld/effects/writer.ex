@@ -269,6 +269,21 @@ defmodule Skuld.Effects.Writer do
   end
 
   @doc """
+  Install Writer handler via catch clause syntax.
+
+  Accepts `nil`, `initial`, or `{initial, opts}`:
+
+      catch
+        Writer -> nil                          # empty initial
+        Writer -> []                           # explicit empty initial
+        Writer -> {[], output: fn r, l -> {r, Enum.reverse(l)} end}
+  """
+  @impl Skuld.Comp.IHandler
+  def __handle__(comp, nil), do: with_handler(comp)
+  def __handle__(comp, {initial, opts}) when is_list(opts), do: with_handler(comp, initial, opts)
+  def __handle__(comp, initial), do: with_handler(comp, initial)
+
+  @doc """
   Get the accumulated log from the environment.
 
   ## Examples

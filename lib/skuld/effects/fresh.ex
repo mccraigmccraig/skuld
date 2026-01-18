@@ -131,6 +131,21 @@ defmodule Skuld.Effects.Fresh do
     Comp.with_handler(comp, @sig, &handle/3)
   end
 
+  @doc """
+  Install Fresh handler via catch clause syntax.
+
+  Config selects handler type:
+
+      catch
+        Fresh -> :uuid7                      # production handler
+        Fresh -> {:test, namespace: ns}      # test handler with opts
+        Fresh -> :test                       # test handler, default opts
+  """
+  @impl Skuld.Comp.IHandler
+  def __handle__(comp, :uuid7), do: with_uuid7_handler(comp)
+  def __handle__(comp, :test), do: with_test_handler(comp)
+  def __handle__(comp, {:test, opts}) when is_list(opts), do: with_test_handler(comp, opts)
+
   @impl Skuld.Comp.IHandler
   def handle(%FreshUUID{}, env, k) do
     uuid = Uniq.UUID.uuid7()

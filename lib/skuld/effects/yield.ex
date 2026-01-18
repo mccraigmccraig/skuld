@@ -266,6 +266,17 @@ defmodule Skuld.Effects.Yield do
     Comp.with_handler(comp, @sig, &__MODULE__.handle/3)
   end
 
+  @doc """
+  Install Yield handler via catch clause syntax.
+
+  Config is ignored (Yield handler takes no configuration):
+
+      catch
+        Yield -> nil
+  """
+  @impl Skuld.Comp.IHandler
+  def __handle__(comp, _config), do: with_handler(comp)
+
   #############################################################################
   ## IHandler Implementation
   #############################################################################

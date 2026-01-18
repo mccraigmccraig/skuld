@@ -248,6 +248,21 @@ defmodule Skuld.Effects.Query do
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 
+  @doc """
+  Install Query handler via catch clause syntax.
+
+  Config is the registry map, or `{registry, opts}`:
+
+      catch
+        Query -> %{MyQueries => :direct}
+        Query -> {%{MyQueries => :direct}, output: fn r, s -> {r, s} end}
+  """
+  @impl Skuld.Comp.IHandler
+  def __handle__(comp, {registry, opts}) when is_map(registry) and is_list(opts),
+    do: with_handler(comp, registry, opts)
+
+  def __handle__(comp, registry) when is_map(registry), do: with_handler(comp, registry)
+
   #############################################################################
   ## Handler Installation - Test
   #############################################################################

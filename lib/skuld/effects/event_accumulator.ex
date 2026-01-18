@@ -114,4 +114,16 @@ defmodule Skuld.Effects.EventAccumulator do
 
     Writer.with_handler(comp, [], tag: __MODULE__, output: internal_output)
   end
+
+  @doc """
+  Install EventAccumulator handler via catch clause syntax.
+
+  Config is opts (or nil for defaults):
+
+      catch
+        EventAccumulator -> nil
+        EventAccumulator -> [output: fn r, events -> {r, events} end]
+  """
+  def __handle__(comp, nil), do: with_handler(comp)
+  def __handle__(comp, opts) when is_list(opts), do: with_handler(comp, opts)
 end

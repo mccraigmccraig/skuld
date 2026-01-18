@@ -199,6 +199,19 @@ defmodule Skuld.Effects.State do
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 
+  @doc """
+  Install State handler via catch clause syntax.
+
+  Accepts either `initial` or `{initial, opts}`:
+
+      catch
+        State -> 0                          # initial value
+        State -> {0, output: fn r, s -> {r, s} end}  # with opts
+  """
+  @impl Skuld.Comp.IHandler
+  def __handle__(comp, {initial, opts}) when is_list(opts), do: with_handler(comp, initial, opts)
+  def __handle__(comp, initial), do: with_handler(comp, initial)
+
   @doc "Extract the state for the given tag from an env"
   @spec get_state(Types.env(), atom()) :: term()
   def get_state(env, tag \\ @sig) do

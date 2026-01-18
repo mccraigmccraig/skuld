@@ -319,6 +319,60 @@ handler in group 2 would be caught by group 3, not group 1.
 **Default re-dispatch:** Patterns without a catch-all automatically re-dispatch
 unhandled values (re-throw for Throw, re-yield for Yield).
 
+### Handler Installation via Catch
+
+In addition to interception with `{Module, pattern}`, the `catch` clause supports
+**handler installation** using bare module patterns. This provides an alternative
+to piping with `|> Module.with_handler(...)`:
+
+```elixir
+comp do
+  x <- State.get()
+  config <- Reader.ask()
+  {x, config}
+catch
+  State -> 0                    # Install State handler with initial value 0
+  Reader -> %{timeout: 5000}    # Install Reader handler with config value
+end
+|> Comp.run!()
+#=> {0, %{timeout: 5000}}
+```
+
+**Syntax distinction:**
+- `{Module, pattern} -> body` = **interception** (calls `Module.intercept/2`)
+- `Module -> config` = **installation** (calls `Module.__handle__/2`)
+
+This syntax reduces cognitive dissonance by keeping handler installation "inside"
+the computation block. It's especially useful when the handler config is computed
+or when you want handlers closer to their usage:
+
+```elixir
+comp do
+  id <- Fresh.fresh_uuid()
+  _ <- Writer.tell("Generated: #{id}")
+  id
+catch
+  Fresh -> :uuid7              # Use UUID7 handler
+  Writer -> []                 # Start with empty log
+end
+```
+
+**Mixed interception and installation** work together:
+
+```elixir
+comp do
+  result <- risky_operation()
+  result
+catch
+  {Throw, :recoverable} -> {:ok, :fallback}  # Interception
+  State -> 0                                   # Installation
+  Throw -> nil                                 # Installation (no config needed)
+end
+```
+
+**Supported effects:** All built-in effects implement `__handle__/2`. See each
+effect's module documentation for the config format it accepts.
+
 ### Combining else and catch
 
 Both clauses can be used together. The `else` must come before `catch`:

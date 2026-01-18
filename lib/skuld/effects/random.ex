@@ -188,6 +188,22 @@ defmodule Skuld.Effects.Random do
     Comp.with_handler(comp, @sig, &handle/3)
   end
 
+  @doc """
+  Install Random handler via catch clause syntax.
+
+  Config selects handler type:
+
+      catch
+        Random -> nil                            # production handler
+        Random -> {:seed, seed: {1, 2, 3}}       # seeded handler
+        Random -> {:fixed, values: [0.5, 0.7]}   # fixed values handler
+  """
+  @impl Skuld.Comp.IHandler
+  def __handle__(comp, nil), do: with_handler(comp)
+  def __handle__(comp, :random), do: with_handler(comp)
+  def __handle__(comp, {:seed, opts}) when is_list(opts), do: with_seed_handler(comp, opts)
+  def __handle__(comp, {:fixed, opts}) when is_list(opts), do: with_fixed_handler(comp, opts)
+
   @impl Skuld.Comp.IHandler
   def handle(%RandomFloat{}, env, k) do
     k.(:rand.uniform(), env)

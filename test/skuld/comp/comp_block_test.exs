@@ -6,6 +6,8 @@ defmodule Skuld.Comp.CompBlockTest do
   alias Skuld.Comp
   alias Skuld.Effects.State
   alias Skuld.Effects.Reader
+  alias Skuld.Effects.Writer
+  alias Skuld.Effects.Fresh
   alias Skuld.Effects.Throw
   alias Skuld.Effects.Yield
 
@@ -1307,6 +1309,171 @@ defmodule Skuld.Comp.CompBlockTest do
         |> Throw.with_handler()
 
       assert Comp.run!(computation) == :outer_caught_b
+    end
+  end
+
+  describe "handler installation via catch clause" do
+    test "install State handler with bare module syntax" do
+      computation =
+        comp do
+          x <- State.get()
+          _ <- State.put(x + 10)
+          y <- State.get()
+          {x, y}
+        catch
+          State -> 5
+        end
+
+      assert Comp.run!(computation) == {5, 15}
+    end
+
+    test "install multiple handlers" do
+      computation =
+        comp do
+          x <- State.get()
+          name <- Reader.ask()
+          {x, name}
+        catch
+          State -> 42
+          Reader -> "hello"
+        end
+
+      assert Comp.run!(computation) == {42, "hello"}
+    end
+
+    test "install Throw and Yield handlers" do
+      computation =
+        comp do
+          _ <- Throw.throw(:error)
+          :never_reached
+        catch
+          {Throw, :error} -> return(:caught)
+          Throw -> nil
+          Yield -> nil
+        end
+
+      assert Comp.run!(computation) == :caught
+    end
+
+    test "mix interception and installation" do
+      computation =
+        comp do
+          x <- State.get()
+          _ <- if x < 0, do: Throw.throw(:negative)
+          x * 2
+        catch
+          {Throw, :negative} -> return(:was_negative)
+          State -> -5
+          Throw -> nil
+        end
+
+      assert Comp.run!(computation) == :was_negative
+    end
+
+    test "installation ordering - first is innermost" do
+      # State installed first (inner), Reader second (outer)
+      computation =
+        comp do
+          x <- State.get()
+          name <- Reader.ask()
+          {x, name}
+        catch
+          State -> 10
+          Reader -> "world"
+        end
+
+      assert Comp.run!(computation) == {10, "world"}
+    end
+
+    test "install State with options via tuple config" do
+      computation =
+        comp do
+          _ <- State.put(100)
+          :done
+        catch
+          State -> {0, output: fn result, state -> {result, {:final, state}} end}
+        end
+
+      assert Comp.run!(computation) == {:done, {:final, 100}}
+    end
+
+    test "install Writer handler" do
+      computation =
+        comp do
+          _ <- Writer.tell("hello")
+          _ <- Writer.tell("world")
+          :done
+        catch
+          Writer -> {[], output: fn result, log -> {result, Enum.reverse(log)} end}
+        end
+
+      assert Comp.run!(computation) == {:done, ["hello", "world"]}
+    end
+
+    test "install Fresh handler with :uuid7" do
+      computation =
+        comp do
+          uuid <- Fresh.fresh_uuid()
+          String.length(uuid) > 0
+        catch
+          Fresh -> :uuid7
+        end
+
+      assert Comp.run!(computation) == true
+    end
+
+    test "consecutive same-module installations are chained" do
+      # Two State installations - they get chained
+      # The outer handler wraps the inner, but since both install
+      # handlers for the same signature, the INNER handler (first)
+      # is what actually handles State operations.
+      computation =
+        comp do
+          x <- State.get()
+          x
+        catch
+          State -> 1
+          State -> 2
+        end
+
+      # Inner handler (1) handles the State.get(), outer (2) just wraps
+      assert Comp.run!(computation) == 1
+    end
+
+    test "interleaved installation and interception" do
+      # State is installed first (inner), then Throw interception wraps it,
+      # then Throw handler is installed (outer).
+      # The interception handler can return a value but doesn't have
+      # access to the inner State handler.
+      computation =
+        comp do
+          x <- State.get()
+          _ <- if x < 0, do: Throw.throw(:error)
+          x * 2
+        catch
+          State -> -1
+          {Throw, :error} -> return(:caught_error)
+          Throw -> nil
+        end
+
+      assert Comp.run!(computation) == :caught_error
+    end
+
+    test "installation creates scope for body" do
+      # Verify that installed handlers are available in the body
+      computation =
+        comp do
+          x <- State.get()
+          name <- Reader.ask()
+          _ <- State.put(x + 1)
+          y <- State.get()
+          {name, x, y}
+        catch
+          State -> 10
+          Reader -> "test"
+        end
+
+      assert Comp.run!(computation) == {"test", 10, 11}
     end
   end
 end

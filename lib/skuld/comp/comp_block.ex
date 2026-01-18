@@ -95,6 +95,38 @@ defmodule Skuld.Comp.CompBlock do
         {Throw, err} -> Throw.throw({:wrapped, err})
       end
 
+  ### Handler Installation (Bare Module Patterns)
+
+  In addition to interception with `{Module, pattern}`, the `catch` clause supports
+  **handler installation** using bare module patterns:
+
+      comp do
+        x <- State.get()
+        config <- Reader.ask()
+        {x, config}
+      catch
+        State -> 0                    # Install State handler with initial value 0
+        Reader -> %{timeout: 5000}    # Install Reader handler with config value
+      end
+
+  Syntax distinction:
+  - `{Module, pattern} -> body` = **interception** (calls `Module.intercept/2`)
+  - `Module -> config` = **installation** (calls `Module.__handle__/2`)
+
+  Mixed interception and installation work together:
+
+      comp do
+        result <- risky_operation()
+        result
+      catch
+        {Throw, :recoverable} -> {:ok, :fallback}  # Interception
+        State -> 0                                   # Installation
+        Throw -> nil                                 # Installation (no config needed)
+      end
+
+  Supported effects: All built-in effects implement `__handle__/2`. See each
+  effect's module documentation for the config format it accepts.
+
   ### Composition Order
 
   Consecutive same-module clauses are grouped into one handler. Each time the
@@ -390,12 +422,25 @@ defmodule Skuld.Comp.CompBlock do
       compose_catch_interceptors(body, chunks)
     end
 
-    # Parse a tagged catch clause: {Module, pattern} -> body
-    # Returns {module_ast, pattern, meta, body} or raises on invalid syntax
+    # Parse a catch clause - either:
+    # - {Module, pattern} -> body  (interception)
+    # - Module -> config           (handler installation)
+    #
+    # Returns {:intercept, module_ast, pattern, meta, body}
+    #      or {:install, module_ast, config, meta}
     defp parse_tagged_catch_clause(caller, {:->, meta, [[pattern], body]}) do
       case pattern do
+        # Tuple pattern: {Module, inner_pattern} -> body  (interception)
         {module_ast, inner_pattern} when not is_nil(module_ast) ->
-          {module_ast, inner_pattern, meta, body}
+          {:intercept, module_ast, inner_pattern, meta, body}
+
+        # Bare module: Module -> config  (installation)
+        {:__aliases__, _, _} = module_ast ->
+          {:install, module_ast, body, meta}
+
+        # Bare atom module (e.g., Elixir.Foo)
+        module_ast when is_atom(module_ast) ->
+          {:install, module_ast, body, meta}
 
         _ ->
           line = Keyword.get(meta, :line) || (caller && caller.line) || 0
@@ -405,24 +450,36 @@ defmodule Skuld.Comp.CompBlock do
             file: file,
             line: line,
             description:
-              "invalid catch clause pattern: expected {Module, pattern}, got: #{Macro.to_string(pattern)}"
+              "invalid catch clause pattern: expected {Module, pattern} or Module, got: #{Macro.to_string(pattern)}"
       end
     end
 
-    # Chunk consecutive catch clauses by their effect module
+    # Chunk consecutive catch clauses by their effect module AND type
     # We normalize the module AST for comparison since different occurrences
     # have different metadata (line numbers, counters)
-    # Returns a list of {original_module_ast, [clauses]} tuples in order
+    # Returns a list of {:intercept | :install, original_module_ast, clauses} tuples
     defp chunk_consecutive_catch_clauses(caller, clauses) do
       clauses
       |> Enum.map(&parse_tagged_catch_clause(caller, &1))
-      |> Enum.chunk_by(fn {module_ast, _pattern, _meta, _body} ->
-        normalize_module_ast(module_ast)
+      |> Enum.chunk_by(fn parsed ->
+        # Group by (type, normalized_module)
+        case parsed do
+          {:intercept, module_ast, _pattern, _meta, _body} ->
+            {:intercept, normalize_module_ast(module_ast)}
+
+          {:install, module_ast, _config, _meta} ->
+            {:install, normalize_module_ast(module_ast)}
+        end
       end)
       |> Enum.map(fn chunk ->
-        # Get the original module AST from the first clause for code generation
-        {original_module_ast, _, _, _} = hd(chunk)
-        {original_module_ast, chunk}
+        # Get the type and original module AST from the first clause
+        case hd(chunk) do
+          {:intercept, original_module_ast, _, _, _} ->
+            {:intercept, original_module_ast, chunk}
+
+          {:install, original_module_ast, _, _} ->
+            {:install, original_module_ast, chunk}
+        end
       end)
     end
 
@@ -430,14 +487,25 @@ defmodule Skuld.Comp.CompBlock do
     defp normalize_module_ast({:__aliases__, _meta, parts}), do: {:__aliases__, [], parts}
     defp normalize_module_ast(other), do: other
 
-    # Compose interceptors around the body in chunk order (first chunk innermost)
+    # Compose interceptors/installations around the body in chunk order (first chunk innermost)
     defp compose_catch_interceptors(body, chunks) do
-      Enum.reduce(chunks, body, fn {module_ast, module_clauses}, acc ->
-        handler_fn = build_module_handler_fn(module_ast, module_clauses)
+      Enum.reduce(chunks, body, fn
+        {:intercept, module_ast, module_clauses}, acc ->
+          handler_fn = build_intercept_handler_fn(module_ast, module_clauses)
 
-        quote do
-          unquote(module_ast).intercept(unquote(acc), unquote(handler_fn))
-        end
+          quote do
+            unquote(module_ast).intercept(unquote(acc), unquote(handler_fn))
+          end
+
+        {:install, module_ast, module_clauses}, acc ->
+          # For install, there should be exactly one clause with the config
+          # (consecutive same-module installs are grouped, but each is independent)
+          # We chain them: Module.__handle__(Module.__handle__(acc, config1), config2)
+          Enum.reduce(module_clauses, acc, fn {:install, _mod, config, _meta}, inner_acc ->
+            quote do
+              unquote(module_ast).__handle__(unquote(inner_acc), unquote(config))
+            end
+          end)
       end)
     end
 
@@ -447,11 +515,11 @@ defmodule Skuld.Comp.CompBlock do
     defp module_is_throw?(Skuld.Effects.Throw), do: true
     defp module_is_throw?(_), do: false
 
-    # Build handler function for a module's catch clauses
-    defp build_module_handler_fn(module_ast, module_clauses) do
+    # Build handler function for interception clauses
+    defp build_intercept_handler_fn(module_ast, module_clauses) do
       # Build case clauses from the module's patterns
       case_clauses =
-        Enum.map(module_clauses, fn {_module, pattern, meta, body} ->
+        Enum.map(module_clauses, fn {:intercept, _module, pattern, meta, body} ->
           rewritten_body = rewrite_block(nil, body, false)
           {:->, meta, [[pattern], rewritten_body]}
         end)
@@ -478,7 +546,7 @@ defmodule Skuld.Comp.CompBlock do
 
     # Check if any clause has a catch-all pattern (variable or _)
     defp has_catch_all_clause_for_patterns?(module_clauses) do
-      Enum.any?(module_clauses, fn {_module, pattern, _meta, _body} ->
+      Enum.any?(module_clauses, fn {:intercept, _module, pattern, _meta, _body} ->
         catch_all_pattern?(pattern)
       end)
     end

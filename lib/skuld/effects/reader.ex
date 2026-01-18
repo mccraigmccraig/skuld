@@ -165,6 +165,19 @@ defmodule Skuld.Effects.Reader do
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 
+  @doc """
+  Install Reader handler via catch clause syntax.
+
+  Accepts either `value` or `{value, opts}`:
+
+      catch
+        Reader -> %{config: true}
+        Reader -> {%{config: true}, tag: :my_reader}
+  """
+  @impl Skuld.Comp.IHandler
+  def __handle__(comp, {value, opts}) when is_list(opts), do: with_handler(comp, value, opts)
+  def __handle__(comp, value), do: with_handler(comp, value)
+
   @doc "Extract the context value for the given tag from an env"
   @spec get_context(Types.env(), atom()) :: term()
   def get_context(env, tag \\ @sig) do

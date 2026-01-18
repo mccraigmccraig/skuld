@@ -1,4 +1,6 @@
 defmodule Skuld.Effects.EffectLogger do
+  @behaviour Skuld.Comp.IHandler
+
   @moduledoc """
   Effect logging for replay, resume, and rerun capabilities.
 
@@ -282,6 +284,7 @@ defmodule Skuld.Effects.EffectLogger do
   - `MarkLoop` - Records loop iteration boundary, returns `:ok`
   """
   @spec handle(term(), Types.env(), Types.k()) :: {Types.result(), Types.env()}
+  @impl Skuld.Comp.IHandler
   def handle(%MarkLoop{}, env, k) do
     # The mark is recorded by the logging wrapper.
     # This handler just returns :ok to continue the computation.
@@ -580,6 +583,23 @@ defmodule Skuld.Effects.EffectLogger do
       {env_final, finally_k}
     end)
   end
+
+  @doc """
+  Install EffectLogger via catch clause syntax.
+
+  Config is opts, a Log for replay, or `{log, opts}`:
+
+      catch
+        EffectLogger -> nil                    # fresh logging
+        EffectLogger -> [effects: [State]]     # log specific effects
+        EffectLogger -> log                    # replay from log
+        EffectLogger -> {log, allow_divergence: true}  # replay with opts
+  """
+  @impl Skuld.Comp.IHandler
+  def __handle__(comp, nil), do: with_logging(comp)
+  def __handle__(comp, opts) when is_list(opts), do: with_logging(comp, opts)
+  def __handle__(comp, %Log{} = log), do: with_logging(comp, log)
+  def __handle__(comp, {%Log{} = log, opts}) when is_list(opts), do: with_logging(comp, log, opts)
 
   # Private helpers to reduce cyclomatic complexity
 

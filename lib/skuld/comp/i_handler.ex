@@ -39,6 +39,28 @@ defmodule Skuld.Comp.IHandler do
   The `handler_fn` receives the intercepted value and returns a computation.
   See `Skuld.Effects.Throw.catch_error/2` and `Skuld.Effects.Yield.respond/2`
   for examples.
+
+  ## Handler Installation via catch
+
+  Effects can support handler installation via bare module patterns in `catch`
+  clauses by implementing the `__handle__/2` callback:
+
+      comp do
+        x <- State.get()
+        x * 2
+      catch
+        State -> 0   # calls State.__handle__(comp, 0)
+      end
+
+  The callback interprets the config term and wraps the computation:
+
+      @impl Skuld.Comp.IHandler
+      def __handle__(comp, initial), do: with_handler(comp, initial)
+
+  Effects can accept different config shapes:
+
+      def __handle__(comp, {initial, opts}), do: with_handler(comp, initial, opts)
+      def __handle__(comp, initial), do: with_handler(comp, initial)
   """
 
   @doc """
@@ -70,5 +92,24 @@ defmodule Skuld.Comp.IHandler do
               handler_fn :: (term() -> Skuld.Comp.Types.computation())
             ) :: Skuld.Comp.Types.computation()
 
-  @optional_callbacks [intercept: 2]
+  @doc """
+  Install a handler for this effect, wrapping the computation.
+
+  This enables bare module patterns in `catch` clauses:
+
+      catch
+        State -> 0   # calls State.__handle__(comp, 0)
+
+  The `config` term is effect-specific. Effects interpret it flexibly:
+
+  - `State.__handle__(comp, initial)` or `State.__handle__(comp, {initial, opts})`
+  - `Throw.__handle__(comp, _)` - ignores config
+  - `Fresh.__handle__(comp, :uuid7)` or `Fresh.__handle__(comp, {:test, opts})`
+  """
+  @callback __handle__(
+              comp :: Skuld.Comp.Types.computation(),
+              config :: term()
+            ) :: Skuld.Comp.Types.computation()
+
+  @optional_callbacks [intercept: 2, __handle__: 2]
 end

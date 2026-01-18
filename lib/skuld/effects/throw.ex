@@ -175,6 +175,17 @@ defmodule Skuld.Effects.Throw do
     Comp.with_handler(comp, @sig, &__MODULE__.handle/3)
   end
 
+  @doc """
+  Install Throw handler via catch clause syntax.
+
+  Config is ignored (Throw handler takes no configuration):
+
+      catch
+        Throw -> nil
+  """
+  @impl Skuld.Comp.IHandler
+  def __handle__(comp, _config), do: with_handler(comp)
+
   #############################################################################
   ## IHandler Implementation
   #############################################################################

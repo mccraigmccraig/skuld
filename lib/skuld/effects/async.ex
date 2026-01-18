@@ -351,6 +351,20 @@ defmodule Skuld.Effects.Async do
     |> Comp.with_handler(@sig, &handle/3)
   end
 
+  @doc """
+  Install Async handler via catch clause syntax.
+
+  Config selects handler type:
+
+      catch
+        Async -> nil           # production handler (Task.Supervisor)
+        Async -> :sequential   # test handler (runs tasks sequentially)
+  """
+  @impl Skuld.Comp.IHandler
+  def __handle__(comp, nil), do: with_handler(comp)
+  def __handle__(comp, :async), do: with_handler(comp)
+  def __handle__(comp, :sequential), do: with_sequential_handler(comp)
+
   @impl Skuld.Comp.IHandler
   def handle(%Boundary{comp: inner_comp, on_unawaited: on_unawaited}, env, k) do
     # Generate unique boundary ID

@@ -244,6 +244,27 @@ defmodule Skuld.Effects.AtomicState do
     |> Comp.with_handler(sig(tag), make_agent_handler(tag))
   end
 
+  @doc """
+  Install AtomicState handler via catch clause syntax.
+
+  Config selects handler type:
+
+      catch
+        AtomicState -> {:agent, 0}                    # agent handler
+        AtomicState -> {:agent, {0, tag: :counter}}   # agent with opts
+        AtomicState -> {:state, 0}                    # state-backed handler
+        AtomicState -> {:state, {0, tag: :counter}}   # state-backed with opts
+  """
+  def __handle__(comp, {:agent, {initial, opts}}) when is_list(opts),
+    do: with_agent_handler(comp, initial, opts)
+
+  def __handle__(comp, {:agent, initial}), do: with_agent_handler(comp, initial)
+
+  def __handle__(comp, {:state, {initial, opts}}) when is_list(opts),
+    do: with_state_handler(comp, initial, opts)
+
+  def __handle__(comp, {:state, initial}), do: with_state_handler(comp, initial)
+
   defp make_agent_handler(tag) do
     fn op, env, k ->
       handle_agent(op, env, k, tag)
