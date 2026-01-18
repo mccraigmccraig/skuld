@@ -333,7 +333,7 @@ access by AsyncRunner callers.
 
 #### Throw
 
-Error handling with the `catch` clause:
+Error handling with the `catch` clause using tagged patterns `{Throw, pattern}`:
 
 ```elixir
 comp do
@@ -341,14 +341,14 @@ comp do
   _ <- if x < 0, do: Throw.throw({:error, "negative"})  # nil auto-lifted when false
   x * 2
 catch
-  err -> {:recovered, err}
+  {Throw, err} -> {:recovered, err}
 end
 |> Throw.with_handler()
 |> Comp.run!()
 #=> {:recovered, {:error, "negative"}}
 ```
 
-The `catch` clause desugars to `Throw.catch_error/2`:
+The `catch` clause with `{Throw, pattern}` desugars to `Throw.catch_error/2`:
 
 ```elixir
 # The above is equivalent to:
@@ -380,7 +380,7 @@ end
 comp do
   Risky.boom!()
 catch
-  %{kind: :error, payload: %RuntimeError{message: msg}} -> {:caught_raise, msg}
+  {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> {:caught_raise, msg}
 end
 |> Throw.with_handler()
 |> Comp.run!()
@@ -390,7 +390,7 @@ end
 comp do
   Risky.throw_ball!()
 catch
-  %{kind: :throw, payload: value} -> {:caught_throw, value}
+  {Throw, %{kind: :throw, payload: value}} -> {:caught_throw, value}
 end
 |> Throw.with_handler()
 |> Comp.run!()
@@ -438,7 +438,7 @@ comp do
 else
   {:error, reason} -> {:match_failed, reason}
 catch
-  err -> {:caught_throw, err}
+  {Throw, err} -> {:caught_throw, err}
 end
 |> Throw.with_handler()
 |> Comp.run!()
@@ -451,7 +451,7 @@ comp do
 else
   {:error, reason} -> {:match_failed, reason}
 catch
-  err -> {:caught_throw, err}
+  {Throw, err} -> {:caught_throw, err}
 end
 |> Throw.with_handler()
 |> Comp.run!()
@@ -612,6 +612,43 @@ Use cases for `Yield.respond`:
 - **Nested coroutine patterns** - Handle some yields locally while propagating others
 - **Internal request/response loops** - Build protocols within a computation
 - **Composing yield-based computations** - Layer handlers for different yield types
+
+#### Catch Clause with Yield
+
+The `catch` clause supports `{Yield, pattern}` for intercepting yields, providing a
+cleaner alternative to explicit `Yield.respond/2` calls:
+
+```elixir
+# Using catch to intercept yields
+comp do
+  x <- Yield.yield(:get_x)
+  y <- Yield.yield(:get_y)
+  x + y
+catch
+  {Yield, :get_x} -> return(10)
+  {Yield, :get_y} -> return(20)
+end
+|> Yield.with_handler()
+|> Comp.run!()
+#=> 30
+```
+
+You can combine Throw and Yield interception in the same catch clause:
+
+```elixir
+comp do
+  config <- Yield.yield(:need_config)
+  result <- risky_operation(config)
+  result
+catch
+  {Yield, :need_config} -> return(%{default: true})
+  {Throw, :timeout} -> return(:retry_later)
+  {Throw, err} -> Throw.throw({:wrapped, err})
+end
+```
+
+When both Yield and Throw patterns are present, Yield interceptors wrap first (innermost),
+so throws from Yield handlers can be caught by Throw patterns.
 
 ### Collection Iteration
 
@@ -836,7 +873,7 @@ comp do
     end
   )
 catch
-  err -> {:caught, err}
+  {Throw, err} -> {:caught, err}
 end
 |> Async.with_handler()
 |> Throw.with_handler()
