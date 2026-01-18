@@ -564,26 +564,100 @@ Simple: update the evidence map, then run the computation.
 
 ** Comp.scoped/2
 
-Installs a handler with setup and cleanup:
+Installs a handler with setup and cleanup. This is the key mechanism that makes
+Skuld's scoped handlers tractable - it ensures cleanup happens in reverse
+installation order regardless of whether the computation completes normally,
+throws, or suspends.
+
+*** The problem
+
+Control effects can bypass continuations:
+- =Throw= discards the continuation entirely
+- =Yield= captures and stores it for later
+
+If cleanup only happened in a wrapped continuation, these control effects would
+skip cleanup. We need cleanup to run *always*, in reverse installation order.
+
+*** The solution: dual cleanup paths
+
+=scoped= installs cleanup in TWO places:
+
+1. *Wrapped continuation* (=normal_k=): For normal completion
+2. *leave_scope chain*: For abnormal exits (Throw, Suspend)
 
 #+begin_src elixir
-def scoped(comp, setup_fn) do
-  fn env, k ->
-    # Setup returns modified env AND a cleanup function
-    {env_with_handler, finally_k} = setup_fn.(env)
+def scoped(comp, setup) do
+  fn env, outer_k ->
+    previous_leave_scope = Env.get_leave_scope(env)
+    {modified_env, finally_k} = setup.(env)
 
-    call(comp, env_with_handler, fn result, final_env ->
-      # Cleanup runs before outer continuation
-      {transformed_result, cleaned_env} = call_k(finally_k, result, final_env)
-      k.(transformed_result, cleaned_env)
-    end)
+    # Path 1: Normal exit - run finally_k then continue to outer_k
+    normal_k = fn value, inner_env ->
+      {new_value, final_env} = call_k(finally_k, value, inner_env)
+      restored_env = Env.with_leave_scope(final_env, previous_leave_scope)
+
+      case new_value do
+        %Throw{} ->
+          # finally_k itself threw - route through leave_scope
+          previous_leave_scope.(new_value, restored_env)
+        _ ->
+          outer_k.(new_value, restored_env)
+      end
+    end
+
+    # Path 2: Abnormal exit - run finally_k during leave_scope unwinding
+    my_leave_scope = fn result, inner_env ->
+      {new_result, final_env} = call_k(finally_k, result, inner_env)
+      previous_leave_scope.(new_result, Env.with_leave_scope(final_env, previous_leave_scope))
+    end
+
+    # Install my_leave_scope, run comp with normal_k
+    call(comp, Env.with_leave_scope(modified_env, my_leave_scope), normal_k)
   end
 end
 #+end_src
 
-The =setup_fn= returns both the modified environment AND a cleanup function
-(=finally_k=). The cleanup function runs after the computation completes,
-before the outer continuation.
+*** How it works
+
+*Normal completion* (comp calls its continuation):
+1. =comp= produces a value and calls =normal_k=
+2. =normal_k= runs =finally_k= for cleanup
+3. =normal_k= restores =previous_leave_scope=
+4. =normal_k= calls =outer_k= with the result
+
+*Throw* (comp discards continuation):
+1. =comp= returns =%Throw{}= without calling any continuation
+2. =Comp.run= sees the sentinel and calls =ISentinel.run=
+3. =ISentinel.run= invokes =env.leave_scope= (which is =my_leave_scope=)
+4. =my_leave_scope= runs =finally_k= for cleanup
+5. =my_leave_scope= chains to =previous_leave_scope=
+
+*Suspend* (comp captures continuation for later):
+1. =comp= returns =%Suspend{}= with =normal_k= captured inside
+2. =Comp.run= sees the sentinel, applies =transform_suspend=, returns
+3. Later, caller invokes =resume.(input)=
+4. Resume calls the captured =normal_k=
+5. =normal_k= runs =finally_k= for cleanup (when resumed)
+
+*** Reverse order guarantee
+
+Because each =scoped= call:
+- Saves the current =leave_scope= as =previous_leave_scope=
+- Installs its own =my_leave_scope= that chains to =previous_leave_scope=
+
+Cleanup happens in reverse installation order:
+
+#+begin_src elixir
+comp
+|> A.with_handler()  # Installs leave_scope_A -> identity
+|> B.with_handler()  # Installs leave_scope_B -> leave_scope_A
+|> C.with_handler()  # Installs leave_scope_C -> leave_scope_B
+#+end_src
+
+On exit (normal or abnormal): =finally_C= → =finally_B= → =finally_A=
+
+This matches the intuition from try/finally blocks - inner resources clean up
+before outer ones.
 
 ** with_scoped_state/4
 
