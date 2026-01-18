@@ -314,7 +314,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ <- Throw.throw(:my_error)
           return(:never_reached)
         catch
-          :my_error -> return(:caught)
+          {Throw, :my_error} -> return(:caught)
         end
         |> Throw.with_handler()
 
@@ -326,7 +326,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           return(42)
         catch
-          _ -> return(:caught)
+          {Throw, _} -> return(:caught)
         end
         |> Throw.with_handler()
 
@@ -339,8 +339,8 @@ defmodule Skuld.Comp.CompBlockTest do
           _ <- Throw.throw({:error, :not_found})
           return(:never_reached)
         catch
-          {:error, :not_found} -> return(:not_found_handled)
-          {:error, reason} -> return({:other_error, reason})
+          {Throw, {:error, :not_found}} -> return(:not_found_handled)
+          {Throw, {:error, reason}} -> return({:other_error, reason})
         end
         |> Throw.with_handler()
 
@@ -353,7 +353,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ <- Throw.throw(:unhandled)
           return(:never_reached)
         catch
-          :specific_error -> return(:handled)
+          {Throw, :specific_error} -> return(:handled)
         end
         |> Throw.with_handler()
 
@@ -367,7 +367,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ <- Throw.throw(:any_error)
           return(:never_reached)
         catch
-          err -> return({:caught, err})
+          {Throw, err} -> return({:caught, err})
         end
         |> Throw.with_handler()
 
@@ -381,7 +381,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ <- Throw.throw(:error)
           return(:never_reached)
         catch
-          :error ->
+          {Throw, :error} ->
             x <- State.get()
             return({:recovered, x})
         end
@@ -397,7 +397,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ <- Throw.throw(:error)
           return(:never_reached)
         catch
-          :error ->
+          {Throw, :error} ->
             ctx <- Reader.ask()
             return({:recovered, ctx.default})
         end
@@ -413,7 +413,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ <- Throw.throw(:error)
           return(:never_reached)
         catch
-          :error -> return({:ok, :recovered})
+          {Throw, :error} -> return({:ok, :recovered})
         end
         |> Throw.with_handler()
 
@@ -426,7 +426,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ <- Throw.throw(:inner_error)
           return(:never)
         catch
-          :inner_error -> return(:inner_caught)
+          {Throw, :inner_error} -> return(:inner_caught)
         end
 
       outer =
@@ -434,7 +434,7 @@ defmodule Skuld.Comp.CompBlockTest do
           result <- inner
           return({:outer_got, result})
         catch
-          _ -> return(:outer_caught)
+          {Throw, _} -> return(:outer_caught)
         end
         |> Throw.with_handler()
 
@@ -447,7 +447,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ <- Throw.throw(:uncaught_inner)
           return(:never)
         catch
-          :different_error -> return(:inner_caught)
+          {Throw, :different_error} -> return(:inner_caught)
         end
 
       outer =
@@ -455,7 +455,7 @@ defmodule Skuld.Comp.CompBlockTest do
           result <- inner
           return({:outer_got, result})
         catch
-          :uncaught_inner -> return(:outer_caught_inner_error)
+          {Throw, :uncaught_inner} -> return(:outer_caught_inner_error)
         end
         |> Throw.with_handler()
 
@@ -468,14 +468,14 @@ defmodule Skuld.Comp.CompBlockTest do
       _ <- if b == 0, do: Throw.throw(:divide_by_zero), else: Comp.pure(:ok)
       return(div(a, b))
     catch
-      :divide_by_zero -> return(:infinity)
+      {Throw, :divide_by_zero} -> return(:infinity)
     end
 
     defcomp fetch_with_default(key, default) do
       _ <- Throw.throw({:not_found, key})
       return(:never)
     catch
-      {:not_found, _} -> return(default)
+      {Throw, {:not_found, _}} -> return(default)
     end
 
     test "defcomp with catch handles error" do
@@ -497,7 +497,7 @@ defmodule Skuld.Comp.CompBlockTest do
       _ <- Throw.throw(:private_error)
       return(:never)
     catch
-      :private_error -> return(:privately_handled)
+      {Throw, :private_error} -> return(:privately_handled)
     end
 
     defcomp uses_private_risky do
@@ -715,7 +715,7 @@ defmodule Skuld.Comp.CompBlockTest do
             _ <- Throw.throw(:else_threw)
             return(:never)
         catch
-          :else_threw -> return(:catch_got_else_throw)
+          {Throw, :else_threw} -> return(:catch_got_else_throw)
         end
         |> Throw.with_handler()
 
@@ -731,7 +731,7 @@ defmodule Skuld.Comp.CompBlockTest do
         else
           {:error, _} -> return(:else_handled)
         catch
-          :body_threw -> return(:catch_got_body_throw)
+          {Throw, :body_threw} -> return(:catch_got_body_throw)
         end
         |> Throw.with_handler()
 
@@ -746,7 +746,7 @@ defmodule Skuld.Comp.CompBlockTest do
         else
           {:error, :no_match} -> return(:else_handled_match)
         catch
-          :some_error -> return(:catch_handled_throw)
+          {Throw, :some_error} -> return(:catch_handled_throw)
         end
         |> Throw.with_handler()
 
@@ -762,7 +762,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           return(:ok)
         catch
-          _ -> return(:caught)
+          {Throw, _} -> return(:caught)
         else
           _ -> return(:else)
         end
@@ -799,7 +799,7 @@ defmodule Skuld.Comp.CompBlockTest do
     else
       {:error, reason} -> return({:match_failed, reason})
     catch
-      :negative -> return(:was_negative)
+      {Throw, :negative} -> return(:was_negative)
     end
 
     test "defcomp with else and catch - match failure" do
@@ -847,7 +847,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           Risky.boom!()
         catch
-          %{kind: :error, payload: %RuntimeError{message: msg}} -> return({:caught, msg})
+          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> return({:caught, msg})
         end
         |> Throw.with_handler()
 
@@ -873,7 +873,7 @@ defmodule Skuld.Comp.CompBlockTest do
           x <- Risky.boom!()
           return(x)
         catch
-          %{kind: :error, payload: %RuntimeError{message: msg}} -> return({:caught, msg})
+          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> return({:caught, msg})
         end
         |> Throw.with_handler()
 
@@ -902,7 +902,7 @@ defmodule Skuld.Comp.CompBlockTest do
           x <- State.get()
           return(x)
         catch
-          %{kind: :error, payload: %RuntimeError{message: msg}} -> return({:caught, msg})
+          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> return({:caught, msg})
         end
         |> State.with_handler(42)
         |> Throw.with_handler()
@@ -932,7 +932,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ = x
           Risky.boom!()
         catch
-          %{kind: :error, payload: %RuntimeError{message: msg}} -> return({:caught, msg})
+          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> return({:caught, msg})
         end
         |> State.with_handler(42)
         |> Throw.with_handler()
@@ -957,7 +957,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           Risky.throw_it!()
         catch
-          %{kind: :throw, payload: value} -> return({:caught_throw, value})
+          {Throw, %{kind: :throw, payload: value}} -> return({:caught_throw, value})
         end
         |> Throw.with_handler()
 
@@ -981,7 +981,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           Risky.exit_it!()
         catch
-          %{kind: :exit, payload: reason} -> return({:caught_exit, reason})
+          {Throw, %{kind: :exit, payload: reason}} -> return({:caught_exit, reason})
         end
         |> Throw.with_handler()
 
@@ -997,7 +997,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ = y
           Risky.boom!()
         catch
-          %{kind: :error, payload: %RuntimeError{message: msg}} ->
+          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} ->
             final <- State.get()
             return({:caught, msg, final})
         end

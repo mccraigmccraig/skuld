@@ -148,7 +148,7 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         catch
-          err -> {:caught, err}
+          {Throw, err} -> {:caught, err}
         end
         |> Async.with_handler()
         |> Throw.with_handler()
@@ -173,7 +173,7 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         catch
-          err -> {:caught, err}
+          {Throw, err} -> {:caught, err}
         end
         |> Async.with_handler()
         |> Throw.with_handler()
@@ -298,7 +298,7 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         catch
-          err -> {:caught, err}
+          {Throw, err} -> {:caught, err}
         end
         |> Async.with_handler()
         |> Throw.with_handler()
@@ -453,7 +453,7 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         catch
-          err -> {:caught, err}
+          {Throw, err} -> {:caught, err}
         end
         |> Async.with_handler()
         |> Throw.with_handler()
@@ -738,7 +738,7 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         catch
-          err -> {:caught, err}
+          {Throw, err} -> {:caught, err}
         end
         |> Async.with_sequential_handler()
         |> Throw.with_handler()
@@ -763,7 +763,7 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         catch
-          err -> {:caught, err}
+          {Throw, err} -> {:caught, err}
         end
         |> Async.with_sequential_handler()
         |> Throw.with_handler()
@@ -854,7 +854,7 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         catch
-          err -> {:caught, err}
+          {Throw, err} -> {:caught, err}
         end
         |> Async.with_sequential_handler()
         |> Throw.with_handler()
@@ -979,7 +979,7 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         catch
-          err -> {:caught, err}
+          {Throw, err} -> {:caught, err}
         end
         |> Async.with_sequential_handler()
         |> Throw.with_handler()

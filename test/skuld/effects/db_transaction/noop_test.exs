@@ -261,7 +261,7 @@ defmodule Skuld.Effects.DBTransaction.NoopTest do
                 _ <- Throw.throw(:caught_error)
                 return(:never_reached)
               catch
-                err -> return({:caught, err})
+                {Throw, err} -> return({:caught, err})
               end
             )
 

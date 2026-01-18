@@ -350,38 +350,49 @@ defmodule Skuld.Comp.CompBlock do
     end
 
     # Group catch clauses by their effect module
+    # We normalize the module AST for grouping since different occurrences
+    # have different metadata (line numbers, counters)
     defp group_catch_clauses_by_module(caller, clauses) do
       clauses
       |> Enum.map(&parse_tagged_catch_clause(caller, &1))
-      |> Enum.group_by(fn {module_ast, _pattern, _meta, _body} -> module_ast end)
+      |> Enum.group_by(fn {module_ast, _pattern, _meta, _body} ->
+        normalize_module_ast(module_ast)
+      end)
     end
+
+    # Normalize module AST for grouping - strip metadata
+    defp normalize_module_ast({:__aliases__, _meta, parts}), do: {:__aliases__, [], parts}
+    defp normalize_module_ast(other), do: other
 
     # Compose interceptors around the body
     # Order: non-Throw effects first (inner), Throw last (outer)
     defp compose_catch_interceptors(body, grouped) do
-      # Separate Throw from other effects
+      # Separate Throw from other effects (using normalized keys)
       {throw_clauses, other_effects} =
-        Enum.split_with(grouped, fn {module_ast, _clauses} ->
-          module_is_throw?(module_ast)
+        Enum.split_with(grouped, fn {normalized_module, _clauses} ->
+          module_is_throw?(normalized_module)
         end)
 
       # Compose: body |> other_effects... |> Throw (if present)
       result =
-        Enum.reduce(other_effects, body, fn {module_ast, module_clauses}, acc ->
-          handler_fn = build_module_handler_fn(module_ast, module_clauses)
+        Enum.reduce(other_effects, body, fn {_normalized, module_clauses}, acc ->
+          # Get the original module AST from the first clause for code generation
+          {original_module_ast, _, _, _} = hd(module_clauses)
+          handler_fn = build_module_handler_fn(original_module_ast, module_clauses)
 
           quote do
-            unquote(module_ast).intercept(unquote(acc), unquote(handler_fn))
+            unquote(original_module_ast).intercept(unquote(acc), unquote(handler_fn))
           end
         end)
 
       # Add Throw interceptor last (outermost)
       case throw_clauses do
-        [{module_ast, module_clauses}] ->
-          handler_fn = build_module_handler_fn(module_ast, module_clauses)
+        [{_normalized, module_clauses}] ->
+          {original_module_ast, _, _, _} = hd(module_clauses)
+          handler_fn = build_module_handler_fn(original_module_ast, module_clauses)
 
           quote do
-            unquote(module_ast).intercept(unquote(result), unquote(handler_fn))
+            unquote(original_module_ast).intercept(unquote(result), unquote(handler_fn))
           end
 
         [] ->

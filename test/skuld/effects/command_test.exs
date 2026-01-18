@@ -91,7 +91,7 @@ defmodule Skuld.Effects.CommandTest do
           _ <- Command.execute(%CreateItem{name: "bad", value: -1})
           :should_not_reach
         catch
-          {:invalid_value, v} -> {:caught_invalid, v}
+          {Throw, {:invalid_value, v}} -> {:caught_invalid, v}
         end
         |> Command.with_handler(handler)
         |> Throw.with_handler()

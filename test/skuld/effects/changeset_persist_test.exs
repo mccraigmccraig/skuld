@@ -138,7 +138,7 @@ defmodule Skuld.Effects.ChangesetPersistTest do
           user <- ChangesetPersist.insert(cs)
           return({:ok, user})
         catch
-          {:invalid_changeset, changeset} -> return({:error, changeset})
+          {Throw, {:invalid_changeset, changeset}} -> return({:error, changeset})
         end
         |> ChangesetPersist.Ecto.with_handler(MockRepo)
         |> Throw.with_handler()
