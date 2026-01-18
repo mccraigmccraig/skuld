@@ -428,6 +428,7 @@ defmodule Skuld.Comp.CompBlock do
     #
     # Returns {:intercept, module_ast, pattern, meta, body}
     #      or {:install, module_ast, config, meta}
+    # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
     defp parse_tagged_catch_clause(caller, {:->, meta, [[pattern], body]}) do
       case pattern do
         # Tuple pattern: {Module, inner_pattern} -> body  (interception)
