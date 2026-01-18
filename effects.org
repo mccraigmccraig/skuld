@@ -1,5 +1,28 @@
 #+title: Algebraic Effects in Elixir
 
+* On Purity
+
+There are pure functions, and side-effecting functions. Pure functions are
+generally regarded as superior to side-effecting functions, aside from the
+inconvenient fact that almost everything we want our programs to do is a
+side-effect.
+
+There are patterns like Functional Core, Imperative Shell which aim to
+increase the ratio of pure to side-effecting functions in our programs
+- the larger we make this ratio, the more we benefit from the helpful
+properties of pure functions - such as being able to use property-based
+testing
+
+My aim is to convince you that there is a third class of function -
+the effectful functions - and that these inhabit a space somewhere
+between the pure functions and the side-effecting functions, have
+very advantageous properties, and can replace most of the side-effecting
+functions in our domain code - and bring the advantages of pure functions to
+our domain code
+
+* Common pitfalls of side-effecting code
+-
+
 * The Problem
 
 You've probably experienced these pain points:
