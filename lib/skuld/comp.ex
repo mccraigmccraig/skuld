@@ -337,7 +337,10 @@ defmodule Skuld.Comp do
         end)
       end
   """
-  @spec scoped(Types.computation(), (Types.env() -> {Types.env(), Types.leave_scope()})) ::
+  @spec scoped(
+          Types.computation(),
+          (Types.env() -> {Types.env(), Types.leave_scope()})
+        ) ::
           Types.computation()
   def scoped(comp, setup) do
     fn env, outer_k ->
