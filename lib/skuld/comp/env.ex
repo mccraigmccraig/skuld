@@ -93,10 +93,10 @@ defmodule Skuld.Comp.Env do
     %{env | leave_scope: new_leave_scope}
   end
 
-  @doc "Get the current leave-scope handler"
-  @spec get_leave_scope(Skuld.Comp.Types.env()) :: Skuld.Comp.Types.leave_scope() | nil
+  @doc "Get the current leave-scope handler (returns identity if nil)"
+  @spec get_leave_scope(Skuld.Comp.Types.env()) :: Skuld.Comp.Types.leave_scope()
   def get_leave_scope(env) do
-    env.leave_scope
+    env.leave_scope || fn result, e -> {result, e} end
   end
 
   @doc "Install a new transform-suspend handler"

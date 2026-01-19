@@ -81,7 +81,7 @@ defmodule Skuld.Comp.ConvertThrow do
 
   def handle_exception(kind, payload, stacktrace, env) do
     error = %{kind: kind, payload: payload, stacktrace: stacktrace}
-    leave_scope = Skuld.Comp.Env.get_leave_scope(env) || fn r, e -> {r, e} end
+    leave_scope = Skuld.Comp.Env.get_leave_scope(env)
     leave_scope.(%Skuld.Comp.Throw{error: error}, env)
   end
 end
