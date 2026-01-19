@@ -571,12 +571,12 @@ or throws. (Suspend defers cleanup until the computation resumes and completes.)
 
 *** The problem
 
-Control effects can bypass continuations:
-- =Throw= discards the continuation entirely
-- =Yield= captures and stores it for later
+=Throw= discards the continuation entirely - it never gets called. If cleanup
+only happened in a wrapped continuation, Throw would skip cleanup entirely.
 
-If cleanup only happened in a wrapped continuation, these control effects would
-skip cleanup. We need cleanup to run *always*, in reverse installation order.
+(=Yield= is different: it captures the continuation for later. The wrapped
+continuation WILL be called when resumed, so cleanup happens then. Yield
+doesn't skip cleanup - it defers it.)
 
 *** The solution: dual cleanup paths
 
