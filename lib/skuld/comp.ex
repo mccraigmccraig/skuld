@@ -108,6 +108,9 @@ defmodule Skuld.Comp do
   #   x + 1  # final expression auto-lifted (no return needed)
   def call(value, env, k) do
     k.(value, env)
+  catch
+    kind, payload ->
+      ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, env)
   end
 
   @doc """
