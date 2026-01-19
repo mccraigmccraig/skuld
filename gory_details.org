@@ -566,8 +566,8 @@ Simple: update the evidence map, then run the computation.
 
 Installs a handler with setup and cleanup. This is the key mechanism that makes
 Skuld's scoped handlers tractable - it ensures cleanup happens in reverse
-installation order regardless of whether the computation completes normally,
-throws, or suspends.
+installation order regardless of whether the computation completes normally
+or throws. (Suspend defers cleanup until the computation resumes and completes.)
 
 *** The problem
 
@@ -582,8 +582,8 @@ skip cleanup. We need cleanup to run *always*, in reverse installation order.
 
 =scoped= installs cleanup in TWO places:
 
-1. *Wrapped continuation* (=normal_k=): For normal completion
-2. *leave_scope chain*: For abnormal exits (Throw, Suspend)
+1. *Wrapped continuation* (=normal_k=): For normal completion (and resumed Suspends)
+2. *leave_scope chain*: For terminal abnormal exits (Throw)
 
 #+begin_src elixir
 def scoped(comp, setup) do
@@ -625,19 +625,26 @@ end
 3. =normal_k= restores =previous_leave_scope=
 4. =normal_k= calls =outer_k= with the result
 
-*Throw* (comp discards continuation):
+*Throw* (comp discards continuation - terminal):
 1. =comp= returns =%Throw{}= without calling any continuation
 2. =Comp.run= sees the sentinel and calls =ISentinel.run=
 3. =ISentinel.run= invokes =env.leave_scope= (which is =my_leave_scope=)
 4. =my_leave_scope= runs =finally_k= for cleanup
 5. =my_leave_scope= chains to =previous_leave_scope=
 
-*Suspend* (comp captures continuation for later):
+*Suspend* (comp captures continuation for later - non-terminal):
 1. =comp= returns =%Suspend{}= with =normal_k= captured inside
-2. =Comp.run= sees the sentinel, applies =transform_suspend=, returns
-3. Later, caller invokes =resume.(input)=
-4. Resume calls the captured =normal_k=
-5. =normal_k= runs =finally_k= for cleanup (when resumed)
+2. =Comp.run= sees the sentinel and calls =ISentinel.run=
+3. =ISentinel.run= applies =transform_suspend= to decorate (expose state on Suspend.data)
+4. =leave_scope= is NOT called - computation is paused, not finished
+5. Later, caller invokes =resume.(input)=
+6. Resume calls the captured =normal_k=, computation continues
+7. When computation finally completes (normal or Throw), =finally_k= runs then
+
+The key distinction: =leave_scope= only runs for *terminal* cases - when the
+computation is truly finished and the continuation has been discarded. Suspend
+is non-terminal; the continuation is captured for later, so cleanup is deferred
+until the resumed computation completes.
 
 *** Reverse order guarantee
 
