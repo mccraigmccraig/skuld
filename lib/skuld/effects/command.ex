@@ -48,12 +48,17 @@ defmodule Skuld.Effects.Command do
   other approach.
   """
 
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IInstall
+
   import Skuld.Comp.DefOp
 
   alias Skuld.Comp
+  alias Skuld.Comp.Env
   alias Skuld.Comp.Types
 
   @sig __MODULE__
+  @state_key {__MODULE__, :handler_fn}
 
   #############################################################################
   ## Operation Structs
@@ -113,13 +118,52 @@ defmodule Skuld.Effects.Command do
   """
   @spec with_handler(Types.computation(), command_handler()) :: Types.computation()
   def with_handler(comp, handler_fn) when is_function(handler_fn, 1) do
-    Comp.with_handler(comp, @sig, fn %Execute{command: command}, env, k ->
-      # Call the handler function to get a computation
-      command_computation = handler_fn.(command)
-      # Run the computation with our continuation
-      Comp.call(command_computation, env, k)
+    comp
+    |> Comp.scoped(fn env ->
+      previous = Env.get_state(env, @state_key)
+      modified = Env.put_state(env, @state_key, handler_fn)
+
+      finally_k = fn v, e ->
+        restored_env =
+          case previous do
+            nil -> %{e | state: Map.delete(e.state, @state_key)}
+            val -> Env.put_state(e, @state_key, val)
+          end
+
+        {v, restored_env}
+      end
+
+      {modified, finally_k}
     end)
+    |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
+
+  #############################################################################
+  ## IHandle Implementation
+  #############################################################################
+
+  @impl Skuld.Comp.IHandle
+  def handle(%Execute{command: command}, env, k) do
+    handler_fn = get_handler_fn!(env)
+    # Call the handler function to get a computation
+    command_computation = handler_fn.(command)
+    # Run the computation with our continuation
+    Comp.call(command_computation, env, k)
+  end
+
+  defp get_handler_fn!(env) do
+    case Env.get_state(env, @state_key) do
+      nil ->
+        raise "Command handler not installed. Use Command.with_handler/2"
+
+      handler_fn ->
+        handler_fn
+    end
+  end
+
+  #############################################################################
+  ## IInstall Implementation
+  #############################################################################
 
   @doc """
   Install Command handler via catch clause syntax.
@@ -129,6 +173,7 @@ defmodule Skuld.Effects.Command do
       catch
         Command -> &MyHandler.handle/1
   """
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, handler_fn) when is_function(handler_fn, 1),
     do: with_handler(comp, handler_fn)
 end
