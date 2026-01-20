@@ -27,7 +27,7 @@ if Code.ensure_loaded?(Ecto) do
         |> Comp.run!()
     """
 
-    @behaviour Skuld.Comp.IHandler
+    @behaviour Skuld.Comp.IHandle
 
     alias Skuld.Comp
     alias Skuld.Comp.Env
@@ -77,7 +77,7 @@ if Code.ensure_loaded?(Ecto) do
     ## IHandler Implementation
     #############################################################################
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(%ChangesetPersist.Insert{input: input, opts: opts}, env, k) do
       repo = get_repo!(env)
       {changeset, merged_opts} = normalize_input(input, opts)
@@ -88,7 +88,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(%ChangesetPersist.Update{input: input, opts: opts}, env, k) do
       repo = get_repo!(env)
       {changeset, merged_opts} = normalize_input(input, opts)
@@ -99,7 +99,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(%ChangesetPersist.Upsert{input: input, opts: opts}, env, k) do
       repo = get_repo!(env)
       {changeset, merged_opts} = normalize_input(input, opts)
@@ -110,7 +110,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(%ChangesetPersist.Delete{input: input, opts: opts}, env, k) do
       repo = get_repo!(env)
       {struct_or_changeset, merged_opts} = normalize_delete_input(input, opts)
@@ -121,7 +121,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(%ChangesetPersist.InsertAll{schema: schema, entries: entries, opts: opts}, env, k) do
       repo = get_repo!(env)
 
@@ -135,7 +135,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(
           %ChangesetPersist.UpdateAll{schema: _schema, entries: entries, opts: opts},
           env,
@@ -173,7 +173,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(
           %ChangesetPersist.UpsertAll{schema: schema, entries: entries, opts: opts},
           env,
@@ -197,7 +197,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(
           %ChangesetPersist.DeleteAll{schema: _schema, entries: entries, opts: opts},
           env,

@@ -55,7 +55,8 @@ defmodule Skuld.Effects.Random do
       #=> {0.0, 0.5, 1.0}
   """
 
-  @behaviour Skuld.Comp.IHandler
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IInstall
 
   import Skuld.Comp.DefOp
 
@@ -198,13 +199,13 @@ defmodule Skuld.Effects.Random do
         Random -> {:seed, seed: {1, 2, 3}}       # seeded handler
         Random -> {:fixed, values: [0.5, 0.7]}   # fixed values handler
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, nil), do: with_handler(comp)
   def __handle__(comp, :random), do: with_handler(comp)
   def __handle__(comp, {:seed, opts}) when is_list(opts), do: with_seed_handler(comp, opts)
   def __handle__(comp, {:fixed, opts}) when is_list(opts), do: with_fixed_handler(comp, opts)
 
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%RandomFloat{}, env, k) do
     k.(:rand.uniform(), env)
   end

@@ -44,7 +44,8 @@ defmodule Skuld.Effects.Writer do
   to see logs leading up to an error).
   """
 
-  @behaviour Skuld.Comp.IHandler
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IInstall
 
   import Skuld.Comp.DefOp
 
@@ -278,7 +279,7 @@ defmodule Skuld.Effects.Writer do
         Writer -> []                           # explicit empty initial
         Writer -> {[], output: fn r, l -> {r, Enum.reverse(l)} end}
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, nil), do: with_handler(comp)
   def __handle__(comp, {initial, opts}) when is_list(opts), do: with_handler(comp, initial, opts)
   def __handle__(comp, initial), do: with_handler(comp, initial)
@@ -300,7 +301,7 @@ defmodule Skuld.Effects.Writer do
   ## IHandler Implementation
   #############################################################################
 
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%Tell{tag: tag, msg: msg}, env, k) do
     state_key = state_key(tag)
     current = Env.get_state(env, state_key, [])
@@ -310,13 +311,13 @@ defmodule Skuld.Effects.Writer do
     k.(updated, new_env)
   end
 
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%Peek{tag: tag}, env, k) do
     current = Env.get_state(env, state_key(tag), [])
     k.(current, env)
   end
 
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%SetLog{tag: tag, log: new_log}, env, k) do
     new_env = Env.put_state(env, state_key(tag), new_log)
     k.(:ok, new_env)

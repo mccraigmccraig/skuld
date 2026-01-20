@@ -13,7 +13,9 @@ defmodule Skuld.Effects.Yield do
   - When resumed, the result goes through the leave_scope chain
   """
 
-  @behaviour Skuld.Comp.IHandler
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IIntercept
+  @behaviour Skuld.Comp.IInstall
 
   import Skuld.Comp.DefOp
 
@@ -224,12 +226,12 @@ defmodule Skuld.Effects.Yield do
   @doc """
   Intercept yields locally within a computation.
 
-  This is the `IHandler.intercept/2` implementation for Yield, enabling
+  This is the `IIntercept.intercept/2` implementation for Yield, enabling
   `{Yield, pattern}` clauses in `comp` block `catch` sections.
 
   Delegates to `respond/2`.
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IIntercept
   @spec intercept(Types.computation(), (term() -> Types.computation())) :: Types.computation()
   defdelegate intercept(comp, handler), to: __MODULE__, as: :respond
 
@@ -274,18 +276,18 @@ defmodule Skuld.Effects.Yield do
       catch
         Yield -> nil
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, _config), do: with_handler(comp)
 
   #############################################################################
-  ## IHandler Implementation
+  ## IHandle Implementation
   #############################################################################
 
   @doc """
   Handler: returns Suspend struct with resume that captures env
   and invokes leave_scope when the resumed computation completes.
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%Yield{value: value}, env, k) do
     captured_resume = fn input ->
       {result, final_env} = k.(input, env)

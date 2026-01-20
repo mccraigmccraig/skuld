@@ -49,7 +49,8 @@ defmodule Skuld.Effects.Fresh do
       #=> "550e8400-..."  # same UUID!
   """
 
-  @behaviour Skuld.Comp.IHandler
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IInstall
 
   import Skuld.Comp.DefOp
 
@@ -141,12 +142,12 @@ defmodule Skuld.Effects.Fresh do
         Fresh -> {:test, namespace: ns}      # test handler with opts
         Fresh -> :test                       # test handler, default opts
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, :uuid7), do: with_uuid7_handler(comp)
   def __handle__(comp, :test), do: with_test_handler(comp)
   def __handle__(comp, {:test, opts}) when is_list(opts), do: with_test_handler(comp, opts)
 
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%FreshUUID{}, env, k) do
     uuid = Uniq.UUID.uuid7()
     k.(uuid, env)

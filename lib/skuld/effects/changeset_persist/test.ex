@@ -49,7 +49,7 @@ if Code.ensure_loaded?(Ecto) do
     Calls are returned in chronological order (first call first).
     """
 
-    @behaviour Skuld.Comp.IHandler
+    @behaviour Skuld.Comp.IHandle
 
     alias Skuld.Comp
     alias Skuld.Comp.Env
@@ -190,35 +190,35 @@ if Code.ensure_loaded?(Ecto) do
     ## IHandler Implementation
     #############################################################################
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(%ChangesetPersist.Insert{input: input} = op, env, k) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:insert, normalize_input(input)}, result, env, k)
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(%ChangesetPersist.Update{input: input} = op, env, k) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:update, normalize_input(input)}, result, env, k)
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(%ChangesetPersist.Upsert{input: input} = op, env, k) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:upsert, normalize_input(input)}, result, env, k)
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(%ChangesetPersist.Delete{input: input} = op, env, k) do
       handler = get_handler!(env)
       result = handler.(op)
       record_and_continue({:delete, normalize_input(input)}, result, env, k)
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(
           %ChangesetPersist.InsertAll{schema: schema, entries: entries, opts: opts} = op,
           env,
@@ -229,7 +229,7 @@ if Code.ensure_loaded?(Ecto) do
       record_and_continue({:insert_all, {schema, entries, opts}}, result, env, k)
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(
           %ChangesetPersist.UpdateAll{schema: schema, entries: entries, opts: opts} = op,
           env,
@@ -240,7 +240,7 @@ if Code.ensure_loaded?(Ecto) do
       record_and_continue({:update_all, {schema, entries, opts}}, result, env, k)
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(
           %ChangesetPersist.UpsertAll{schema: schema, entries: entries, opts: opts} = op,
           env,
@@ -251,7 +251,7 @@ if Code.ensure_loaded?(Ecto) do
       record_and_continue({:upsert_all, {schema, entries, opts}}, result, env, k)
     end
 
-    @impl Skuld.Comp.IHandler
+    @impl Skuld.Comp.IHandle
     def handle(
           %ChangesetPersist.DeleteAll{schema: schema, entries: entries, opts: opts} = op,
           env,

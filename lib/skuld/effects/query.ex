@@ -61,7 +61,8 @@ defmodule Skuld.Effects.Query do
       |> Comp.run!()
   """
 
-  @behaviour Skuld.Comp.IHandler
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IInstall
 
   import Skuld.Comp.DefOp
 
@@ -257,7 +258,7 @@ defmodule Skuld.Effects.Query do
         Query -> %{MyQueries => :direct}
         Query -> {%{MyQueries => :direct}, output: fn r, s -> {r, s} end}
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, {registry, opts}) when is_map(registry) and is_list(opts),
     do: with_handler(comp, registry, opts)
 
@@ -304,7 +305,7 @@ defmodule Skuld.Effects.Query do
   ## IHandler Implementation
   #############################################################################
 
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%Request{mod: mod, name: name, params: params}, env, k) do
     case Env.get_state(env, @state_key) do
       {:runtime, registry} ->

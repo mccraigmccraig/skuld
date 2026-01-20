@@ -68,7 +68,8 @@ defmodule Skuld.Effects.Async do
   tasks, use `AtomicState` effect instead of regular `State`.
   """
 
-  @behaviour Skuld.Comp.IHandler
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IInstall
 
   import Skuld.Comp.DefOp
 
@@ -360,12 +361,12 @@ defmodule Skuld.Effects.Async do
         Async -> nil           # production handler (Task.Supervisor)
         Async -> :sequential   # test handler (runs tasks sequentially)
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, nil), do: with_handler(comp)
   def __handle__(comp, :async), do: with_handler(comp)
   def __handle__(comp, :sequential), do: with_sequential_handler(comp)
 
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%Boundary{comp: inner_comp, on_unawaited: on_unawaited}, env, k) do
     # Generate unique boundary ID
     boundary_id = make_ref()

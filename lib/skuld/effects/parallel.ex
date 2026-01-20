@@ -49,7 +49,8 @@ defmodule Skuld.Effects.Parallel do
   Changes don't propagate back. Use `AtomicState` for shared mutable state.
   """
 
-  @behaviour Skuld.Comp.IHandler
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IInstall
 
   import Skuld.Comp.DefOp
 
@@ -192,12 +193,12 @@ defmodule Skuld.Effects.Parallel do
         Parallel -> nil           # production handler (Task.Supervisor)
         Parallel -> :sequential   # test handler (runs tasks sequentially)
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, nil), do: with_handler(comp)
   def __handle__(comp, :parallel), do: with_handler(comp)
   def __handle__(comp, :sequential), do: with_sequential_handler(comp)
 
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%All{comps: comps}, env, k) do
     sup = Env.get_state(env, @supervisor_key)
 

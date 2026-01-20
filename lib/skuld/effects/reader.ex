@@ -30,7 +30,8 @@ defmodule Skuld.Effects.Reader do
       #=> {"localhost", "https://api.example.com"}
   """
 
-  @behaviour Skuld.Comp.IHandler
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IInstall
 
   import Skuld.Comp.DefOp
 
@@ -174,7 +175,7 @@ defmodule Skuld.Effects.Reader do
         Reader -> %{config: true}
         Reader -> {%{config: true}, tag: :my_reader}
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, {value, opts}) when is_list(opts), do: with_handler(comp, value, opts)
   def __handle__(comp, value), do: with_handler(comp, value)
 
@@ -185,10 +186,10 @@ defmodule Skuld.Effects.Reader do
   end
 
   #############################################################################
-  ## IHandler Implementation
+  ## IHandle Implementation
   #############################################################################
 
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%Ask{tag: tag}, env, k) do
     value = Env.get_state(env, state_key(tag))
     k.(value, env)

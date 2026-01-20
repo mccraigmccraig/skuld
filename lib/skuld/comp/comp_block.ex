@@ -161,10 +161,11 @@ defmodule Skuld.Comp.CompBlock do
 
   ## Extending Catch to Custom Effects
 
-  Effects can support `catch` interception by implementing the optional
-  `intercept/2` callback in `Skuld.Comp.IHandler`:
+  Effects can support `catch` interception by implementing `Skuld.Comp.IIntercept`:
 
-      @impl Skuld.Comp.IHandler
+      @behaviour Skuld.Comp.IIntercept
+
+      @impl Skuld.Comp.IIntercept
       def intercept(comp, handler_fn) do
         # Wrap comp, intercepting effect operations
         # handler_fn receives intercepted value, returns computation

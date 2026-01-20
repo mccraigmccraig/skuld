@@ -14,7 +14,9 @@ defmodule Skuld.Effects.Throw do
   - If recovery re-throws, the error propagates to outer catch handlers
   """
 
-  @behaviour Skuld.Comp.IHandler
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IIntercept
+  @behaviour Skuld.Comp.IInstall
 
   import Skuld.Comp.DefOp
 
@@ -133,12 +135,12 @@ defmodule Skuld.Effects.Throw do
   @doc """
   Intercept thrown errors locally within a computation.
 
-  This is the `IHandler.intercept/2` implementation for Throw, enabling
+  This is the `IIntercept.intercept/2` implementation for Throw, enabling
   `{Throw, pattern}` clauses in `comp` block `catch` sections.
 
   Delegates to `catch_error/2`.
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IIntercept
   @spec intercept(Types.computation(), (term() -> Types.computation())) :: Types.computation()
   defdelegate intercept(comp, handler), to: __MODULE__, as: :catch_error
 
@@ -183,15 +185,15 @@ defmodule Skuld.Effects.Throw do
       catch
         Throw -> nil
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, _config), do: with_handler(comp)
 
   #############################################################################
-  ## IHandler Implementation
+  ## IHandle Implementation
   #############################################################################
 
   @doc "Default handler - return Throw struct as result (does not call k)"
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%Throw{error: error}, env, _k) do
     {%Comp.Throw{error: error}, env}
   end

@@ -34,7 +34,8 @@ defmodule Skuld.Effects.State do
       #=> {1, "alice"}
   """
 
-  @behaviour Skuld.Comp.IHandler
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IInstall
 
   import Skuld.Comp.DefOp
 
@@ -208,7 +209,7 @@ defmodule Skuld.Effects.State do
         State -> 0                          # initial value
         State -> {0, output: fn r, s -> {r, s} end}  # with opts
   """
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, {initial, opts}) when is_list(opts), do: with_handler(comp, initial, opts)
   def __handle__(comp, initial), do: with_handler(comp, initial)
 
@@ -219,16 +220,16 @@ defmodule Skuld.Effects.State do
   end
 
   #############################################################################
-  ## IHandler Implementation
+  ## IHandle Implementation
   #############################################################################
 
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%Get{tag: tag}, env, k) do
     value = Env.get_state(env, state_key(tag))
     k.(value, env)
   end
 
-  @impl Skuld.Comp.IHandler
+  @impl Skuld.Comp.IHandle
   def handle(%Put{tag: tag, value: value}, env, k) do
     key = state_key(tag)
     old_value = Env.get_state(env, key)
