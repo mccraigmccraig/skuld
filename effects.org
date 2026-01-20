@@ -1,71 +1,91 @@
 #+title: Algebraic Effects in Elixir
 
-* On Purity
+* Purity and sin
 
-There are pure functions, and side-effecting functions. Pure functions are
-generally regarded as superior to side-effecting functions, aside from the
-inconvenient fact that almost everything we want our programs to do is a
-side-effect.
+There are two difficult problems in computer science:
 
-There are patterns like Functional Core, Imperative Shell which aim to
-increase the ratio of pure to side-effecting functions in our programs
-- the larger we make this ratio, the more we benefit from the helpful
-properties of pure functions - such as being able to use property-based
-testing
+- naming things
+- cache invalidation
+- off by one errors
 
-My aim is to convince you that there is a third class of function -
-the effectful functions - and that these inhabit a space somewhere
-between the pure functions and the side-effecting functions, have
-very advantageous properties, and can replace most of the side-effecting
-functions in our domain code - and bring the advantages of pure functions to
-our domain code
+** There are two kinds of functions
 
-* Common pitfalls of side-effecting code
--
+*** Pure functions
 
-* The Problem
+We like pure functions because:
 
-You've probably experienced these pain points:
+- they compose well
+- they are predictable
+- they are fast (algorithms permitting)
+
+*** Side-effecting functions
+
+We don't like side-effecting functions because:
+
+- they don't compose well
+- they are slow... (not all side-effecting functions)
+- they are unpredictable
+
+On the other hand... we like side-effecting functions because:
+
+- without them nothing actually happens
+
+*** Off by one
+
+I am here to convince you of the existence of a 3rd class of functions:
+
+**** Effectful functions
+
+These inhabit a space somewhere between the pure functions and the
+side-effecting functions.
+
+Effectful functions allow a program to declare *what* effects it
+wants to perform without specifying *how* they are to be performed.
+
+The *how* can be decided upon later *without* changing code
+
+* Problems & pains
 
 ** Slow tests
 
 Domain logic calls =Repo.get!/2= directly. Most tests hits the database.
 Property-based testing? No chance - 1000 iterations would take minutes.
 
-** Context threading is painful
+** Context threading
 
 You need =tenant_id= in a function 8 levels deep. You add it as a parameter
 to every function in the chain. Then you need =user_id=. Then =request_id=.
 Your function signatures grow. Your call sites get noisy.
 
-** Mocking is awkward
+** Mocking is awkward - and often depends on global state
 
-You create a behaviour, implement it twice, configure Mox, add
-=Mox.verify_on_exit!= to every test. For every external dependency.
-And the mocks don't compose - you end up with test setup that's longer
-than the test itself.
+Create a behaviour, implement it twice, configure Mox, add
+=Mox.verify_on_exit!= to tests - for each external dependency.
+And the mocks don't compose
 
-** The functional-core/imperative-shell dream
+** Functional-core/imperative-shell
 
-You've heard it: "keep business logic pure, push I/O to the edges."
+"keep business logic pure, push I/O to the edges."
 
-But how? Your domain logic /needs/ to query the database. It /needs/
-to call external APIs. The pattern is easy at first, but gets hard as
-call stacks get deeper, recursion bites, and dependencies compound.
+But how? Pure transformations are easy, but there is plenty of domain logic
+which /needs/ to query the database, and /needs/ to call external APIs.
+The pattern is easy at first, but gets complex as call stacks get deeper,
+recursion bites, and dependencies compound.
 
-* What if...
+* But...
 
 What if you could write domain logic that:
 
 - Describes *what* it needs (fetch a record, save a change, get config)
-- Without specifying *how* (which database, which API, real or fake)
-- And the "how" was a deployment decision, not a coding decision?
+- But not *how* the request is granted (which database, which API, real or fake)
+- And "how" becomes a deployment decision, not a coding decision?
 
-That's what Algebraic Effects give you.
+This is what Algebraic Effects deliver.
 
-* The Payoff: Same Code, Different Backends
+* Same Code, Different Backends
 
-Here's real code from a todo app. This handler toggles a todo's completion:
+Here's real code from an Algebraic Effects based implementation of the classic
+todo app. This handler toggles a todo's completion:
 
 #+begin_src elixir
 defcomp handle(%ToggleTodo{id: id}) do
@@ -85,13 +105,13 @@ defcomp handle(%ToggleTodo{id: id}) do
 end
 #+end_src
 
-Notice what's /not/ here: no =Repo= calls, no GenServer, no process dictionary.
+This is pure *domain logic*. It describes *what* needs to happen, not *how* -
+it might /look/ side-effecting - but that's thanks to some macro sugar - it is
+completely pure!
 
-This is *domain logic*. It describes *what* needs to happen, not *how*.
+** Swap them handlers
 
-** The handler swap
-
-The same code runs against different backends:
+The exact same code can be run against different backends:
 
 #+begin_src elixir
 # Production: real Ecto/Postgres
@@ -111,7 +131,7 @@ end
 
 One line changes the storage backend. The domain handler doesn't change at all.
 
-* The Testing Payoff
+* Testing Payoff
 
 With pure handlers, property-based testing becomes practical:
 
@@ -200,7 +220,7 @@ MyApp.add_to_config(5)
 #> 15
 #+end_src
 
-Effectful functions compose - call them from other =defcomp= functions,
+Effectful functions compose - call them from another =defcomp= functions,
 and effects bubble up to wherever you install handlers.
 
 * Building Blocks
@@ -215,8 +235,8 @@ Need =tenant_id= deep in a call stack? Don't thread it through every function:
 #+begin_src elixir
 # Deep in your code, just ask for it:
 defcomp do_something() do
-  ctx <- Reader.ask(TenantContext)
-  # use ctx.tenant_id
+  %{tenant_id: tenant_id} <- Reader.ask(TenantContext)
+  # use tenant_id
 end
 
 # At the top level, provide it once:
@@ -229,17 +249,15 @@ Multiple readers with different tags for different contexts.
 
 ** State: Accumulation without threading
 
-Need to track state through a computation? Don't pass accumulators:
+Need to track state through a computation? No need for accumulator parameters:
 
 #+begin_src elixir
 defcomp count_items(items) do
-  _ <- State.put(0)
 
   FxList.fx_each(items, fn item ->
     comp do
-      count <- State.get()
-      _ <- State.put(count + 1)
-      return(:ok)
+      count <- State.modify(& &1+1)
+      :ok
     end
   end)
 
@@ -253,7 +271,7 @@ count_items([1, 2, 3, 4, 5])
 #> 5
 #+end_src
 
-** Writer: Logging from anywhere
+** Writer: Structured logging from anywhere
 
 Accumulate values from deep in a call stack:
 
@@ -268,7 +286,7 @@ defcomp process_with_audit(items) do
 end
 
 process_with_audit([1, 2, 3])
-|> Writer.with_handler()
+|> Writer.with_handler([], output: fn r, log -> {r, log} end)
 |> Comp.run!()
 
 #> {[2, 4, 6], [{:processed, 1}, {:processed, 2}, {:processed, 3}]}
@@ -288,7 +306,7 @@ end
 defcomp safe_process(x) do
   maybe_fail(x)
 catch
-  :validation_failed -> return(:skipped)
+  {Throw, :validation_failed} -> :skipped
 end
 #+end_src
 
@@ -303,9 +321,9 @@ defcomp process(a, b, c) do
   {:ok, ar} <- do_the_thing(:a, a)
   {:ok, br} <- do_the_thing(:b, b)
   {:ok, cr} <- do_the_thing(:c, c)
-  return({:ok, [ar, br, cr]})
+  {:ok, [ar, br, cr]}
 else
-  {step, _} -> return({:error, "failed at: #{step}"})
+  {step, _} -> {:error, "failed at: #{step}"}
 end
 #+end_src
 
@@ -408,22 +426,19 @@ end
 The conversation is a single computation that yields for input, calls the LLM,
 yields responses, and loops forever. The caller drives it by resuming with values.
 
-Try implementing this with GenServer - you'd need manual state machines,
-explicit serialization, callback management. With effects, the computation
-/is/ the state machine.
+The computation /is/ the state machine!
 
 * The Cost
 
 Algebraic Effects aren't free:
 
-- *Performance overhead*: Skuld is ~4x slower than hand-threaded state for
-  pure computation. For I/O-bound code (database, HTTP), this is negligible.
+- *Performance overhead*: Skuld orchestration is ~4x slower than a simple state
+  monad. If your program did nothing but effect orchestration, that would be
+  significant - but if your program is doing I/O and actual computation it's
+  small beer
 
 - *Learning curve*: It's a different way of thinking. The =comp= macro takes
   getting used to.
-
-- *Team buy-in*: Everyone needs to understand the pattern, or you get
-  a mix of effectful and side-effecting code.
 
 The tradeoff is worth it when:
 - Testability matters more than microseconds
@@ -438,32 +453,11 @@ The tradeoff is worth it when:
 - Complex domain logic with many effects (DB, external APIs)
 - When you want property-based testing of domain logic
 - When you need effect logging for debugging/replay
-- Multi-tenant systems (Reader effect for context)
 
 ** Maybe not
 - CPU-bound computation where every microsecond counts
 - Simple scripts with minimal side effects
 - When the team isn't bought in
-
-* Getting Started
-
-1. *Start small*: Use Reader for configuration that you're currently threading
-2. *Wrap one side-effect*: Create an effect signature for your Repo calls
-3. *Write one property test*: See the testing benefits firsthand
-4. *Expand gradually*: Add more effects as you see the value
-
-#+begin_src elixir
-# Add to mix.exs
-{:skuld, "~> 0.1"}
-
-# In your module
-use Skuld.Syntax
-
-defcomp my_first_effectful_function() do
-  config <- Reader.ask()
-  return(config.some_value)
-end
-#+end_src
 
 * Summary
 
@@ -560,8 +554,8 @@ comp do
 end
 
 # Expands to:
-Comp.chain(Reader.ask(), fn x ->
-  Comp.chain(State.get(), fn y ->
+Comp.bind(Reader.ask(), fn x ->
+  Comp.bind(State.get(), fn y ->
     Comp.pure(x + y)
   end)
 end)

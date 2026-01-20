@@ -1877,13 +1877,13 @@ types (`Freer` and `Hefty`), with all the additional complexity and mental load
 that imposes. Skuld's client API looks quite similar to Freyja, but the implementation
 is very different - Skuld performs better and has a simpler, more coherent API.
 
-| Aspect | Freyja | Skuld |
-|--------|--------|-------|
+| Aspect                | Freyja                       | Skuld                |
+|-----------------------|------------------------------|----------------------|
 | Effect representation | Freer monad + Hefty algebras | Evidence-passing CPS |
-| Computation types | `Freer` + `Hefty` | Just `computation` |
-| Control effects | Hefty (higher-order) | Direct CPS |
-| Handler lookup | Search through handler list | Direct map lookup |
-| Macro system | `con` + `hefty` | Single `comp` |
+| Computation types     | `Freer` + `Hefty`            | Just `computation`   |
+| Control effects       | Hefty (higher-order)         | Direct CPS           |
+| Handler lookup        | Search through handler list  | Direct map lookup    |
+| Macro system          | `con` + `hefty`              | Single `comp`        |
 
 Skuld's performance advantage comes from avoiding Freer monad object allocation,
 continuation queue management, and linear search for handlers.
@@ -1899,13 +1899,13 @@ invocation path repeatedly, measuring per-operation overhead.
 
 ### Core Benchmark
 
-| Target | Pure/Rec | Monad | Evf | Evf/CPS | Skuld/Nest | Skuld/FxFL |
-|--------|----------|-------|-----|---------|------------|------------|
-| 500 | 4 µs | 10 µs | 17 µs | 17 µs | 141 µs | 54 µs |
-| 1000 | 28 µs | 55 µs | 56 µs | 58 µs | 255 µs | 166 µs |
-| 2000 | 34 µs | 78 µs | 91 µs | 97 µs | 558 µs | 325 µs |
-| 5000 | 82 µs | 189 µs | 244 µs | 258 µs | 1.42 ms | 836 µs |
-| 10000 | 145 µs | 157 µs | 298 µs | 325 µs | 2.3 ms | 960 µs |
+| Target | Pure/Rec | Monad  | Evf    | Evf/CPS | Skuld/Nest | Skuld/FxFL |
+|--------|----------|--------|--------|---------|------------|------------|
+| 500    | 4 µs     | 10 µs  | 17 µs  | 17 µs   | 141 µs     | 54 µs      |
+| 1000   | 28 µs    | 55 µs  | 56 µs  | 58 µs   | 255 µs     | 166 µs     |
+| 2000   | 34 µs    | 78 µs  | 91 µs  | 97 µs   | 558 µs     | 325 µs     |
+| 5000   | 82 µs    | 189 µs | 244 µs | 258 µs  | 1.42 ms    | 836 µs     |
+| 10000  | 145 µs   | 157 µs | 298 µs | 325 µs  | 2.3 ms     | 960 µs     |
 
 **Implementations compared:**
 
@@ -1918,13 +1918,13 @@ invocation path repeatedly, measuring per-operation overhead.
 
 ### Iteration Strategies
 
-| Target | FxFasterList | FxList | Yield |
-|--------|--------------|--------|-------|
-| 1000 | 97 µs (0.10 µs/op) | 200 µs (0.20 µs/op) | 147 µs (0.15 µs/op) |
-| 5000 | 492 µs (0.10 µs/op) | 959 µs (0.19 µs/op) | 762 µs (0.15 µs/op) |
-| 10000 | 1.02 ms (0.10 µs/op) | 2.71 ms (0.27 µs/op) | 1.52 ms (0.15 µs/op) |
-| 50000 | 5.1 ms (0.10 µs/op) | - | 7.58 ms (0.15 µs/op) |
-| 100000 | 10.02 ms (0.10 µs/op) | - | 14.9 ms (0.15 µs/op) |
+| Target | FxFasterList          | FxList               | Yield                |
+|--------|-----------------------|----------------------|----------------------|
+| 1000   | 97 µs (0.10 µs/op)    | 200 µs (0.20 µs/op)  | 147 µs (0.15 µs/op)  |
+| 5000   | 492 µs (0.10 µs/op)   | 959 µs (0.19 µs/op)  | 762 µs (0.15 µs/op)  |
+| 10000  | 1.02 ms (0.10 µs/op)  | 2.71 ms (0.27 µs/op) | 1.52 ms (0.15 µs/op) |
+| 50000  | 5.1 ms (0.10 µs/op)   | -                    | 7.58 ms (0.15 µs/op) |
+| 100000 | 10.02 ms (0.10 µs/op) | -                    | 14.9 ms (0.15 µs/op) |
 
 **Iteration options:**
 
