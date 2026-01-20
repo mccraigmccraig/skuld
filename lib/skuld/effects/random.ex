@@ -53,6 +53,11 @@ defmodule Skuld.Effects.Random do
       |> Random.with_fixed_handler(values: [0.0, 0.5, 1.0])
       |> Comp.run!()
       #=> {0.0, 0.5, 1.0}
+
+  ## Handler Submodules
+
+  - `Random.Seed` - Deterministic seeded random handler
+  - `Random.Fixed` - Fixed value handler for testing
   """
 
   @behaviour Skuld.Comp.IHandle
@@ -61,24 +66,9 @@ defmodule Skuld.Effects.Random do
   import Skuld.Comp.DefOp
 
   alias Skuld.Comp
-  alias Skuld.Comp.Env
   alias Skuld.Comp.Types
 
   @sig __MODULE__
-
-  #############################################################################
-  ## State Structures
-  #############################################################################
-
-  defmodule SeededState do
-    @moduledoc false
-    defstruct [:rand_state]
-  end
-
-  defmodule FixedState do
-    @moduledoc false
-    defstruct values: [], original: []
-  end
 
   #############################################################################
   ## Operation Structs
@@ -189,22 +179,6 @@ defmodule Skuld.Effects.Random do
     Comp.with_handler(comp, @sig, &handle/3)
   end
 
-  @doc """
-  Install Random handler via catch clause syntax.
-
-  Config selects handler type:
-
-      catch
-        Random -> nil                            # production handler
-        Random -> {:seed, seed: {1, 2, 3}}       # seeded handler
-        Random -> {:fixed, values: [0.5, 0.7]}   # fixed values handler
-  """
-  @impl Skuld.Comp.IInstall
-  def __handle__(comp, nil), do: with_handler(comp)
-  def __handle__(comp, :random), do: with_handler(comp)
-  def __handle__(comp, {:seed, opts}) when is_list(opts), do: with_seed_handler(comp, opts)
-  def __handle__(comp, {:fixed, opts}) when is_list(opts), do: with_fixed_handler(comp, opts)
-
   @impl Skuld.Comp.IHandle
   def handle(%RandomFloat{}, env, k) do
     k.(:rand.uniform(), env)
@@ -226,14 +200,13 @@ defmodule Skuld.Effects.Random do
   end
 
   #############################################################################
-  ## Seeded Handler (Deterministic)
+  ## Handler Delegation
   #############################################################################
 
   @doc """
   Install a deterministic random handler with a fixed seed.
 
-  Uses Erlang's `:rand` module with explicit state management, ensuring
-  the same seed always produces the same sequence. Ideal for testing.
+  Delegates to `Random.Seed.with_handler/2`.
 
   ## Options
 
@@ -243,7 +216,6 @@ defmodule Skuld.Effects.Random do
 
   ## Example
 
-      # Same seed = same results
       comp do
         a <- Random.random()
         b <- Random.random_int(1, 10)
@@ -255,93 +227,13 @@ defmodule Skuld.Effects.Random do
   """
   @spec with_seed_handler(Types.computation(), keyword()) :: Types.computation()
   def with_seed_handler(comp, opts \\ []) do
-    seed = Keyword.get(opts, :seed, {1, 2, 3})
-    algorithm = Keyword.get(opts, :algorithm, :exsss)
-    output = Keyword.get(opts, :output)
-    suspend = Keyword.get(opts, :suspend)
-
-    initial_rand_state = :rand.seed_s(algorithm, seed)
-    initial_state = %SeededState{rand_state: initial_rand_state}
-
-    scoped_opts =
-      []
-      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
-      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
-
-    comp
-    |> Comp.with_scoped_state(@sig, initial_state, scoped_opts)
-    |> Comp.with_handler(@sig, &handle_seeded/3)
+    __MODULE__.Seed.with_handler(comp, opts)
   end
-
-  defp handle_seeded(%RandomFloat{}, env, k) do
-    %SeededState{rand_state: rand_state} = Env.get_state(env, @sig)
-    {value, new_rand_state} = :rand.uniform_s(rand_state)
-    new_env = Env.put_state(env, @sig, %SeededState{rand_state: new_rand_state})
-    k.(value, new_env)
-  end
-
-  defp handle_seeded(%RandomInt{min: min, max: max}, env, k) do
-    %SeededState{rand_state: rand_state} = Env.get_state(env, @sig)
-    {raw, new_rand_state} = :rand.uniform_s(max - min + 1, rand_state)
-    value = min + raw - 1
-    new_env = Env.put_state(env, @sig, %SeededState{rand_state: new_rand_state})
-    k.(value, new_env)
-  end
-
-  defp handle_seeded(%RandomElement{list: list}, env, k) do
-    %SeededState{rand_state: rand_state} = Env.get_state(env, @sig)
-    {raw, new_rand_state} = :rand.uniform_s(length(list), rand_state)
-    index = raw - 1
-    new_env = Env.put_state(env, @sig, %SeededState{rand_state: new_rand_state})
-    k.(Enum.at(list, index), new_env)
-  end
-
-  defp handle_seeded(%Shuffle{list: list}, env, k) do
-    # Fisher-Yates shuffle with explicit state threading
-    %SeededState{rand_state: rand_state} = Env.get_state(env, @sig)
-    {shuffled, new_rand_state} = shuffle_with_state(list, rand_state)
-    new_env = Env.put_state(env, @sig, %SeededState{rand_state: new_rand_state})
-    k.(shuffled, new_env)
-  end
-
-  # Fisher-Yates shuffle with explicit random state using tuple for O(1) access
-  defp shuffle_with_state([], rand_state), do: {[], rand_state}
-  defp shuffle_with_state([single], rand_state), do: {[single], rand_state}
-
-  defp shuffle_with_state(list, rand_state) do
-    tuple = List.to_tuple(list)
-    n = tuple_size(tuple)
-
-    {final_tuple, final_state} =
-      Enum.reduce((n - 1)..1//-1, {tuple, rand_state}, fn i, {acc_tuple, acc_state} ->
-        # :rand.uniform_s(n) returns 1..n, we need 0..i
-        {raw_j, new_state} = :rand.uniform_s(i + 1, acc_state)
-        j = raw_j - 1
-
-        val_i = elem(acc_tuple, i)
-        val_j = elem(acc_tuple, j)
-
-        swapped =
-          acc_tuple
-          |> put_elem(i, val_j)
-          |> put_elem(j, val_i)
-
-        {swapped, new_state}
-      end)
-
-    {Tuple.to_list(final_tuple), final_state}
-  end
-
-  #############################################################################
-  ## Fixed Handler (Test Scenarios)
-  #############################################################################
 
   @doc """
   Install a handler that returns values from a fixed sequence.
 
-  Useful for testing specific scenarios where you need exact control
-  over random values. When the sequence is exhausted, it cycles back
-  to the beginning.
+  Delegates to `Random.Fixed.with_handler/2`.
 
   ## Options
 
@@ -360,76 +252,33 @@ defmodule Skuld.Effects.Random do
       |> Random.with_fixed_handler(values: [0.1, 0.5, 0.9])
       |> Comp.run!()
       #=> {0.1, 0.5, 0.9}
-
-      # Cycles when exhausted
-      comp do
-        a <- Random.random()
-        b <- Random.random()
-        c <- Random.random()
-        d <- Random.random()
-        {a, b, c, d}
-      end
-      |> Random.with_fixed_handler(values: [0.0, 1.0])
-      |> Comp.run!()
-      #=> {0.0, 1.0, 0.0, 1.0}
   """
   @spec with_fixed_handler(Types.computation(), keyword()) :: Types.computation()
   def with_fixed_handler(comp, opts \\ []) do
-    values = Keyword.get(opts, :values, [0.5])
-    output = Keyword.get(opts, :output)
-    suspend = Keyword.get(opts, :suspend)
-
-    initial_state = %FixedState{values: values, original: values}
-
-    scoped_opts =
-      []
-      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
-      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
-
-    comp
-    |> Comp.with_scoped_state(@sig, initial_state, scoped_opts)
-    |> Comp.with_handler(@sig, &handle_fixed/3)
+    __MODULE__.Fixed.with_handler(comp, opts)
   end
 
-  defp handle_fixed(%RandomFloat{}, env, k) do
-    {value, new_env} = next_fixed_value(env)
-    k.(value, new_env)
-  end
+  #############################################################################
+  ## Catch Clause Installation
+  #############################################################################
 
-  defp handle_fixed(%RandomInt{min: min, max: max}, env, k) do
-    {raw, new_env} = next_fixed_value(env)
-    # Interpret raw as a position in the range
-    range_size = max - min + 1
-    value = (min + trunc(raw * range_size)) |> min(max)
-    k.(value, new_env)
-  end
+  @doc """
+  Install Random handler via catch clause syntax.
 
-  defp handle_fixed(%RandomElement{list: list}, env, k) do
-    {raw, new_env} = next_fixed_value(env)
-    index = trunc(raw * length(list)) |> min(length(list) - 1)
-    k.(Enum.at(list, index), new_env)
-  end
+  Config selects handler type:
 
-  defp handle_fixed(%Shuffle{list: list}, env, k) do
-    # For fixed handler, just reverse the list as a deterministic "shuffle"
-    # (Real shuffle would need multiple values)
-    k.(Enum.reverse(list), env)
-  end
+      catch
+        Random -> nil                            # production handler
+        Random -> {:seed, seed: {1, 2, 3}}       # seeded handler
+        Random -> {:fixed, values: [0.5, 0.7]}   # fixed values handler
+  """
+  @impl Skuld.Comp.IInstall
+  def __handle__(comp, nil), do: with_handler(comp)
+  def __handle__(comp, :random), do: with_handler(comp)
 
-  defp next_fixed_value(env) do
-    state = Env.get_state(env, @sig)
+  def __handle__(comp, {:seed, opts}) when is_list(opts),
+    do: __MODULE__.Seed.__handle__(comp, opts)
 
-    {value, remaining} =
-      case state.values do
-        [v | rest] ->
-          {v, rest}
-
-        [] ->
-          [v | rest] = state.original
-          {v, rest}
-      end
-
-    new_env = Env.put_state(env, @sig, %{state | values: remaining})
-    {value, new_env}
-  end
+  def __handle__(comp, {:fixed, opts}) when is_list(opts),
+    do: __MODULE__.Fixed.__handle__(comp, opts)
 end
