@@ -545,6 +545,7 @@ defmodule Skuld.Effects.AsyncTest do
       assert result == {:ok, :fast_result}
     end
 
+    @tag :slow
     test "await_with_timeout returns {:error, :timeout} when task is too slow" do
       # Use a latch to make the task block until we want it to
       latch = Latch.start()
@@ -595,6 +596,7 @@ defmodule Skuld.Effects.AsyncTest do
       assert result == {:ok, :quick_work}
     end
 
+    @tag :slow
     test "timeout convenience returns {:error, :timeout} when computation is too slow" do
       latch = Latch.start()
 
