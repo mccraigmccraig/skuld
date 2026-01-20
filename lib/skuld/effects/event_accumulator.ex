@@ -49,6 +49,8 @@ defmodule Skuld.Effects.EventAccumulator do
     * `Skuld.Effects.ChangeEvent` - Generic changeset operation wrapper
   """
 
+  @behaviour Skuld.Comp.IInstall
+
   alias Skuld.Effects.Writer
   alias Skuld.Comp
   alias Skuld.Comp.Types
@@ -124,6 +126,7 @@ defmodule Skuld.Effects.EventAccumulator do
         EventAccumulator -> nil
         EventAccumulator -> [output: fn r, events -> {r, events} end]
   """
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, nil), do: with_handler(comp)
   def __handle__(comp, opts) when is_list(opts), do: with_handler(comp, opts)
 end
