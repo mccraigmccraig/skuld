@@ -58,7 +58,7 @@ defmodule Skuld.Comp do
   @doc "Lift a pure value into a computation"
   @spec pure(term()) :: Types.computation()
   def pure(value) do
-    fn env, k -> k.(value, env) end
+    fn env, k -> call_k(k, value, env) end
   end
 
   @doc """
