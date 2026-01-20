@@ -233,15 +233,17 @@ capabilities you can request from anywhere in your call stack.
 Need =tenant_id= deep in a call stack? Don't thread it through every function:
 
 #+begin_src elixir
-# Deep in your code, just ask for it:
-defcomp do_something() do
-  %{tenant_id: tenant_id} <- Reader.ask(TenantContext)
-  # use tenant_id
+defmodule DoSomething do
+  # Deep in your code, just ask for it:
+  defcomp do_something() do
+    %{tenant_id: tenant_id} <- Reader.ask(__MODULE__)
+    {:pk, tenant_id}
+  end
 end
 
 # At the top level, provide it once:
-do_something()
-|> Reader.with_handler(%{tenant_id: "tenant_123"}, tag: TenantContext)
+DoSomething.do_something()
+|> Reader.with_handler(%{tenant_id: "tenant_123"}, tag: DoSomething)
 |> Comp.run!()
 #+end_src
 
@@ -252,19 +254,21 @@ Multiple readers with different tags for different contexts.
 Need to track state through a computation? No need for accumulator parameters:
 
 #+begin_src elixir
-defcomp count_items(items) do
+defmodule CountItems do
+  defcomp count_items(items) do
 
-  FxList.fx_each(items, fn item ->
-    comp do
-      count <- State.modify(& &1+1)
-      :ok
-    end
-  end)
+    _ <- FxList.fx_each(items, fn item ->
+      comp do
+        count <- State.modify(& &1+1)
+        :ok
+      end
+    end)
 
-  State.get()  # return final count
+    State.get()  # return final count
+  end
 end
 
-count_items([1, 2, 3, 4, 5])
+CountItems.count_items([1, 2, 3, 4, 5])
 |> State.with_handler(0)
 |> Comp.run!()
 
@@ -276,16 +280,18 @@ count_items([1, 2, 3, 4, 5])
 Accumulate values from deep in a call stack:
 
 #+begin_src elixir
-defcomp process_with_audit(items) do
-  FxList.fx_map(items, fn item ->
-    comp do
-      _ <- Writer.tell({:processed, item})
-      return(item * 2)
-    end
-  end)
+defmodule ProcessWithAudit do
+  defcomp process_with_audit(items) do
+    FxList.fx_map(items, fn item ->
+      comp do
+        _ <- Writer.tell({:processed, item})
+        return(item * 2)
+      end
+    end)
+  end
 end
 
-process_with_audit([1, 2, 3])
+ProcessWithAudit.process_with_audit([1, 2, 3])
 |> Writer.with_handler([], output: fn r, log -> {r, log} end)
 |> Comp.run!()
 
@@ -295,18 +301,20 @@ process_with_audit([1, 2, 3])
 ** Throw: Error handling that composes
 
 #+begin_src elixir
-defcomp maybe_fail(x) do
-  if Integer.is_odd(x) do
-    Throw.throw(:validation_failed)
-  else
-    return(x * 2)
+defmodule MaybeFail do
+  defcomp maybe_fail(x) do
+    if Integer.is_odd(x) do
+      Throw.throw(:validation_failed)
+    else
+      x * 2
+    end
   end
-end
 
-defcomp safe_process(x) do
-  maybe_fail(x)
-catch
-  {Throw, :validation_failed} -> :skipped
+  defcomp safe_process(x) do
+    maybe_fail(x)
+  catch
+    {Throw, :validation_failed} -> :skipped
+  end
 end
 #+end_src
 
@@ -317,13 +325,15 @@ Errors propagate up the effectful call stack until caught.
 Like =with=, you can pattern match and handle failures:
 
 #+begin_src elixir
-defcomp process(a, b, c) do
-  {:ok, ar} <- do_the_thing(:a, a)
-  {:ok, br} <- do_the_thing(:b, b)
-  {:ok, cr} <- do_the_thing(:c, c)
-  {:ok, [ar, br, cr]}
-else
-  {step, _} -> {:error, "failed at: #{step}"}
+defmodule Process do
+  defcomp process(a, b, c) do
+    {:ok, ar} <- do_the_thing(:a, a)
+    {:ok, br} <- do_the_thing(:b, b)
+    {:ok, cr} <- do_the_thing(:c, c)
+    {:ok, [ar, br, cr]}
+  else
+    {step, _} -> {:error, "failed at: #{step}"}
+  end
 end
 #+end_src
 
@@ -332,24 +342,27 @@ end
 The EffectLogger records every effect in a computation:
 
 #+begin_src elixir
-defcomp maybe_fail(version) do
-  _ <- State.put(10)
-  _ <- case version do
-    :original -> Throw.throw(:validation_failed)
-    :patched -> return(:ok)
+defmodule MaybeFail do
+  defcomp maybe_fail(version) do
+    _ <- State.put(10)
+    _ <- case version do
+           :original -> Throw.throw(:validation_failed)
+           :patched -> :ok
+         end
+    x <- State.get()
+    x
   end
-  x <- State.get()
-  return(x)
 end
 
 # Run with logging
-{{:throw, :validation_failed}, log} =
-  maybe_fail(:original)
+{%Skuld.Comp.Throw{error: :validation_failed}, log} = (
+  MaybeFail.maybe_fail(:original)
   |> EffectLogger.with_logging()
   |> Throw.with_handler()
   |> State.with_handler(0)
   |> Comp.run()
   |> elem(0)
+)
 
 # The log captured everything up to the failure
 # Fix the bug, replay from the exact failure point
@@ -379,16 +392,19 @@ computation
 Computations can suspend and request values from their caller:
 
 #+begin_src elixir
-defcomp interactive_sum() do
-  x <- Yield.yield("Enter first number:")
-  y <- Yield.yield("Enter second number:")
-  return(x + y)
+defmodule InteractiveSum do
+  defcomp interactive_sum() do
+    x <- Yield.yield("Enter first number:")
+    y <- Yield.yield("Enter second number:")
+    x + y
+  end
 end
 
-{:done, result, _yields, _env} =
-  interactive_sum()
+{:done, result, _yields, _env} = (
+  InteractiveSum.interactive_sum()
   |> Yield.with_handler()
   |> Yield.feed([10, 20])
+)
 
 #> result == 30
 #+end_src
@@ -502,6 +518,7 @@ alias Skuld.Effects.TaggedState
 alias Skuld.Effects.FxList
 alias Skuld.Effects.Throw
 alias Skuld.Effects.EffectLogger
+alias Skuld.Effects.Yield
 require Integer
 use Skuld.Syntax
 #+end_src
