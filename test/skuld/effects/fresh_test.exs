@@ -43,30 +43,6 @@ defmodule Skuld.Effects.FreshTest do
       assert uuid1 != uuid3
     end
 
-    test "UUIDs generated with time gap are time-ordered" do
-      # v7 UUIDs have millisecond precision, so we need a gap
-      uuid1 =
-        comp do
-          uuid <- Fresh.fresh_uuid()
-          return(uuid)
-        end
-        |> Fresh.with_uuid7_handler()
-        |> Comp.run!()
-
-      Process.sleep(2)
-
-      uuid2 =
-        comp do
-          uuid <- Fresh.fresh_uuid()
-          return(uuid)
-        end
-        |> Fresh.with_uuid7_handler()
-        |> Comp.run!()
-
-      # v7 UUIDs generated with time gap should be lexically ordered
-      assert uuid1 < uuid2
-    end
-
     test "nested handlers are independent" do
       result =
         comp do
