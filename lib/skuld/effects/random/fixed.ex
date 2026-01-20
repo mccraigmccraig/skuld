@@ -36,7 +36,10 @@ defmodule Skuld.Effects.Random.Fixed do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
-  alias Skuld.Effects.Random.{RandomFloat, RandomInt, RandomElement, Shuffle}
+  alias Skuld.Effects.Random.RandomElement
+  alias Skuld.Effects.Random.RandomFloat
+  alias Skuld.Effects.Random.RandomInt
+  alias Skuld.Effects.Random.Shuffle
 
   @sig Skuld.Effects.Random
 
