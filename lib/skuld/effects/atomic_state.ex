@@ -8,6 +8,11 @@ defmodule Skuld.Effects.AtomicState do
 
   Supports both simple single-state usage and multiple independent states via tags.
 
+  ## Handlers
+
+  - `AtomicState.Agent` - Agent-backed handler for production (true atomic ops)
+  - `AtomicState.Sync` - State-backed handler for testing (no Agent processes)
+
   ## Production Usage (Agent handler)
 
       use Skuld.Syntax
@@ -19,7 +24,7 @@ defmodule Skuld.Effects.AtomicState do
         value <- AtomicState.get()
         value
       end
-      |> AtomicState.with_agent_handler(0)
+      |> AtomicState.Agent.with_handler(0)
       |> Comp.run!()
       #=> 1
 
@@ -36,8 +41,8 @@ defmodule Skuld.Effects.AtomicState do
 
         {count, cache}
       end
-      |> AtomicState.with_agent_handler(0, tag: :counter)
-      |> AtomicState.with_agent_handler(%{}, tag: :cache)
+      |> AtomicState.Agent.with_handler(0, tag: :counter)
+      |> AtomicState.Agent.with_handler(%{}, tag: :cache)
       |> Comp.run!()
       #=> {1, %{key: "value"}}
 
@@ -49,30 +54,29 @@ defmodule Skuld.Effects.AtomicState do
         result2 <- AtomicState.cas(10, 30)  # fails - current is 20, not 10
         {result1, result2}
       end
-      |> AtomicState.with_agent_handler(0)
+      |> AtomicState.Agent.with_handler(0)
       |> Comp.run!()
       #=> {:ok, {:conflict, 20}}
 
-  ## Testing (State handler)
+  ## Testing (Sync handler)
 
-  For testing without spinning up Agents, use `with_state_handler/3` which
-  delegates to the regular State effect:
+  For testing without spinning up Agents, use the Sync handler:
 
       comp do
         _ <- AtomicState.put(0)
         _ <- AtomicState.modify(&(&1 + 1))
         AtomicState.get()
       end
-      |> AtomicState.with_state_handler(0)
-      |> State.with_handler(%{})  # State handler for AtomicState's internal state
+      |> AtomicState.Sync.with_handler(0)
       |> Comp.run!()
       #=> 1
   """
 
+  @behaviour Skuld.Comp.IInstall
+
   import Skuld.Comp.DefOp
 
   alias Skuld.Comp
-  alias Skuld.Comp.Env
   alias Skuld.Comp.Types
 
   @sig __MODULE__
@@ -184,65 +188,32 @@ defmodule Skuld.Effects.AtomicState do
   end
 
   #############################################################################
-  ## Agent Handler (Production)
+  ## Handler Installation (Delegating)
   #############################################################################
 
   @doc """
   Install an Agent-backed AtomicState handler.
 
-  Creates an Agent process that provides true atomic operations accessible
-  from multiple processes. The Agent is stopped when the computation completes.
-
-  ## Options
-
-  - `tag` - the state tag (default: `Skuld.Effects.AtomicState`)
-
-  ## Examples
-
-      # Simple usage
-      comp do
-        _ <- AtomicState.modify(&(&1 + 1))
-        AtomicState.get()
-      end
-      |> AtomicState.with_agent_handler(0)
-      |> Comp.run!()
-
-      # Multiple tagged states
-      comp do
-        _ <- AtomicState.modify(:a, &(&1 + 1))
-        _ <- AtomicState.modify(:b, &(&1 * 2))
-        {AtomicState.get(:a), AtomicState.get(:b)}
-      end
-      |> AtomicState.with_agent_handler(0, tag: :a)
-      |> AtomicState.with_agent_handler(10, tag: :b)
-      |> Comp.run!()
+  Delegates to `AtomicState.Agent.with_handler/3`.
   """
   @spec with_agent_handler(Types.computation(), term(), keyword()) :: Types.computation()
-  def with_agent_handler(comp, initial, opts \\ []) do
-    tag = Keyword.get(opts, :tag, @sig)
-    agent_key = agent_key(tag)
+  defdelegate with_agent_handler(comp, initial, opts \\ []),
+    to: __MODULE__.Agent,
+    as: :with_handler
 
-    comp
-    |> Comp.scoped(fn env ->
-      {:ok, agent} = Agent.start_link(fn -> initial end)
+  @doc """
+  Install a State-backed AtomicState handler for testing.
 
-      # Store agent pid in env.state so handler can find it
-      modified = Env.put_state(env, agent_key, agent)
+  Delegates to `AtomicState.Sync.with_handler/3`.
+  """
+  @spec with_state_handler(Types.computation(), term(), keyword()) :: Types.computation()
+  defdelegate with_state_handler(comp, initial, opts \\ []),
+    to: __MODULE__.Sync,
+    as: :with_handler
 
-      finally_k = fn value, e ->
-        # Stop the agent
-        agent_pid = Env.get_state(e, agent_key)
-        if agent_pid, do: Agent.stop(agent_pid)
-
-        # Clean up env.state
-        restored_env = %{e | state: Map.delete(e.state, agent_key)}
-        {value, restored_env}
-      end
-
-      {modified, finally_k}
-    end)
-    |> Comp.with_handler(sig(tag), make_agent_handler(tag))
-  end
+  #############################################################################
+  ## IInstall Implementation
+  #############################################################################
 
   @doc """
   Install AtomicState handler via catch clause syntax.
@@ -252,165 +223,21 @@ defmodule Skuld.Effects.AtomicState do
       catch
         AtomicState -> {:agent, 0}                    # agent handler
         AtomicState -> {:agent, {0, tag: :counter}}   # agent with opts
-        AtomicState -> {:state, 0}                    # state-backed handler
-        AtomicState -> {:state, {0, tag: :counter}}   # state-backed with opts
+        AtomicState -> {:sync, 0}                     # sync handler
+        AtomicState -> {:sync, {0, tag: :counter}}    # sync with opts
   """
+  @impl Skuld.Comp.IInstall
   def __handle__(comp, {:agent, {initial, opts}}) when is_list(opts),
-    do: with_agent_handler(comp, initial, opts)
+    do: __MODULE__.Agent.with_handler(comp, initial, opts)
 
-  def __handle__(comp, {:agent, initial}), do: with_agent_handler(comp, initial)
+  def __handle__(comp, {:agent, initial}),
+    do: __MODULE__.Agent.with_handler(comp, initial)
 
-  def __handle__(comp, {:state, {initial, opts}}) when is_list(opts),
-    do: with_state_handler(comp, initial, opts)
+  def __handle__(comp, {:sync, {initial, opts}}) when is_list(opts),
+    do: __MODULE__.Sync.with_handler(comp, initial, opts)
 
-  def __handle__(comp, {:state, initial}), do: with_state_handler(comp, initial)
-
-  defp make_agent_handler(tag) do
-    fn op, env, k ->
-      handle_agent(op, env, k, tag)
-    end
-  end
-
-  # With tagged signatures, each handler only receives operations for its own tag
-  defp handle_agent(%Get{tag: tag}, env, k, tag) do
-    agent = Env.get_state(env, agent_key(tag))
-    value = Agent.get(agent, & &1)
-    k.(value, env)
-  end
-
-  defp handle_agent(%Put{tag: tag, value: value}, env, k, tag) do
-    agent = Env.get_state(env, agent_key(tag))
-    Agent.update(agent, fn _ -> value end)
-    k.(:ok, env)
-  end
-
-  defp handle_agent(%Modify{tag: tag, fun: fun}, env, k, tag) do
-    agent = Env.get_state(env, agent_key(tag))
-
-    new_value =
-      Agent.get_and_update(agent, fn v ->
-        result = fun.(v)
-        {result, result}
-      end)
-
-    k.(new_value, env)
-  end
-
-  defp handle_agent(%AtomicState{tag: tag, fun: fun}, env, k, tag) do
-    agent = Env.get_state(env, agent_key(tag))
-
-    result =
-      Agent.get_and_update(agent, fn v ->
-        {result, new_state} = fun.(v)
-        {result, new_state}
-      end)
-
-    k.(result, env)
-  end
-
-  defp handle_agent(%Cas{tag: tag, expected: expected, new: new}, env, k, tag) do
-    agent = Env.get_state(env, agent_key(tag))
-
-    result =
-      Agent.get_and_update(agent, fn current ->
-        if current == expected do
-          {:ok, new}
-        else
-          {{:conflict, current}, current}
-        end
-      end)
-
-    k.(result, env)
-  end
-
-  #############################################################################
-  ## State Handler (Testing)
-  #############################################################################
-
-  @doc """
-  Install a State-backed AtomicState handler for testing.
-
-  Maps AtomicState operations to the regular State effect, allowing tests
-  without spinning up Agent processes. Operations are "atomic" trivially
-  since there's no concurrency in single-process tests.
-
-  Requires a State handler to be installed for the internal state key.
-
-  ## Options
-
-  - `tag` - the state tag (default: `Skuld.Effects.AtomicState`)
-
-  ## Examples
-
-      comp do
-        _ <- AtomicState.modify(&(&1 + 1))
-        AtomicState.get()
-      end
-      |> AtomicState.with_state_handler(0)
-      |> State.with_handler(%{})  # backing State handler
-      |> Comp.run!()
-  """
-  @spec with_state_handler(Types.computation(), term(), keyword()) :: Types.computation()
-  def with_state_handler(comp, initial, opts \\ []) do
-    tag = Keyword.get(opts, :tag, @sig)
-    output = Keyword.get(opts, :output)
-    suspend = Keyword.get(opts, :suspend)
-    state_key = state_key(tag)
-
-    scoped_opts =
-      []
-      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
-      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
-
-    comp
-    |> Comp.with_scoped_state(state_key, initial, scoped_opts)
-    |> Comp.with_handler(sig(tag), make_state_handler(tag))
-  end
-
-  defp make_state_handler(tag) do
-    fn op, env, k ->
-      handle_state(op, env, k, tag)
-    end
-  end
-
-  # With tagged signatures, each handler only receives operations for its own tag
-  defp handle_state(%Get{tag: tag}, env, k, tag) do
-    value = Env.get_state(env, state_key(tag))
-    k.(value, env)
-  end
-
-  defp handle_state(%Put{tag: tag, value: value}, env, k, tag) do
-    new_env = Env.put_state(env, state_key(tag), value)
-    k.(:ok, new_env)
-  end
-
-  defp handle_state(%Modify{tag: tag, fun: fun}, env, k, tag) do
-    key = state_key(tag)
-    current = Env.get_state(env, key)
-    new_value = fun.(current)
-    new_env = Env.put_state(env, key, new_value)
-    k.(new_value, new_env)
-  end
-
-  defp handle_state(%AtomicState{tag: tag, fun: fun}, env, k, tag) do
-    key = state_key(tag)
-    current = Env.get_state(env, key)
-    {result, new_state} = fun.(current)
-    new_env = Env.put_state(env, key, new_state)
-    k.(result, new_env)
-  end
-
-  defp handle_state(%Cas{tag: tag, expected: expected, new: new}, env, k, tag) do
-    key = state_key(tag)
-    current = Env.get_state(env, key)
-
-    if current == expected do
-      new_env = Env.put_state(env, key, new)
-      k.(:ok, new_env)
-    else
-      k.({:conflict, current}, env)
-    end
-  end
+  def __handle__(comp, {:sync, initial}),
+    do: __MODULE__.Sync.with_handler(comp, initial)
 
   #############################################################################
   ## Key Helpers
