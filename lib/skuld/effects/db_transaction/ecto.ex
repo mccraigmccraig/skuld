@@ -50,9 +50,15 @@ if Code.ensure_loaded?(Ecto) do
     - `:isolation` - The transaction isolation level (if supported)
     """
 
+    @behaviour Skuld.Comp.IHandle
+    @behaviour Skuld.Comp.IInstall
+
     alias Skuld.Comp
+    alias Skuld.Comp.Env
     alias Skuld.Comp.ISentinel
     alias Skuld.Effects.DBTransaction
+
+    @state_key {DBTransaction, :ecto_config}
 
     @doc """
     Install an Ecto transaction handler.
@@ -84,27 +90,73 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec with_handler(Comp.Types.computation(), module(), keyword()) :: Comp.Types.computation()
     def with_handler(comp, repo, opts \\ []) do
-      handler = fn
-        %DBTransaction.Transact{comp: inner_comp}, env, k ->
-          handle_transact(inner_comp, repo, opts, env, k)
+      comp
+      |> Comp.scoped(fn env ->
+        previous = Env.get_state(env, @state_key)
+        modified = Env.put_state(env, @state_key, {repo, opts})
 
-        %DBTransaction.Rollback{}, _env, _k ->
-          raise ArgumentError, """
-          DBTransaction.rollback/1 called outside of a transaction.
+        finally_k = fn v, e ->
+          restored_env =
+            case previous do
+              nil -> %{e | state: Map.delete(e.state, @state_key)}
+              val -> Env.put_state(e, @state_key, val)
+            end
 
-          rollback/1 must be called within a DBTransaction.transact/1 block:
+          {v, restored_env}
+        end
 
-              comp do
-                result <- DBTransaction.transact(comp do
-                  # ... do work ...
-                  _ <- DBTransaction.rollback(:some_reason)
-                end)
-                return(result)
-              end
-          """
+        {modified, finally_k}
+      end)
+      |> Comp.with_handler(DBTransaction.sig(), &__MODULE__.handle/3)
+    end
+
+    @doc """
+    Install Ecto handler via catch clause syntax.
+
+        catch
+          DBTransaction.Ecto -> MyApp.Repo
+          DBTransaction.Ecto -> {MyApp.Repo, timeout: 5000}
+    """
+    @impl Skuld.Comp.IInstall
+    def __handle__(comp, {repo, opts}) when is_atom(repo) and is_list(opts) do
+      with_handler(comp, repo, opts)
+    end
+
+    def __handle__(comp, repo) when is_atom(repo) do
+      with_handler(comp, repo, [])
+    end
+
+    @impl Skuld.Comp.IHandle
+    def handle(%DBTransaction.Transact{comp: inner_comp}, env, k) do
+      {repo, opts} = get_config!(env)
+      handle_transact(inner_comp, repo, opts, env, k)
+    end
+
+    def handle(%DBTransaction.Rollback{}, _env, _k) do
+      raise ArgumentError, """
+      DBTransaction.rollback/1 called outside of a transaction.
+
+      rollback/1 must be called within a DBTransaction.transact/1 block:
+
+          comp do
+            result <- DBTransaction.transact(comp do
+              # ... do work ...
+              _ <- DBTransaction.rollback(:some_reason)
+            end)
+            return(result)
+          end
+      """
+    end
+
+    # Get config from env state
+    defp get_config!(env) do
+      case Env.get_state(env, @state_key) do
+        nil ->
+          raise "DBTransaction.Ecto handler not installed. Use DBTransaction.Ecto.with_handler/2"
+
+        config ->
+          config
       end
-
-      Comp.with_handler(comp, DBTransaction.sig(), handler)
     end
 
     # Handle the transact operation - run inner comp in Ecto transaction

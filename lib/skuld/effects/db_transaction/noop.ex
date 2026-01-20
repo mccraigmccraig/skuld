@@ -31,6 +31,9 @@ defmodule Skuld.Effects.DBTransaction.Noop do
       |> Comp.run!()
   """
 
+  @behaviour Skuld.Comp.IHandle
+  @behaviour Skuld.Comp.IInstall
+
   alias Skuld.Comp
   alias Skuld.Comp.ISentinel
   alias Skuld.Effects.DBTransaction
@@ -57,27 +60,37 @@ defmodule Skuld.Effects.DBTransaction.Noop do
   """
   @spec with_handler(Comp.Types.computation()) :: Comp.Types.computation()
   def with_handler(comp) do
-    handler = fn
-      %DBTransaction.Transact{comp: inner_comp}, env, k ->
-        handle_transact(inner_comp, env, k)
+    Comp.with_handler(comp, DBTransaction.sig(), &__MODULE__.handle/3)
+  end
 
-      %DBTransaction.Rollback{}, _env, _k ->
-        raise ArgumentError, """
-        DBTransaction.rollback/1 called outside of a transaction.
+  @doc """
+  Install Noop handler via catch clause syntax.
 
-        rollback/1 must be called within a DBTransaction.transact/1 block:
+      catch
+        DBTransaction.Noop -> nil
+  """
+  @impl Skuld.Comp.IInstall
+  def __handle__(comp, _config), do: with_handler(comp)
 
-            comp do
-              result <- DBTransaction.transact(comp do
-                # ... do work ...
-                _ <- DBTransaction.rollback(:some_reason)
-              end)
-              return(result)
-            end
-        """
-    end
+  @impl Skuld.Comp.IHandle
+  def handle(%DBTransaction.Transact{comp: inner_comp}, env, k) do
+    handle_transact(inner_comp, env, k)
+  end
 
-    Comp.with_handler(comp, DBTransaction.sig(), handler)
+  def handle(%DBTransaction.Rollback{}, _env, _k) do
+    raise ArgumentError, """
+    DBTransaction.rollback/1 called outside of a transaction.
+
+    rollback/1 must be called within a DBTransaction.transact/1 block:
+
+        comp do
+          result <- DBTransaction.transact(comp do
+            # ... do work ...
+            _ <- DBTransaction.rollback(:some_reason)
+          end)
+          return(result)
+        end
+    """
   end
 
   # Handle the transact operation - run inner comp without actual transaction
