@@ -60,8 +60,9 @@ Each effect module defines a unique signature (typically the module itself):
 
 ** State: Scoped storage
 
-The =state= map holds effect state. Keys are typically tuples like
-={EffectModule, tag}= to support multiple instances of the same effect:
+The =state= map holds effect state. Keys are typically effect module atoms,
+or tuples like ={EffectModule, tag}= to support multiple instances of the same
+effect:
 
 #+begin_src elixir
 # Two independent State handlers:
@@ -186,7 +187,8 @@ def pure(value) do
 end
 #+end_src
 
-Simply calls the continuation with the value - no effects, no environment changes.
+The computation calls the continuation with the value - no effects, no
+environment changes.
 
 ** Comp.bind/2
 
@@ -208,8 +210,9 @@ This is the monadic bind operation:
 2. When it produces value =a=, call =f.(a)= to get the next computation
 3. Run that computation with the original continuation =k=
 
-The key insight: =bind= returns a *function*, not a result. The computation
-isn't executed until someone calls it with an environment and continuation.
+The key insight: =bind= returns another computation  *function*, not a result.
+The computation isn't executed until someone calls it with an environment and
+continuation.
 
 ** Why functions, not data?
 
@@ -237,7 +240,7 @@ The =comp= macro transforms sequential-looking code into nested =bind= calls:
 comp do
   x <- Reader.ask()
   y <- State.get()
-  return(x + y)
+  x + y
 end
 
 # Expands to:
@@ -258,9 +261,9 @@ The =else= clause handles pattern match failures in =<-= bindings:
 #+begin_src elixir
 comp do
   {:ok, x} <- might_return_error()
-  return(x)
+  x
 else
-  {:error, reason} -> return({:failed, reason})
+  {:error, reason} -> {:failed, reason}
 end
 #+end_src
 
@@ -299,7 +302,8 @@ Key mechanism:
 The =catch= clause supports two forms:
 
 1. *Interception*: ={Module, pattern} -> body= - intercepts effects via =Module.intercept/2=
-2. *Installation*: =Module -> config= - installs handlers via =Module.__handle__/2=
+2. *Installation*: =Module -> config= - installs handlers via
+   =Module.__handle__/2=
 
 *** Simple interception example
 
@@ -307,9 +311,9 @@ The =catch= clause supports two forms:
 comp do
   x <- State.get()
   _ <- if x < 0, do: Throw.throw(:negative)
-  return(x * 2)
+  x * 2
 catch
-  {Throw, :negative} -> return(0)
+  {Throw, :negative} -> 0
 end
 #+end_src
 
@@ -379,8 +383,8 @@ comp do
   result <- risky_operation(config)
   result
 catch
-  {Yield, :get_config} -> return(%{default: true})
-  {Throw, :timeout} -> return(:retry_later)
+  {Yield, :get_config} -> %{default: true}
+  {Throw, :timeout} -> :retry_later
   {Throw, err} -> Throw.throw({:wrapped, err})
 end
 #+end_src
@@ -475,7 +479,7 @@ comp do
   result <- risky_operation()
   result
 catch
-  {Throw, :recoverable} -> return(:fallback)  # Interception
+  {Throw, :recoverable} -> :fallback           # Interception
   State -> 0                                   # Installation
   Throw -> nil                                 # Installation
 end
@@ -515,11 +519,11 @@ When both are present, the semantic ordering is =catch(else(body))=:
 comp do
   {:ok, x} <- might_fail_match()
   _ <- might_throw(x)
-  return(x)
+  x
 else
-  {:error, r} -> return({:match_failed, r})
+  {:error, r} -> {:match_failed, r}
 catch
-  :boom -> return(:caught)
+  :boom -> :caught
 end
 #+end_src
 
@@ -534,7 +538,7 @@ end
 defcomp increment() do
   x <- State.get()
   _ <- State.put(x + 1)
-  return(x + 1)
+  x + 1
 end
 
 # Expands to:
@@ -780,7 +784,7 @@ end
    - Suspend: apply =transform_suspend=, bypass =leave_scope=
    - Throw: bypass both (error state)
 
-* Control Effects: Why CPS Matters
+* Control Effects: CPS FTW!
 
 ** Normal effects: Call continuation once
 
@@ -1143,8 +1147,8 @@ negligible compared to I/O latency. The overhead matters most for:
 - Tight loops with many effect calls
 - CPU-bound computation using effects for state
 
-For these cases, consider =FxFasterList= or Yield-based iteration which
-batch effect overhead.
+For these cases, consider =FxFasterList=, or Yield-based iterations, or
+just write pure code with accumulators and context parameters.
 
 ** Benchmark summary
 
