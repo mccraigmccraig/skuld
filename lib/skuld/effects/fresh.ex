@@ -4,7 +4,7 @@ defmodule Skuld.Effects.Fresh do
 
   Provides two handler modes:
 
-  - **Production** (`with_uuid7_handler/2`): Generates v7 UUIDs which are
+  - **Production** (`with_uuid7_handler/1`): Generates v7 UUIDs which are
     time-ordered and suitable for database primary keys (good data locality,
     lexical ordering).
 
@@ -47,30 +47,21 @@ defmodule Skuld.Effects.Fresh do
       |> Fresh.with_test_handler(namespace: namespace)
       |> Comp.run!()
       #=> "550e8400-..."  # same UUID!
+
+  ## Handler Submodules
+
+  - `Fresh.UUID7` - Production v7 UUID handler
+  - `Fresh.Test` - Deterministic v5 UUID handler for testing
   """
 
-  @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall
 
   import Skuld.Comp.DefOp
 
   alias Skuld.Comp
-  alias Skuld.Comp.Env
   alias Skuld.Comp.Types
 
   @sig __MODULE__
-
-  # Default namespace for deterministic UUID generation (a fixed v4 UUID)
-  @default_namespace "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
-
-  #############################################################################
-  ## State Structures
-  #############################################################################
-
-  defmodule TestState do
-    @moduledoc false
-    defstruct counter: 0, namespace: nil
-  end
 
   #############################################################################
   ## Operation Structs
@@ -87,7 +78,7 @@ defmodule Skuld.Effects.Fresh do
 
   The UUID format depends on the installed handler:
 
-  - `with_uuid7_handler/2`: Generates v7 UUIDs (time-ordered, production)
+  - `with_uuid7_handler/1`: Generates v7 UUIDs (time-ordered, production)
   - `with_test_handler/2`: Generates v5 UUIDs (deterministic, testing)
 
   ## Example
@@ -106,16 +97,13 @@ defmodule Skuld.Effects.Fresh do
   end
 
   #############################################################################
-  ## Production Handler (v7 UUIDs)
+  ## Handler Delegation
   #############################################################################
 
   @doc """
   Install a v7 UUID handler for production use.
 
-  Generates time-ordered UUIDs using UUID v7 (RFC 9562). These UUIDs:
-  - Are time-ordered (lexically sortable by creation time)
-  - Have excellent database index locality
-  - Are suitable for distributed systems
+  Delegates to `Fresh.UUID7.with_handler/1`.
 
   ## Example
 
@@ -128,9 +116,38 @@ defmodule Skuld.Effects.Fresh do
       #=> "01945a3b-7c9d-7000-8000-..."  # v7 UUID
   """
   @spec with_uuid7_handler(Types.computation()) :: Types.computation()
-  def with_uuid7_handler(comp) do
-    Comp.with_handler(comp, @sig, &handle/3)
+  defdelegate with_uuid7_handler(comp), to: __MODULE__.UUID7, as: :with_handler
+
+  @doc """
+  Install a deterministic UUID handler for testing.
+
+  Delegates to `Fresh.Test.with_handler/2`.
+
+  ## Options
+
+  - `namespace` - UUID namespace for generation (default: a fixed UUID).
+  - `output` - optional function `(result, final_counter) -> new_result`
+    to transform the result before returning.
+
+  ## Example
+
+      namespace = Uniq.UUID.uuid4()
+
+      comp do
+        uuid <- Fresh.fresh_uuid()
+        return(uuid)
+      end
+      |> Fresh.with_test_handler(namespace: namespace)
+      |> Comp.run!()
+  """
+  @spec with_test_handler(Types.computation(), keyword()) :: Types.computation()
+  def with_test_handler(comp, opts \\ []) do
+    __MODULE__.Test.with_handler(comp, opts)
   end
+
+  #############################################################################
+  ## Catch Clause Installation
+  #############################################################################
 
   @doc """
   Install Fresh handler via catch clause syntax.
@@ -143,87 +160,9 @@ defmodule Skuld.Effects.Fresh do
         Fresh -> :test                       # test handler, default opts
   """
   @impl Skuld.Comp.IInstall
-  def __handle__(comp, :uuid7), do: with_uuid7_handler(comp)
-  def __handle__(comp, :test), do: with_test_handler(comp)
-  def __handle__(comp, {:test, opts}) when is_list(opts), do: with_test_handler(comp, opts)
+  def __handle__(comp, :uuid7), do: __MODULE__.UUID7.__handle__(comp, nil)
+  def __handle__(comp, :test), do: __MODULE__.Test.__handle__(comp, nil)
 
-  @impl Skuld.Comp.IHandle
-  def handle(%FreshUUID{}, env, k) do
-    uuid = Uniq.UUID.uuid7()
-    k.(uuid, env)
-  end
-
-  #############################################################################
-  ## Test Handler (Deterministic v5 UUIDs)
-  #############################################################################
-
-  @doc """
-  Install a deterministic UUID handler for testing.
-
-  Generates reproducible UUIDs using UUID v5 (name-based, SHA-1) with a
-  configured namespace and sequential counter. The same namespace always
-  produces the same UUID sequence - ideal for testing.
-
-  ## Options
-
-  - `namespace` - UUID namespace for generation (default: a fixed UUID).
-    Can be a UUID string or one of the standard namespaces: `:dns`, `:url`,
-    `:oid`, `:x500`, or `nil`.
-  - `output` - optional function `(result, final_counter) -> new_result`
-    to transform the result before returning.
-
-  ## Example
-
-      namespace = Uniq.UUID.uuid4()
-
-      # First run
-      uuid1 = comp do
-        uuid <- Fresh.fresh_uuid()
-        return(uuid)
-      end
-      |> Fresh.with_test_handler(namespace: namespace)
-      |> Comp.run!()
-
-      # Second run - same result!
-      uuid2 = comp do
-        uuid <- Fresh.fresh_uuid()
-        return(uuid)
-      end
-      |> Fresh.with_test_handler(namespace: namespace)
-      |> Comp.run!()
-
-      uuid1 == uuid2  #=> true
-  """
-  @spec with_test_handler(Types.computation(), keyword()) :: Types.computation()
-  def with_test_handler(comp, opts \\ []) do
-    namespace = Keyword.get(opts, :namespace, @default_namespace)
-    output = Keyword.get(opts, :output)
-    suspend = Keyword.get(opts, :suspend)
-
-    initial_state = %TestState{counter: 0, namespace: namespace}
-
-    # Wrap user's output function to extract counter from state struct
-    wrapped_output =
-      if output do
-        fn value, %TestState{counter: final_counter} -> output.(value, final_counter) end
-      else
-        nil
-      end
-
-    scoped_opts =
-      []
-      |> then(fn o -> if wrapped_output, do: Keyword.put(o, :output, wrapped_output), else: o end)
-      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
-
-    comp
-    |> Comp.with_scoped_state(@sig, initial_state, scoped_opts)
-    |> Comp.with_handler(@sig, &handle_test/3)
-  end
-
-  defp handle_test(%FreshUUID{}, env, k) do
-    %TestState{counter: counter, namespace: namespace} = state = Env.get_state(env, @sig)
-    uuid = Uniq.UUID.uuid5(namespace, Integer.to_string(counter))
-    new_env = Env.put_state(env, @sig, %{state | counter: counter + 1})
-    k.(uuid, new_env)
-  end
+  def __handle__(comp, {:test, opts}) when is_list(opts),
+    do: __MODULE__.Test.__handle__(comp, opts)
 end
