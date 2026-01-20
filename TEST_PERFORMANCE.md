@@ -16,12 +16,12 @@ A typical `State.get -> State.put -> return` computation takes less than 1 micro
 
 ### Where Test Time Goes
 
-| Category | Time | Notes |
-|----------|------|-------|
-| Per-module JIT warmup | ~400ms | 28 modules × ~15ms avg first-test cost |
-| Genuinely slow tests | ~50ms | Timeouts, process spawning, Agent ops |
-| Fast tests (600+) | ~6ms | 0.00-0.01ms each once warmed up |
-| **Total** | **~500ms** | |
+| Category              | Time       | Notes                                  |
+|-----------------------|------------|----------------------------------------|
+| Per-module JIT warmup | ~400ms     | 28 modules × ~15ms avg first-test cost |
+| Genuinely slow tests  | ~50ms      | Timeouts, process spawning, Agent ops  |
+| Fast tests (600+)     | ~6ms       | 0.00-0.01ms each once warmed up        |
+| **Total**             | **~500ms** |                                        |
 
 ### Evidence
 
