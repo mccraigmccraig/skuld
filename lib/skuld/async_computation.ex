@@ -1,4 +1,4 @@
-defmodule Skuld.AsyncRunner do
+defmodule Skuld.AsyncComputation do
   @moduledoc """
   Run a computation in a separate process, bridging yields, throws, and results
   back to the calling process via messages.
@@ -30,10 +30,10 @@ defmodule Skuld.AsyncRunner do
         |> EctoPersist.with_handler(Repo)
 
       # Start async - will add Yield and Throw handlers
-      {:ok, runner} = AsyncRunner.start(computation, tag: :create_todo)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :create_todo)
 
       # Or start sync for fast-yielding computations
-      {:ok, runner, {:yield, :ready}} = AsyncRunner.start_sync(computation, tag: :create_todo)
+      {:ok, runner, {:yield, :ready}} = AsyncComputation.start_sync(computation, tag: :create_todo)
 
       # In handle_info:
       def handle_info({:create_todo, :result, {:ok, todo}}, socket) do
@@ -55,17 +55,17 @@ defmodule Skuld.AsyncRunner do
         end
         |> ...handlers...
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :create_user)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :create_user)
 
       # Handle yields (data contains any scoped effect decorations)
       def handle_info({:create_user, :yield, :get_name, _data}, socket) do
         # Maybe wait for user input, then:
-        AsyncRunner.resume(runner, "Alice")
+        AsyncComputation.resume(runner, "Alice")
         {:noreply, socket}
       end
 
       def handle_info({:create_user, :yield, :get_email, _data}, socket) do
-        AsyncRunner.resume(runner, "alice@example.com")
+        AsyncComputation.resume(runner, "alice@example.com")
         {:noreply, socket}
       end
 
@@ -149,10 +149,10 @@ defmodule Skuld.AsyncRunner do
       {:ok, runner, {:yield, :ready, _data}} =
         command_processor
         |> Reader.with_handler(context)
-        |> AsyncRunner.start_sync(tag: :processor)
+        |> AsyncComputation.start_sync(tag: :processor)
 
       # Now resume synchronously for quick commands
-      {:yield, :ready, _data} = AsyncRunner.resume_sync(runner, %QuickCommand{})
+      {:yield, :ready, _data} = AsyncComputation.resume_sync(runner, %QuickCommand{})
   """
   @spec start_sync(Skuld.Comp.Types.computation(), keyword()) ::
           {:ok, t(),
@@ -216,7 +216,7 @@ defmodule Skuld.AsyncRunner do
 
   ## Example
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :cmd)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :cmd)
 
       # First yield arrives via message
       receive do
@@ -224,7 +224,7 @@ defmodule Skuld.AsyncRunner do
       end
 
       # Now resume and wait synchronously
-      case AsyncRunner.resume_sync(runner, %SomeCommand{}) do
+      case AsyncComputation.resume_sync(runner, %SomeCommand{}) do
         {:yield, :ready, _data} -> # ready for next command
         {:result, final} -> # computation finished
         {:throw, error} -> # something went wrong

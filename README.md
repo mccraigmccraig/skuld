@@ -28,7 +28,7 @@ some common side-effecting operations and their effectful equivalents:
 | Random values                   | Random                       |
 | Generating IDs (UUIDs)          | Fresh                        |
 | Async tasks / parallel work     | Async, Parallel, AtomicState |
-| Run effects from LiveView       | AsyncRunner                  |
+| Run effects from LiveView       | AsyncComputation             |
 | Database transactions           | DBTransaction                |
 | Database queries                | Query                        |
 | Ecto Repo operations            | ChangesetPersist             |
@@ -74,7 +74,7 @@ some common side-effecting operations and their effectful equivalents:
     - [AtomicState](#atomicstate)
     - [Async](#async)
     - [Parallel](#parallel)
-    - [AsyncRunner](#asyncrunner)
+    - [AsyncComputation](#asynccomputation)
   - [Persistence & Data](#persistence--data)
     - [DBTransaction](#dbtransaction)
     - [Query](#query)
@@ -554,7 +554,7 @@ end
 
 When a computation yields (via the Yield effect), the `:suspend` function can attach
 effect state to the `Suspend.data` field. This is useful for:
-- Exposing effect state to external runners (like AsyncRunner)
+- Exposing effect state to external runners (like AsyncComputation)
 - Debugging and logging
 - Cold resume scenarios
 
@@ -586,7 +586,7 @@ modify the result.
 
 EffectLogger uses this mechanism automatically when `:decorate_suspend` is true
 (the default), attaching the current log to `Suspend.data[EffectLogger]` for
-access by AsyncRunner callers.
+access by AsyncComputation callers.
 
 ### Control Flow
 
@@ -1309,7 +1309,7 @@ end
 
 Operations: `all/1`, `race/1`, `map/2`
 
-#### AsyncRunner
+#### AsyncComputation
 
 Run effectful computations from non-effectful code (e.g., LiveView), bridging yields,
 throws, and results back via messages:
@@ -1325,11 +1325,11 @@ computation =
   |> Reader.with_handler(%{tenant_id: "t-123"})
 
 # Start async - returns immediately, first response via message
-{:ok, runner} = Skuld.AsyncRunner.start(computation, tag: :create_user)
+{:ok, runner} = Skuld.AsyncComputation.start(computation, tag: :create_user)
 
 # Start sync - blocks until first yield/result/throw (for fast-yielding computations)
 {:ok, runner, {:yield, :get_name, data}} =
-  Skuld.AsyncRunner.start_sync(computation, tag: :create_user, timeout: 5000)
+  Skuld.AsyncComputation.start_sync(computation, tag: :create_user, timeout: 5000)
 # `data` contains any decorations from scoped effects (e.g., EffectLogger log)
 
 # Messages arrive as {tag, status, value} or {tag, status, value, data}:
@@ -1339,10 +1339,10 @@ computation =
 # - {:create_user, :stopped, reason}         <- cancelled
 
 # Resume async - returns immediately, next response via message
-Skuld.AsyncRunner.resume(runner, "Alice")
+Skuld.AsyncComputation.resume(runner, "Alice")
 
 # Resume sync - blocks until next yield/result/throw
-case Skuld.AsyncRunner.resume_sync(runner, "Alice", timeout: 5000) do
+case Skuld.AsyncComputation.resume_sync(runner, "Alice", timeout: 5000) do
   {:yield, next_prompt, data} -> # computation yielded again
   {:result, value} -> # computation completed
   {:throw, error} -> # computation threw
@@ -1350,7 +1350,7 @@ case Skuld.AsyncRunner.resume_sync(runner, "Alice", timeout: 5000) do
 end
 
 # Cancel if needed
-Skuld.AsyncRunner.cancel(runner)
+Skuld.AsyncComputation.cancel(runner)
 ```
 
 **LiveView example:**
@@ -1365,7 +1365,7 @@ def handle_event("start_wizard", _params, socket) do
     end
     |> MyApp.with_domain_handlers()
 
-  {:ok, runner} = Skuld.AsyncRunner.start(computation, tag: :wizard)
+  {:ok, runner} = Skuld.AsyncComputation.start(computation, tag: :wizard)
   {:noreply, assign(socket, runner: runner, step: nil)}
 end
 
@@ -1382,7 +1382,7 @@ def handle_info({:wizard, :throw, error}, socket) do
 end
 
 def handle_event("submit_step", %{"value" => value}, socket) do
-  Skuld.AsyncRunner.resume(socket.assigns.runner, value)
+  Skuld.AsyncComputation.resume(socket.assigns.runner, value)
   {:noreply, socket}
 end
 ```

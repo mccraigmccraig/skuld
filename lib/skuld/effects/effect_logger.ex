@@ -490,7 +490,7 @@ defmodule Skuld.Effects.EffectLogger do
 
     This only captures the specified State keys, excluding Reader/other constant state.
   - `:decorate_suspend` - If true (default), attach the current finalized log to
-    `Suspend.data[EffectLogger]` when yielding. This allows AsyncRunner callers to
+    `Suspend.data[EffectLogger]` when yielding. This allows AsyncComputation callers to
     access the log without needing the full env. Set to `false` to disable.
 
   ## Example - Fresh Logging

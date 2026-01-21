@@ -1,8 +1,8 @@
-defmodule Skuld.AsyncRunnerTest do
+defmodule Skuld.AsyncComputationTest do
   use ExUnit.Case, async: true
   use Skuld.Syntax
 
-  alias Skuld.AsyncRunner
+  alias Skuld.AsyncComputation
   alias Skuld.Effects.Reader
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
@@ -15,7 +15,7 @@ defmodule Skuld.AsyncRunnerTest do
           return({:ok, 42})
         end
 
-      {:ok, _runner} = AsyncRunner.start(computation, tag: :test)
+      {:ok, _runner} = AsyncComputation.start(computation, tag: :test)
 
       assert_receive {:test, :result, {:ok, 42}}
     end
@@ -30,7 +30,7 @@ defmodule Skuld.AsyncRunnerTest do
         |> Reader.with_handler(10)
         |> State.with_handler(32)
 
-      {:ok, _runner} = AsyncRunner.start(computation, tag: :with_effects)
+      {:ok, _runner} = AsyncComputation.start(computation, tag: :with_effects)
 
       assert_receive {:with_effects, :result, 42}
     end
@@ -42,7 +42,7 @@ defmodule Skuld.AsyncRunnerTest do
           return(:never_reached)
         end
 
-      {:ok, _runner} = AsyncRunner.start(computation, tag: :throwing)
+      {:ok, _runner} = AsyncComputation.start(computation, tag: :throwing)
 
       assert_receive {:throwing, :throw, :something_went_wrong}
     end
@@ -55,15 +55,15 @@ defmodule Skuld.AsyncRunnerTest do
           return(x + y)
         end
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :yielding)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :yielding)
 
       # First yield (data is nil since no scoped effects with suspend decoration)
       assert_receive {:yielding, :yield, :first, _data}
-      AsyncRunner.resume(runner, 10)
+      AsyncComputation.resume(runner, 10)
 
       # Second yield
       assert_receive {:yielding, :yield, :second, _data}
-      AsyncRunner.resume(runner, 32)
+      AsyncComputation.resume(runner, 32)
 
       # Final result
       assert_receive {:yielding, :result, 42}
@@ -82,7 +82,7 @@ defmodule Skuld.AsyncRunnerTest do
 
       computation = comp(do: return(:hello))
 
-      {:ok, _runner} = AsyncRunner.start(computation, tag: :custom_caller, caller: middleman)
+      {:ok, _runner} = AsyncComputation.start(computation, tag: :custom_caller, caller: middleman)
 
       assert_receive {:forwarded, {:custom_caller, :result, :hello}}
     end
@@ -97,17 +97,17 @@ defmodule Skuld.AsyncRunnerTest do
         end
 
       {:ok, runner, {:yield, :ready, _data}} =
-        AsyncRunner.start_sync(computation, tag: :sync_start)
+        AsyncComputation.start_sync(computation, tag: :sync_start)
 
       # Can continue with resume_sync
-      assert {:result, 42} = AsyncRunner.resume_sync(runner, 21)
+      assert {:result, 42} = AsyncComputation.resume_sync(runner, 21)
     end
 
     test "returns result when computation completes immediately" do
       computation = comp(do: return({:ok, 42}))
 
       {:ok, _runner, {:result, {:ok, 42}}} =
-        AsyncRunner.start_sync(computation, tag: :immediate_result)
+        AsyncComputation.start_sync(computation, tag: :immediate_result)
     end
 
     test "returns throw when computation throws immediately" do
@@ -118,7 +118,7 @@ defmodule Skuld.AsyncRunnerTest do
         end
 
       {:ok, _runner, {:throw, :immediate_error}} =
-        AsyncRunner.start_sync(computation, tag: :immediate_throw)
+        AsyncComputation.start_sync(computation, tag: :immediate_throw)
     end
 
     test "works with effects" do
@@ -131,9 +131,9 @@ defmodule Skuld.AsyncRunnerTest do
         |> Reader.with_handler(21)
 
       {:ok, runner, {:yield, :get_multiplier, _data}} =
-        AsyncRunner.start_sync(computation, tag: :with_effects)
+        AsyncComputation.start_sync(computation, tag: :with_effects)
 
-      assert {:result, 42} = AsyncRunner.resume_sync(runner, 2)
+      assert {:result, 42} = AsyncComputation.resume_sync(runner, 2)
     end
 
     test "respects custom timeout" do
@@ -145,9 +145,9 @@ defmodule Skuld.AsyncRunnerTest do
 
       # Should succeed quickly with reasonable timeout
       {:ok, runner, {:yield, :first, _data}} =
-        AsyncRunner.start_sync(computation, tag: :custom_timeout, timeout: 1000)
+        AsyncComputation.start_sync(computation, tag: :custom_timeout, timeout: 1000)
 
-      assert {:result, :done} = AsyncRunner.resume_sync(runner, :done)
+      assert {:result, :done} = AsyncComputation.resume_sync(runner, :done)
     end
 
     test "command processor pattern - sync start then sync resume loop" do
@@ -162,14 +162,14 @@ defmodule Skuld.AsyncRunnerTest do
         end
 
       # Start sync - get first :ready yield
-      {:ok, runner, {:yield, :ready, _data}} = AsyncRunner.start_sync(processor, tag: :processor)
+      {:ok, runner, {:yield, :ready, _data}} = AsyncComputation.start_sync(processor, tag: :processor)
 
       # Send first command, get back ready with result
-      {:yield, {:ready, {:processed, :cmd_a}}, _data} = AsyncRunner.resume_sync(runner, :cmd_a)
+      {:yield, {:ready, {:processed, :cmd_a}}, _data} = AsyncComputation.resume_sync(runner, :cmd_a)
 
       # Send second command, get final result
       {:result, {:done, {:processed, :cmd_a}, {:processed, :cmd_b}}} =
-        AsyncRunner.resume_sync(runner, :cmd_b)
+        AsyncComputation.resume_sync(runner, :cmd_b)
     end
   end
 
@@ -182,16 +182,16 @@ defmodule Skuld.AsyncRunnerTest do
           return(x + y)
         end
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :sync_yield)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :sync_yield)
 
       # First yield comes via message
       assert_receive {:sync_yield, :yield, :first, _data}
 
       # Resume sync and wait for second yield
-      assert {:yield, :second, _data} = AsyncRunner.resume_sync(runner, 10)
+      assert {:yield, :second, _data} = AsyncComputation.resume_sync(runner, 10)
 
       # Resume sync and wait for result
-      assert {:result, 42} = AsyncRunner.resume_sync(runner, 32)
+      assert {:result, 42} = AsyncComputation.resume_sync(runner, 32)
     end
 
     test "returns result when computation completes" do
@@ -201,10 +201,10 @@ defmodule Skuld.AsyncRunnerTest do
           return({:ok, x * 2})
         end
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :sync_result)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :sync_result)
 
       assert_receive {:sync_result, :yield, :get_value, _data}
-      assert {:result, {:ok, 42}} = AsyncRunner.resume_sync(runner, 21)
+      assert {:result, {:ok, 42}} = AsyncComputation.resume_sync(runner, 21)
     end
 
     test "returns throw on error" do
@@ -215,10 +215,10 @@ defmodule Skuld.AsyncRunnerTest do
           return(x)
         end
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :sync_throw)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :sync_throw)
 
       assert_receive {:sync_throw, :yield, :get_value, _data}
-      assert {:throw, :negative} = AsyncRunner.resume_sync(runner, -5)
+      assert {:throw, :negative} = AsyncComputation.resume_sync(runner, -5)
     end
 
     test "respects custom timeout" do
@@ -229,12 +229,12 @@ defmodule Skuld.AsyncRunnerTest do
           return(:done)
         end
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :custom_timeout)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :custom_timeout)
 
       assert_receive {:custom_timeout, :yield, :ready, _data}
 
       # This should succeed quickly
-      assert {:result, :done} = AsyncRunner.resume_sync(runner, :go, timeout: 1000)
+      assert {:result, :done} = AsyncComputation.resume_sync(runner, :go, timeout: 1000)
     end
 
     test "mixed sync and async resumes" do
@@ -246,20 +246,20 @@ defmodule Skuld.AsyncRunnerTest do
           return(a + b + c)
         end
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :mixed)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :mixed)
 
       # First yield via message
       assert_receive {:mixed, :yield, :a, _data}
 
       # Async resume
-      AsyncRunner.resume(runner, 1)
+      AsyncComputation.resume(runner, 1)
       assert_receive {:mixed, :yield, :b, _data}
 
       # Sync resume
-      assert {:yield, :c, _data} = AsyncRunner.resume_sync(runner, 2)
+      assert {:yield, :c, _data} = AsyncComputation.resume_sync(runner, 2)
 
       # Sync resume to completion
-      assert {:result, 6} = AsyncRunner.resume_sync(runner, 3)
+      assert {:result, 6} = AsyncComputation.resume_sync(runner, 3)
     end
   end
 
@@ -271,11 +271,11 @@ defmodule Skuld.AsyncRunnerTest do
           return(:completed)
         end
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :cancellable)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :cancellable)
 
       assert_receive {:cancellable, :yield, :waiting, _data}
 
-      AsyncRunner.cancel(runner)
+      AsyncComputation.cancel(runner)
 
       assert_receive {:cancellable, :stopped, :cancelled}
       refute_receive {:cancellable, :result, _}, 10
@@ -286,7 +286,7 @@ defmodule Skuld.AsyncRunnerTest do
     test "runner process exits after sending result" do
       computation = comp(do: return(:done))
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :lifecycle)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :lifecycle)
 
       assert_receive {:lifecycle, :result, :done}
 
@@ -300,7 +300,7 @@ defmodule Skuld.AsyncRunnerTest do
       # Skuld converts exceptions to Throws, so they come back as messages
       computation = fn _env, _k -> raise "something went wrong" end
 
-      {:ok, _runner} = AsyncRunner.start(computation, tag: :raising)
+      {:ok, _runner} = AsyncComputation.start(computation, tag: :raising)
 
       # Should receive a throw message with the exception info
       assert_receive {:raising, :throw,
@@ -310,7 +310,7 @@ defmodule Skuld.AsyncRunnerTest do
     test "runner exits normally after sending throw message" do
       computation = fn _env, _k -> raise "boom" end
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :exits_normally)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :exits_normally)
 
       assert_receive {:exits_normally, :throw, _error}
 
@@ -331,15 +331,15 @@ defmodule Skuld.AsyncRunnerTest do
           return(%{name: name, email: email})
         end
 
-      {:ok, runner} = AsyncRunner.start(wizard, tag: :wizard)
+      {:ok, runner} = AsyncComputation.start(wizard, tag: :wizard)
 
       # Step 1
       assert_receive {:wizard, :yield, %{step: 1, prompt: "Enter name"}, _data1}
-      AsyncRunner.resume(runner, "Alice")
+      AsyncComputation.resume(runner, "Alice")
 
       # Step 2
       assert_receive {:wizard, :yield, %{step: 2, prompt: "Enter email"}, _data2}
-      AsyncRunner.resume(runner, "alice@example.com")
+      AsyncComputation.resume(runner, "alice@example.com")
 
       # Result
       assert_receive {:wizard, :result, %{name: "Alice", email: "alice@example.com"}}
@@ -354,10 +354,10 @@ defmodule Skuld.AsyncRunnerTest do
         end
         |> Reader.with_handler(21)
 
-      {:ok, runner} = AsyncRunner.start(computation, tag: :mixed)
+      {:ok, runner} = AsyncComputation.start(computation, tag: :mixed)
 
       assert_receive {:mixed, :yield, :get_multiplier, _data}
-      AsyncRunner.resume(runner, 2)
+      AsyncComputation.resume(runner, 2)
 
       assert_receive {:mixed, :result, 42}
     end
