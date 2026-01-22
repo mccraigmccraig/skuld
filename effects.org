@@ -18,6 +18,21 @@ We like pure functions because:
 - they are predictable
 - they are fast (algorithms permitting)
 
+#+begin_src elixir
+# Pure functions - output depends only on input
+def add(a, b), do: a + b
+
+def calculate_total(items) do
+  Enum.reduce(items, 0, fn item, acc -> 
+    acc + item.price * item.quantity 
+  end)
+end
+
+def validate_email(email) do
+  if String.contains?(email, "@"), do: {:ok, email}, else: {:error, :invalid}
+end
+#+end_src
+
 *** Side-effecting functions
 
 We don't like side-effecting functions because:
@@ -29,6 +44,32 @@ We don't like side-effecting functions because:
 On the other hand... we like side-effecting functions because:
 
 - without them nothing actually happens
+
+#+begin_src elixir
+# Side-effecting functions - interact with the world
+def save_user(user) do
+  Repo.insert!(user)  # Hits the database
+end
+
+def fetch_weather(city) do
+  HTTPoison.get!("https://api.weather.com/#{city}")  # Network call
+end
+
+def log_event(event) do
+  Logger.info("Event: #{inspect(event)}")  # Writes to stdout/file
+  :ok
+end
+
+def get_current_time() do
+  DateTime.utc_now()  # Reads system clock
+end
+
+def increment_counter() do
+  count = Process.get(:counter, 0)  # Read from process dictionary
+  Process.put(:counter, count + 1)  # Write to process dictionary
+  count + 1
+end
+#+end_src
 
 *** Off by one
 
@@ -43,6 +84,42 @@ Effectful functions allow a program to declare *what* effects it
 wants to perform without specifying *how* they are to be performed.
 
 The *how* can be decided upon later *without* changing code
+
+#+begin_src elixir
+# Effectful functions - describe what, not how
+defcomp save_user(user) do
+  ChangesetPersist.insert(user)  # "I need to persist this"
+end
+
+defcomp fetch_weather(city) do
+  Http.get("https://api.weather.com/#{city}")  # "I need this HTTP response"
+end
+
+defcomp log_event(event) do
+  _ <- Writer.tell({:event, event})  # "I want to record this"
+  :ok
+end
+
+defcomp get_current_time() do
+  Clock.now()  # "I need the current time"
+end
+#+end_src
+
+The functions look similar to side-effecting functions, but they return
+*descriptions* of effects, not results. Nothing happens until handlers
+interpret those descriptions:
+
+#+begin_src elixir
+# Production: real database, real HTTP, real clock
+save_user(user)
+|> ChangesetPersist.Ecto.with_handler(Repo)
+|> Comp.run!()
+
+# Test: in-memory, deterministic
+save_user(user)
+|> ChangesetPersist.InMemory.with_handler()
+|> Comp.run!()
+#+end_src
 
 * Problems & pains
 
