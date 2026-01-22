@@ -132,7 +132,7 @@ Property-based testing? No chance - 1000 iterations would take minutes.
 
 You need =tenant_id= in a function 8 levels deep. You add it as a parameter
 to every function in the chain. Then you need =user_id=. Then =request_id=.
-Your function signatures grow. Your call sites get noisy.
+Your function signatures grow, and call sites get noisy.
 
 ** Mocking is awkward - and often depends on global state
 
@@ -242,18 +242,21 @@ runners. That's *75x slower*.
 Fast tests mean:
 - Faster CI pipelines
 - More property test iterations (find more bugs)
-- Developers actually run tests locally
+- Developers can actually run tests locally
 - Less flakiness (no network, no database state)
 
 * How It Works: The 30-Second Version
 
 Algebraic Effects split your code into three layers:
 
-| Layer     | What it does                         | Example                         |
-|-----------+--------------------------------------+---------------------------------|
-| Pure      | Regular functions, no effects        | =String.upcase/1=               |
-| Effectful | Describes effects without doing them | Your domain logic               |
-| Handlers  | Actually performs the I/O            | Thin wrappers around Repo, HTTP |
+| Layer     | What it does       | Example              |
+|-----------+--------------------+----------------------|
+| Pure      | Regular functions, | =String.upcase/1=    |
+|           | no effects         |                      |
+| Effectful | Describes effects  | Your domain logic    |
+|           | without doing them |                      |
+| Handlers  | Actually perform   | Thin wrappers around |
+|           | the I/O            | Repo, HTTP           |
 
 Domain logic moves from "side-effecting" to "effectful".
 It becomes pure - testable, composable, independent of infrastructure.
@@ -538,6 +541,8 @@ The tradeoff is worth it when:
 - You have complex domain logic with many effects
 - You want property-based testing
 - You need effect logging for debugging
+- You want serializable function state and replay
+- You want coroutines
 
 * When To Use Skuld
 
