@@ -793,13 +793,55 @@ generator
 # Or drive with a custom function
 generator
 |> Yield.with_handler()
-|> Yield.run_with_driver(fn yielded ->
+|> Yield.run_with_driver(fn yielded, _data ->
   IO.puts("Got: #{yielded}")
   {:continue, :ok}
 end)
 # Prints: Got: 1, Got: 2, Got: 3
 #=> {:done, :done, _env}
 ```
+
+#### Cancelling Suspended Computations
+
+When a computation yields, you can either resume it or cancel it. Cancellation invokes
+the `leave_scope` chain, allowing effects to clean up resources (close connections,
+release locks, etc.):
+
+```elixir
+alias Skuld.Comp
+alias Skuld.Comp.{Suspend, Cancelled}
+
+# A computation with scoped cleanup
+computation =
+  Yield.yield(:waiting)
+  |> Comp.scoped(fn env ->
+    IO.puts("Entering scope")
+    finally_k = fn result, e ->
+      IO.puts("Cleanup called with: #{inspect(result.__struct__)}")
+      {result, e}
+    end
+    {env, finally_k}
+  end)
+  |> Yield.with_handler()
+
+# Run until suspension
+{%Suspend{value: :waiting}, env} = Comp.run(computation)
+# Prints: Entering scope
+
+# Cancel instead of resuming - triggers cleanup
+{%Cancelled{reason: :user_cancelled}, _final_env} =
+  Comp.cancel(suspend, env, :user_cancelled)
+# Prints: Cleanup called with: Skuld.Comp.Cancelled
+```
+
+The `Comp.cancel/3` function:
+- Creates a `%Cancelled{reason: reason}` result
+- Invokes the `leave_scope` chain for proper effect cleanup
+- Returns `{%Cancelled{}, final_env}`
+
+This is used internally by `AsyncComputation.cancel/1` and `Yield.run_with_driver/2`
+(via `{:cancel, reason}` driver return) to ensure effects can clean up when
+computations are cancelled.
 
 #### Yield.respond - Internal Yield Handling
 
@@ -1315,6 +1357,9 @@ Run effectful computations from non-effectful code (e.g., LiveView), bridging yi
 throws, and results back via messages:
 
 ```elixir
+alias Skuld.AsyncComputation
+alias Skuld.Comp.{Suspend, Throw, Cancelled}
+
 # Build a computation with handlers
 computation =
   comp do
@@ -1325,37 +1370,41 @@ computation =
   |> Reader.with_handler(%{tenant_id: "t-123"})
 
 # Start async - returns immediately, first response via message
-{:ok, runner} = Skuld.AsyncComputation.start(computation, tag: :create_user)
+{:ok, runner} = AsyncComputation.start(computation, tag: :create_user)
 
 # Start sync - blocks until first yield/result/throw (for fast-yielding computations)
-{:ok, runner, {:yield, :get_name, data}} =
-  Skuld.AsyncComputation.start_sync(computation, tag: :create_user, timeout: 5000)
+{:ok, runner, %Suspend{value: :get_name, data: data}} =
+  AsyncComputation.start_sync(computation, tag: :create_user, timeout: 5000)
 # `data` contains any decorations from scoped effects (e.g., EffectLogger log)
 
-# Messages arrive as {tag, status, value} or {tag, status, value, data}:
-# - {:create_user, :yield, :get_name, data}  <- computation yielded (data has effect decorations)
-# - {:create_user, :result, value}           <- computation completed
-# - {:create_user, :throw, error}            <- computation threw
-# - {:create_user, :stopped, reason}         <- cancelled
+# Messages arrive as {AsyncComputation, tag, result} where result is:
+# - %Suspend{value: v, data: d}  <- computation yielded (data has effect decorations)
+# - %Throw{error: e}             <- computation threw
+# - %Cancelled{reason: r}        <- computation was cancelled
+# - plain value                  <- computation completed successfully
 
 # Resume async - returns immediately, next response via message
-Skuld.AsyncComputation.resume(runner, "Alice")
+AsyncComputation.resume(runner, "Alice")
 
 # Resume sync - blocks until next yield/result/throw
-case Skuld.AsyncComputation.resume_sync(runner, "Alice", timeout: 5000) do
-  {:yield, next_prompt, data} -> # computation yielded again
-  {:result, value} -> # computation completed
-  {:throw, error} -> # computation threw
+case AsyncComputation.resume_sync(runner, "Alice", timeout: 5000) do
+  %Suspend{value: next_prompt} -> # computation yielded again
+  %Throw{error: error} -> # computation threw
+  %Cancelled{reason: reason} -> # computation was cancelled
+  value -> # computation completed with value
   {:error, :timeout} -> # timed out
 end
 
-# Cancel if needed
-Skuld.AsyncComputation.cancel(runner)
+# Cancel if needed - triggers proper cleanup via leave_scope
+AsyncComputation.cancel(runner)
 ```
 
 **LiveView example:**
 
 ```elixir
+alias Skuld.AsyncComputation
+alias Skuld.Comp.{Suspend, Throw, Cancelled}
+
 def handle_event("start_wizard", _params, socket) do
   computation =
     comp do
@@ -1365,24 +1414,29 @@ def handle_event("start_wizard", _params, socket) do
     end
     |> MyApp.with_domain_handlers()
 
-  {:ok, runner} = Skuld.AsyncComputation.start(computation, tag: :wizard)
+  {:ok, runner} = AsyncComputation.start(computation, tag: :wizard)
   {:noreply, assign(socket, runner: runner, step: nil)}
 end
 
-def handle_info({:wizard, :yield, %{step: step, prompt: prompt}, _data}, socket) do
-  {:noreply, assign(socket, step: step, prompt: prompt)}
-end
+# Single clause handles all messages for a tag - easy delegation
+def handle_info({AsyncComputation, :wizard, result}, socket) do
+  case result do
+    %Suspend{value: %{step: step, prompt: prompt}} ->
+      {:noreply, assign(socket, step: step, prompt: prompt)}
 
-def handle_info({:wizard, :result, {:ok, user}}, socket) do
-  {:noreply, socket |> assign(user: user, runner: nil) |> put_flash(:info, "Created!")}
-end
+    %Throw{error: error} ->
+      {:noreply, socket |> assign(runner: nil) |> put_flash(:error, inspect(error))}
 
-def handle_info({:wizard, :throw, error}, socket) do
-  {:noreply, socket |> assign(runner: nil) |> put_flash(:error, inspect(error))}
+    %Cancelled{reason: _reason} ->
+      {:noreply, assign(socket, runner: nil)}
+
+    {:ok, user} ->
+      {:noreply, socket |> assign(user: user, runner: nil) |> put_flash(:info, "Created!")}
+  end
 end
 
 def handle_event("submit_step", %{"value" => value}, socket) do
-  Skuld.AsyncComputation.resume(socket.assigns.runner, value)
+  AsyncComputation.resume(socket.assigns.runner, value)
   {:noreply, socket}
 end
 ```
@@ -1390,9 +1444,11 @@ end
 **Key points:**
 
 - Adds `Throw.with_handler/1` and `Yield.with_handler/1` automatically
-- Exceptions in computations become `{tag, :throw, %{kind: :error, payload: exception}}` messages
+- Uniform message format `{AsyncComputation, tag, result}` enables single-clause delegation
+- Exceptions in computations become `%Throw{error: %{kind: :error, payload: exception}}`
+- Cancellation triggers proper cleanup via `leave_scope` chain
 - Linked by default (use `link: false` for unlinked)
-- Yield messages include `data` containing decorations from scoped effects (e.g., `data[EffectLogger]` has the current log when using `EffectLogger.with_logging/2`)
+- `Suspend.data` contains decorations from scoped effects (e.g., `data[EffectLogger]` has the current log)
 - Use this for non-effectful callers; use `Async` effect when inside a computation
 
 Operations: `start/2`, `start_sync/2`, `resume/2`, `resume_sync/3`, `cancel/1`
