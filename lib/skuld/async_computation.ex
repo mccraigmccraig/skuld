@@ -306,7 +306,7 @@ defmodule Skuld.AsyncComputation do
             {:continue, value}
 
           {:async_cancel, ^ref} ->
-            {:stop, :cancelled}
+            {:cancel, :cancelled}
         end
       end)
 
@@ -318,9 +318,9 @@ defmodule Skuld.AsyncComputation do
         # Plain value - send as-is
         send(final_reply_to, {__MODULE__, tag, value})
 
-      {:stopped, reason, _env} ->
-        # Cancelled - send as Cancelled struct
-        send(final_reply_to, {__MODULE__, tag, %Cancelled{reason: reason}})
+      {:cancelled, cancelled, _env} ->
+        # Cancelled with proper cleanup - send Cancelled struct
+        send(final_reply_to, {__MODULE__, tag, cancelled})
 
       {:thrown, error, _env} ->
         # Error - send as Throw struct

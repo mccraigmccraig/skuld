@@ -285,6 +285,45 @@ defmodule Skuld.AsyncComputationTest do
       assert_receive {AsyncComputation, :cancellable, %Cancelled{reason: :cancelled}}
       refute_receive {AsyncComputation, :cancellable, _}, 10
     end
+
+    test "cancellation invokes leave_scope for effect cleanup" do
+      # Use an agent to track cleanup across process boundaries
+      {:ok, agent} = Agent.start_link(fn -> [] end)
+
+      computation =
+        Yield.yield(:waiting)
+        |> Skuld.Comp.scoped(fn env ->
+          # Record that we entered the scope
+          Agent.update(agent, fn log -> [:entered | log] end)
+
+          finally_k = fn result, e ->
+            # Record cleanup with the result type
+            Agent.update(agent, fn log -> [{:cleanup, result.__struct__} | log] end)
+            {result, e}
+          end
+
+          {env, finally_k}
+        end)
+        |> Yield.with_handler()
+
+      {:ok, runner} = AsyncComputation.start(computation, tag: :cleanup_test)
+
+      assert_receive {AsyncComputation, :cleanup_test, %Suspend{value: :waiting}}
+
+      # Verify we entered the scope
+      assert Agent.get(agent, & &1) == [:entered]
+
+      # Cancel - should trigger cleanup
+      AsyncComputation.cancel(runner)
+
+      assert_receive {AsyncComputation, :cleanup_test, %Cancelled{reason: :cancelled}}
+
+      # Verify cleanup was called with Cancelled
+      log = Agent.get(agent, & &1)
+      assert log == [{:cleanup, Cancelled}, :entered]
+
+      Agent.stop(agent)
+    end
   end
 
   describe "process lifecycle" do

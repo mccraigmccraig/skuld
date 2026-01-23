@@ -314,28 +314,38 @@ defmodule Skuld.Effects.Yield do
   @doc """
   Run a computation with a driver function that handles yields.
 
-  The driver receives yielded values and returns `{:continue, input}` or `{:stop, reason}`.
+  The driver receives yielded values and returns:
+  - `{:continue, input}` - resume the computation with input
+  - `{:cancel, reason}` - cancel the computation, invoking leave_scope for cleanup
 
   The computation should already have handlers installed via `with_handler`.
+
+  ## Returns
+
+  - `{:done, value, env}` - computation completed successfully
+  - `{:cancelled, %Cancelled{}, env}` - computation was cancelled with cleanup
+  - `{:thrown, error, env}` - computation threw an error
   """
   @spec run_with_driver(
           Types.computation(),
-          (value :: term(), data :: map() | nil -> {:continue, term()} | {:stop, term()})
+          (value :: term(), data :: map() | nil -> {:continue, term()} | {:cancel, term()})
         ) ::
           {:done, term(), Types.env()}
-          | {:stopped, term(), Types.env()}
+          | {:cancelled, Comp.Cancelled.t(), Types.env()}
           | {:thrown, term(), Types.env()}
   def run_with_driver(comp, driver) do
     case Comp.run(comp) do
-      {%Comp.Suspend{value: yielded, data: data, resume: resume}, suspended_env} ->
+      {%Comp.Suspend{value: yielded, data: data} = suspend, suspended_env} ->
         case driver.(yielded, data) do
           {:continue, input} ->
             # Resume returns {result, env} with leave_scope already applied
-            {result, new_env} = resume.(input)
+            {result, new_env} = suspend.resume.(input)
             continue_with_driver(result, new_env, driver)
 
-          {:stop, reason} ->
-            {:stopped, reason, suspended_env}
+          {:cancel, reason} ->
+            # Cancel with proper cleanup via leave_scope
+            {cancelled, final_env} = Comp.cancel(suspend, suspended_env, reason)
+            {:cancelled, cancelled, final_env}
         end
 
       {%Comp.Throw{error: error}, err_env} ->
@@ -348,17 +358,19 @@ defmodule Skuld.Effects.Yield do
 
   # Continue processing after a resume
   defp continue_with_driver(
-         %Comp.Suspend{value: yielded, data: data, resume: resume},
+         %Comp.Suspend{value: yielded, data: data} = suspend,
          env,
          driver
        ) do
     case driver.(yielded, data) do
       {:continue, input} ->
-        {result, new_env} = resume.(input)
+        {result, new_env} = suspend.resume.(input)
         continue_with_driver(result, new_env, driver)
 
-      {:stop, reason} ->
-        {:stopped, reason, env}
+      {:cancel, reason} ->
+        # Cancel with proper cleanup via leave_scope
+        {cancelled, final_env} = Comp.cancel(suspend, env, reason)
+        {:cancelled, cancelled, final_env}
     end
   end
 
