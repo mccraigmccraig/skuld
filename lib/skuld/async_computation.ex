@@ -258,16 +258,61 @@ defmodule Skuld.AsyncComputation do
   end
 
   @doc """
-  Cancel a running computation.
+  Cancel a running computation (async).
 
-  The computation process will be terminated and a
-  `{AsyncComputation, tag, %Cancelled{reason: :cancelled}}` message will be sent to the caller.
+  Sends a cancel signal to the computation. The computation will invoke `leave_scope`
+  for all active scoped effects (allowing cleanup), then send a
+  `{AsyncComputation, tag, %Cancelled{reason: :cancelled}}` message to the caller.
+
+  Use `cancel_sync/2` if you need to wait for the cancellation to complete.
   """
   @spec cancel(t()) :: :ok
   def cancel(%__MODULE__{ref: ref, pid: pid, monitor_ref: monitor_ref}) do
     Process.demonitor(monitor_ref, [:flush])
     send(pid, {:async_cancel, ref})
     :ok
+  end
+
+  @doc """
+  Cancel a running computation and wait for it to complete.
+
+  Like `cancel/1`, but blocks until the computation has finished its cleanup
+  (invoking `leave_scope` for all active scoped effects) and returns the result.
+
+  This can be called from any process - the response will be sent to the calling
+  process, not necessarily the original caller from `start/2`.
+
+  ## Options
+
+  - `:timeout` - Maximum time to wait in ms (default: 5000)
+
+  ## Returns
+
+  - `%Cancelled{reason: :cancelled}` - computation was cancelled successfully
+  - `{:error, :timeout}` - timed out waiting for cancellation to complete
+
+  ## Example
+
+      {:ok, runner, %Suspend{value: :ready}} =
+        AsyncComputation.start_sync(computation, tag: :worker)
+
+      # Cancel and wait for cleanup to finish
+      %Cancelled{reason: :cancelled} = AsyncComputation.cancel_sync(runner)
+  """
+  @spec cancel_sync(t(), keyword()) :: Cancelled.t() | {:error, :timeout}
+  def cancel_sync(%__MODULE__{ref: ref, pid: pid, monitor_ref: monitor_ref, tag: tag}, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 5000)
+
+    Process.demonitor(monitor_ref, [:flush])
+    # Send cancel with self() as the implicit recipient (via process dictionary override)
+    # But actually we need to tell the runner to reply to us, not the original caller
+    send(pid, {:async_cancel_sync, ref, self()})
+
+    receive do
+      {__MODULE__, ^tag, result} -> result
+    after
+      timeout -> {:error, :timeout}
+    end
   end
 
   # Child process entry point
@@ -306,6 +351,11 @@ defmodule Skuld.AsyncComputation do
             {:continue, value}
 
           {:async_cancel, ^ref} ->
+            {:cancel, :cancelled}
+
+          {:async_cancel_sync, ^ref, reply_to} ->
+            # Sync cancel - reply to the requester, not original caller
+            Process.put(reply_to_ref, reply_to)
             {:cancel, :cancelled}
         end
       end)

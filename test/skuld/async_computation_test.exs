@@ -326,6 +326,99 @@ defmodule Skuld.AsyncComputationTest do
     end
   end
 
+  describe "cancel_sync/2" do
+    test "cancels and waits for completion" do
+      computation =
+        comp do
+          _ <- Yield.yield(:waiting)
+          return(:completed)
+        end
+
+      {:ok, runner, %Suspend{value: :waiting}} =
+        AsyncComputation.start_sync(computation, tag: :cancel_sync_test)
+
+      # Cancel synchronously
+      assert %Cancelled{reason: :cancelled} = AsyncComputation.cancel_sync(runner)
+
+      # No additional messages should arrive
+      refute_receive {AsyncComputation, :cancel_sync_test, _}, 10
+    end
+
+    test "cancel_sync invokes leave_scope for cleanup" do
+      {:ok, agent} = Agent.start_link(fn -> [] end)
+
+      computation =
+        Yield.yield(:waiting)
+        |> Skuld.Comp.scoped(fn env ->
+          Agent.update(agent, fn log -> [:entered | log] end)
+
+          finally_k = fn result, e ->
+            Agent.update(agent, fn log -> [{:cleanup, result.__struct__} | log] end)
+            {result, e}
+          end
+
+          {env, finally_k}
+        end)
+        |> Yield.with_handler()
+
+      {:ok, runner, %Suspend{value: :waiting}} =
+        AsyncComputation.start_sync(computation, tag: :cleanup_sync)
+
+      # Verify we entered the scope
+      assert Agent.get(agent, & &1) == [:entered]
+
+      # Cancel synchronously - should trigger cleanup
+      assert %Cancelled{reason: :cancelled} = AsyncComputation.cancel_sync(runner)
+
+      # Verify cleanup was called with Cancelled
+      log = Agent.get(agent, & &1)
+      assert log == [{:cleanup, Cancelled}, :entered]
+
+      Agent.stop(agent)
+    end
+
+    test "cancel_sync can be called from different process than caller" do
+      computation =
+        comp do
+          _ <- Yield.yield(:waiting)
+          return(:completed)
+        end
+
+      # Start with self() as caller
+      {:ok, runner, %Suspend{value: :waiting}} =
+        AsyncComputation.start_sync(computation, tag: :cross_process)
+
+      # Cancel from a different process
+      test_pid = self()
+
+      spawn(fn ->
+        result = AsyncComputation.cancel_sync(runner)
+        send(test_pid, {:cancel_result, result})
+      end)
+
+      # The spawned process should get the result
+      assert_receive {:cancel_result, %Cancelled{reason: :cancelled}}
+
+      # Original caller should NOT receive anything (the spawned process got it)
+      refute_receive {AsyncComputation, :cross_process, _}, 50
+    end
+
+    test "cancel_sync respects timeout" do
+      computation =
+        comp do
+          _ <- Yield.yield(:waiting)
+          return(:completed)
+        end
+
+      {:ok, runner, %Suspend{value: :waiting}} =
+        AsyncComputation.start_sync(computation, tag: :timeout_test)
+
+      # This should complete quickly, well within timeout
+      assert %Cancelled{reason: :cancelled} =
+               AsyncComputation.cancel_sync(runner, timeout: 1000)
+    end
+  end
+
   describe "process lifecycle" do
     test "runner process exits after sending result" do
       computation = comp(do: return(:done))
