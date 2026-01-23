@@ -46,8 +46,10 @@ defmodule Skuld.Comp do
   # - Skuld.Comp.ISentinel (protocol)
   # - Skuld.Comp.Suspend (bypasses leave-scope)
   # - Skuld.Comp.Throw (error sentinel)
+  alias Skuld.Comp.Cancelled
   alias Skuld.Comp.Env
   alias Skuld.Comp.ISentinel
+  alias Skuld.Comp.Suspend
   alias Skuld.Comp.Types
   alias Skuld.Comp.ConvertThrow
 
@@ -184,6 +186,47 @@ defmodule Skuld.Comp do
   def run!(comp) do
     {result, _env} = run(comp)
     ISentinel.run!(result)
+  end
+
+  #############################################################################
+  ## Cancellation
+  #############################################################################
+
+  @doc """
+  Cancel a suspended computation, invoking the leave_scope chain for cleanup.
+
+  When a computation yields (returns `%Suspend{}`), the caller can either:
+  - Resume it with `suspend.resume.(input)`
+  - Cancel it with `Comp.cancel(suspend, env, reason)`
+
+  Cancellation creates a `%Cancelled{reason: reason}` result and invokes the
+  leave_scope chain, allowing effects to clean up resources.
+
+  ## Example
+
+      # Run until suspension
+      {%Suspend{} = suspend, env} = Comp.run(my_yielding_comp)
+
+      # Decide to cancel instead of resume
+      {%Cancelled{reason: :timeout}, final_env} =
+        Comp.cancel(suspend, env, :timeout)
+
+  ## Effect Cleanup
+
+  Effects can detect cancellation in their leave_scope handlers:
+
+      my_leave_scope = fn result, env ->
+        case result do
+          %Cancelled{} -> cleanup_my_resources(env)
+          _ -> :ok
+        end
+        {result, env}
+      end
+  """
+  @spec cancel(Suspend.t(), Types.env(), term()) :: {Cancelled.t(), Types.env()}
+  def cancel(%Suspend{}, env, reason) do
+    cancelled = %Cancelled{reason: reason}
+    env.leave_scope.(cancelled, env)
   end
 
   #############################################################################
