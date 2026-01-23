@@ -1,5 +1,8 @@
 defmodule Skuld.Comp.Throw do
   @moduledoc "Error result that Catch recognizes"
+
+  @type t :: %__MODULE__{error: term()}
+
   defstruct [:error]
 
   defimpl Skuld.Comp.ISentinel do
