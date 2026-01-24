@@ -1,3 +1,6 @@
+# credo:disable-for-this-file Credo.Check.Consistency.ExceptionNames
+# Naming is intentional: ThrowError is for Skuld's Throw.throw/1 effect,
+# while UncaughtThrow/UncaughtExit are for Elixir's native throw/exit.
 defmodule Skuld.Comp.ThrowError do
   @moduledoc """
   Exception raised when a Skuld computation throws via `Throw.throw/1`

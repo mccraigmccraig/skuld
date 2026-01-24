@@ -31,6 +31,7 @@ defmodule Skuld.Comp do
   that can clean up env or redirect control flow.
   """
 
+  # credo:disable-for-next-line Credo.Check.Consistency.ExceptionNames
   defmodule InvalidComputation do
     @moduledoc """
     Raised when a non-computation value is used where a computation is expected.
