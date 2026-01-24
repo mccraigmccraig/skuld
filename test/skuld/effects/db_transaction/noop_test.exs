@@ -165,15 +165,14 @@ defmodule Skuld.Effects.DBTransaction.NoopTest do
         end
         |> NoopTx.with_handler()
 
-      # The ArgumentError from the handler is wrapped in a RuntimeError by Comp.run!
+      # The original ArgumentError is preserved and re-raised with its stacktrace
       error =
-        assert_raise RuntimeError, fn ->
+        assert_raise ArgumentError, fn ->
           Comp.run!(computation)
         end
 
       # Verify the error message contains the expected text
       assert error.message =~ "outside of a transaction"
-      assert error.message =~ "ArgumentError"
     end
   end
 

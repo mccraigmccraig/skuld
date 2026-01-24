@@ -350,8 +350,8 @@ defmodule Skuld.Effects.ChangesetPersistTest do
           return(user)
         end
 
-      # The ArgumentError is caught and converted to a Throw, which run! re-raises as RuntimeError
-      assert_raise RuntimeError, ~r/No handler installed for effect/, fn ->
+      # The original ArgumentError is preserved and re-raised with its stacktrace
+      assert_raise ArgumentError, ~r/No handler installed for effect/, fn ->
         Comp.run!(computation)
       end
     end
