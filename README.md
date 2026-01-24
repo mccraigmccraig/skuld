@@ -51,6 +51,10 @@ some common side-effecting operations and their effectful equivalents:
   - [Auto-Lifting](#auto-lifting)
   - [The else Clause](#the-else-clause)
   - [The catch Clause](#the-catch-clause)
+- [Debugging](#debugging)
+  - [Elixir Exceptions in Computations](#elixir-exceptions-in-computations)
+  - [Skuld's Throw Effect](#skulds-throw-effect)
+  - [Caught Elixir Exceptions](#caught-elixir-exceptions)
 - [Effects](#effects)
   - [State & Environment](#state--environment)
     - [State](#state)
@@ -409,6 +413,93 @@ end
 ```
 
 This is equivalent to `def fetch_user_data(user_id), do: comp do ... end`.
+
+## Debugging
+
+Skuld preserves stacktraces and exception types, so debugging feels natural. When
+something goes wrong, you see your source file and line number at the top of the
+stacktrace, just like regular Elixir code.
+
+### Elixir Exceptions in Computations
+
+When Elixir's `raise`, `throw`, or `exit` occurs inside a computation, Skuld captures
+the original exception with its stacktrace. If you use `Comp.run!/1`, the original
+exception is re-raised with its original stacktrace:
+
+```elixir
+defmodule MyDomain do
+  use Skuld.Syntax
+
+  defcomp process(data) do
+    # This raise will show my_domain.ex:5 in the stacktrace
+    if data == :bad, do: raise ArgumentError, "invalid data"
+    {:ok, data}
+  end
+end
+
+MyDomain.process(:bad)
+|> Throw.with_handler()
+|> Comp.run!()
+#=> ** (ArgumentError) invalid data
+#=>     my_domain.ex:5: MyDomain.process/1
+#=>     ...
+```
+
+The stacktrace points directly to your code, not to Skuld internals. This works for:
+- `raise` → re-raised as the original exception type
+- `throw` → wrapped in `%UncaughtThrow{value: thrown_value}`
+- `exit` → wrapped in `%UncaughtExit{reason: exit_reason}`
+
+### Skuld's Throw Effect
+
+When you use `Throw.throw/1` (Skuld's effect-based error handling), unhandled throws
+become `%ThrowError{}` exceptions:
+
+```elixir
+comp do
+  _ <- Throw.throw(:not_found)
+  :ok
+end
+|> Throw.with_handler()
+|> Comp.run!()
+#=> ** (Skuld.Comp.ThrowError) Computation threw: :not_found
+```
+
+To handle throws within the computation, use the `catch` clause:
+
+```elixir
+comp do
+  _ <- Throw.throw(:not_found)
+  :ok
+catch
+  {Throw, :not_found} -> {:error, :not_found}
+end
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:error, :not_found}
+```
+
+### Caught Elixir Exceptions
+
+If you catch Elixir exceptions with a `catch` clause, they arrive as maps with full
+context:
+
+```elixir
+comp do
+  raise ArgumentError, "oops"
+catch
+  {Throw, %{kind: :error, payload: exception, stacktrace: stacktrace}} ->
+    {:caught, Exception.message(exception)}
+end
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:caught, "oops"}
+```
+
+The map contains:
+- `:kind` - `:error`, `:throw`, or `:exit`
+- `:payload` - the exception struct, thrown value, or exit reason
+- `:stacktrace` - the original stacktrace from where the error occurred
 
 ## Effects
 
