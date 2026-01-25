@@ -28,7 +28,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.StateTest do
       request = make_request(:all)
       resume = fn _ -> :resumed end
 
-      state = State.add_suspension(state, request.id, request, resume)
+      {:suspended, state} = State.add_suspension(state, request.id, request, resume)
 
       assert Map.has_key?(state.suspended, request.id)
       info = state.suspended[request.id]
@@ -45,11 +45,48 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.StateTest do
       request = AwaitRequest.new([TaskTarget.new(task), timer], :any)
       resume = fn _ -> :resumed end
 
-      state = State.add_suspension(state, request.id, request, resume)
+      {:suspended, state} = State.add_suspension(state, request.id, request, resume)
 
       # Both targets should map to this request_id
       assert state.waiting_for[{:task, task.ref}] == request.id
       assert state.waiting_for[{:timer, timer.ref}] == request.id
+    end
+
+    test "returns :ready when early completions satisfy wake condition" do
+      state = State.new()
+      task = make_task()
+      request = AwaitRequest.new([TaskTarget.new(task)], :all)
+      resume = fn _ -> :resumed end
+
+      # Record completion BEFORE adding suspension
+      {:waiting, state} = State.record_completion(state, {:task, task.ref}, {:ok, :early_result})
+
+      # Now add suspension - should immediately be ready
+      {:ready, state} = State.add_suspension(state, request.id, request, resume)
+
+      # Should be in run_queue, not suspended
+      refute Map.has_key?(state.suspended, request.id)
+      assert :queue.len(state.run_queue) == 1
+    end
+
+    test "merges early completions into collected when partial" do
+      state = State.new()
+      task1 = make_task()
+      task2 = make_task()
+      request = AwaitRequest.new([TaskTarget.new(task1), TaskTarget.new(task2)], :all)
+      resume = fn _ -> :resumed end
+
+      # Record completion for first task before suspension
+      {:waiting, state} = State.record_completion(state, {:task, task1.ref}, {:ok, :early_result})
+
+      # Add suspension - should be suspended but with collected pre-populated
+      {:suspended, state} = State.add_suspension(state, request.id, request, resume)
+
+      info = state.suspended[request.id]
+      assert info.collected[{:task, task1.ref}] == {:ok, :early_result}
+      # Only waiting for task2 now
+      refute Map.has_key?(state.waiting_for, {:task, task1.ref})
+      assert state.waiting_for[{:task, task2.ref}] == request.id
     end
   end
 
@@ -60,7 +97,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.StateTest do
       request = AwaitRequest.new([TaskTarget.new(task)], :all)
       resume = fn _ -> :resumed end
 
-      state = State.add_suspension(state, request.id, request, resume)
+      {:suspended, state} = State.add_suspension(state, request.id, request, resume)
       assert Map.has_key?(state.suspended, request.id)
 
       state = State.remove_suspension(state, request.id)
@@ -84,7 +121,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.StateTest do
       request = AwaitRequest.new([TaskTarget.new(task1), TaskTarget.new(task2)], :all)
       resume = fn _ -> :resumed end
 
-      state = State.add_suspension(state, request.id, request, resume)
+      {:suspended, state} = State.add_suspension(state, request.id, request, resume)
 
       # First completion - should wait
       {:waiting, state} = State.record_completion(state, {:task, task1.ref}, {:ok, :result1})
@@ -102,7 +139,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.StateTest do
       request_id = request.id
       resume = fn results -> {:got, results} end
 
-      state = State.add_suspension(state, request.id, request, resume)
+      {:suspended, state} = State.add_suspension(state, request.id, request, resume)
 
       # First completion
       {:waiting, state} = State.record_completion(state, {:task, task1.ref}, {:ok, :result1})
@@ -128,7 +165,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.StateTest do
       request_id = request.id
       resume = fn result -> {:got, result} end
 
-      state = State.add_suspension(state, request.id, request, resume)
+      {:suspended, state} = State.add_suspension(state, request.id, request, resume)
 
       # First completion - should wake
       {:woke, ^request_id, {target_key, result}, state} =
@@ -143,23 +180,26 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.StateTest do
   end
 
   describe "record_completion/3 edge cases" do
-    test "ignores completion for unknown target" do
+    test "stores completion for unknown target as early completion" do
       state = State.new()
-      {:waiting, state2} = State.record_completion(state, {:task, make_ref()}, {:ok, :result})
-      assert state2 == state
+      unknown_ref = make_ref()
+      {:waiting, state2} = State.record_completion(state, {:task, unknown_ref}, {:ok, :result})
+
+      # Should be stored as early completion
+      assert state2.early_completions[{:task, unknown_ref}] == {:ok, :result}
     end
 
-    test "ignores completion after suspension removed" do
+    test "stores completion after suspension removed as early completion" do
       state = State.new()
       task = make_task()
       request = AwaitRequest.new([TaskTarget.new(task)], :all)
 
-      state = State.add_suspension(state, request.id, request, fn _ -> :resumed end)
+      {:suspended, state} = State.add_suspension(state, request.id, request, fn _ -> :resumed end)
       state = State.remove_suspension(state, request.id)
 
-      # Completion arrives after removal
+      # Completion arrives after removal - should be stored as early completion
       {:waiting, state2} = State.record_completion(state, {:task, task.ref}, {:ok, :result})
-      assert state2 == state
+      assert state2.early_completions[{:task, task.ref}] == {:ok, :result}
     end
   end
 
@@ -189,7 +229,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.StateTest do
     test "true when suspended" do
       state = State.new()
       request = make_request(:all)
-      state = State.add_suspension(state, request.id, request, fn _ -> :ok end)
+      {:suspended, state} = State.add_suspension(state, request.id, request, fn _ -> :ok end)
 
       assert State.active?(state)
     end
@@ -206,7 +246,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.StateTest do
     test "returns correct counts" do
       state = State.new()
       request = make_request(:all)
-      state = State.add_suspension(state, request.id, request, fn _ -> :ok end)
+      {:suspended, state} = State.add_suspension(state, request.id, request, fn _ -> :ok end)
       state = State.enqueue_ready(state, make_ref(), fn _ -> :ok end, :results)
       state = State.record_completed(state, make_ref(), :done)
 

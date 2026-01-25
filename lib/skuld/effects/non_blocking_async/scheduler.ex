@@ -69,6 +69,8 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
           {:done, term()} | {:suspended, Suspend.t(), fun()} | {:error, term()}
   def run_one(comp, opts \\ []) do
     state = State.new(opts)
+    # Use a unique tag to identify this computation's result
+    tag = make_ref()
 
     case run_until_suspend(comp) do
       {:done, result} ->
@@ -76,9 +78,18 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
 
       %AwaitSuspend{request: request, resume: resume} ->
         # Track and run loop
-        state = State.add_suspension(state, request.id, request, resume)
-        state = start_timers(state, request)
-        run_loop(state)
+        case State.add_suspension(state, request.id, request, resume) do
+          {:ready, state} ->
+            # Early completions satisfied immediately - run the ready computation
+            state = %{state | completed: Map.put(state.completed, request.id, {:pending, tag})}
+            run_one_loop(state, tag)
+
+          {:suspended, state} ->
+            # Associate the request_id with our tag for result extraction
+            state = %{state | completed: Map.put(state.completed, request.id, {:pending, tag})}
+            state = start_timers(state, request)
+            run_one_loop(state, tag)
+        end
 
       %Suspend{resume: resume} = suspend ->
         # External yield - return to caller with resume function
@@ -92,6 +103,132 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  # Run loop for single computation - extracts the final result
+  defp run_one_loop(state, tag) do
+    case run_ready_one(state, tag) do
+      {:continue, state} ->
+        run_one_loop(state, tag)
+
+      {:suspended, suspend, state} ->
+        {:suspended, suspend, state}
+
+      {:done, result} ->
+        {:done, result}
+
+      {:receive, state} ->
+        receive_and_continue_one(state, tag)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Run one ready computation from the queue, tracking which is our target
+  defp run_ready_one(state, tag) do
+    case State.dequeue_one(state) do
+      {:empty, state} ->
+        if State.active?(state) do
+          {:receive, state}
+        else
+          # Find our result by tag
+          result = find_result_by_tag(state.completed, tag)
+          {:done, result}
+        end
+
+      {:ok, {request_id, resume, results}, state} ->
+        case run_resume(resume, results) do
+          {:done, result} ->
+            # Check if this is our computation (via the pending marker)
+            state =
+              case Map.get(state.completed, request_id) do
+                {:pending, ^tag} ->
+                  # This is our computation - store the actual result
+                  %{state | completed: Map.put(state.completed, tag, result)}
+
+                _ ->
+                  State.record_completed(state, request_id, result)
+              end
+
+            {:continue, state}
+
+          %AwaitSuspend{request: request, resume: new_resume} ->
+            {status, state} = State.add_suspension(state, request.id, request, new_resume)
+
+            # Transfer tag association to new request
+            state =
+              case Map.get(state.completed, request_id) do
+                {:pending, ^tag} ->
+                  %{
+                    state
+                    | completed:
+                        state.completed
+                        |> Map.delete(request_id)
+                        |> Map.put(request.id, {:pending, tag})
+                  }
+
+                _ ->
+                  state
+              end
+
+            case status do
+              :ready ->
+                # Early completions satisfied - computation already in run_queue
+                {:continue, state}
+
+              :suspended ->
+                state = start_timers(state, request)
+                {:continue, state}
+            end
+
+          %Suspend{} = suspend ->
+            {:suspended, suspend, state}
+
+          {:error, reason} ->
+            handle_computation_error(state, request_id, reason)
+        end
+    end
+  end
+
+  # Wait for message for single computation
+  defp receive_and_continue_one(state, tag) do
+    receive do
+      msg ->
+        case Completion.match(msg) do
+          {:completed, target_key, result} ->
+            case State.record_completion(state, target_key, result) do
+              {:woke, _request_id, _wake_result, state} ->
+                run_one_loop(state, tag)
+
+              {:waiting, state} ->
+                run_one_loop(state, tag)
+            end
+
+          {:yielded, _target_key, suspend} ->
+            {:suspended, suspend, state}
+
+          :unknown ->
+            Logger.debug("Scheduler received unknown message: #{inspect(msg)}")
+            run_one_loop(state, tag)
+        end
+    end
+  end
+
+  # Find result by tag in completed map
+  defp find_result_by_tag(completed, tag) do
+    case Map.get(completed, tag) do
+      nil ->
+        # Fallback - find any non-pending result
+        completed
+        |> Enum.find_value(fn
+          {_k, {:pending, _}} -> nil
+          {_k, v} -> v
+        end)
+
+      result ->
+        result
     end
   end
 
@@ -115,14 +252,28 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
     # Assign IDs to track result ordering
     indexed_comps = Enum.with_index(computations)
 
-    # Spawn all computations
-    state =
-      Enum.reduce(indexed_comps, state, fn {comp, idx}, acc ->
-        spawn_computation(acc, comp, {:index, idx})
-      end)
+    # Spawn all computations (may return early on error with :stop option)
+    case spawn_all(state, indexed_comps) do
+      {:ok, state} ->
+        # Run until all complete
+        run_loop(state)
 
-    # Run until all complete
-    run_loop(state)
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Spawn all computations, stopping early if :on_error => :stop and one fails
+  defp spawn_all(state, indexed_comps) do
+    Enum.reduce_while(indexed_comps, {:ok, state}, fn {comp, idx}, {:ok, acc} ->
+      case spawn_computation(acc, comp, {:index, idx}) do
+        {:ok, new_state} ->
+          {:cont, {:ok, new_state}}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
   end
 
   #############################################################################
@@ -172,9 +323,15 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
 
           %AwaitSuspend{request: request, resume: new_resume} ->
             # Suspended again on new await
-            state = State.add_suspension(state, request.id, request, new_resume)
-            state = start_timers(state, request)
-            {:continue, state}
+            case State.add_suspension(state, request.id, request, new_resume) do
+              {:ready, state} ->
+                # Early completions satisfied immediately
+                {:continue, state}
+
+              {:suspended, state} ->
+                state = start_timers(state, request)
+                {:continue, state}
+            end
 
           %Suspend{} = suspend ->
             # External yield - pause this computation
@@ -218,26 +375,52 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
   #############################################################################
 
   # Spawn a computation and run it until it suspends
+  # Returns {:ok, state} or {:error, reason} depending on :on_error option
   defp spawn_computation(state, comp, tag) do
     case run_until_suspend(comp) do
       {:done, result} ->
         # Completed immediately
-        State.record_completed(state, tag, result)
+        {:ok, State.record_completed(state, tag, result)}
 
       %AwaitSuspend{request: request, resume: resume} ->
         # Waiting on async
-        state = State.add_suspension(state, request.id, request, resume)
-        state = put_in(state.completed[request.id], {:tag, tag})
-        start_timers(state, request)
+        case State.add_suspension(state, request.id, request, resume) do
+          {:ready, state} ->
+            # Early completions satisfied immediately
+            state = put_in(state.completed[request.id], {:tag, tag})
+            {:ok, state}
+
+          {:suspended, state} ->
+            state = put_in(state.completed[request.id], {:tag, tag})
+            {:ok, start_timers(state, request)}
+        end
 
       %Suspend{} = _suspend ->
         # External yield on first run - record as pending external
         # This is a bit unusual - typically computations start with async work
         Logger.warning("Computation yielded externally on spawn - not fully supported yet")
-        State.record_completed(state, tag, {:error, :external_yield_on_spawn})
+        {:ok, State.record_completed(state, tag, {:error, :external_yield_on_spawn})}
 
       {:error, reason} ->
-        State.record_completed(state, tag, {:error, reason})
+        handle_spawn_error(state, tag, reason)
+    end
+  end
+
+  # Handle error during spawn based on :on_error option
+  defp handle_spawn_error(state, tag, reason) do
+    case Keyword.get(state.opts, :on_error, :log_and_continue) do
+      :log_and_continue ->
+        Logger.error("Computation #{inspect(tag)} failed on spawn: #{inspect(reason)}")
+        {:ok, State.record_completed(state, tag, {:error, reason})}
+
+      :stop ->
+        {:error, reason}
+
+      {:callback, fun} ->
+        case fun.(reason, state) do
+          {:continue, new_state} -> {:ok, new_state}
+          {:stop, reason} -> {:error, reason}
+        end
     end
   end
 
@@ -250,6 +433,18 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
         {:done, result} ->
           {:done, result}
 
+        # Suspensions return {suspend, env} tuple
+        {%AwaitSuspend{} = suspend, _env} ->
+          suspend
+
+        {%Suspend{} = suspend, _env} ->
+          suspend
+
+        # Handle Throw sentinels
+        {%Comp.Throw{} = throw, _env} ->
+          {:error, {:throw, throw.error}}
+
+        # Direct sentinel (shouldn't normally happen but handle it)
         %AwaitSuspend{} = suspend ->
           suspend
 
@@ -258,8 +453,14 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
 
         other ->
           # Handle other sentinel types
-          if Comp.ISentinel.impl_for(other) do
-            other
+          if is_tuple(other) and tuple_size(other) == 2 do
+            {value, _env} = other
+
+            if Comp.ISentinel.impl_for(value) do
+              value
+            else
+              {:done, value}
+            end
           else
             {:done, other}
           end
@@ -283,9 +484,22 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
         {:done, result} ->
           {:done, result}
 
+        # Suspensions return {suspend, env} tuple
+        {%AwaitSuspend{} = suspend, _env} ->
+          suspend
+
+        {%Suspend{} = suspend, _env} ->
+          suspend
+
+        # Handle Throw sentinels
+        {%Comp.Throw{} = throw, _env} ->
+          {:error, {:throw, throw.error}}
+
+        # Plain {value, env} tuple from continuation
         {result, %Env{}} ->
           {:done, result}
 
+        # Direct sentinel (shouldn't normally happen)
         %AwaitSuspend{} = suspend ->
           suspend
 
@@ -323,9 +537,16 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
       %AwaitSuspend{request: request, resume: resume} ->
         # Back to scheduler loop
         state = State.new(opts)
-        state = State.add_suspension(state, request.id, request, resume)
-        state = start_timers(state, request)
-        run_loop(state)
+
+        case State.add_suspension(state, request.id, request, resume) do
+          {:ready, state} ->
+            # Early completions satisfied immediately
+            run_loop(state)
+
+          {:suspended, state} ->
+            state = start_timers(state, request)
+            run_loop(state)
+        end
 
       %Suspend{resume: resume} = suspend ->
         # Another external yield

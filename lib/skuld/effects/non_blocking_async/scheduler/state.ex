@@ -30,6 +30,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
     :waiting_for,
     :run_queue,
     :completed,
+    :early_completions,
     :opts
   ]
 
@@ -50,6 +51,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
           waiting_for: %{target_key() => reference()},
           run_queue: :queue.queue(ready_item()),
           completed: %{reference() => term()},
+          early_completions: %{target_key() => result()},
           opts: keyword()
         }
 
@@ -70,6 +72,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
       waiting_for: %{},
       run_queue: :queue.new(),
       completed: %{},
+      early_completions: %{},
       opts: opts
     }
   end
@@ -78,29 +81,61 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
   Add a suspended computation to track.
 
   Creates the waiting_for reverse index entries for fast completion lookup.
-  """
-  @spec add_suspension(t(), reference(), AwaitRequest.t(), (term() -> term())) :: t()
-  def add_suspension(state, request_id, request, resume) do
-    suspension_info = %{
-      resume: resume,
-      request: request,
-      collected: %{},
-      suspended_at: System.monotonic_time(:millisecond)
-    }
+  Also checks for early completions that arrived before we started waiting.
 
-    # Build reverse index: target_key => request_id
+  Returns `{:suspended, state}` if waiting, or `{:ready, state}` if early
+  completions immediately satisfied the wake condition.
+  """
+  @spec add_suspension(t(), reference(), AwaitRequest.t(), (term() -> term())) ::
+          {:suspended, t()} | {:ready, t()}
+  def add_suspension(state, request_id, request, resume) do
     target_keys = Enum.map(request.targets, &Target.key/1)
 
-    waiting_for =
-      Enum.reduce(target_keys, state.waiting_for, fn key, acc ->
-        Map.put(acc, key, request_id)
+    # Check for early completions
+    {collected, remaining_early} =
+      Enum.reduce(target_keys, {%{}, state.early_completions}, fn key, {coll, early} ->
+        case Map.pop(early, key) do
+          {nil, early} -> {coll, early}
+          {result, early} -> {Map.put(coll, key, result), early}
+        end
       end)
 
-    %{
-      state
-      | suspended: Map.put(state.suspended, request_id, suspension_info),
-        waiting_for: waiting_for
-    }
+    state = %{state | early_completions: remaining_early}
+
+    # Check if early completions satisfy wake condition
+    case check_wake(request, collected) do
+      {:ready, wake_result} ->
+        # Already have all results - enqueue directly
+        state = enqueue_ready(state, request_id, resume, wake_result)
+        {:ready, state}
+
+      :waiting ->
+        # Need to wait for more completions
+        suspension_info = %{
+          resume: resume,
+          request: request,
+          collected: collected,
+          suspended_at: System.monotonic_time(:millisecond)
+        }
+
+        # Build reverse index: target_key => request_id
+        # Only for targets we don't already have completions for
+        waiting_for =
+          Enum.reduce(target_keys, state.waiting_for, fn key, acc ->
+            if Map.has_key?(collected, key) do
+              acc
+            else
+              Map.put(acc, key, request_id)
+            end
+          end)
+
+        {:suspended,
+         %{
+           state
+           | suspended: Map.put(state.suspended, request_id, suspension_info),
+             waiting_for: waiting_for
+         }}
+    end
   end
 
   @doc """
@@ -132,20 +167,32 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
 
   Returns `{:woke, request_id, wake_result, state}` if this completion
   caused a computation to become ready, or `{:waiting, state}` otherwise.
+
+  If no one is waiting for this target, stores it as an early completion
+  for later retrieval when a suspension is added.
   """
   @spec record_completion(t(), target_key(), result()) ::
           {:woke, reference(), term(), t()} | {:waiting, t()}
   def record_completion(state, target_key, result) do
     case Map.get(state.waiting_for, target_key) do
       nil ->
-        # No one waiting for this target (already completed or cancelled)
-        {:waiting, state}
+        # No one waiting for this target yet - store as early completion
+        # This happens when a task completes before we await it
+        # Don't overwrite existing early completion (e.g., task result arrives
+        # before DOWN message - keep the result, ignore the DOWN)
+        if Map.has_key?(state.early_completions, target_key) do
+          {:waiting, state}
+        else
+          early = Map.put(state.early_completions, target_key, result)
+          {:waiting, %{state | early_completions: early}}
+        end
 
       request_id ->
         case Map.get(state.suspended, request_id) do
           nil ->
-            # Suspension was already removed
-            {:waiting, state}
+            # Suspension was already removed - store as early completion
+            early = Map.put(state.early_completions, target_key, result)
+            {:waiting, %{state | early_completions: early}}
 
           suspension_info ->
             # Add to collected results
