@@ -431,8 +431,8 @@ defmodule MyDomain do
   use Skuld.Syntax
 
   defcomp process(data) do
-    # This raise will show my_domain.ex:5 in the stacktrace
-    if data == :bad, do: raise ArgumentError, "invalid data"
+    # This raise will show MyDomain.process in the stacktrace
+    _ <- if data == :bad, do: raise ArgumentError, "invalid data"
     {:ok, data}
   end
 end

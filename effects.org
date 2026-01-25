@@ -417,6 +417,79 @@ defmodule Process do
 end
 #+end_src
 
+* Debugging: Stacktraces Still Work
+
+A common concern: "All this indirection - can I still debug?"
+
+Yes. Skuld preserves original exceptions and stacktraces. When something breaks,
+you see your code at the top of the stacktrace, not framework internals.
+
+** Elixir exceptions point to your code
+
+#+begin_src elixir
+defmodule MyDomain do
+  use Skuld.Syntax
+
+  defcomp process(data) do
+    # Line 5: this raise will appear in stacktrace
+    _ <- if data == :bad, do: raise ArgumentError, "invalid data"
+    {:ok, data}
+  end
+end
+
+MyDomain.process(:bad)
+|> Throw.with_handler()
+|> Comp.run!()
+
+#> ** (ArgumentError) invalid data
+#>     my_domain.ex:5: MyDomain.process/1
+#>     ...
+#+end_src
+
+The stacktrace points to line 5 in your domain code - not to Skuld internals.
+
+** Skuld's Throw effect
+
+When you use =Throw.throw/1=, unhandled throws become =ThrowError= exceptions:
+
+#+begin_src elixir
+comp do
+  _ <- Throw.throw(:not_found)
+  :ok
+end
+|> Throw.with_handler()
+|> Comp.run!()
+
+#> ** (Skuld.Comp.ThrowError) Computation threw: :not_found
+#+end_src
+
+** Catching exceptions in computations
+
+Elixir exceptions caught with =catch= arrive as maps with full context:
+
+#+begin_src elixir
+comp do
+  raise ArgumentError, "oops"
+catch
+  {Throw, %{kind: :error, payload: ex, stacktrace: st}} ->
+    {:caught, Exception.message(ex)}
+end
+|> Throw.with_handler()
+|> Comp.run!()
+
+#> {:caught, "oops"}
+#+end_src
+
+The map contains =:kind= (error/throw/exit), =:payload= (the exception),
+and =:stacktrace= (where it happened).
+
+** The takeaway
+
+Effects add a layer of indirection, but debugging remains practical:
+- Exceptions show your source locations
+- Stacktraces are preserved through the effect system
+- You can catch and inspect errors with full context
+
 * Advanced: Effect Logging and Replay
 
 The EffectLogger records every effect in a computation:
