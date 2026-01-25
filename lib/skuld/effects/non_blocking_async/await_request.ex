@@ -211,6 +211,7 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest.ComputationTarget do
   def new(%AsyncComputation{} = runner), do: %__MODULE__{runner: runner}
 
   defimpl Skuld.Effects.NonBlockingAsync.AwaitRequest.Target do
-    def key(%{runner: %{ref: ref}}), do: {:computation, ref}
+    # Use tag (not ref) because AsyncComputation messages are {AsyncComputation, tag, result}
+    def key(%{runner: %{tag: tag}}), do: {:computation, tag}
   end
 end

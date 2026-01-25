@@ -147,11 +147,11 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitRequestTest do
       assert %ComputationTarget{runner: ^runner} = target
     end
 
-    test "Target.key/1 returns {:computation, ref}" do
+    test "Target.key/1 returns {:computation, tag}" do
       runner = make_runner()
       target = ComputationTarget.new(runner)
 
-      assert Target.key(target) == {:computation, runner.ref}
+      assert Target.key(target) == {:computation, runner.tag}
     end
   end
 
