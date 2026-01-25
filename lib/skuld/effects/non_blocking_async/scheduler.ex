@@ -277,6 +277,104 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
   end
 
   #############################################################################
+  ## Server API - For GenServer Integration
+  #############################################################################
+
+  @doc """
+  Spawn a computation into existing scheduler state.
+
+  Used by Scheduler.Server to add computations to a running scheduler.
+  Returns `{:ok, tag, state}` or `{:error, reason}` depending on `:on_error` option.
+
+  The `tag` can be used to retrieve the computation's result from `state.completed`.
+  """
+  @spec spawn_into(State.t(), computation(), term()) ::
+          {:ok, term(), State.t()} | {:error, term()}
+  def spawn_into(state, comp, tag \\ nil) do
+    tag = tag || make_ref()
+
+    case spawn_computation(state, comp, tag) do
+      {:ok, state} -> {:ok, tag, state}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Handle a completion message and update scheduler state.
+
+  Used by Scheduler.Server to process messages received via `handle_info`.
+  Returns `{:ok, state}` if the message was processed, or `{:ignored, state}`
+  if the message was not a recognized completion.
+  """
+  @spec handle_message(State.t(), term()) :: {:ok, State.t()} | {:ignored, State.t()}
+  def handle_message(state, msg) do
+    case Completion.match(msg) do
+      {:completed, target_key, result} ->
+        case State.record_completion(state, target_key, result) do
+          {:woke, _request_id, _wake_result, state} ->
+            {:ok, state}
+
+          {:waiting, state} ->
+            {:ok, state}
+        end
+
+      {:yielded, _target_key, _suspend} ->
+        # External yield from a child - not supported in server mode yet
+        Logger.warning("Scheduler.Server received external yield - not supported")
+        {:ignored, state}
+
+      :unknown ->
+        {:ignored, state}
+    end
+  end
+
+  @doc """
+  Run ready computations without blocking.
+
+  Used by Scheduler.Server to process the run queue after receiving messages.
+  Returns `{:continue, state}` if there's more work that could be done,
+  `{:idle, state}` if waiting for messages, or `{:done, state}` if all
+  computations have completed.
+  """
+  @spec step(State.t()) :: {:continue, State.t()} | {:idle, State.t()} | {:done, State.t()}
+  def step(state) do
+    case run_ready(state) do
+      {:continue, state} ->
+        # More work available - continue stepping
+        {:continue, state}
+
+      {:receive, state} ->
+        # Waiting for messages
+        {:idle, state}
+
+      {:done, state} ->
+        # All computations finished
+        {:done, state}
+
+      {:suspended, _suspend, state} ->
+        # External yield - treat as idle for server mode
+        {:idle, state}
+
+      {:error, _reason} = error ->
+        # Propagate error
+        error
+    end
+  end
+
+  @doc """
+  Run all ready computations until the queue is empty.
+
+  A convenience function that calls `step/1` repeatedly until idle or done.
+  """
+  @spec drain_ready(State.t()) :: {:idle, State.t()} | {:done, State.t()} | {:error, term()}
+  def drain_ready(state) do
+    case step(state) do
+      {:continue, state} -> drain_ready(state)
+      other -> other
+    end
+  end
+
+  #############################################################################
   ## Core Loop
   #############################################################################
 
@@ -317,12 +415,14 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
         # Run the resumed computation
         case run_resume(resume, results) do
           {:done, result} ->
-            # Computation finished
-            state = State.record_completed(state, request_id, result)
+            # Computation finished - resolve tag and store result
+            state = record_with_tag_resolution(state, request_id, result)
             {:continue, state}
 
           %AwaitSuspend{request: request, resume: new_resume} ->
-            # Suspended again on new await
+            # Suspended again on new await - transfer tag association
+            state = transfer_tag_association(state, request_id, request.id)
+
             case State.add_suspension(state, request.id, request, new_resume) do
               {:ready, state} ->
                 # Early completions satisfied immediately
@@ -340,6 +440,35 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
           {:error, reason} ->
             handle_computation_error(state, request_id, reason)
         end
+    end
+  end
+
+  # Record result, resolving tag association if present
+  defp record_with_tag_resolution(state, request_id, result) do
+    case Map.get(state.completed, request_id) do
+      {:tag, user_tag} ->
+        # Store under user tag, clean up marker
+        state
+        |> put_in([Access.key(:completed), request_id], nil)
+        |> update_in([Access.key(:completed)], &Map.delete(&1, request_id))
+        |> put_in([Access.key(:completed), user_tag], result)
+
+      _ ->
+        # No tag association - store under request_id (used by run/2)
+        State.record_completed(state, request_id, result)
+    end
+  end
+
+  # Transfer tag association from old request to new request
+  defp transfer_tag_association(state, old_request_id, new_request_id) do
+    case Map.get(state.completed, old_request_id) do
+      {:tag, user_tag} ->
+        state
+        |> update_in([Access.key(:completed)], &Map.delete(&1, old_request_id))
+        |> put_in([Access.key(:completed), new_request_id], {:tag, user_tag})
+
+      _ ->
+        state
     end
   end
 
@@ -597,7 +726,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
     case Keyword.get(state.opts, :on_error, :log_and_continue) do
       :log_and_continue ->
         Logger.error("Computation #{inspect(request_id)} failed: #{inspect(reason)}")
-        state = State.record_completed(state, request_id, {:error, reason})
+        state = record_with_tag_resolution(state, request_id, {:error, reason})
         {:continue, state}
 
       :stop ->
