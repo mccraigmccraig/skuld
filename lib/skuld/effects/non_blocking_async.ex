@@ -477,19 +477,17 @@ defmodule Skuld.Effects.NonBlockingAsync do
     if handle_boundary != current_boundary do
       Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
     else
-      # Fast path - check if already complete
-      case Task.yield(task, 0) do
+      # Fast path - check if result message is already available
+      # Use peek_task_result to avoid the race condition where DOWN message
+      # arrives before the result message (Task.yield(task, 0) can return
+      # {:exit, :normal} even when the task completed successfully)
+      case peek_task_result(task) do
         {:ok, value} ->
           # Already done - continue immediately, no yield
           env_untracked = untrack_handle(env, handle)
           k.(value, env_untracked)
 
-        {:exit, reason} ->
-          # Task failed
-          env_untracked = untrack_handle(env, handle)
-          Comp.call(Throw.throw({:error, {:task_failed, reason}}), env_untracked, k)
-
-        nil ->
+        :not_ready ->
           # Not ready - yield to scheduler via Await effect
           target = TaskTarget.new(task)
           request = AwaitRequest.new([target], :all)
@@ -665,17 +663,15 @@ defmodule Skuld.Effects.NonBlockingAsync do
     Env.put_state(env, @boundaries_key, Map.put(boundaries, boundary_id, updated_tasks))
   end
 
-  # Check which handles are already ready (Task.yield(task, 0))
+  # Check which handles have result messages already available.
+  # Uses peek_task_result to avoid race condition with DOWN messages.
   defp check_ready(handles) do
     Enum.reduce(handles, {%{}, []}, fn %Handle{task: task} = handle, {ready, pending} ->
-      case Task.yield(task, 0) do
+      case peek_task_result(task) do
         {:ok, value} ->
           {Map.put(ready, handle, {:ok, value}), pending}
 
-        {:exit, reason} ->
-          {Map.put(ready, handle, {:error, {:task_failed, reason}}), pending}
-
-        nil ->
+        :not_ready ->
           {ready, [handle | pending]}
       end
     end)
@@ -706,20 +702,33 @@ defmodule Skuld.Effects.NonBlockingAsync do
     end
   end
 
-  # Find first ready handle
+  # Find first ready handle (has result message available).
+  # Uses peek_task_result to avoid race condition with DOWN messages.
   defp find_ready(handles) do
     Enum.find_value(handles, :none_ready, fn %Handle{task: task} = handle ->
-      case Task.yield(task, 0) do
+      case peek_task_result(task) do
         {:ok, value} ->
           {:ready, handle, {:ok, value}}
 
-        {:exit, reason} ->
-          {:ready, handle, {:error, {:task_failed, reason}}}
-
-        nil ->
+        :not_ready ->
           nil
       end
     end)
+  end
+
+  # Peek for task result message without consuming DOWN messages.
+  # This avoids the race condition where Task.yield(task, 0) returns
+  # {:exit, :normal} because the DOWN message arrived before the result message.
+  # The scheduler handles this properly by waiting for both messages.
+  defp peek_task_result(%Task{ref: ref}) do
+    receive do
+      {^ref, result} ->
+        # Got the result - demonitor and flush any DOWN message
+        Process.demonitor(ref, [:flush])
+        {:ok, result}
+    after
+      0 -> :not_ready
+    end
   end
 
   # Find handle by target key (task ref)

@@ -1,6 +1,8 @@
 defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   use Skuld.Syntax
 
   alias Skuld.Effects.NonBlockingAsync
@@ -348,10 +350,13 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
           :never_reached
         end
 
-      {:done, results} = Scheduler.run([comp_ok, comp_error])
+      # Capture the expected error log from :log_and_continue behavior
+      capture_log(fn ->
+        {:done, results} = Scheduler.run([comp_ok, comp_error])
 
-      assert results[{:index, 0}] == :ok_result
-      assert match?({:error, {:throw, _}}, results[{:index, 1}])
+        assert results[{:index, 0}] == :ok_result
+        assert match?({:error, {:throw, _}}, results[{:index, 1}])
+      end)
     end
 
     test "on_error: :stop halts on first error" do
@@ -361,6 +366,7 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
           :never_reached
         end
 
+      # on_error: :stop doesn't log, but wrap anyway for consistency
       result = Scheduler.run([comp_error], on_error: :stop)
 
       # Exceptions are converted to throws by Comp.call's ConvertThrow handling
@@ -427,13 +433,16 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
 
   # Start a gate process that releases all waiting tasks after n registrations.
   # Tasks call: send(gate, {:gate_wait, self()}) then receive do: (:gate_release -> :ok)
+  # The gate stays alive after releasing to avoid any race conditions with process exit.
   defp start_gate(n) when n > 0 do
-    spawn_link(fn -> gate_loop(n, []) end)
+    spawn(fn -> gate_loop(n, []) end)
   end
 
   defp gate_loop(0, waiting) do
     # All tasks registered, release them all
     Enum.each(waiting, &send(&1, :gate_release))
+    # Stay alive indefinitely (gets cleaned up when test process exits)
+    Process.sleep(:infinity)
   end
 
   defp gate_loop(remaining, waiting) do

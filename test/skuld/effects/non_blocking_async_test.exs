@@ -1,6 +1,8 @@
 defmodule Skuld.Effects.NonBlockingAsyncTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   use Skuld.Syntax
 
   alias Skuld.Effects.NonBlockingAsync
@@ -430,27 +432,30 @@ defmodule Skuld.Effects.NonBlockingAsyncTest do
 
   describe "task failure" do
     test "task failure returns error" do
-      result =
-        comp do
-          NonBlockingAsync.boundary(
-            comp do
-              h <-
-                NonBlockingAsync.async(
-                  comp do
-                    boom!()
-                  end
-                )
+      # Capture expected error log from task failure
+      capture_log(fn ->
+        result =
+          comp do
+            NonBlockingAsync.boundary(
+              comp do
+                h <-
+                  NonBlockingAsync.async(
+                    comp do
+                      boom!()
+                    end
+                  )
 
-              NonBlockingAsync.await(h)
-            end
-          )
-        end
-        |> NonBlockingAsync.with_handler()
-        |> Throw.with_handler()
-        |> Scheduler.run_one()
+                NonBlockingAsync.await(h)
+              end
+            )
+          end
+          |> NonBlockingAsync.with_handler()
+          |> Throw.with_handler()
+          |> Scheduler.run_one()
 
-      # Task failures from await become errors at the scheduler level
-      assert match?({:done, {:error, {:throw, {:error, _}}}}, result)
+        # Task failures from await become errors at the scheduler level
+        assert match?({:done, {:error, {:throw, {:error, _}}}}, result)
+      end)
     end
   end
 

@@ -1,6 +1,8 @@
 defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   use Skuld.Syntax
 
   alias Skuld.Effects.NonBlockingAsync
@@ -284,13 +286,16 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
         |> NonBlockingAsync.with_handler()
         |> Throw.with_handler()
 
-      {:ok, tag} = Server.spawn(server, comp)
+      # Capture expected error log from :log_and_continue behavior
+      capture_log(fn ->
+        {:ok, tag} = Server.spawn(server, comp)
 
-      # Poll for result instead of relying on callback
-      result = poll_for_result(server, tag, 1000)
-      assert match?({:ok, {:error, _}}, result)
+        # Poll for result instead of relying on callback
+        result = poll_for_result(server, tag, 1000)
+        assert match?({:ok, {:error, _}}, result)
 
-      Server.stop(server)
+        Server.stop(server)
+      end)
     end
   end
 
