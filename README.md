@@ -27,7 +27,7 @@ some common side-effecting operations and their effectful equivalents:
 | Process dictionary              | State, Writer                |
 | Random values                   | Random                       |
 | Generating IDs (UUIDs)          | Fresh                        |
-| Async tasks / parallel work     | Async, Parallel, AtomicState |
+| Async tasks / parallel work     | Async, Parallel, NonBlockingAsync |
 | Run effects from LiveView       | AsyncComputation             |
 | Database transactions           | DBTransaction                |
 | Database queries                | Query                        |
@@ -79,6 +79,7 @@ some common side-effecting operations and their effectful equivalents:
     - [Async](#async)
     - [Parallel](#parallel)
     - [AsyncComputation](#asynccomputation)
+    - [NonBlockingAsync](#nonblockingasync)
   - [Persistence & Data](#persistence--data)
     - [DBTransaction](#dbtransaction)
     - [Query](#query)
@@ -511,10 +512,12 @@ alias Skuld.Comp
 alias Skuld.Effects.{
   State, Reader, Writer, Throw, Yield,
   FxList, FxFasterList,
-  Fresh, Random, AtomicState, Async, Parallel, Bracket, Query, Command, 
-  EventAccumulator, EffectLogger,
+  Fresh, Random, AtomicState, Async, Parallel, NonBlockingAsync, Bracket,
+  Query, Command, EventAccumulator, EffectLogger,
   DBTransaction, ChangesetPersist, ChangeEvent
 }
+alias Skuld.Effects.NonBlockingAsync.Scheduler
+alias Skuld.Effects.NonBlockingAsync.AwaitRequest.{TaskTarget, TimerTarget}
 alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
 alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
 ```
@@ -1543,6 +1546,162 @@ end
 - Use this for non-effectful callers; use `Async` effect when inside a computation
 
 Operations: `start/2`, `start_sync/2`, `resume/2`, `resume_sync/3`, `cancel/1`
+
+#### NonBlockingAsync
+
+Cooperative multitasking for complex async workflows. Unlike `Async` which blocks on 
+`Task.yield`, NonBlockingAsync yields `%AwaitSuspend{}` to a scheduler, enabling 
+JavaScript event loop-style concurrency where multiple computations interleave fairly 
+in a single process.
+
+**Basic usage with single computation:**
+
+```elixir
+comp do
+  result <- NonBlockingAsync.boundary(comp do
+    h1 <- NonBlockingAsync.async(comp do :result_1 end)
+    h2 <- NonBlockingAsync.async(comp do :result_2 end)
+    
+    r1 <- NonBlockingAsync.await(h1)
+    r2 <- NonBlockingAsync.await(h2)
+    {r1, r2}
+  end)
+  result
+end
+|> NonBlockingAsync.with_handler()
+|> Throw.with_handler()
+|> Scheduler.run_one()
+#=> {:done, {:result_1, :result_2}}
+```
+
+**Multiple computations with fair scheduling:**
+
+```elixir
+# Run multiple workflows cooperatively - FIFO fair interleaving
+{:done, results} = Scheduler.run([
+  user_workflow(user_id_1),
+  user_workflow(user_id_2),
+  user_workflow(user_id_3)
+])
+
+results[{:index, 0}]  #=> result from first workflow
+results[{:index, 1}]  #=> result from second workflow
+```
+
+**await_all and await_any:**
+
+```elixir
+# Wait for all - results in order
+NonBlockingAsync.boundary(comp do
+  h1 <- NonBlockingAsync.async(comp do :first end)
+  h2 <- NonBlockingAsync.async(comp do :second end)
+  
+  [r1, r2] <- NonBlockingAsync.await_all([h1, h2])
+  {r1, r2}
+end)
+
+# Race - first to complete wins
+NonBlockingAsync.boundary(comp do
+  h1 <- NonBlockingAsync.async(comp do :approach_a end)
+  h2 <- NonBlockingAsync.async(comp do :approach_b end)
+  
+  {winner, result} <- NonBlockingAsync.await_any([h1, h2])
+  loser = if winner.task.ref == h1.task.ref, do: h2, else: h1
+  _ <- NonBlockingAsync.cancel(loser)
+  result
+end)
+```
+
+**Timeout patterns with reusable timers:**
+
+```elixir
+# Race a task against a timeout using await_any_raw
+NonBlockingAsync.boundary(
+  comp do
+    h <- NonBlockingAsync.async(comp do slow_work() end)
+    timer = TimerTarget.new(5000)  # 5 second timeout
+    
+    {target_key, result} <- NonBlockingAsync.await_any_raw([
+      TaskTarget.new(h.task),
+      timer
+    ])
+    
+    _ <- NonBlockingAsync.cancel(h)
+    
+    case target_key do
+      {:task, _} -> {:ok, result}
+      {:timer, _} -> {:error, :timeout}
+    end
+  end,
+  fn result, _unawaited -> result end
+)
+
+# Reusable timer for overall operation timeout
+NonBlockingAsync.boundary(
+  comp do
+    timer = TimerTarget.new(10_000)  # 10 second overall timeout
+    
+    h1 <- NonBlockingAsync.async(comp do step_1() end)
+    {key1, r1} <- NonBlockingAsync.await_any_raw([TaskTarget.new(h1.task), timer])
+    _ <- NonBlockingAsync.cancel(h1)
+    
+    case key1 do
+      {:timer, _} -> {:error, :timeout}
+      {:task, _} ->
+        # Same timer continues counting down
+        h2 <- NonBlockingAsync.async(comp do step_2(r1) end)
+        {key2, r2} <- NonBlockingAsync.await_any_raw([TaskTarget.new(h2.task), timer])
+        _ <- NonBlockingAsync.cancel(h2)
+        
+        case key2 do
+          {:timer, _} -> {:error, :timeout}
+          {:task, _} -> {:ok, r2}
+        end
+    end
+  end,
+  fn result, _unawaited -> result end
+)
+```
+
+**GenServer mode for long-lived schedulers:**
+
+```elixir
+# Start a scheduler server
+{:ok, server} = Scheduler.Server.start_link(
+  computations: [workflow(user1), workflow(user2)],
+  scheduler_opts: [on_error: :log_and_continue]
+)
+
+# Spawn additional computations dynamically
+{:ok, tag} = Scheduler.Server.spawn(server, workflow(user3))
+
+# Check status
+Scheduler.Server.stats(server)
+#=> %{suspended: 2, ready: 0, completed: 1}
+
+# Get a completed result
+{:ok, result} = Scheduler.Server.get_result(server, tag)
+
+# Stop the server
+Scheduler.Server.stop(server)
+```
+
+**Comparison with other concurrency effects:**
+
+| Feature | Async | Parallel | NonBlockingAsync |
+|---------|-------|----------|------------------|
+| await behavior | Blocks on Task.yield | Blocks | Yields AwaitSuspend |
+| Multiple computations | No | Yes (self-contained) | Yes (via Scheduler) |
+| Cooperative scheduling | No | No | Yes (FIFO fair) |
+| Reusable timeouts | No | No | Yes |
+| GenServer mode | No | No | Yes |
+| Use case | Simple parallel | Fork-join patterns | Complex workflows, timeouts |
+
+Operations: `boundary/2`, `async/1`, `await/1`, `await_all/1`, `await_any/1`, 
+`await_any_raw/1`, `cancel/1`
+
+> **Note**: Like Async, NonBlockingAsync runs on the same BEAM node. For distributed 
+> work, use message passing between nodes.
 
 ### Persistence & Data
 
