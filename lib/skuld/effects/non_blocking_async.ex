@@ -509,6 +509,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
     end
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def handle(%AwaitAll{handles: handles}, env, k) do
     current_boundary = Env.get_state(env, @current_boundary_key)
 

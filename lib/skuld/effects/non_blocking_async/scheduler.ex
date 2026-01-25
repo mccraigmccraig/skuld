@@ -127,6 +127,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
   end
 
   # Run one ready computation from the queue, tracking which is our target
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_ready_one(state, tag) do
     case State.dequeue_one(state) do
       {:empty, state} ->
@@ -336,7 +337,8 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
   `{:idle, state}` if waiting for messages, or `{:done, state}` if all
   computations have completed.
   """
-  @spec step(State.t()) :: {:continue, State.t()} | {:idle, State.t()} | {:done, State.t()}
+  @spec step(State.t()) ::
+          {:continue, State.t()} | {:idle, State.t()} | {:done, State.t()} | {:error, term()}
   def step(state) do
     case run_ready(state) do
       {:continue, state} ->
@@ -401,6 +403,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
   end
 
   # Run one ready computation from the queue
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_ready(state) do
     case State.dequeue_one(state) do
       {:empty, state} ->
@@ -573,26 +576,13 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
         {%Comp.Throw{} = throw, _env} ->
           {:error, {:throw, throw.error}}
 
-        # Direct sentinel (shouldn't normally happen but handle it)
-        %AwaitSuspend{} = suspend ->
-          suspend
+        # Handle Cancelled sentinels
+        {%Comp.Cancelled{} = cancelled, _env} ->
+          {:error, {:cancelled, cancelled.reason}}
 
-        %Suspend{} = suspend ->
-          suspend
-
-        other ->
-          # Handle other sentinel types
-          if is_tuple(other) and tuple_size(other) == 2 do
-            {value, _env} = other
-
-            if Comp.ISentinel.impl_for(value) do
-              value
-            else
-              {:done, value}
-            end
-          else
-            {:done, other}
-          end
+        # Regular {value, env} tuples
+        {value, %Env{}} ->
+          {:done, value}
       end
     rescue
       e ->
@@ -624,23 +614,13 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
         {%Comp.Throw{} = throw, _env} ->
           {:error, {:throw, throw.error}}
 
-        # Plain {value, env} tuple from continuation
-        {result, %Env{}} ->
-          {:done, result}
+        # Handle Cancelled sentinels
+        {%Comp.Cancelled{} = cancelled, _env} ->
+          {:error, {:cancelled, cancelled.reason}}
 
-        # Direct sentinel (shouldn't normally happen)
-        %AwaitSuspend{} = suspend ->
-          suspend
-
-        %Suspend{} = suspend ->
-          suspend
-
-        other ->
-          if Comp.ISentinel.impl_for(other) do
-            other
-          else
-            {:done, other}
-          end
+        # Regular {value, env} tuples
+        {value, %Env{}} ->
+          {:done, value}
       end
     rescue
       e ->
