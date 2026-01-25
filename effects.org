@@ -495,8 +495,8 @@ Effects add a layer of indirection, but debugging remains practical:
 The EffectLogger records every effect in a computation:
 
 #+begin_src elixir
-defmodule MaybeFail do
-  defcomp maybe_fail(version) do
+defmodule BuggyCode do
+  defcomp process(version) do
     _ <- State.put(10)
     _ <- case version do
            :original -> Throw.throw(:validation_failed)
@@ -509,7 +509,7 @@ end
 
 # Run with logging
 {%Skuld.Comp.Throw{error: :validation_failed}, log} = (
-  MaybeFail.maybe_fail(:original)
+  BuggyCode.process(:original)
   |> EffectLogger.with_logging()
   |> Throw.with_handler()
   |> State.with_handler(0)
@@ -597,7 +597,7 @@ yields responses, and loops forever. The caller drives it by resuming with value
 
 The computation /is/ the state machine!
 
-* The Cost
+* Tradeoffs
 
 Algebraic Effects aren't free:
 
@@ -609,21 +609,13 @@ Algebraic Effects aren't free:
 - *Learning curve*: It's a different way of thinking. The =comp= macro takes
   getting used to.
 
-The tradeoff is worth it when:
-- Testability matters more than microseconds
-- You have complex domain logic with many effects
-- You want property-based testing
-- You need effect logging for debugging
-- You want serializable function state and replay
-- You want coroutines
-
-* When To Use Skuld
-
 ** Good fit
 - I/O-bound services where testability matters
 - Complex domain logic with many effects (DB, external APIs)
-- When you want property-based testing of domain logic
-- When you need effect logging for debugging/replay
+- Property-based testing of domain logic
+- Effect logging for debugging/replay
+- Serializable computation state and cold resume
+- Coroutines and yield-based control flow
 
 ** Maybe not
 - CPU-bound computation where every microsecond counts
