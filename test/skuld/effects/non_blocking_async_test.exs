@@ -167,7 +167,12 @@ defmodule Skuld.Effects.NonBlockingAsyncTest do
               h2 <-
                 NonBlockingAsync.async(
                   comp do
-                    _ = Process.sleep(100)
+                    # Slow task - waits forever, will be cancelled
+                    _ =
+                      receive do
+                        :never_sent -> :ok
+                      end
+
                     :loser
                   end
                 )
@@ -452,6 +457,8 @@ defmodule Skuld.Effects.NonBlockingAsyncTest do
   describe "fast path" do
     test "already-completed task returns immediately without yielding" do
       # This tests that Task.yield(task, 0) fast-path works
+      test_pid = self()
+
       result =
         comp do
           NonBlockingAsync.boundary(
@@ -459,12 +466,24 @@ defmodule Skuld.Effects.NonBlockingAsyncTest do
               h <-
                 NonBlockingAsync.async(
                   comp do
+                    # Signal test process with task pid so it can monitor for completion
+                    _ = send(test_pid, {:task_pid, self()})
                     :instant
                   end
                 )
 
-              # Give time for task to complete
-              _ = Process.sleep(10)
+              # Wait for task to complete by monitoring its exit
+              # The task sends its pid, then we monitor it and wait for DOWN
+              _ =
+                receive do
+                  {:task_pid, task_pid} ->
+                    ref = Process.monitor(task_pid)
+
+                    receive do
+                      {:DOWN, ^ref, :process, ^task_pid, _} -> :ok
+                    end
+                end
+
               NonBlockingAsync.await(h)
             end
           )

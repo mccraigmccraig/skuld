@@ -15,13 +15,15 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
     end
 
     test "starts with initial computations" do
-      comp1 = make_async_comp(:result1)
-      comp2 = make_async_comp(:result2)
+      test_pid = self()
+      comp1 = make_notifying_comp(test_pid, :comp1, :result1)
+      comp2 = make_notifying_comp(test_pid, :comp2, :result2)
 
       {:ok, server} = Server.start_link(computations: [comp1, comp2])
 
-      # Allow tasks to complete
-      Process.sleep(10)
+      # Wait for both completion signals
+      assert_receive {:completed, :comp1, :result1}, 1000
+      assert_receive {:completed, :comp2, :result2}, 1000
 
       stats = Server.stats(server)
       assert stats.completed == 2
@@ -42,14 +44,15 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
   describe "spawn/2" do
     test "spawns computation and returns tag" do
       {:ok, server} = Server.start_link()
+      test_pid = self()
 
-      comp = make_async_comp(:my_result)
+      comp = make_notifying_comp(test_pid, :my_comp, :my_result)
       {:ok, tag} = Server.spawn(server, comp)
 
       assert is_reference(tag)
 
-      # Allow task to complete
-      Process.sleep(10)
+      # Wait for completion signal
+      assert_receive {:completed, :my_comp, :my_result}, 1000
 
       {:ok, result} = Server.get_result(server, tag)
       assert result == :my_result
@@ -59,13 +62,16 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
 
     test "spawns multiple computations" do
       {:ok, server} = Server.start_link()
+      test_pid = self()
 
-      {:ok, tag1} = Server.spawn(server, make_async_comp(:first))
-      {:ok, tag2} = Server.spawn(server, make_async_comp(:second))
-      {:ok, tag3} = Server.spawn(server, make_async_comp(:third))
+      {:ok, tag1} = Server.spawn(server, make_notifying_comp(test_pid, :first, :first))
+      {:ok, tag2} = Server.spawn(server, make_notifying_comp(test_pid, :second, :second))
+      {:ok, tag3} = Server.spawn(server, make_notifying_comp(test_pid, :third, :third))
 
-      # Allow tasks to complete
-      Process.sleep(20)
+      # Wait for all completion signals
+      assert_receive {:completed, :first, :first}, 1000
+      assert_receive {:completed, :second, :second}, 1000
+      assert_receive {:completed, :third, :third}, 1000
 
       assert {:ok, :first} = Server.get_result(server, tag1)
       assert {:ok, :second} = Server.get_result(server, tag2)
@@ -78,12 +84,13 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
   describe "spawn/3 with custom tag" do
     test "uses provided tag" do
       {:ok, server} = Server.start_link()
+      test_pid = self()
 
-      comp = make_async_comp(:my_result)
+      comp = make_notifying_comp(test_pid, :my_comp, :my_result)
       {:ok, :my_tag} = Server.spawn(server, comp, :my_tag)
 
-      # Allow task to complete
-      Process.sleep(10)
+      # Wait for completion signal
+      assert_receive {:completed, :my_comp, :my_result}, 1000
 
       {:ok, result} = Server.get_result(server, :my_tag)
       assert result == :my_result
@@ -99,12 +106,23 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
       # Initially empty
       assert Server.stats(server) == %{suspended: 0, ready: 0, completed: 0}
 
-      # Spawn a computation that takes some time
-      {:ok, _tag} = Server.spawn(server, make_slow_async_comp(:slow, 100))
+      # Spawn a computation that waits for a signal
+      test_pid = self()
 
-      # Should be suspended waiting for task
+      {:ok, _tag} =
+        Server.spawn(server, make_signaled_comp(test_pid, :waiting_comp, :slow_result))
+
+      # Should be suspended waiting for signal
+      assert_receive {:ready, :waiting_comp}, 1000
       stats = Server.stats(server)
-      assert stats.suspended == 1 or stats.completed == 1
+      assert stats.suspended == 1
+
+      # Signal to proceed and wait for completion
+      send_signal(:waiting_comp)
+      assert_receive {:completed, :waiting_comp, :slow_result}, 1000
+
+      stats = Server.stats(server)
+      assert stats.completed == 1
 
       Server.stop(server)
     end
@@ -113,9 +131,10 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
   describe "get_result/2" do
     test "returns result for completed computation" do
       {:ok, server} = Server.start_link()
+      test_pid = self()
 
-      {:ok, tag} = Server.spawn(server, make_async_comp(:done))
-      Process.sleep(10)
+      {:ok, tag} = Server.spawn(server, make_notifying_comp(test_pid, :done_comp, :done))
+      assert_receive {:completed, :done_comp, :done}, 1000
 
       assert {:ok, :done} = Server.get_result(server, tag)
 
@@ -124,12 +143,20 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
 
     test "returns pending for running computation" do
       {:ok, server} = Server.start_link()
+      test_pid = self()
 
-      {:ok, tag} = Server.spawn(server, make_slow_async_comp(:slow, 500))
+      {:ok, tag} = Server.spawn(server, make_signaled_comp(test_pid, :pending_test, :result))
+
+      # Wait for it to be ready (suspended on signal)
+      assert_receive {:ready, :pending_test}, 1000
 
       # Check immediately - should be pending
       result = Server.get_result(server, tag)
       assert result in [{:pending, :suspended}, {:pending, :ready}]
+
+      # Clean up - signal to complete
+      send_signal(:pending_test)
+      assert_receive {:completed, :pending_test, :result}, 1000
 
       Server.stop(server)
     end
@@ -146,11 +173,14 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
   describe "get_all_results/1" do
     test "returns all completed results" do
       {:ok, server} = Server.start_link()
+      test_pid = self()
 
-      {:ok, _tag1} = Server.spawn(server, make_async_comp(:a), :tag_a)
-      {:ok, _tag2} = Server.spawn(server, make_async_comp(:b), :tag_b)
+      {:ok, _tag1} = Server.spawn(server, make_notifying_comp(test_pid, :a, :a), :tag_a)
+      {:ok, _tag2} = Server.spawn(server, make_notifying_comp(test_pid, :b, :b), :tag_b)
 
-      Process.sleep(20)
+      # Wait for completions
+      assert_receive {:completed, :a, :a}, 1000
+      assert_receive {:completed, :b, :b}, 1000
 
       results = Server.get_all_results(server)
 
@@ -162,17 +192,23 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
 
     test "excludes pending computations" do
       {:ok, server} = Server.start_link()
+      test_pid = self()
 
-      {:ok, _} = Server.spawn(server, make_async_comp(:fast), :fast)
-      {:ok, _} = Server.spawn(server, make_slow_async_comp(:slow, 500), :slow)
+      {:ok, _} = Server.spawn(server, make_notifying_comp(test_pid, :fast, :fast), :fast)
+      {:ok, _} = Server.spawn(server, make_signaled_comp(test_pid, :slow_test, :slow), :slow)
 
-      Process.sleep(20)
+      # Wait for fast to complete and slow to be ready (suspended)
+      assert_receive {:completed, :fast, :fast}, 1000
+      assert_receive {:ready, :slow_test}, 1000
 
       results = Server.get_all_results(server)
 
-      # Fast should be complete, slow should not be in results
       assert results[:fast] == :fast
       refute Map.has_key?(results, :slow)
+
+      # Clean up
+      send_signal(:slow_test)
+      assert_receive {:completed, :slow_test, :slow}, 1000
 
       Server.stop(server)
     end
@@ -187,19 +223,26 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
 
     test "true when computations are running" do
       {:ok, server} = Server.start_link()
+      test_pid = self()
 
-      {:ok, _} = Server.spawn(server, make_slow_async_comp(:slow, 500))
+      {:ok, _} = Server.spawn(server, make_signaled_comp(test_pid, :active_test, :result))
 
+      assert_receive {:ready, :active_test}, 1000
       assert Server.active?(server)
+
+      # Clean up
+      send_signal(:active_test)
+      assert_receive {:completed, :active_test, :result}, 1000
 
       Server.stop(server)
     end
 
     test "false when all complete" do
       {:ok, server} = Server.start_link()
+      test_pid = self()
 
-      {:ok, _} = Server.spawn(server, make_async_comp(:done))
-      Process.sleep(20)
+      {:ok, _} = Server.spawn(server, make_notifying_comp(test_pid, :done, :done))
+      assert_receive {:completed, :done, :done}, 1000
 
       refute Server.active?(server)
 
@@ -210,7 +253,10 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
   describe "error handling" do
     test "computation errors are recorded" do
       {:ok, server} = Server.start_link()
+      test_pid = self()
 
+      # Use make_notifying_comp pattern but with an error
+      # The boundary's on_unawaited callback signals completion
       comp =
         comp do
           NonBlockingAsync.boundary(
@@ -224,7 +270,14 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
                   end
                 )
 
-              NonBlockingAsync.await(h)
+              r <- NonBlockingAsync.await(h)
+              _ = send(test_pid, {:completed, :error_test, r})
+              r
+            end,
+            # on_unawaited callback - also signals when boundary completes (even with error)
+            fn result, _unawaited ->
+              send(test_pid, {:completed, :error_test, result})
+              result
             end
           )
         end
@@ -232,10 +285,10 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
         |> Throw.with_handler()
 
       {:ok, tag} = Server.spawn(server, comp)
-      Process.sleep(20)
 
-      {:ok, result} = Server.get_result(server, tag)
-      assert match?({:error, _}, result)
+      # Poll for result instead of relying on callback
+      result = poll_for_result(server, tag, 1000)
+      assert match?({:ok, {:error, _}}, result)
 
       Server.stop(server)
     end
@@ -244,14 +297,27 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
   describe "interleaved execution" do
     test "multiple computations interleave" do
       {:ok, server} = Server.start_link()
+      test_pid = self()
 
-      # Spawn several computations with varying delays
-      {:ok, _t1} = Server.spawn(server, make_slow_async_comp(:a, 10), :a)
-      {:ok, _t2} = Server.spawn(server, make_slow_async_comp(:b, 20), :b)
-      {:ok, _t3} = Server.spawn(server, make_slow_async_comp(:c, 15), :c)
+      # Spawn computations that signal when they start and wait for proceed
+      {:ok, _t1} = Server.spawn(server, make_signaled_comp(test_pid, :a, :a), :a)
+      {:ok, _t2} = Server.spawn(server, make_signaled_comp(test_pid, :b, :b), :b)
+      {:ok, _t3} = Server.spawn(server, make_signaled_comp(test_pid, :c, :c), :c)
+
+      # Wait for all to be ready (suspended on signals)
+      assert_receive {:ready, :a}, 1000
+      assert_receive {:ready, :b}, 1000
+      assert_receive {:ready, :c}, 1000
+
+      # Signal all to proceed
+      send_signal(:a)
+      send_signal(:b)
+      send_signal(:c)
 
       # Wait for all to complete
-      Process.sleep(50)
+      assert_receive {:completed, :a, :a}, 1000
+      assert_receive {:completed, :b, :b}, 1000
+      assert_receive {:completed, :c, :c}, 1000
 
       results = Server.get_all_results(server)
       assert results[:a] == :a
@@ -266,8 +332,40 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
   ## Test Helpers
   #############################################################################
 
-  # Create a computation that does an async operation and returns a result
-  defp make_async_comp(result) do
+  # Poll for result using message round-trip to yield (not time-based).
+  # Each iteration does a GenServer call which ensures the server has processed messages.
+  defp poll_for_result(server, tag, max_attempts) when max_attempts > 0 do
+    case Server.get_result(server, tag) do
+      {:ok, _} = result ->
+        result
+
+      {:pending, _} ->
+        # Do a stats call to yield and let server process messages
+        _ = Server.stats(server)
+        poll_for_result(server, tag, max_attempts - 1)
+
+      {:error, :not_found} ->
+        # Do a stats call to yield
+        _ = Server.stats(server)
+        poll_for_result(server, tag, max_attempts - 1)
+    end
+  end
+
+  defp poll_for_result(_server, tag, 0) do
+    {:error, {:timeout, tag}}
+  end
+
+  # Send a signal to a waiting computation
+  # Receives the task pid from the {:task_pid, signal_name, task_pid} message
+  defp send_signal(signal_name) do
+    receive do
+      {:task_pid, ^signal_name, task_pid} ->
+        send(task_pid, {:signal, signal_name})
+    end
+  end
+
+  # Create a computation that notifies on completion
+  defp make_notifying_comp(test_pid, name, result) do
     comp do
       NonBlockingAsync.boundary(
         comp do
@@ -278,7 +376,9 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
               end
             )
 
-          NonBlockingAsync.await(h)
+          r <- NonBlockingAsync.await(h)
+          _ = send(test_pid, {:completed, name, r})
+          r
         end
       )
     end
@@ -286,20 +386,32 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
     |> Throw.with_handler()
   end
 
-  # Create a computation with a delay
-  defp make_slow_async_comp(result, delay_ms) do
+  # Create a computation that signals when ready and waits for a proceed signal
+  # Also notifies on completion
+  defp make_signaled_comp(test_pid, signal_name, result) do
     comp do
       NonBlockingAsync.boundary(
         comp do
           h <-
             NonBlockingAsync.async(
               comp do
-                _ = Process.sleep(delay_ms)
+                # Signal that we're ready and send our pid for signaling back
+                _ = send(test_pid, {:ready, signal_name})
+                _ = send(test_pid, {:task_pid, signal_name, self()})
+
+                # Wait for proceed signal
+                _ =
+                  receive do
+                    {:signal, ^signal_name} -> :ok
+                  end
+
                 result
               end
             )
 
-          NonBlockingAsync.await(h)
+          r <- NonBlockingAsync.await(h)
+          _ = send(test_pid, {:completed, signal_name, r})
+          r
         end
       )
     end

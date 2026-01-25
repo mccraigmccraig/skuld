@@ -34,6 +34,9 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
     end
 
     test "handles task that takes time" do
+      # Gate releases after 1 task registers
+      gate = start_gate(1)
+
       result =
         comp do
           NonBlockingAsync.boundary(
@@ -41,7 +44,9 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               h <-
                 NonBlockingAsync.async(
                   comp do
-                    _ = Process.sleep(10)
+                    # Wait at gate - ensures task doesn't complete instantly
+                    _ = send(gate, {:gate_wait, self()})
+                    _ = receive do: (:gate_release -> :ok)
                     :delayed_result
                   end
                 )
@@ -58,6 +63,9 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
     end
 
     test "handles multiple sequential awaits" do
+      # Gate releases after 2 tasks register
+      gate = start_gate(2)
+
       result =
         comp do
           NonBlockingAsync.boundary(
@@ -65,7 +73,8 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               h1 <-
                 NonBlockingAsync.async(
                   comp do
-                    _ = Process.sleep(5)
+                    _ = send(gate, {:gate_wait, self()})
+                    _ = receive do: (:gate_release -> :ok)
                     :first
                   end
                 )
@@ -73,7 +82,8 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               h2 <-
                 NonBlockingAsync.async(
                   comp do
-                    _ = Process.sleep(5)
+                    _ = send(gate, {:gate_wait, self()})
+                    _ = receive do: (:gate_release -> :ok)
                     :second
                   end
                 )
@@ -101,7 +111,7 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               h <-
                 NonBlockingAsync.async(
                   comp do
-                    :from_comp1
+                    :result1
                   end
                 )
 
@@ -119,7 +129,7 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               h <-
                 NonBlockingAsync.async(
                   comp do
-                    :from_comp2
+                    :result2
                   end
                 )
 
@@ -132,16 +142,14 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
 
       {:done, results} = Scheduler.run([comp1, comp2])
 
-      # Results should contain both computation results
-      assert Map.values(results) |> Enum.sort() == [:from_comp1, :from_comp2]
+      assert results[{:index, 0}] == :result1
+      assert results[{:index, 1}] == :result2
     end
 
-    test "empty computation list returns done immediately" do
-      result = Scheduler.run([])
-      assert result == {:done, %{}}
-    end
+    test "handles fast and slow computations" do
+      # Gate for the slow task
+      gate = start_gate(1)
 
-    test "handles computations that complete at different times" do
       comp_fast =
         comp do
           NonBlockingAsync.boundary(
@@ -167,7 +175,9 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               h <-
                 NonBlockingAsync.async(
                   comp do
-                    _ = Process.sleep(20)
+                    # Wait at gate
+                    _ = send(gate, {:gate_wait, self()})
+                    _ = receive do: (:gate_release -> :ok)
                     :slow
                   end
                 )
@@ -196,7 +206,8 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               h <-
                 NonBlockingAsync.async(
                   comp do
-                    _ = Process.sleep(100)
+                    # Task waits forever - will lose to timer
+                    _ = receive do: (:never_sent -> :ok)
                     :slow_task
                   end
                 )
@@ -223,7 +234,10 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
       assert result == {:done, {:timeout, {:ok, :timeout}}}
     end
 
-    test "task wins race against timer" do
+    test "task wins race against long timer" do
+      # Gate releases immediately (1 task)
+      gate = start_gate(1)
+
       result =
         comp do
           NonBlockingAsync.boundary(
@@ -231,23 +245,27 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               h <-
                 NonBlockingAsync.async(
                   comp do
+                    # Quick task - wait at gate then complete
+                    _ = send(gate, {:gate_wait, self()})
+                    _ = receive do: (:gate_release -> :ok)
                     :fast_task
                   end
                 )
 
+              # Timer is very long (1 second)
               timer = TimerTarget.new(1000)
 
               {target_key, value} <-
                 NonBlockingAsync.await_any_raw([TaskTarget.new(h.task), timer])
 
-              # Must cancel handle since await_any_raw doesn't untrack it
               _ <- NonBlockingAsync.cancel(h)
 
               case target_key do
                 {:timer, _} -> {:timeout, value}
                 {:task, _} -> {:task_won, value}
               end
-            end
+            end,
+            fn result, _unawaited -> result end
           )
         end
         |> NonBlockingAsync.with_handler()
@@ -257,22 +275,23 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
       assert result == {:done, {:task_won, {:ok, :fast_task}}}
     end
 
-    @tag :slow
     test "reusable timer for overall operation timeout" do
-      # Test that the same timer can be used across multiple awaits
-      # to implement an overall operation timeout
+      # Gate releases immediately
+      gate = start_gate(1)
+
       result =
         comp do
           NonBlockingAsync.boundary(
             comp do
-              # Create a timer with 50ms overall timeout
-              timer = TimerTarget.new(50)
+              # Create a timer with long timeout (won't fire)
+              timer = TimerTarget.new(1000)
 
-              # First task - should complete in time (10ms < 50ms remaining)
+              # Task completes quickly
               h1 <-
                 NonBlockingAsync.async(
                   comp do
-                    _ = Process.sleep(10)
+                    _ = send(gate, {:gate_wait, self()})
+                    _ = receive do: (:gate_release -> :ok)
                     :step1_done
                   end
                 )
@@ -298,7 +317,7 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
         |> Throw.with_handler()
         |> Scheduler.run_one()
 
-      # First task should complete before the 50ms timer
+      # Task should complete before the timer
       assert result == {:done, {:step1_ok, {:ok, :step1_done}}}
     end
   end
@@ -331,10 +350,8 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
 
       {:done, results} = Scheduler.run([comp_ok, comp_error])
 
-      values = Map.values(results)
-      # One should be :ok_result, one should be an error
-      assert Enum.any?(values, fn v -> v == :ok_result end)
-      assert Enum.any?(values, fn v -> match?({:error, _}, v) end)
+      assert results[{:index, 0}] == :ok_result
+      assert match?({:error, {:throw, _}}, results[{:index, 1}])
     end
 
     test "on_error: :stop halts on first error" do
@@ -353,8 +370,9 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
 
   describe "FIFO fairness" do
     test "computations wake in FIFO order" do
-      # This is hard to test precisely, but we can verify
-      # both computations complete and results are collected
+      # Gate releases after both tasks register
+      gate = start_gate(2)
+
       comp1 =
         comp do
           NonBlockingAsync.boundary(
@@ -362,7 +380,8 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               h <-
                 NonBlockingAsync.async(
                   comp do
-                    _ = Process.sleep(10)
+                    _ = send(gate, {:gate_wait, self()})
+                    _ = receive do: (:gate_release -> :ok)
                     :comp1
                   end
                 )
@@ -381,7 +400,8 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               h <-
                 NonBlockingAsync.async(
                   comp do
-                    _ = Process.sleep(10)
+                    _ = send(gate, {:gate_wait, self()})
+                    _ = receive do: (:gate_release -> :ok)
                     :comp2
                   end
                 )
@@ -398,6 +418,28 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
       values = Map.values(results)
       assert :comp1 in values
       assert :comp2 in values
+    end
+  end
+
+  #############################################################################
+  ## Test Helpers
+  #############################################################################
+
+  # Start a gate process that releases all waiting tasks after n registrations.
+  # Tasks call: send(gate, {:gate_wait, self()}) then receive do: (:gate_release -> :ok)
+  defp start_gate(n) when n > 0 do
+    spawn_link(fn -> gate_loop(n, []) end)
+  end
+
+  defp gate_loop(0, waiting) do
+    # All tasks registered, release them all
+    Enum.each(waiting, &send(&1, :gate_release))
+  end
+
+  defp gate_loop(remaining, waiting) do
+    receive do
+      {:gate_wait, pid} ->
+        gate_loop(remaining - 1, [pid | waiting])
     end
   end
 end

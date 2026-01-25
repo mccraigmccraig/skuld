@@ -88,9 +88,9 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitRequestTest do
     end
 
     test "start/1 returns :already_expired for past deadline" do
-      target = TimerTarget.new(0)
-      # Small sleep to ensure deadline passes
-      Process.sleep(1)
+      # Create timer with deadline in the past
+      past_deadline = System.monotonic_time(:millisecond) - 1
+      target = TimerTarget.new_absolute(past_deadline)
 
       assert {:already_expired, ^target} = TimerTarget.start(target)
     end
@@ -125,8 +125,10 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitRequestTest do
     end
 
     test "expired?/1 returns true for past deadline" do
-      target = TimerTarget.new(0)
-      Process.sleep(1)
+      # Create timer with deadline in the past
+      past_deadline = System.monotonic_time(:millisecond) - 1
+      target = TimerTarget.new_absolute(past_deadline)
+
       assert TimerTarget.expired?(target)
     end
 

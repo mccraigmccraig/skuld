@@ -538,17 +538,36 @@ defmodule Skuld.Effects.NonBlockingAsync do
           end
 
         _ ->
-          # Some pending - yield to scheduler
-          targets = Enum.map(handles, fn %Handle{task: task} -> TaskTarget.new(task) end)
-          request = AwaitRequest.new(targets, :all)
+          # Some pending - yield to scheduler for ONLY the pending handles
+          # (ready handles' messages were already consumed by check_ready)
+          pending_targets =
+            Enum.map(pending_handles, fn %Handle{task: task} -> TaskTarget.new(task) end)
+
+          request = AwaitRequest.new(pending_targets, :all)
 
           await_comp = Await.await(request)
 
-          Comp.call(await_comp, env, fn results, env2 ->
+          Comp.call(await_comp, env, fn pending_results, env2 ->
             env_untracked = Enum.reduce(handles, env2, &untrack_handle(&2, &1))
 
-            # Results are in target order, extract values
-            case extract_all_results(results) do
+            # Build map from task ref to result for pending handles
+            pending_results_map =
+              pending_handles
+              |> Enum.zip(pending_results)
+              |> Enum.map(fn {%Handle{task: task}, result} -> {task.ref, result} end)
+              |> Map.new()
+
+            # Merge ready_results (from check_ready) with pending_results (from scheduler)
+            # Return in original handle order
+            all_results =
+              Enum.map(handles, fn %Handle{task: task} = handle ->
+                case Map.get(ready_results, handle) do
+                  nil -> Map.fetch!(pending_results_map, task.ref)
+                  result -> result
+                end
+              end)
+
+            case extract_all_results(all_results) do
               {:ok, values} -> k.(values, env_untracked)
               {:error, reason} -> Comp.call(Throw.throw({:error, reason}), env_untracked, k)
             end
