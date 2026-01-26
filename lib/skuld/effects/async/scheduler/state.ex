@@ -1,4 +1,4 @@
-defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
+defmodule Skuld.Effects.Async.Scheduler.State do
   @moduledoc """
   State management for the cooperative scheduler.
 
@@ -22,7 +22,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
   - `suspended_at` - Monotonic timestamp for debugging/metrics
   """
 
-  alias Skuld.Effects.NonBlockingAsync.AwaitRequest
+  alias Skuld.Effects.Async.AwaitRequest
   alias AwaitRequest.Target
 
   defstruct [

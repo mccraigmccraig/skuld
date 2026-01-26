@@ -1,34 +1,34 @@
-defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
+defmodule Skuld.Effects.Async.SchedulerTest do
   use ExUnit.Case, async: true
 
   import ExUnit.CaptureLog
 
   use Skuld.Syntax
 
-  alias Skuld.Effects.NonBlockingAsync
-  alias Skuld.Effects.NonBlockingAsync.AwaitRequest.TaskTarget
-  alias Skuld.Effects.NonBlockingAsync.AwaitRequest.TimerTarget
-  alias Skuld.Effects.NonBlockingAsync.Scheduler
+  alias Skuld.Effects.Async
+  alias Skuld.Effects.Async.AwaitRequest.TaskTarget
+  alias Skuld.Effects.Async.AwaitRequest.TimerTarget
+  alias Skuld.Effects.Async.Scheduler
   alias Skuld.Effects.Throw
 
   describe "run_one/2" do
     test "runs single computation to completion" do
       result =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     :work_done
                   end
                 )
 
-              NonBlockingAsync.await(h)
+              Async.await(h)
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
         |> Scheduler.run_one()
 
@@ -41,10 +41,10 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
 
       result =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     # Wait at gate - ensures task doesn't complete instantly
                     _ = send(gate, {:gate_wait, self()})
@@ -53,11 +53,11 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
                   end
                 )
 
-              NonBlockingAsync.await(h)
+              Async.await(h)
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
         |> Scheduler.run_one()
 
@@ -70,10 +70,10 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
 
       result =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h1 <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     _ = send(gate, {:gate_wait, self()})
                     _ = receive do: (:gate_release -> :ok)
@@ -82,7 +82,7 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
                 )
 
               h2 <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     _ = send(gate, {:gate_wait, self()})
                     _ = receive do: (:gate_release -> :ok)
@@ -90,13 +90,13 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
                   end
                 )
 
-              r1 <- NonBlockingAsync.await(h1)
-              r2 <- NonBlockingAsync.await(h2)
+              r1 <- Async.await(h1)
+              r2 <- Async.await(h2)
               {r1, r2}
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
         |> Scheduler.run_one()
 
@@ -108,38 +108,38 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
     test "runs multiple computations" do
       comp1 =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     :result1
                   end
                 )
 
-              NonBlockingAsync.await(h)
+              Async.await(h)
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
 
       comp2 =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     :result2
                   end
                 )
 
-              NonBlockingAsync.await(h)
+              Async.await(h)
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
 
       {:done, results} = Scheduler.run([comp1, comp2])
@@ -154,28 +154,28 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
 
       comp_fast =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     :fast
                   end
                 )
 
-              NonBlockingAsync.await(h)
+              Async.await(h)
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
 
       comp_slow =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     # Wait at gate
                     _ = send(gate, {:gate_wait, self()})
@@ -184,11 +184,11 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
                   end
                 )
 
-              NonBlockingAsync.await(h)
+              Async.await(h)
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
 
       {:done, results} = Scheduler.run([comp_fast, comp_slow])
@@ -203,10 +203,10 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
     test "timer fires and wins race" do
       result =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     # Task waits forever - will lose to timer
                     _ = receive do: (:never_sent -> :ok)
@@ -217,9 +217,9 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               timer = TimerTarget.new(10)
 
               {target_key, value} <-
-                NonBlockingAsync.await_any_raw([TaskTarget.new(h.task), timer])
+                Async.await_any_raw([TaskTarget.new(h.task), timer])
 
-              _ <- NonBlockingAsync.cancel(h)
+              _ <- Async.cancel(h)
 
               case target_key do
                 {:timer, _} -> {:timeout, value}
@@ -229,7 +229,7 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
             fn result, _unawaited -> result end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
         |> Scheduler.run_one()
 
@@ -242,10 +242,10 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
 
       result =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     # Quick task - wait at gate then complete
                     _ = send(gate, {:gate_wait, self()})
@@ -258,9 +258,9 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
               timer = TimerTarget.new(1000)
 
               {target_key, value} <-
-                NonBlockingAsync.await_any_raw([TaskTarget.new(h.task), timer])
+                Async.await_any_raw([TaskTarget.new(h.task), timer])
 
-              _ <- NonBlockingAsync.cancel(h)
+              _ <- Async.cancel(h)
 
               case target_key do
                 {:timer, _} -> {:timeout, value}
@@ -270,7 +270,7 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
             fn result, _unawaited -> result end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
         |> Scheduler.run_one()
 
@@ -283,14 +283,14 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
 
       result =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               # Create a timer with long timeout (won't fire)
               timer = TimerTarget.new(1000)
 
               # Task completes quickly
               h1 <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     _ = send(gate, {:gate_wait, self()})
                     _ = receive do: (:gate_release -> :ok)
@@ -299,10 +299,10 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
                 )
 
               {key1, r1} <-
-                NonBlockingAsync.await_any_raw([TaskTarget.new(h1.task), timer])
+                Async.await_any_raw([TaskTarget.new(h1.task), timer])
 
               # Must cancel handle since await_any_raw doesn't untrack it
-              _ <- NonBlockingAsync.cancel(h1)
+              _ <- Async.cancel(h1)
 
               # Check if first step completed or timed out
               step1_result =
@@ -315,7 +315,7 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
         |> Scheduler.run_one()
 
@@ -328,20 +328,20 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
     test "computation error is recorded" do
       comp_ok =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     :ok_result
                   end
                 )
 
-              NonBlockingAsync.await(h)
+              Async.await(h)
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
 
       comp_error =
@@ -381,10 +381,10 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
 
       comp1 =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     _ = send(gate, {:gate_wait, self()})
                     _ = receive do: (:gate_release -> :ok)
@@ -392,19 +392,19 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
                   end
                 )
 
-              NonBlockingAsync.await(h)
+              Async.await(h)
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
 
       comp2 =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     _ = send(gate, {:gate_wait, self()})
                     _ = receive do: (:gate_release -> :ok)
@@ -412,11 +412,11 @@ defmodule Skuld.Effects.NonBlockingAsync.SchedulerTest do
                   end
                 )
 
-              NonBlockingAsync.await(h)
+              Async.await(h)
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
 
       {:done, results} = Scheduler.run([comp1, comp2])

@@ -1,11 +1,11 @@
-defmodule Skuld.Effects.NonBlockingAsync.AwaitTest do
+defmodule Skuld.Effects.Async.AwaitTest do
   use ExUnit.Case, async: true
   use Skuld.Syntax
 
   alias Skuld.Comp
-  alias Skuld.Effects.NonBlockingAsync.Await
-  alias Skuld.Effects.NonBlockingAsync.AwaitRequest
-  alias Skuld.Effects.NonBlockingAsync.AwaitSuspend
+  alias Skuld.Effects.Async.Await
+  alias Skuld.Effects.Async.AwaitRequest
+  alias Skuld.Effects.Async.AwaitSuspend
   alias AwaitRequest.TaskTarget
   alias AwaitRequest.TimerTarget
 

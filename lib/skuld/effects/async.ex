@@ -1,71 +1,113 @@
 defmodule Skuld.Effects.Async do
   @moduledoc """
-  Async effect - structured concurrency with async/await semantics.
+  Async effect for cooperative multitasking with fibers and tasks.
 
-  Provides asynchronous computation with explicit boundaries that ensure
-  tasks cannot leak. All async tasks must be awaited before their boundary
-  exits, or they are killed.
+  Provides two mechanisms for concurrent work:
 
-  ## Structured Concurrency
+  - **`async/1`** - Spawns an Erlang Task for parallel execution
+  - **`fiber/1`** - Registers a computation for cooperative scheduling (no process spawned)
 
-  The key principle is that child tasks cannot outlive their parent scope:
+  Both can be mixed freely within a `boundary/2` and awaited using the same `await/1` function.
 
-  1. `boundary/2` establishes a structured concurrency scope
-  2. `async/1` starts a task within the current boundary
-  3. `await/1` waits for a task result
-  4. When a boundary exits, all unawaited tasks are killed
+  ## Fiber vs Task
+
+  | Operation | Execution Model | Process       | Use Case                      |
+  |-----------|-----------------|---------------|-------------------------------|
+  | `fiber/1` | Cooperative     | Same process  | CPU-bound work, complex state |
+  | `async/1` | Parallel        | Separate Task | I/O-bound work, isolation     |
+
+  **Fibers** run cooperatively in the scheduler process. They yield explicitly at `await`
+  points, allowing other fibers to run. Good for CPU-bound work or when you need to share
+  complex state without message passing.
+
+  **Tasks** run in parallel in separate Erlang processes. Good for I/O-bound work or when
+  you need process isolation for fault tolerance.
 
   ## Basic Usage
 
       use Skuld.Syntax
       alias Skuld.Comp
       alias Skuld.Effects.{Async, Throw}
+      alias Skuld.Effects.Async.Scheduler
 
       comp do
         result <- Async.boundary(comp do
-          h1 <- Async.async(work1())
-          h2 <- Async.async(work2())
+          # Cooperative fibers - run in scheduler process
+          h1 <- Async.fiber(work1())
+          h2 <- Async.fiber(work2())
+
+          # Or parallel tasks - run in separate processes
+          h3 <- Async.async(io_work())
 
           r1 <- Async.await(h1)
           r2 <- Async.await(h2)
+          r3 <- Async.await(h3)
 
-          {r1, r2}
+          {r1, r2, r3}
         end)
 
         result
       end
       |> Async.with_handler()
       |> Throw.with_handler()
+      |> Scheduler.run_one()
+
+  ## Simple Usage with `with_sequential_handler`
+
+  For simpler cases (especially testing), use `with_sequential_handler/1`:
+
+      comp do
+        Async.boundary(comp do
+          h <- Async.fiber(work())
+          Async.await(h)
+        end)
+      end
+      |> Async.with_sequential_handler()
       |> Comp.run!()
 
-  ## Unawaited Task Handling
+  ## Timeout Patterns
 
-  By default, unawaited tasks cause an error. You can customize this:
+  ### Convenience Functions
 
-      # Log warning but return result anyway
-      Async.boundary(
-        my_comp,
-        fn result, unawaited ->
-          Logger.warning("Killed \#{length(unawaited)} tasks")
-          result
-        end
-      )
+  Use `await_with_timeout/2` to await a task or fiber with a timeout:
 
-      # Wrap result with metadata
-      Async.boundary(my_comp, fn result, unawaited ->
-        %{result: result, killed: length(unawaited)}
-      end)
+      h <- Async.async(slow_work())
+      case Async.await_with_timeout(h, 5000) do
+        {:ok, result} -> handle_success(result)
+        {:error, :timeout} -> handle_timeout()
+      end
 
-  ## Handlers
+  Use `timeout/2` to run and await an entire computation with a timeout:
 
-  - `with_handler/1` - Production handler using Task.Supervisor
-  - `with_sequential_handler/1` - Testing handler that runs synchronously
+      case Async.timeout(slow_computation(), 5000) do
+        {:ok, result} -> handle_success(result)
+        {:error, :timeout} -> handle_timeout()
+      end
 
-  ## BEAM Process Constraints
+  ### Manual Timeout with await_any_raw
 
-  Computations are spawned with a snapshot of `env` at fork time. Child
-  changes to state don't propagate back. For shared mutable state across
-  tasks, use `AtomicState` effect instead of regular `State`.
+  For more control, use `await_any_raw` with a timer:
+
+      timer = TimerTarget.new(5000)  # 5 second overall timeout
+
+      h1 <- Async.async(slow_work())
+
+      # Race task against timer
+      {target_key, result} <- Async.await_any_raw([TaskTarget.new(h1.task), timer])
+      case target_key do
+        {:task, _} -> {:ok, result}
+        {:timer, _} -> {:error, :timeout}
+      end
+
+  ## Cooperative Scheduling
+
+  Run multiple computations cooperatively:
+
+      Scheduler.run([
+        user_workflow(user1),
+        user_workflow(user2),
+        user_workflow(user3)
+      ])
   """
 
   @behaviour Skuld.Comp.IHandle
@@ -77,6 +119,12 @@ defmodule Skuld.Effects.Async do
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
   alias Skuld.Effects.Helpers.TaskHelpers
+  alias Skuld.Effects.Async.Await
+  alias Skuld.Effects.Async.AwaitRequest
+  alias Skuld.Effects.Async.AwaitRequest.FiberTarget
+  alias Skuld.Effects.Async.AwaitRequest.TaskTarget
+  alias Skuld.Effects.Async.AwaitRequest.TimerTarget
+  alias Skuld.Effects.Async.Scheduler
   alias Skuld.Effects.Throw
 
   @sig __MODULE__
@@ -88,49 +136,76 @@ defmodule Skuld.Effects.Async do
   @supervisor_key {@sig, :supervisor}
   @boundaries_key {@sig, :boundaries}
   @current_boundary_key {@sig, :current_boundary}
-  @sequential_results_key {@sig, :sequential_results}
+  @pending_fibers_key {@sig, :pending_fibers}
 
   #############################################################################
   ## Operation Structs
   #############################################################################
 
   def_op(Async, [:comp])
-  def_op(Await, [:handle])
+  def_op(Fiber, [:comp])
+  def_op(AwaitOp, [:handle])
+  def_op(AwaitAll, [:handles])
+  def_op(AwaitAny, [:handles])
+  def_op(AwaitAnyRaw, [:targets])
   def_op(AwaitWithTimeout, [:handle, :timeout_ms])
   def_op(Cancel, [:handle])
   def_op(Boundary, [:comp, :on_unawaited])
 
   #############################################################################
-  ## Handle Structure
+  ## Handle Structures
   #############################################################################
 
-  defmodule Handle do
+  defmodule TaskHandle do
     @moduledoc """
-    Opaque handle for an async computation.
+    Handle for a parallel Task spawned via `async/1`.
 
-    Contains the boundary it belongs to and the underlying task (or ref for sequential).
+    Contains the boundary it belongs to and the underlying Erlang Task.
     """
     @type t :: %__MODULE__{
             boundary_id: reference(),
-            task_or_ref: Task.t() | reference()
+            task: Task.t()
           }
-    defstruct [:boundary_id, :task_or_ref]
+    defstruct [:boundary_id, :task]
   end
+
+  defmodule FiberHandle do
+    @moduledoc """
+    Handle for a cooperative fiber spawned via `fiber/1`.
+
+    Contains the boundary it belongs to and a unique fiber ID.
+    Fibers run cooperatively in the scheduler process, not as separate Erlang processes.
+    """
+    @type t :: %__MODULE__{
+            boundary_id: reference(),
+            fiber_id: reference()
+          }
+    defstruct [:boundary_id, :fiber_id]
+  end
+
+  # Union type for handles - either a TaskHandle or FiberHandle
+  @type handle :: TaskHandle.t() | FiberHandle.t()
 
   #############################################################################
   ## Public Operations
   #############################################################################
 
   @doc """
-  Start a computation asynchronously, returning a handle.
+  Start a computation as a parallel Task, returning a handle.
 
-  Must be called within an `Async.boundary/2` scope. The handle can only
+  Spawns an Erlang Task to run the computation in a separate process.
+  Use this for I/O-bound work or when you need process isolation.
+
+  For cooperative scheduling in the same process, use `fiber/1` instead.
+
+  Must be called within a `boundary/2` scope. The handle can only
   be awaited within the same boundary.
 
   ## Example
 
       Async.boundary(comp do
-        handle <- Async.async(expensive_work())
+        # Runs in separate process
+        handle <- Async.async(io_work())
         # ... do other work ...
         result <- Async.await(handle)
         result
@@ -142,24 +217,190 @@ defmodule Skuld.Effects.Async do
   end
 
   @doc """
-  Wait for an async computation to complete and return its result.
+  Start a computation as a cooperative fiber, returning a handle.
 
-  Uses a default timeout of 5 minutes. If the task does not complete within
-  the timeout, it is cancelled and `{:error, :timeout}` is returned.
+  Unlike `async/1` which spawns an Erlang Task (parallel execution),
+  `fiber/1` registers the computation with the scheduler for cooperative
+  execution in the same process. Fibers yield explicitly and are scheduled
+  by the Async scheduler.
 
-  For infinite wait, use `await_with_timeout(handle, :infinity)`.
-
-  The handle must be from the current boundary. Awaiting a handle from
-  a different boundary will throw an error.
+  Must be called within a `boundary/2` scope. The handle can only
+  be awaited within the same boundary.
 
   ## Example
 
-      handle <- Async.async(work())
-      result <- Async.await(handle)
+      Async.boundary(comp do
+        # Cooperative fibers - run in scheduler process
+        h1 <- Async.fiber(work1())
+        h2 <- Async.fiber(work2())
+
+        # Can mix with parallel tasks
+        h3 <- Async.async(parallel_work())
+
+        r1 <- Async.await(h1)
+        r2 <- Async.await(h2)
+        r3 <- Async.await(h3)
+        {r1, r2, r3}
+      end)
   """
-  @spec await(Handle.t()) :: Types.computation()
-  def await(%Handle{} = handle) do
-    Comp.effect(@sig, %Await{handle: handle})
+  @spec fiber(Types.computation()) :: Types.computation()
+  def fiber(comp) do
+    Comp.effect(@sig, %Fiber{comp: comp})
+  end
+
+  @doc """
+  Wait for an async computation or fiber to complete and return its result.
+
+  Works with both `TaskHandle` (from `async/1`) and `FiberHandle` (from `fiber/1`).
+  Unlike `Async.await/1`, this yields an `%AwaitSuspend{}` if the computation
+  is not immediately ready, allowing other fibers and computations to run.
+
+  Returns the unwrapped result directly. Errors are propagated.
+
+  ## Example
+
+      # Await a fiber
+      fiber_handle <- Async.fiber(cpu_work())
+      result1 <- Async.await(fiber_handle)
+
+      # Await a task
+      task_handle <- Async.async(io_work())
+      result2 <- Async.await(task_handle)
+  """
+  @spec await(TaskHandle.t() | FiberHandle.t()) :: Types.computation()
+  def await(%TaskHandle{} = handle) do
+    Comp.effect(@sig, %AwaitOp{handle: handle})
+  end
+
+  def await(%FiberHandle{} = handle) do
+    Comp.effect(@sig, %AwaitOp{handle: handle})
+  end
+
+  @doc """
+  Wait for all async computations to complete.
+
+  Returns results in the same order as the input handles.
+
+  ## Example
+
+      h1 <- Async.async(work1())
+      h2 <- Async.async(work2())
+      [r1, r2] <- Async.await_all([h1, h2])
+  """
+  @spec await_all([TaskHandle.t() | FiberHandle.t()]) :: Types.computation()
+  def await_all(handles) when is_list(handles) do
+    Comp.effect(@sig, %AwaitAll{handles: handles})
+  end
+
+  @doc """
+  Wait for any computation to complete.
+
+  Works with both `TaskHandle` (from `async/1`) and `FiberHandle` (from `fiber/1`).
+  Can mix fibers and tasks freely.
+
+  Returns `{winning_handle, result}` for the first to complete.
+  Other computations remain running and can be awaited or cancelled.
+
+  ## Example
+
+      # Race a fiber against a task
+      h1 <- Async.fiber(approach_a())
+      h2 <- Async.async(approach_b())
+      {winner, result} <- Async.await_any([h1, h2])
+
+      # Cancel the loser if desired
+      loser = if winner == h1, do: h2, else: h1
+      _ <- Async.cancel(loser)
+  """
+  @spec await_any([TaskHandle.t() | FiberHandle.t()]) :: Types.computation()
+  def await_any(handles) when is_list(handles) do
+    Comp.effect(@sig, %AwaitAny{handles: handles})
+  end
+
+  @doc """
+  Wait for any of the raw targets to complete.
+
+  This is the low-level API for awaiting heterogeneous targets
+  (tasks, timers, computations). Returns `{target_key, result}`.
+
+  Use this for timeout patterns with reusable timers:
+
+      timer = TimerTarget.new(5000)
+      h <- Async.async(work())
+
+      {target_key, result} <- Async.await_any_raw([
+        TaskTarget.new(h.task),
+        timer
+      ])
+
+      case target_key do
+        {:task, _} -> result
+        {:timer, _} -> :timeout
+      end
+  """
+  @spec await_any_raw([AwaitRequest.target()]) :: Types.computation()
+  def await_any_raw(targets) when is_list(targets) do
+    Comp.effect(@sig, %AwaitAnyRaw{targets: targets})
+  end
+
+  @doc """
+  Wait for a computation with a timeout.
+
+  Returns `{:ok, result}` if the computation completes before the timeout,
+  or `{:error, :timeout}` if the timeout fires first.
+
+  Works with both `TaskHandle` (from `async/1`) and `FiberHandle` (from `fiber/1`).
+
+  ## Example
+
+      h <- Async.fiber(slow_work())
+      case <- Async.await_with_timeout(h, 5000)
+      case do
+        {:ok, result} -> result
+        {:error, :timeout} -> :fallback
+      end
+  """
+  @spec await_with_timeout(TaskHandle.t() | FiberHandle.t(), non_neg_integer()) ::
+          Types.computation()
+  def await_with_timeout(handle, timeout_ms) when is_integer(timeout_ms) and timeout_ms >= 0 do
+    Comp.effect(@sig, %AwaitWithTimeout{handle: handle, timeout_ms: timeout_ms})
+  end
+
+  @doc """
+  Run a computation with a timeout.
+
+  This is a convenience function that wraps the computation in a boundary,
+  runs it as a fiber, and awaits with a timeout. Returns `{:ok, result}`
+  if the computation completes in time, or `{:error, :timeout}` if it times out.
+
+  ## Example
+
+      result <- Async.timeout(5000, expensive_work())
+      case result do
+        {:ok, value} -> value
+        {:error, :timeout} -> :gave_up
+      end
+
+  This is equivalent to:
+
+      Async.boundary(comp do
+        h <- Async.fiber(expensive_work())
+        Async.await_with_timeout(h, 5000)
+      end)
+  """
+  @spec timeout(non_neg_integer(), Types.computation()) :: Types.computation()
+  def timeout(timeout_ms, inner_comp) when is_integer(timeout_ms) and timeout_ms >= 0 do
+    # Build the composed computation
+    timeout_body =
+      Comp.bind(
+        fiber(inner_comp),
+        fn handle ->
+          await_with_timeout(handle, timeout_ms)
+        end
+      )
+
+    # Wrap in a boundary that ignores unawaited (fiber is always awaited or timed out)
+    boundary(timeout_body, fn result, _unawaited -> result end)
   end
 
   @doc """
@@ -181,69 +422,13 @@ defmodule Skuld.Effects.Async do
         result
       end)
   """
-  @spec cancel(Handle.t()) :: Types.computation()
-  def cancel(%Handle{} = handle) do
+  @spec cancel(TaskHandle.t() | FiberHandle.t()) :: Types.computation()
+  def cancel(%TaskHandle{} = handle) do
     Comp.effect(@sig, %Cancel{handle: handle})
   end
 
-  @doc """
-  Wait for an async computation with a timeout.
-
-  Returns `{:ok, result}` if the task completes within the timeout,
-  or `{:error, :timeout}` if it times out. On timeout, the task is
-  automatically cancelled.
-
-  The handle must be from the current boundary.
-
-  ## Example
-
-      handle <- Async.async(slow_work())
-      case <- Async.await_with_timeout(handle, 5000)
-      case do
-        {:ok, result} -> result
-        {:error, :timeout} -> :fallback
-      end
-  """
-  @spec await_with_timeout(Handle.t(), non_neg_integer()) :: Types.computation()
-  def await_with_timeout(%Handle{} = handle, timeout_ms) when is_integer(timeout_ms) do
-    Comp.effect(@sig, %AwaitWithTimeout{handle: handle, timeout_ms: timeout_ms})
-  end
-
-  @doc """
-  Run a computation with a timeout.
-
-  This is a convenience function that wraps the computation in a boundary,
-  runs it asynchronously, and awaits with a timeout. Returns `{:ok, result}`
-  if the computation completes in time, or `{:error, :timeout}` if it times out.
-
-  ## Example
-
-      result <- Async.timeout(5000, expensive_work())
-      case result do
-        {:ok, value} -> value
-        {:error, :timeout} -> :gave_up
-      end
-
-  This is equivalent to:
-
-      Async.boundary(comp do
-        h <- Async.async(expensive_work())
-        Async.await_with_timeout(h, 5000)
-      end)
-  """
-  @spec timeout(non_neg_integer(), Types.computation()) :: Types.computation()
-  def timeout(timeout_ms, inner_comp) when is_integer(timeout_ms) do
-    # Build the composed computation directly
-    timeout_body =
-      Comp.bind(
-        async(inner_comp),
-        fn handle ->
-          await_with_timeout(handle, timeout_ms)
-        end
-      )
-
-    # Wrap in a boundary that ignores unawaited (task is always awaited or timed out)
-    boundary(timeout_body, fn result, _unawaited -> result end)
+  def cancel(%FiberHandle{} = handle) do
+    Comp.effect(@sig, %Cancel{handle: handle})
   end
 
   @doc """
@@ -278,13 +463,8 @@ defmodule Skuld.Effects.Async do
           result
         end
       )
-
-      # Custom: wrap result with metadata
-      Async.boundary(my_comp, fn result, unawaited ->
-        %{result: result, killed_tasks: length(unawaited)}
-      end)
   """
-  @spec boundary(Types.computation(), (term(), list(Handle.t()) -> term()) | nil) ::
+  @spec boundary(Types.computation(), (term(), list(handle()) -> term()) | nil) ::
           Types.computation()
   def boundary(comp, on_unawaited \\ nil) do
     on_unawaited =
@@ -297,14 +477,16 @@ defmodule Skuld.Effects.Async do
   end
 
   #############################################################################
-  ## Production Handler (Task.Supervisor)
+  ## Handler
   #############################################################################
 
   @doc """
-  Install a production Async handler using Task.Supervisor.
+  Install the Async handler.
 
-  Creates a Task.Supervisor that manages all async tasks. The supervisor
+  Creates a Task.Supervisor and sets up boundary tracking. The supervisor
   is stopped when the handler scope exits.
+
+  Also installs the low-level Await handler automatically.
 
   ## Example
 
@@ -316,11 +498,12 @@ defmodule Skuld.Effects.Async do
       end
       |> Async.with_handler()
       |> Throw.with_handler()
-      |> Comp.run!()
+      |> Scheduler.run()
   """
   @spec with_handler(Types.computation()) :: Types.computation()
   def with_handler(comp) do
     comp
+    |> Await.with_handler()
     |> Comp.scoped(fn env ->
       {:ok, sup} = Task.Supervisor.start_link()
 
@@ -329,6 +512,7 @@ defmodule Skuld.Effects.Async do
         |> Env.put_state(@supervisor_key, sup)
         |> Env.put_state(@boundaries_key, %{})
         |> Env.put_state(@current_boundary_key, nil)
+        |> Env.put_state(@pending_fibers_key, [])
 
       finally_k = fn value, e ->
         sup = Env.get_state(e, @supervisor_key)
@@ -342,6 +526,7 @@ defmodule Skuld.Effects.Async do
                 |> Map.delete(@supervisor_key)
                 |> Map.delete(@boundaries_key)
                 |> Map.delete(@current_boundary_key)
+                |> Map.delete(@pending_fibers_key)
           }
 
         {value, cleaned}
@@ -353,18 +538,73 @@ defmodule Skuld.Effects.Async do
   end
 
   @doc """
+  Run a computation with Async effects handled sequentially.
+
+  Wraps the computation with handlers and runs it through the cooperative
+  scheduler. This is useful for testing where you want deterministic execution
+  in a single process.
+
+  All fibers run cooperatively in the current process (no parallelism).
+  Tasks are still spawned but awaited through the scheduler.
+
+  ## Example
+
+      comp do
+        result <- Async.boundary(comp do
+          h1 <- Async.fiber(work1())
+          h2 <- Async.fiber(work2())
+          r1 <- Async.await(h1)
+          r2 <- Async.await(h2)
+          {r1, r2}
+        end)
+        result
+      end
+      |> Async.with_sequential_handler()
+      |> Comp.run!()
+
+  ## Differences from with_handler
+
+  - `with_handler/1` - Returns a computation that must be run through `Scheduler.run_one`
+  - `with_sequential_handler/1` - Returns a computation that can be run directly via `Comp.run!`
+
+  ## Error Handling
+
+  Errors from the computation are propagated via `Throw.throw/1`.
+  """
+  @spec with_sequential_handler(Types.computation()) :: Types.computation()
+  def with_sequential_handler(comp) do
+    fn env, k ->
+      # Wrap in handlers and run through scheduler
+      handled_comp =
+        comp
+        |> with_handler()
+        |> Throw.with_handler()
+
+      case Scheduler.run_one(handled_comp) do
+        {:done, result} ->
+          k.(result, env)
+
+        {:error, reason} ->
+          Comp.call(Throw.throw(reason), env, k)
+
+        {:suspended, suspend, _resume_fn} ->
+          # External yield - propagate as suspend
+          {suspend, env}
+      end
+    end
+  end
+
+  @doc """
   Install Async handler via catch clause syntax.
 
   Config selects handler type:
 
       catch
-        Async -> nil           # production handler (Task.Supervisor)
-        Async -> :sequential   # test handler (runs tasks sequentially)
+        Async -> nil           # standard handler
   """
   @impl Skuld.Comp.IInstall
   def __handle__(comp, nil), do: with_handler(comp)
   def __handle__(comp, :async), do: with_handler(comp)
-  def __handle__(comp, :sequential), do: with_sequential_handler(comp)
 
   @impl Skuld.Comp.IHandle
   def handle(%Boundary{comp: inner_comp, on_unawaited: on_unawaited}, env, k) do
@@ -395,258 +635,22 @@ defmodule Skuld.Effects.Async do
           prev_boundary = Env.get_state(env_after, {@sig, :boundary_previous, boundary_id})
 
           # Kill all unawaited tasks (non-negotiable)
+          # Note: Only TaskHandles have actual tasks to kill. FiberHandles are cooperative
+          # and don't need termination since they run in the same process.
           sup = Env.get_state(env_after, @supervisor_key)
 
           if sup do
-            Enum.each(unawaited_handles, fn %Handle{task_or_ref: task} ->
-              Task.Supervisor.terminate_child(sup, task.pid)
+            Enum.each(unawaited_handles, fn
+              %TaskHandle{task: task} ->
+                Task.Supervisor.terminate_child(sup, task.pid)
+
+              %FiberHandle{} ->
+                # Fibers don't need termination - they're in-process
+                :ok
             end)
           end
 
           # Clean up boundary and restore previous
-          env_cleaned =
-            env_after
-            |> Env.put_state(@boundaries_key, Map.delete(boundaries_after, boundary_id))
-            |> Env.put_state(@current_boundary_key, prev_boundary)
-            |> then(fn e ->
-              %{e | state: Map.delete(e.state, {@sig, :boundary_previous, boundary_id})}
-            end)
-
-          # For throws, just propagate (don't call on_unawaited)
-          case result do
-            %Comp.Throw{} ->
-              {result, env_cleaned}
-
-            _ ->
-              # Normal completion - check for unawaited tasks
-              case unawaited_handles do
-                [] ->
-                  {result, env_cleaned}
-
-                _ ->
-                  # on_unawaited can return a computation or a plain value
-                  handler_result = on_unawaited.(result, unawaited_handles)
-
-                  case handler_result do
-                    fun when is_function(fun, 2) ->
-                      # It's a computation - run it
-                      Comp.call(fun, env_cleaned, fn v, e2 -> {v, e2} end)
-
-                    value ->
-                      {value, env_cleaned}
-                  end
-              end
-          end
-        end
-
-        {modified, finally_k}
-      end)
-
-    # Run the scoped computation with our continuation
-    Comp.call(scoped_comp, env, k)
-  end
-
-  def handle(%Async{comp: comp}, env, k) do
-    current_boundary = Env.get_state(env, @current_boundary_key)
-
-    if current_boundary == nil do
-      # No boundary - throw error via Throw effect
-      Comp.call(Throw.throw({:error, :async_outside_boundary}), env, k)
-    else
-      sup = Env.get_state(env, @supervisor_key)
-
-      # Start task with snapshot of current env
-      task =
-        Task.Supervisor.async_nolink(sup, fn ->
-          {result, _final_env} = Comp.call(comp, env, fn v, e -> {v, e} end)
-          result
-        end)
-
-      # Create handle and track it (store full task struct)
-      handle = %Handle{boundary_id: current_boundary, task_or_ref: task}
-
-      boundaries = Env.get_state(env, @boundaries_key)
-      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
-      updated_tasks = MapSet.put(boundary_tasks, handle)
-
-      env_tracked =
-        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
-
-      k.(handle, env_tracked)
-    end
-  end
-
-  # Default timeout for await/1 - 5 minutes
-  @default_await_timeout_ms 5 * 60 * 1000
-
-  def handle(
-        %Await{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task}},
-        env,
-        k
-      ) do
-    # await/1 returns the result directly (or {:error, reason} on failure/timeout)
-    do_await_task(handle_boundary, task, @default_await_timeout_ms, :unwrap, env, k)
-  end
-
-  def handle(
-        %AwaitWithTimeout{
-          handle: %Handle{boundary_id: handle_boundary, task_or_ref: task},
-          timeout_ms: timeout_ms
-        },
-        env,
-        k
-      ) do
-    # await_with_timeout/2 returns {:ok, result} or {:error, reason}
-    do_await_task(handle_boundary, task, timeout_ms, :wrap, env, k)
-  end
-
-  def handle(
-        %Cancel{handle: %Handle{boundary_id: handle_boundary, task_or_ref: task} = handle},
-        env,
-        k
-      ) do
-    current_boundary = Env.get_state(env, @current_boundary_key)
-
-    if handle_boundary != current_boundary do
-      # Cross-boundary cancel - throw error via Throw effect
-      Comp.call(Throw.throw({:error, :cancel_across_boundary}), env, k)
-    else
-      # Terminate the task
-      sup = Env.get_state(env, @supervisor_key)
-
-      if sup && Process.alive?(task.pid) do
-        Task.Supervisor.terminate_child(sup, task.pid)
-      end
-
-      # Untrack the task
-      boundaries = Env.get_state(env, @boundaries_key)
-      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
-      updated_tasks = MapSet.delete(boundary_tasks, handle)
-
-      env_untracked =
-        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
-
-      k.(:ok, env_untracked)
-    end
-  end
-
-  defp do_await_task(handle_boundary, task, timeout_ms, wrap_mode, env, k) do
-    current_boundary = Env.get_state(env, @current_boundary_key)
-
-    if handle_boundary != current_boundary do
-      # Cross-boundary await - throw error via Throw effect
-      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
-    else
-      # Wait for task result with timeout using Task.yield + Task.shutdown
-      result =
-        case Task.yield(task, timeout_ms) do
-          {:ok, value} ->
-            case wrap_mode do
-              :unwrap -> value
-              :wrap -> {:ok, value}
-            end
-
-          {:exit, reason} ->
-            {:error, {:task_failed, reason}}
-
-          nil ->
-            # Timeout - shutdown the task
-            Task.shutdown(task, :brutal_kill)
-            {:error, :timeout}
-        end
-
-      # Untrack the task
-      handle = %Handle{boundary_id: handle_boundary, task_or_ref: task}
-      boundaries = Env.get_state(env, @boundaries_key)
-      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
-      updated_tasks = MapSet.delete(boundary_tasks, handle)
-
-      env_untracked =
-        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
-
-      k.(result, env_untracked)
-    end
-  end
-
-  #############################################################################
-  ## Sequential Handler (Testing)
-  #############################################################################
-
-  @doc """
-  Install a sequential handler for testing.
-
-  Runs async computations immediately and synchronously. Useful for testing
-  logic without concurrency complexity.
-
-  ## Example
-
-      comp do
-        Async.boundary(comp do
-          h <- Async.async(work())
-          Async.await(h)
-        end)
-      end
-      |> Async.with_sequential_handler()
-      |> Throw.with_handler()
-      |> Comp.run!()
-  """
-  @spec with_sequential_handler(Types.computation()) :: Types.computation()
-  def with_sequential_handler(comp) do
-    comp
-    |> Comp.scoped(fn env ->
-      modified =
-        env
-        |> Env.put_state(@boundaries_key, %{})
-        |> Env.put_state(@current_boundary_key, nil)
-        |> Env.put_state(@sequential_results_key, %{})
-
-      finally_k = fn value, e ->
-        cleaned =
-          %{
-            e
-            | state:
-                e.state
-                |> Map.delete(@boundaries_key)
-                |> Map.delete(@current_boundary_key)
-                |> Map.delete(@sequential_results_key)
-          }
-
-        {value, cleaned}
-      end
-
-      {modified, finally_k}
-    end)
-    |> Comp.with_handler(@sig, &handle_sequential/3)
-  end
-
-  defp handle_sequential(%Boundary{comp: inner_comp, on_unawaited: on_unawaited}, env, k) do
-    # Generate unique boundary ID
-    boundary_id = make_ref()
-
-    # Use scoped to ensure cleanup happens on both normal and throw paths
-    scoped_comp =
-      inner_comp
-      |> Comp.scoped(fn e ->
-        # Setup: register boundary and set as current
-        boundaries = Env.get_state(e, @boundaries_key)
-        previous_boundary = Env.get_state(e, @current_boundary_key)
-
-        modified =
-          e
-          |> Env.put_state(@boundaries_key, Map.put(boundaries, boundary_id, MapSet.new()))
-          |> Env.put_state(@current_boundary_key, boundary_id)
-          |> Env.put_state({@sig, :boundary_previous, boundary_id}, previous_boundary)
-
-        finally_k = fn result, env_after ->
-          # Get unawaited tasks for this boundary
-          boundaries_after = Env.get_state(env_after, @boundaries_key)
-
-          unawaited_handles =
-            Map.get(boundaries_after, boundary_id, MapSet.new()) |> MapSet.to_list()
-
-          prev_boundary = Env.get_state(env_after, {@sig, :boundary_previous, boundary_id})
-
-          # Clean up boundary and restore previous (no tasks to kill in sequential mode)
           env_cleaned =
             env_after
             |> Env.put_state(@boundaries_key, Map.delete(boundaries_after, boundary_id))
@@ -688,122 +692,501 @@ defmodule Skuld.Effects.Async do
     Comp.call(scoped_comp, env, k)
   end
 
-  defp handle_sequential(%Async{comp: comp}, env, k) do
+  def handle(%Async{comp: comp}, env, k) do
     current_boundary = Env.get_state(env, @current_boundary_key)
 
     if current_boundary == nil do
+      # No boundary - throw error via Throw effect
       Comp.call(Throw.throw({:error, :async_outside_boundary}), env, k)
     else
-      # Run computation immediately (sequential)
-      {result, _final_env} = Comp.call(comp, env, fn v, e -> {v, e} end)
+      sup = Env.get_state(env, @supervisor_key)
 
-      # Create handle and store result
-      handle_ref = make_ref()
-      handle = %Handle{boundary_id: current_boundary, task_or_ref: handle_ref}
+      # Start task with snapshot of current env
+      task =
+        Task.Supervisor.async_nolink(sup, fn ->
+          {result, _final_env} = Comp.call(comp, env, fn v, e -> {v, e} end)
+          result
+        end)
 
-      results = Env.get_state(env, @sequential_results_key)
+      # Create handle and track it
+      handle = %TaskHandle{boundary_id: current_boundary, task: task}
 
-      env_with_result =
-        Env.put_state(env, @sequential_results_key, Map.put(results, handle_ref, result))
-
-      # Track handle
-      boundaries = Env.get_state(env_with_result, @boundaries_key)
+      boundaries = Env.get_state(env, @boundaries_key)
       boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
       updated_tasks = MapSet.put(boundary_tasks, handle)
 
       env_tracked =
-        Env.put_state(
-          env_with_result,
-          @boundaries_key,
-          Map.put(boundaries, current_boundary, updated_tasks)
-        )
+        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
 
       k.(handle, env_tracked)
     end
   end
 
-  defp handle_sequential(
-         %Await{handle: %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref}},
-         env,
-         k
-       ) do
-    # await/1 returns the result directly
-    do_await_sequential(handle_boundary, handle_ref, :unwrap, env, k)
-  end
-
-  defp handle_sequential(
-         %AwaitWithTimeout{
-           handle: %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref},
-           timeout_ms: _timeout_ms
-         },
-         env,
-         k
-       ) do
-    # await_with_timeout/2 returns {:ok, result} (timeout doesn't apply in sequential mode)
-    do_await_sequential(handle_boundary, handle_ref, :wrap, env, k)
-  end
-
-  defp handle_sequential(
-         %Cancel{
-           handle: %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref} = handle
-         },
-         env,
-         k
-       ) do
+  def handle(%Fiber{comp: comp}, env, k) do
     current_boundary = Env.get_state(env, @current_boundary_key)
 
-    if handle_boundary != current_boundary do
-      Comp.call(Throw.throw({:error, :cancel_across_boundary}), env, k)
+    if current_boundary == nil do
+      # No boundary - throw error via Throw effect
+      Comp.call(Throw.throw({:error, :fiber_outside_boundary}), env, k)
     else
-      # Remove stored result (no actual task to kill in sequential mode)
-      results = Env.get_state(env, @sequential_results_key)
+      # Generate unique fiber ID
+      fiber_id = make_ref()
 
-      env_without_result =
-        Env.put_state(env, @sequential_results_key, Map.delete(results, handle_ref))
+      # Create handle and track it in boundary
+      handle = %FiberHandle{boundary_id: current_boundary, fiber_id: fiber_id}
 
-      # Untrack handle
-      boundaries = Env.get_state(env_without_result, @boundaries_key)
-      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
-      updated_tasks = MapSet.delete(boundary_tasks, handle)
+      boundaries = Env.get_state(env, @boundaries_key)
+      boundary_handles = Map.get(boundaries, current_boundary, MapSet.new())
+      updated_handles = MapSet.put(boundary_handles, handle)
 
-      env_untracked =
+      env_tracked =
         Env.put_state(
-          env_without_result,
+          env,
           @boundaries_key,
-          Map.put(boundaries, current_boundary, updated_tasks)
+          Map.put(boundaries, current_boundary, updated_handles)
         )
 
-      k.(:ok, env_untracked)
+      # Store fiber in pending_fibers for scheduler to extract
+      pending = Env.get_state(env_tracked, @pending_fibers_key, [])
+      fiber_entry = {fiber_id, comp, current_boundary}
+      env_with_fiber = Env.put_state(env_tracked, @pending_fibers_key, [fiber_entry | pending])
+
+      # Continue immediately with handle - no yield!
+      # The fiber will be extracted by the scheduler when this computation yields/completes
+      k.(handle, env_with_fiber)
     end
   end
 
-  defp do_await_sequential(handle_boundary, handle_ref, wrap_mode, env, k) do
+  def handle(
+        %AwaitOp{handle: %TaskHandle{boundary_id: handle_boundary, task: task} = handle},
+        env,
+        k
+      ) do
     current_boundary = Env.get_state(env, @current_boundary_key)
 
     if handle_boundary != current_boundary do
       Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
     else
-      # Get stored result (in sequential mode, computation already ran)
-      results = Env.get_state(env, @sequential_results_key)
-      result = Map.get(results, handle_ref)
+      # Fast path - check if result message is already available
+      # Use peek_task_result to avoid the race condition where DOWN message
+      # arrives before the result message (Task.yield(task, 0) can return
+      # {:exit, :normal} even when the task completed successfully)
+      case peek_task_result(task) do
+        {:ok, value} ->
+          # Already done - continue immediately, no yield
+          env_untracked = untrack_handle(env, handle)
+          k.(value, env_untracked)
 
-      # Wrap or unwrap based on which operation was called
-      final_result =
-        case wrap_mode do
-          :unwrap -> result
-          :wrap -> {:ok, result}
+        :not_ready ->
+          # Not ready - yield to scheduler via Await effect
+          target = TaskTarget.new(task)
+          request = AwaitRequest.new([target], :all)
+
+          await_comp = Await.await(request)
+
+          Comp.call(await_comp, env, fn [result], env2 ->
+            env_untracked = untrack_handle(env2, handle)
+
+            case result do
+              {:ok, value} ->
+                k.(value, env_untracked)
+
+              {:error, reason} ->
+                Comp.call(Throw.throw({:error, reason}), env_untracked, k)
+            end
+          end)
+      end
+    end
+  end
+
+  def handle(
+        %AwaitOp{handle: %FiberHandle{boundary_id: handle_boundary, fiber_id: fiber_id} = handle},
+        env,
+        k
+      ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # Fibers are always yielded to scheduler - no fast path check here
+      # because fiber_results live in scheduler state, not in Env
+      target = FiberTarget.new(fiber_id)
+      request = AwaitRequest.new([target], :all)
+
+      await_comp = Await.await(request)
+
+      Comp.call(await_comp, env, fn [result], env2 ->
+        env_untracked = untrack_handle(env2, handle)
+
+        case result do
+          {:ok, value} ->
+            k.(value, env_untracked)
+
+          {:error, reason} ->
+            Comp.call(Throw.throw({:error, reason}), env_untracked, k)
+        end
+      end)
+    end
+  end
+
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
+  def handle(%AwaitAll{handles: handles}, env, k) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    # Verify all handles are from current boundary (TaskHandles only for now)
+    invalid =
+      Enum.find(handles, fn
+        %TaskHandle{boundary_id: bid} -> bid != current_boundary
+        %FiberHandle{boundary_id: bid} -> bid != current_boundary
+      end)
+
+    if invalid do
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # Check fast path for all handles
+      {ready_results, pending_handles} = check_ready(handles)
+
+      case pending_handles do
+        [] ->
+          # All ready - return results immediately
+          results = extract_results(handles, ready_results)
+          env_untracked = Enum.reduce(handles, env, &untrack_handle(&2, &1))
+
+          case results do
+            {:ok, values} -> k.(values, env_untracked)
+            {:error, reason} -> Comp.call(Throw.throw({:error, reason}), env_untracked, k)
+          end
+
+        _ ->
+          # Some pending - yield to scheduler for ONLY the pending handles
+          # (ready handles' messages were already consumed by check_ready)
+          pending_targets = Enum.map(pending_handles, &handle_to_target/1)
+
+          request = AwaitRequest.new(pending_targets, :all)
+
+          await_comp = Await.await(request)
+
+          Comp.call(await_comp, env, fn pending_results, env2 ->
+            env_untracked = Enum.reduce(handles, env2, &untrack_handle(&2, &1))
+
+            # Build map from target key to result for pending handles
+            pending_results_map =
+              pending_handles
+              |> Enum.zip(pending_results)
+              |> Enum.map(fn {handle, result} -> {handle_to_target_key(handle), result} end)
+              |> Map.new()
+
+            # Merge ready_results (from check_ready) with pending_results (from scheduler)
+            # Return in original handle order
+            all_results =
+              Enum.map(handles, fn handle ->
+                case Map.get(ready_results, handle) do
+                  nil -> Map.fetch!(pending_results_map, handle_to_target_key(handle))
+                  result -> result
+                end
+              end)
+
+            case extract_all_results(all_results) do
+              {:ok, values} -> k.(values, env_untracked)
+              {:error, reason} -> Comp.call(Throw.throw({:error, reason}), env_untracked, k)
+            end
+          end)
+      end
+    end
+  end
+
+  def handle(%AwaitAny{handles: handles}, env, k) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    # Verify all handles are from current boundary
+    invalid =
+      Enum.find(handles, fn
+        %TaskHandle{boundary_id: bid} -> bid != current_boundary
+        %FiberHandle{boundary_id: bid} -> bid != current_boundary
+      end)
+
+    if invalid do
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # Check fast path - any handle already ready?
+      case find_ready(handles) do
+        {:ready, handle, result} ->
+          # Found a ready one
+          env_untracked = untrack_handle(env, handle)
+
+          case result do
+            {:ok, value} -> k.({handle, value}, env_untracked)
+            {:error, reason} -> Comp.call(Throw.throw({:error, reason}), env_untracked, k)
+          end
+
+        :none_ready ->
+          # None ready - yield to scheduler
+          targets = Enum.map(handles, &handle_to_target/1)
+          request = AwaitRequest.new(targets, :any)
+
+          await_comp = Await.await(request)
+
+          Comp.call(await_comp, env, fn {target_key, result}, env2 ->
+            # Find the handle that matches the target_key
+            winning_handle = find_handle_by_target_key(handles, target_key)
+            env_untracked = untrack_handle(env2, winning_handle)
+
+            case result do
+              {:ok, value} -> k.({winning_handle, value}, env_untracked)
+              {:error, reason} -> Comp.call(Throw.throw({:error, reason}), env_untracked, k)
+            end
+          end)
+      end
+    end
+  end
+
+  def handle(%AwaitAnyRaw{targets: targets}, env, k) do
+    # Low-level: await raw targets directly
+    # No boundary checking (targets might not be from handles)
+    request = AwaitRequest.new(targets, :any)
+    await_comp = Await.await(request)
+
+    Comp.call(await_comp, env, fn {target_key, result}, env2 ->
+      k.({target_key, result}, env2)
+    end)
+  end
+
+  def handle(
+        %AwaitWithTimeout{
+          handle: %TaskHandle{boundary_id: handle_boundary} = handle,
+          timeout_ms: timeout_ms
+        },
+        env,
+        k
+      ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # Race handle against timer using await_any_raw
+      targets = [handle_to_target(handle), TimerTarget.new(timeout_ms)]
+      request = AwaitRequest.new(targets, :any)
+      await_comp = Await.await(request)
+
+      Comp.call(await_comp, env, fn {target_key, result}, env2 ->
+        # Always untrack the handle (whether it completed or timed out)
+        env_untracked = untrack_handle(env2, handle)
+
+        case target_key do
+          {:timer, _} ->
+            # Timed out - return error
+            k.({:error, :timeout}, env_untracked)
+
+          _other ->
+            # Handle completed - return result wrapped in ok/error
+            case result do
+              {:ok, value} -> k.({:ok, value}, env_untracked)
+              {:error, reason} -> k.({:error, reason}, env_untracked)
+            end
+        end
+      end)
+    end
+  end
+
+  def handle(
+        %AwaitWithTimeout{
+          handle: %FiberHandle{boundary_id: handle_boundary} = handle,
+          timeout_ms: timeout_ms
+        },
+        env,
+        k
+      ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # Race handle against timer using await_any_raw
+      targets = [handle_to_target(handle), TimerTarget.new(timeout_ms)]
+      request = AwaitRequest.new(targets, :any)
+      await_comp = Await.await(request)
+
+      Comp.call(await_comp, env, fn {target_key, result}, env2 ->
+        # Always untrack the handle (whether it completed or timed out)
+        env_untracked = untrack_handle(env2, handle)
+
+        case target_key do
+          {:timer, _} ->
+            # Timed out - return error
+            k.({:error, :timeout}, env_untracked)
+
+          _other ->
+            # Handle completed - return result wrapped in ok/error
+            case result do
+              {:ok, value} -> k.({:ok, value}, env_untracked)
+              {:error, reason} -> k.({:error, reason}, env_untracked)
+            end
+        end
+      end)
+    end
+  end
+
+  def handle(
+        %Cancel{handle: %TaskHandle{boundary_id: handle_boundary, task: task} = handle},
+        env,
+        k
+      ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :cancel_across_boundary}), env, k)
+    else
+      # Terminate the task
+      sup = Env.get_state(env, @supervisor_key)
+
+      if sup && Process.alive?(task.pid) do
+        Task.Supervisor.terminate_child(sup, task.pid)
+      end
+
+      # Untrack the handle
+      env_untracked = untrack_handle(env, handle)
+      k.(:ok, env_untracked)
+    end
+  end
+
+  def handle(
+        %Cancel{handle: %FiberHandle{boundary_id: handle_boundary, fiber_id: fiber_id} = handle},
+        env,
+        k
+      ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :cancel_across_boundary}), env, k)
+    else
+      # Remove fiber from pending_fibers if it hasn't been extracted yet
+      pending = Env.get_state(env, @pending_fibers_key, [])
+      updated_pending = Enum.reject(pending, fn {fid, _comp, _bid} -> fid == fiber_id end)
+      env_updated = Env.put_state(env, @pending_fibers_key, updated_pending)
+
+      # Untrack the handle from boundary
+      env_untracked = untrack_handle(env_updated, handle)
+      k.(:ok, env_untracked)
+    end
+  end
+
+  #############################################################################
+  ## Helpers
+  #############################################################################
+
+  defp untrack_handle(env, handle) do
+    boundary_id = get_boundary_id(handle)
+    boundaries = Env.get_state(env, @boundaries_key)
+    boundary_tasks = Map.get(boundaries, boundary_id, MapSet.new())
+    updated_tasks = MapSet.delete(boundary_tasks, handle)
+    Env.put_state(env, @boundaries_key, Map.put(boundaries, boundary_id, updated_tasks))
+  end
+
+  defp get_boundary_id(%TaskHandle{boundary_id: bid}), do: bid
+  defp get_boundary_id(%FiberHandle{boundary_id: bid}), do: bid
+
+  # Convert a handle to an await target
+  defp handle_to_target(%TaskHandle{task: task}), do: TaskTarget.new(task)
+  defp handle_to_target(%FiberHandle{fiber_id: fiber_id}), do: FiberTarget.new(fiber_id)
+
+  # Get the target key for a handle (used for result correlation)
+  defp handle_to_target_key(%TaskHandle{task: %Task{ref: ref}}), do: {:task, ref}
+  defp handle_to_target_key(%FiberHandle{fiber_id: fiber_id}), do: {:fiber, fiber_id}
+
+  # Check which handles have result messages already available.
+  # Uses peek_task_result to avoid race condition with DOWN messages.
+  # Note: Currently only works for TaskHandles. FiberHandle support will be added later.
+  defp check_ready(handles) do
+    Enum.reduce(handles, {%{}, []}, fn
+      %TaskHandle{task: task} = handle, {ready, pending} ->
+        case peek_task_result(task) do
+          {:ok, value} ->
+            {Map.put(ready, handle, {:ok, value}), pending}
+
+          :not_ready ->
+            {ready, [handle | pending]}
         end
 
-      # Untrack handle
-      handle = %Handle{boundary_id: handle_boundary, task_or_ref: handle_ref}
-      boundaries = Env.get_state(env, @boundaries_key)
-      boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
-      updated_tasks = MapSet.delete(boundary_tasks, handle)
+      %FiberHandle{} = handle, {ready, pending} ->
+        # FiberHandles are always pending - scheduler checks fiber_results
+        {ready, [handle | pending]}
+    end)
+    |> then(fn {ready, pending} -> {ready, Enum.reverse(pending)} end)
+  end
 
-      env_untracked =
-        Env.put_state(env, @boundaries_key, Map.put(boundaries, current_boundary, updated_tasks))
+  # Extract results in handle order from ready map
+  defp extract_results(handles, ready_results) do
+    results = Enum.map(handles, &Map.fetch!(ready_results, &1))
 
-      k.(final_result, env_untracked)
+    case Enum.find(results, fn
+           {:error, _} -> true
+           _ -> false
+         end) do
+      nil -> {:ok, Enum.map(results, fn {:ok, v} -> v end)}
+      {:error, reason} -> {:error, reason}
     end
+  end
+
+  # Extract values from scheduler results list
+  defp extract_all_results(results) do
+    case Enum.find(results, fn
+           {:error, _} -> true
+           _ -> false
+         end) do
+      nil -> {:ok, Enum.map(results, fn {:ok, v} -> v end)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Find first ready handle (has result message available).
+  # Uses peek_task_result to avoid race condition with DOWN messages.
+  # Note: Currently only works for TaskHandles. FiberHandle support will be added later.
+  defp find_ready(handles) do
+    Enum.find_value(handles, :none_ready, fn
+      %TaskHandle{task: task} = handle ->
+        case peek_task_result(task) do
+          {:ok, value} ->
+            {:ready, handle, {:ok, value}}
+
+          :not_ready ->
+            nil
+        end
+
+      %FiberHandle{} ->
+        # FiberHandles are always pending - scheduler checks fiber_results
+        nil
+    end)
+  end
+
+  # Peek for task result message without consuming DOWN messages.
+  # This avoids the race condition where Task.yield(task, 0) returns
+  # {:exit, :normal} because the DOWN message arrived before the result message.
+  # The scheduler handles this properly by waiting for both messages.
+  defp peek_task_result(%Task{ref: ref}) do
+    receive do
+      {^ref, result} ->
+        # Got the result - demonitor and flush any DOWN message
+        Process.demonitor(ref, [:flush])
+        {:ok, result}
+    after
+      0 -> :not_ready
+    end
+  end
+
+  # Find handle by target key (task ref or fiber id)
+  defp find_handle_by_target_key(handles, {:task, ref}) do
+    Enum.find(handles, fn
+      %TaskHandle{task: %Task{ref: task_ref}} -> task_ref == ref
+      %FiberHandle{} -> false
+    end)
+  end
+
+  defp find_handle_by_target_key(handles, {:fiber, fiber_id}) do
+    Enum.find(handles, fn
+      %FiberHandle{fiber_id: fid} -> fid == fiber_id
+      %TaskHandle{} -> false
+    end)
   end
 end

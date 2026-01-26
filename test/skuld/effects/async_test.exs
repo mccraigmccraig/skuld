@@ -1,11 +1,14 @@
 defmodule Skuld.Effects.AsyncTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   use Skuld.Syntax
 
   alias Skuld.Comp
   alias Skuld.Effects.Async
-  alias Skuld.Effects.State
+  alias Skuld.Effects.Async.Scheduler
+  alias Skuld.Effects.Reader
   alias Skuld.Effects.Throw
 
   # Helper to raise without triggering "typing violation" warnings.
@@ -14,68 +17,8 @@ defmodule Skuld.Effects.AsyncTest do
     if true, do: raise(msg), else: :ok
   end
 
-  # Barrier for testing concurrency - tasks signal arrival and wait for release
-  defmodule Barrier do
-    def start(n) do
-      {:ok, agent} = Agent.start_link(fn -> {0, n, []} end)
-      agent
-    end
-
-    def arrive_and_wait(barrier) do
-      # Register this process
-      self_pid = self()
-
-      Agent.update(barrier, fn {count, n, waiters} ->
-        {count + 1, n, [self_pid | waiters]}
-      end)
-
-      # Check if we should release everyone
-      {count, n, waiters} = Agent.get(barrier, & &1)
-
-      if count >= n do
-        # Release all waiters
-        Enum.each(waiters, &send(&1, :released))
-      end
-
-      # Wait for release
-      receive do
-        :released -> :ok
-      after
-        1000 -> raise "Barrier timeout - not all tasks arrived"
-      end
-    end
-
-    def stop(barrier), do: Agent.stop(barrier)
-  end
-
-  # Latch for controlling task ordering - tasks wait until released
-  defmodule Latch do
-    def start do
-      {:ok, agent} = Agent.start_link(fn -> [] end)
-      agent
-    end
-
-    def wait(latch) do
-      self_pid = self()
-      Agent.update(latch, fn waiters -> [self_pid | waiters] end)
-
-      receive do
-        :released -> :ok
-      after
-        1000 -> raise "Latch timeout"
-      end
-    end
-
-    def release(latch) do
-      waiters = Agent.get(latch, & &1)
-      Enum.each(waiters, &send(&1, :released))
-    end
-
-    def stop(latch), do: Agent.stop(latch)
-  end
-
-  describe "with_handler (production)" do
-    test "basic async/await works" do
+  describe "basic async/await" do
+    test "single async/await works" do
       result =
         comp do
           Async.boundary(
@@ -93,9 +36,9 @@ defmodule Skuld.Effects.AsyncTest do
         end
         |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == :done
+      assert result == {:done, :done}
     end
 
     test "multiple async tasks" do
@@ -134,12 +77,12 @@ defmodule Skuld.Effects.AsyncTest do
         end
         |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == {:a, :b, :c}
+      assert result == {:done, {:a, :b, :c}}
     end
 
-    test "async outside boundary throws error" do
+    test "async outside boundary returns error" do
       result =
         comp do
           Async.async(
@@ -147,16 +90,113 @@ defmodule Skuld.Effects.AsyncTest do
               :work
             end
           )
-        catch
-          {Throw, err} -> {:caught, err}
         end
         |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == {:caught, {:error, :async_outside_boundary}}
+      # Throws from handlers become errors at the scheduler level
+      assert result == {:error, {:throw, {:error, :async_outside_boundary}}}
+    end
+  end
+
+  describe "await_all" do
+    test "await_all returns results in order" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h1 <-
+                Async.async(
+                  comp do
+                    :first
+                  end
+                )
+
+              h2 <-
+                Async.async(
+                  comp do
+                    :second
+                  end
+                )
+
+              h3 <-
+                Async.async(
+                  comp do
+                    :third
+                  end
+                )
+
+              Async.await_all([h1, h2, h3])
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, [:first, :second, :third]}
     end
 
+    test "await_all with empty list" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              Async.await_all([])
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, []}
+    end
+  end
+
+  describe "await_any" do
+    test "await_any returns first completer" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h1 <-
+                Async.async(
+                  comp do
+                    :winner
+                  end
+                )
+
+              h2 <-
+                Async.async(
+                  comp do
+                    # Slow task - waits forever, will be cancelled
+                    _ =
+                      receive do
+                        :never_sent -> :ok
+                      end
+
+                    :loser
+                  end
+                )
+
+              {winner, value} <- Async.await_any([h1, h2])
+              _ <- Async.cancel(h2)
+              {winner.task.ref == h1.task.ref, value}
+            end,
+            fn result, _unawaited -> result end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {true, :winner}}
+    end
+  end
+
+  describe "boundary cleanup" do
     test "unawaited tasks throw by default" do
       result =
         comp do
@@ -177,9 +217,9 @@ defmodule Skuld.Effects.AsyncTest do
         end
         |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == {:caught, {:unawaited_tasks, 1}}
+      assert result == {:done, {:caught, {:unawaited_tasks, 1}}}
     end
 
     test "custom on_unawaited handler - return result" do
@@ -201,9 +241,9 @@ defmodule Skuld.Effects.AsyncTest do
         end
         |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == :done
+      assert result == {:done, :done}
     end
 
     test "custom on_unawaited handler - wrap result" do
@@ -234,11 +274,96 @@ defmodule Skuld.Effects.AsyncTest do
         end
         |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == %{result: :done, killed: 2}
+      assert result == {:done, %{result: :done, killed: 2}}
+    end
+  end
+
+  describe "cancel" do
+    test "cancel removes task from unawaited set" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :will_be_cancelled
+                  end
+                )
+
+              _ <- Async.cancel(h)
+              :done
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      # No unawaited error because we cancelled
+      assert result == {:done, :done}
     end
 
+    test "cancel returns :ok" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :work
+                  end
+                )
+
+              cancel_result <- Async.cancel(h)
+              cancel_result
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, :ok}
+    end
+
+    test "cancel across boundary returns error" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :outer_task
+                  end
+                )
+
+              inner_result <-
+                Async.boundary(
+                  comp do
+                    # Try to cancel outer handle from inner boundary
+                    Async.cancel(h)
+                  end
+                )
+
+              inner_result
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      # Throws from handlers become errors at the scheduler level
+      assert result == {:error, {:throw, {:error, :cancel_across_boundary}}}
+    end
+  end
+
+  describe "nested boundaries" do
     test "nested boundaries are independent" do
       result =
         comp do
@@ -272,12 +397,12 @@ defmodule Skuld.Effects.AsyncTest do
         end
         |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == {:outer, :inner}
+      assert result == {:done, {:outer, :inner}}
     end
 
-    test "await across boundary throws error" do
+    test "await across boundary returns error" do
       result =
         comp do
           Async.boundary(
@@ -297,377 +422,50 @@ defmodule Skuld.Effects.AsyncTest do
               )
             end
           )
-        catch
-          {Throw, err} -> {:caught, err}
         end
         |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == {:caught, {:error, :await_across_boundary}}
-    end
-
-    test "async tasks run concurrently" do
-      # Use a barrier to prove all 3 tasks run concurrently
-      # If they were sequential, the barrier would timeout
-      barrier = Barrier.start(3)
-
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h1 <-
-                Async.async(
-                  comp do
-                    _ = Barrier.arrive_and_wait(barrier)
-                    :a
-                  end
-                )
-
-              h2 <-
-                Async.async(
-                  comp do
-                    _ = Barrier.arrive_and_wait(barrier)
-                    :b
-                  end
-                )
-
-              h3 <-
-                Async.async(
-                  comp do
-                    _ = Barrier.arrive_and_wait(barrier)
-                    :c
-                  end
-                )
-
-              r1 <- Async.await(h1)
-              r2 <- Async.await(h2)
-              r3 <- Async.await(h3)
-
-              {r1, r2, r3}
-            end
-          )
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      Barrier.stop(barrier)
-
-      assert result == {:a, :b, :c}
-    end
-
-    test "task failure is caught" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h <-
-                Async.async(
-                  comp do
-                    boom!()
-                  end
-                )
-
-              Async.await(h)
-            end
-          )
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      assert match?({:error, {:task_failed, _}}, result)
-    end
-
-    test "cancel removes task from unawaited set" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h <-
-                Async.async(
-                  comp do
-                    :will_be_cancelled
-                  end
-                )
-
-              _ <- Async.cancel(h)
-              :done
-            end
-          )
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      # No unawaited error because we cancelled
-      assert result == :done
-    end
-
-    test "cancel returns :ok" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h <-
-                Async.async(
-                  comp do
-                    :work
-                  end
-                )
-
-              cancel_result <- Async.cancel(h)
-              cancel_result
-            end
-          )
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      assert result == :ok
-    end
-
-    test "cancel across boundary throws error" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h <-
-                Async.async(
-                  comp do
-                    :outer_task
-                  end
-                )
-
-              inner_result <-
-                Async.boundary(
-                  comp do
-                    # Try to cancel outer handle from inner boundary
-                    Async.cancel(h)
-                  end
-                )
-
-              inner_result
-            end
-          )
-        catch
-          {Throw, err} -> {:caught, err}
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      assert result == {:caught, {:error, :cancel_across_boundary}}
-    end
-
-    test "cancel one task, await another" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h1 <-
-                Async.async(
-                  comp do
-                    :approach_a
-                  end
-                )
-
-              h2 <-
-                Async.async(
-                  comp do
-                    :approach_b
-                  end
-                )
-
-              r1 <- Async.await(h1)
-              _ <- Async.cancel(h2)
-              r1
-            end
-          )
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      assert result == :approach_a
-    end
-
-    test "cancel already-completed task is no-op" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h <-
-                Async.async(
-                  comp do
-                    :done
-                  end
-                )
-
-              # Await first
-              r <- Async.await(h)
-              # Then cancel (already completed and awaited)
-              cancel_result <- Async.cancel(h)
-              {r, cancel_result}
-            end
-          )
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      # Cancel returns :ok even for already-awaited tasks
-      assert result == {:done, :ok}
-    end
-
-    test "await_with_timeout returns {:ok, result} when task completes in time" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h <-
-                Async.async(
-                  comp do
-                    :fast_result
-                  end
-                )
-
-              Async.await_with_timeout(h, 1000)
-            end
-          )
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      assert result == {:ok, :fast_result}
-    end
-
-    @tag :slow
-    test "await_with_timeout returns {:error, :timeout} when task is too slow" do
-      # Use a latch to make the task block until we want it to
-      latch = Latch.start()
-
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h <-
-                Async.async(
-                  comp do
-                    # This will block forever (until cancelled by timeout)
-                    _ = Latch.wait(latch)
-                    :never_reached
-                  end
-                )
-
-              Async.await_with_timeout(h, 10)
-            end
-          )
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      Latch.stop(latch)
-
-      assert result == {:error, :timeout}
-    end
-
-    test "timeout convenience returns {:ok, result} when computation completes in time" do
-      result =
-        comp do
-          r <-
-            Async.timeout(
-              1000,
-              comp do
-                :quick_work
-              end
-            )
-
-          r
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      assert result == {:ok, :quick_work}
-    end
-
-    @tag :slow
-    test "timeout convenience returns {:error, :timeout} when computation is too slow" do
-      latch = Latch.start()
-
-      result =
-        comp do
-          r <-
-            Async.timeout(
-              10,
-              comp do
-                _ = Latch.wait(latch)
-                :never_reached
-              end
-            )
-
-          r
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      Latch.stop(latch)
-
-      assert result == {:error, :timeout}
-    end
-
-    test "await_with_timeout returns {:error, {:task_failed, _}} when task raises" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h <-
-                Async.async(
-                  comp do
-                    boom!()
-                  end
-                )
-
-              Async.await_with_timeout(h, 1000)
-            end
-          )
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      assert match?({:error, {:task_failed, _}}, result)
-    end
-
-    test "timeout convenience returns {:error, {:task_failed, _}} when computation raises" do
-      result =
-        comp do
-          r <-
-            Async.timeout(
-              1000,
-              comp do
-                boom!()
-              end
-            )
-
-          r
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      assert match?({:error, {:task_failed, _}}, result)
+      # Throws from handlers become errors at the scheduler level
+      assert result == {:error, {:throw, {:error, :await_across_boundary}}}
     end
   end
 
-  describe "with_sequential_handler (testing)" do
-    test "basic async/await works" do
+  describe "task failure" do
+    test "task failure returns error" do
+      # Capture expected error log from task failure
+      capture_log(fn ->
+        result =
+          comp do
+            Async.boundary(
+              comp do
+                h <-
+                  Async.async(
+                    comp do
+                      boom!()
+                    end
+                  )
+
+                Async.await(h)
+              end
+            )
+          end
+          |> Async.with_handler()
+          |> Throw.with_handler()
+          |> Scheduler.run_one()
+
+        # Task failures from await become errors at the scheduler level
+        assert match?({:done, {:error, {:throw, {:error, _}}}}, result)
+      end)
+    end
+  end
+
+  describe "fast path" do
+    test "already-completed task returns immediately without yielding" do
+      # This tests that Task.yield(task, 0) fast-path works
+      test_pid = self()
+
       result =
         comp do
           Async.boundary(
@@ -675,7 +473,50 @@ defmodule Skuld.Effects.AsyncTest do
               h <-
                 Async.async(
                   comp do
-                    :done
+                    # Signal test process with task pid so it can monitor for completion
+                    _ = send(test_pid, {:task_pid, self()})
+                    :instant
+                  end
+                )
+
+              # Wait for task to complete by monitoring its exit
+              # The task sends its pid, then we monitor it and wait for DOWN
+              _ =
+                receive do
+                  {:task_pid, task_pid} ->
+                    ref = Process.monitor(task_pid)
+
+                    receive do
+                      {:DOWN, ^ref, :process, ^task_pid, _} -> :ok
+                    end
+                end
+
+              Async.await(h)
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, :instant}
+    end
+  end
+
+  #############################################################################
+  ## Fiber Tests - Cooperative Scheduling
+  #############################################################################
+
+  describe "basic fiber" do
+    test "single fiber can be spawned and awaited" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.fiber(
+                  comp do
+                    42
                   end
                 )
 
@@ -683,140 +524,353 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         end
-        |> Async.with_sequential_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == :done
+      assert result == {:done, 42}
     end
 
-    test "multiple async tasks" do
+    test "fiber returns FiberHandle" do
       result =
         comp do
           Async.boundary(
             comp do
-              h1 <-
-                Async.async(
+              h <-
+                Async.fiber(
                   comp do
-                    :a
+                    :fiber_result
                   end
                 )
 
-              h2 <-
-                Async.async(
-                  comp do
-                    :b
-                  end
-                )
-
-              h3 <-
-                Async.async(
-                  comp do
-                    :c
-                  end
-                )
-
-              r1 <- Async.await(h1)
-              r2 <- Async.await(h2)
-              r3 <- Async.await(h3)
-
-              {r1, r2, r3}
+              # Verify it's a FiberHandle, not a TaskHandle
+              is_fiber = match?(%Async.FiberHandle{}, h)
+              r <- Async.await(h)
+              {is_fiber, r}
             end
           )
         end
-        |> Async.with_sequential_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == {:a, :b, :c}
+      assert result == {:done, {true, :fiber_result}}
     end
 
-    test "async outside boundary throws error" do
+    test "fiber outside boundary returns error" do
       result =
         comp do
-          Async.async(
+          Async.fiber(
             comp do
               :work
             end
           )
-        catch
-          {Throw, err} -> {:caught, err}
         end
-        |> Async.with_sequential_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == {:caught, {:error, :async_outside_boundary}}
+      assert result == {:error, {:throw, {:error, :fiber_outside_boundary}}}
     end
+  end
 
-    test "unawaited tasks throw by default" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              _ <-
-                Async.async(
-                  comp do
-                    :unawaited
-                  end
-                )
-
-              :done
-            end
-          )
-        catch
-          {Throw, err} -> {:caught, err}
-        end
-        |> Async.with_sequential_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      assert result == {:caught, {:unawaited_tasks, 1}}
-    end
-
-    test "custom on_unawaited handler" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              _ <-
-                Async.async(
-                  comp do
-                    :ignored
-                  end
-                )
-
-              :done
-            end,
-            fn result, _unawaited -> result end
-          )
-        end
-        |> Async.with_sequential_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      assert result == :done
-    end
-
-    test "nested boundaries are independent" do
+  describe "multiple fibers" do
+    test "multiple fibers can be spawned and awaited" do
       result =
         comp do
           Async.boundary(
             comp do
               h1 <-
-                Async.async(
+                Async.fiber(
                   comp do
-                    :outer
+                    :a
                   end
                 )
 
-              inner_result <-
-                Async.boundary(
+              h2 <-
+                Async.fiber(
+                  comp do
+                    :b
+                  end
+                )
+
+              h3 <-
+                Async.fiber(
+                  comp do
+                    :c
+                  end
+                )
+
+              r1 <- Async.await(h1)
+              r2 <- Async.await(h2)
+              r3 <- Async.await(h3)
+
+              {r1, r2, r3}
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:a, :b, :c}}
+    end
+
+    test "fibers run cooperatively in single process" do
+      # Verify fibers run in the scheduler process, not separate processes
+      scheduler_pid = self()
+
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.fiber(
+                  comp do
+                    # Fiber runs in scheduler process
+                    self() == scheduler_pid
+                  end
+                )
+
+              Async.await(h)
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, true}
+    end
+  end
+
+  describe "mixed fiber and task" do
+    test "fiber and async task can be mixed" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h_fiber <-
+                Async.fiber(
+                  comp do
+                    :fiber_result
+                  end
+                )
+
+              h_task <-
+                Async.async(
+                  comp do
+                    :task_result
+                  end
+                )
+
+              r1 <- Async.await(h_fiber)
+              r2 <- Async.await(h_task)
+              {r1, r2}
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:fiber_result, :task_result}}
+    end
+
+    test "task runs in separate process, fiber runs in scheduler" do
+      scheduler_pid = self()
+
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h_fiber <-
+                Async.fiber(
+                  comp do
+                    self()
+                  end
+                )
+
+              h_task <-
+                Async.async(
+                  comp do
+                    self()
+                  end
+                )
+
+              fiber_pid <- Async.await(h_fiber)
+              task_pid <- Async.await(h_task)
+
+              {fiber_pid == scheduler_pid, task_pid != scheduler_pid}
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {true, true}}
+    end
+  end
+
+  describe "fiber await_all" do
+    test "await_all works with fibers" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h1 <-
+                Async.fiber(
+                  comp do
+                    :first
+                  end
+                )
+
+              h2 <-
+                Async.fiber(
+                  comp do
+                    :second
+                  end
+                )
+
+              h3 <-
+                Async.fiber(
+                  comp do
+                    :third
+                  end
+                )
+
+              Async.await_all([h1, h2, h3])
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, [:first, :second, :third]}
+    end
+
+    test "await_all works with mixed fibers and tasks" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h1 <-
+                Async.fiber(
+                  comp do
+                    :fiber
+                  end
+                )
+
+              h2 <-
+                Async.async(
+                  comp do
+                    :task
+                  end
+                )
+
+              Async.await_all([h1, h2])
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, [:fiber, :task]}
+    end
+  end
+
+  describe "fiber await_any" do
+    test "await_any works with fibers" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h1 <-
+                Async.fiber(
+                  comp do
+                    :first_fiber
+                  end
+                )
+
+              h2 <-
+                Async.fiber(
+                  comp do
+                    :second_fiber
+                  end
+                )
+
+              {winner, value} <- Async.await_any([h1, h2])
+              # Cancel the loser
+              loser = if winner == h1, do: h2, else: h1
+              _ <- Async.cancel(loser)
+              value
+            end,
+            fn result, _unawaited -> result end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      # One of the fibers should win
+      assert result == {:done, :first_fiber} or result == {:done, :second_fiber}
+    end
+  end
+
+  describe "nested fibers" do
+    test "fiber can spawn another fiber" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h1 <-
+                Async.fiber(
                   comp do
                     h2 <-
-                      Async.async(
+                      Async.fiber(
                         comp do
                           :inner
+                        end
+                      )
+
+                    inner_result <- Async.await(h2)
+                    {:outer, inner_result}
+                  end
+                )
+
+              Async.await(h1)
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:outer, :inner}}
+    end
+
+    test "deeply nested fibers work" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.fiber(
+                  comp do
+                    h2 <-
+                      Async.fiber(
+                        comp do
+                          h3 <-
+                            Async.fiber(
+                              comp do
+                                :deep
+                              end
+                            )
+
+                          Async.await(h3)
                         end
                       )
 
@@ -824,97 +878,26 @@ defmodule Skuld.Effects.AsyncTest do
                   end
                 )
 
-              outer_result <- Async.await(h1)
-              {outer_result, inner_result}
+              Async.await(h)
             end
           )
         end
-        |> Async.with_sequential_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == {:outer, :inner}
+      assert result == {:done, :deep}
     end
+  end
 
-    test "await across boundary throws error" do
+  describe "fiber cancel" do
+    test "cancel removes fiber from unawaited set" do
       result =
         comp do
           Async.boundary(
             comp do
               h <-
-                Async.async(
-                  comp do
-                    :outer
-                  end
-                )
-
-              Async.boundary(
-                comp do
-                  Async.await(h)
-                end
-              )
-            end
-          )
-        catch
-          {Throw, err} -> {:caught, err}
-        end
-        |> Async.with_sequential_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      assert result == {:caught, {:error, :await_across_boundary}}
-    end
-
-    test "async tasks with State effect" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h1 <-
-                Async.async(
-                  comp do
-                    count <- State.get()
-                    _ <- State.put(count + 1)
-                    count
-                  end
-                )
-
-              h2 <-
-                Async.async(
-                  comp do
-                    count <- State.get()
-                    _ <- State.put(count + 10)
-                    count
-                  end
-                )
-
-              r1 <- Async.await(h1)
-              r2 <- Async.await(h2)
-              final <- State.get()
-
-              {r1, r2, final}
-            end
-          )
-        end
-        |> State.with_handler(0)
-        |> Async.with_sequential_handler()
-        |> Throw.with_handler()
-        |> Comp.run!()
-
-      # Sequential: h1 runs with state=0, returns 0, sets state=1
-      # h2 runs with state=0 (snapshot at fork), returns 0, sets state=10
-      # Final state in parent is still 0 (child changes don't propagate)
-      # Note: sequential handler still doesn't propagate state changes
-      assert result == {0, 0, 0}
-    end
-
-    test "cancel removes task from unawaited set" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h <-
-                Async.async(
+                Async.fiber(
                   comp do
                     :will_be_cancelled
                   end
@@ -925,21 +908,21 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         end
-        |> Async.with_sequential_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
       # No unawaited error because we cancelled
-      assert result == :done
+      assert result == {:done, :done}
     end
 
-    test "cancel returns :ok" do
+    test "cancel fiber returns :ok" do
       result =
         comp do
           Async.boundary(
             comp do
               h <-
-                Async.async(
+                Async.fiber(
                   comp do
                     :work
                   end
@@ -950,107 +933,271 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         end
-        |> Async.with_sequential_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == :ok
+      assert result == {:done, :ok}
     end
+  end
 
-    test "cancel across boundary throws error" do
+  describe "fiber boundary enforcement" do
+    test "unawaited fibers throw by default" do
       result =
         comp do
           Async.boundary(
             comp do
-              h <-
-                Async.async(
+              _ <-
+                Async.fiber(
                   comp do
-                    :outer_task
+                    :unawaited_fiber
                   end
                 )
 
-              inner_result <-
-                Async.boundary(
-                  comp do
-                    # Try to cancel outer handle from inner boundary
-                    Async.cancel(h)
-                  end
-                )
-
-              inner_result
+              :done
             end
           )
         catch
           {Throw, err} -> {:caught, err}
         end
-        |> Async.with_sequential_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == {:caught, {:error, :cancel_across_boundary}}
+      assert result == {:done, {:caught, {:unawaited_tasks, 1}}}
     end
 
-    test "cancel one task, await another" do
+    test "await fiber across boundary returns error" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.fiber(
+                  comp do
+                    :outer_fiber
+                  end
+                )
+
+              Async.boundary(
+                comp do
+                  # Try to await outer fiber from inner boundary
+                  Async.await(h)
+                end
+              )
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:error, {:throw, {:error, :await_across_boundary}}}
+    end
+  end
+
+  describe "with_sequential_handler" do
+    test "runs computation and returns result directly" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.fiber(
+                  comp do
+                    42
+                  end
+                )
+
+              Async.await(h)
+            end
+          )
+        end
+        |> Async.with_sequential_handler()
+        |> Comp.run!()
+
+      assert result == 42
+    end
+
+    test "multiple fibers run cooperatively" do
       result =
         comp do
           Async.boundary(
             comp do
               h1 <-
-                Async.async(
+                Async.fiber(
                   comp do
-                    :approach_a
+                    :first
                   end
                 )
 
               h2 <-
-                Async.async(
+                Async.fiber(
                   comp do
-                    :approach_b
+                    :second
                   end
                 )
 
               r1 <- Async.await(h1)
-              _ <- Async.cancel(h2)
-              r1
+              r2 <- Async.await(h2)
+              {r1, r2}
             end
           )
         end
         |> Async.with_sequential_handler()
-        |> Throw.with_handler()
         |> Comp.run!()
 
-      assert result == :approach_a
+      assert result == {:first, :second}
     end
 
-    test "cancel already-awaited task is no-op" do
+    test "nested fibers work" do
       result =
         comp do
           Async.boundary(
             comp do
-              h <-
-                Async.async(
+              h1 <-
+                Async.fiber(
                   comp do
-                    :done
+                    h2 <-
+                      Async.fiber(
+                        comp do
+                          :inner
+                        end
+                      )
+
+                    inner_result <- Async.await(h2)
+                    {:outer, inner_result}
                   end
                 )
 
-              # Await first
-              r <- Async.await(h)
-              # Then cancel (already awaited)
-              cancel_result <- Async.cancel(h)
-              {r, cancel_result}
+              Async.await(h1)
             end
           )
         end
         |> Async.with_sequential_handler()
+        |> Comp.run!()
+
+      assert result == {:outer, :inner}
+    end
+
+    test "mixed fibers and tasks work" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h_fiber <-
+                Async.fiber(
+                  comp do
+                    :fiber_result
+                  end
+                )
+
+              h_task <-
+                Async.async(
+                  comp do
+                    :task_result
+                  end
+                )
+
+              r1 <- Async.await(h_fiber)
+              r2 <- Async.await(h_task)
+              {r1, r2}
+            end
+          )
+        end
+        |> Async.with_sequential_handler()
+        |> Comp.run!()
+
+      assert result == {:fiber_result, :task_result}
+    end
+
+    test "errors are propagated via Throw" do
+      # Throws inside the computation propagate out via Throw.throw
+      # Use catch_error to handle the re-thrown error
+      result =
+        comp do
+          r <-
+            Throw.catch_error(
+              comp do
+                Async.boundary(
+                  comp do
+                    _ <- Throw.throw(:test_error)
+                    :unreachable
+                  end
+                )
+              end
+              |> Async.with_sequential_handler(),
+              fn error -> {:caught, error} end
+            )
+
+          r
+        end
         |> Throw.with_handler()
         |> Comp.run!()
 
-      # Cancel returns :ok even for already-awaited tasks
-      assert result == {:done, :ok}
+      # Error is wrapped as {:throw, original_error} by scheduler
+      assert result == {:caught, {:throw, :test_error}}
     end
 
-    test "await_with_timeout returns {:ok, result} (sequential always succeeds)" do
+    test "can be composed with other effects" do
+      # Reader effect works outside the sequential handler
+      result =
+        comp do
+          x <- Reader.ask()
+
+          boundary_result <-
+            comp do
+              Async.boundary(
+                comp do
+                  h <-
+                    Async.fiber(
+                      comp do
+                        # x is captured from outer scope
+                        x * 2
+                      end
+                    )
+
+                  Async.await(h)
+                end
+              )
+            end
+            |> Async.with_sequential_handler()
+
+          boundary_result + 1
+        end
+        |> Throw.with_handler()
+        |> Reader.with_handler(10)
+        |> Comp.run!()
+
+      assert result == 21
+    end
+  end
+
+  describe "await_with_timeout" do
+    test "returns {:ok, result} when computation completes before timeout" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.fiber(
+                  comp do
+                    :fast_result
+                  end
+                )
+
+              Async.await_with_timeout(h, 5000)
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:ok, :fast_result}}
+    end
+
+    test "returns {:error, :timeout} when timeout fires first" do
       result =
         comp do
           Async.boundary(
@@ -1058,7 +1205,34 @@ defmodule Skuld.Effects.AsyncTest do
               h <-
                 Async.async(
                   comp do
-                    :fast_result
+                    # Sleep longer than timeout
+                    _ = Process.sleep(1000)
+                    :slow_result
+                  end
+                )
+
+              Async.await_with_timeout(h, 10)
+            end,
+            # Don't throw on unawaited - the task will be killed
+            fn result, _unawaited -> result end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:error, :timeout}}
+    end
+
+    test "works with fiber handle" do
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.fiber(
+                  comp do
+                    :fiber_result
                   end
                 )
 
@@ -1066,97 +1240,96 @@ defmodule Skuld.Effects.AsyncTest do
             end
           )
         end
-        |> Async.with_sequential_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      # In sequential mode, computation already ran, so timeout doesn't apply
-      assert result == {:ok, :fast_result}
+      assert result == {:done, {:ok, :fiber_result}}
     end
 
-    test "timeout convenience returns {:ok, result} (sequential always succeeds)" do
+    test "works with task handle" do
       result =
         comp do
-          r <-
-            Async.timeout(
-              1000,
-              comp do
-                :quick_work
-              end
-            )
+          Async.boundary(
+            comp do
+              h <-
+                Async.async(
+                  comp do
+                    :task_result
+                  end
+                )
 
-          r
+              Async.await_with_timeout(h, 1000)
+            end
+          )
         end
-        |> Async.with_sequential_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      assert result == {:ok, :quick_work}
+      assert result == {:done, {:ok, :task_result}}
     end
   end
 
-  describe "state isolation" do
-    test "child task gets snapshot of parent state (production)" do
+  describe "timeout" do
+    test "returns {:ok, result} when computation completes in time" do
       result =
         comp do
-          _ <- State.put(100)
-
-          Async.boundary(
+          Async.timeout(
+            5000,
             comp do
-              h <-
-                Async.async(
-                  comp do
-                    # Should see 100 from parent
-                    State.get()
-                  end
-                )
-
-              # Modify parent state after fork
-              _ <- State.put(200)
-
-              child_saw <- Async.await(h)
-              parent_has <- State.get()
-
-              {child_saw, parent_has}
+              :completed_in_time
             end
           )
         end
-        |> State.with_handler(0)
         |> Async.with_handler()
         |> Throw.with_handler()
-        |> Comp.run!()
+        |> Scheduler.run_one()
 
-      # Child saw 100 (snapshot at fork), parent has 200
-      assert result == {100, 200}
+      assert result == {:done, {:ok, :completed_in_time}}
     end
 
-    test "child state changes don't propagate to parent (production)" do
+    test "returns {:error, :timeout} when computation exceeds timeout" do
       result =
         comp do
-          _ <- State.put(100)
-
-          Async.boundary(
+          Async.timeout(
+            10,
             comp do
+              # This runs as a fiber, so we need to yield to let timer fire
+              # Use an async task that sleeps
               h <-
                 Async.async(
                   comp do
-                    _ <- State.put(999)
-                    :done
+                    _ = Process.sleep(1000)
+                    :too_slow
                   end
                 )
 
-              _ <- Async.await(h)
-              State.get()
+              Async.await(h)
             end
           )
         end
-        |> State.with_handler(0)
         |> Async.with_handler()
         |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:error, :timeout}}
+    end
+
+    test "can be used with with_sequential_handler" do
+      result =
+        comp do
+          Async.timeout(
+            5000,
+            comp do
+              :quick_result
+            end
+          )
+        end
+        |> Async.with_sequential_handler()
         |> Comp.run!()
 
-      # Parent still has 100, not affected by child's put(999)
-      assert result == 100
+      assert result == {:ok, :quick_result}
     end
   end
 end

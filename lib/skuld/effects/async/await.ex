@@ -1,9 +1,9 @@
-defmodule Skuld.Effects.NonBlockingAsync.Await do
+defmodule Skuld.Effects.Async.Await do
   @moduledoc """
   Low-level Await effect for cooperative multitasking.
 
   Yields `%AwaitSuspend{}` requests that schedulers handle internally.
-  Higher-level effects like `NonBlockingAsync` build on this.
+  Higher-level effects like `Async` build on this.
 
   ## How It Works
 
@@ -44,8 +44,8 @@ defmodule Skuld.Effects.NonBlockingAsync.Await do
 
   alias Skuld.Comp
   alias Skuld.Comp.Types
-  alias Skuld.Effects.NonBlockingAsync.AwaitRequest
-  alias Skuld.Effects.NonBlockingAsync.AwaitSuspend
+  alias Skuld.Effects.Async.AwaitRequest
+  alias Skuld.Effects.Async.AwaitSuspend
 
   @sig __MODULE__
 

@@ -1,7 +1,7 @@
-defmodule Skuld.Effects.NonBlockingAsync.Scheduler.CompletionTest do
+defmodule Skuld.Effects.Async.Scheduler.CompletionTest do
   use ExUnit.Case, async: true
 
-  alias Skuld.Effects.NonBlockingAsync.Scheduler.Completion
+  alias Skuld.Effects.Async.Scheduler.Completion
   alias Skuld.AsyncComputation
   alias Skuld.Comp.Cancelled
   alias Skuld.Comp.Suspend

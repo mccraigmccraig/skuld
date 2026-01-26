@@ -1,4 +1,4 @@
-defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest do
+defmodule Skuld.Effects.Async.AwaitRequest do
   @moduledoc """
   Request struct for awaiting async completions.
 
@@ -65,7 +65,7 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest do
   end
 end
 
-defprotocol Skuld.Effects.NonBlockingAsync.AwaitRequest.Target do
+defprotocol Skuld.Effects.Async.AwaitRequest.Target do
   @moduledoc """
   Protocol for await targets.
 
@@ -78,11 +78,11 @@ defprotocol Skuld.Effects.NonBlockingAsync.AwaitRequest.Target do
 
   Keys are tuples like `{:task, ref}`, `{:timer, ref}`, `{:computation, ref}`.
   """
-  @spec key(t) :: Skuld.Effects.NonBlockingAsync.AwaitRequest.target_key()
+  @spec key(t) :: Skuld.Effects.Async.AwaitRequest.target_key()
   def key(target)
 end
 
-defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest.TaskTarget do
+defmodule Skuld.Effects.Async.AwaitRequest.TaskTarget do
   @moduledoc """
   Target for awaiting an Elixir Task.
 
@@ -98,12 +98,12 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest.TaskTarget do
   @spec new(Task.t()) :: t()
   def new(%Task{} = task), do: %__MODULE__{task: task}
 
-  defimpl Skuld.Effects.NonBlockingAsync.AwaitRequest.Target do
+  defimpl Skuld.Effects.Async.AwaitRequest.Target do
     def key(%{task: %Task{ref: ref}}), do: {:task, ref}
   end
 end
 
-defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest.TimerTarget do
+defmodule Skuld.Effects.Async.AwaitRequest.TimerTarget do
   @moduledoc """
   Target for awaiting a timer.
 
@@ -195,12 +195,12 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest.TimerTarget do
     System.monotonic_time(:millisecond) >= deadline
   end
 
-  defimpl Skuld.Effects.NonBlockingAsync.AwaitRequest.Target do
+  defimpl Skuld.Effects.Async.AwaitRequest.Target do
     def key(%{ref: ref}), do: {:timer, ref}
   end
 end
 
-defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest.ComputationTarget do
+defmodule Skuld.Effects.Async.AwaitRequest.ComputationTarget do
   @moduledoc """
   Target for awaiting an AsyncComputation.
 
@@ -218,13 +218,13 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest.ComputationTarget do
   @spec new(AsyncComputation.t()) :: t()
   def new(%AsyncComputation{} = runner), do: %__MODULE__{runner: runner}
 
-  defimpl Skuld.Effects.NonBlockingAsync.AwaitRequest.Target do
+  defimpl Skuld.Effects.Async.AwaitRequest.Target do
     # Use tag (not ref) because AsyncComputation messages are {AsyncComputation, tag, result}
     def key(%{runner: %{tag: tag}}), do: {:computation, tag}
   end
 end
 
-defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest.FiberTarget do
+defmodule Skuld.Effects.Async.AwaitRequest.FiberTarget do
   @moduledoc """
   Target for awaiting a cooperative fiber.
 
@@ -243,7 +243,7 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest.FiberTarget do
   @spec new(reference()) :: t()
   def new(fiber_id) when is_reference(fiber_id), do: %__MODULE__{fiber_id: fiber_id}
 
-  defimpl Skuld.Effects.NonBlockingAsync.AwaitRequest.Target do
+  defimpl Skuld.Effects.Async.AwaitRequest.Target do
     def key(%{fiber_id: fiber_id}), do: {:fiber, fiber_id}
   end
 end

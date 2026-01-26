@@ -1,12 +1,12 @@
-defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
+defmodule Skuld.Effects.Async.Scheduler.ServerTest do
   use ExUnit.Case, async: true
 
   import ExUnit.CaptureLog
 
   use Skuld.Syntax
 
-  alias Skuld.Effects.NonBlockingAsync
-  alias Skuld.Effects.NonBlockingAsync.Scheduler.Server
+  alias Skuld.Effects.Async
+  alias Skuld.Effects.Async.Scheduler.Server
   alias Skuld.Effects.Throw
 
   describe "start_link/1" do
@@ -267,10 +267,10 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
       # The boundary's on_unawaited callback signals completion
       comp =
         comp do
-          NonBlockingAsync.boundary(
+          Async.boundary(
             comp do
               h <-
-                NonBlockingAsync.async(
+                Async.async(
                   comp do
                     # Use if to suppress "never matches" warning
                     _ = if true, do: raise("boom"), else: :ok
@@ -278,7 +278,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
                   end
                 )
 
-              r <- NonBlockingAsync.await(h)
+              r <- Async.await(h)
               _ = send(test_pid, {:completed, :error_test, r})
               r
             end,
@@ -289,7 +289,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
             end
           )
         end
-        |> NonBlockingAsync.with_handler()
+        |> Async.with_handler()
         |> Throw.with_handler()
 
       # Capture expected error log from :log_and_continue behavior
@@ -378,22 +378,22 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
   # Create a computation that notifies on completion
   defp make_notifying_comp(test_pid, name, result) do
     comp do
-      NonBlockingAsync.boundary(
+      Async.boundary(
         comp do
           h <-
-            NonBlockingAsync.async(
+            Async.async(
               comp do
                 result
               end
             )
 
-          r <- NonBlockingAsync.await(h)
+          r <- Async.await(h)
           _ = send(test_pid, {:completed, name, r})
           r
         end
       )
     end
-    |> NonBlockingAsync.with_handler()
+    |> Async.with_handler()
     |> Throw.with_handler()
   end
 
@@ -401,10 +401,10 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
   # Also notifies on completion
   defp make_signaled_comp(test_pid, signal_name, result) do
     comp do
-      NonBlockingAsync.boundary(
+      Async.boundary(
         comp do
           h <-
-            NonBlockingAsync.async(
+            Async.async(
               comp do
                 # Signal that we're ready and send our pid for signaling back
                 _ = send(test_pid, {:ready, signal_name})
@@ -420,13 +420,13 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
               end
             )
 
-          r <- NonBlockingAsync.await(h)
+          r <- Async.await(h)
           _ = send(test_pid, {:completed, signal_name, r})
           r
         end
       )
     end
-    |> NonBlockingAsync.with_handler()
+    |> Async.with_handler()
     |> Throw.with_handler()
   end
 end

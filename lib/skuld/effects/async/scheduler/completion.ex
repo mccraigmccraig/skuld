@@ -1,4 +1,4 @@
-defmodule Skuld.Effects.NonBlockingAsync.Scheduler.Completion do
+defmodule Skuld.Effects.Async.Scheduler.Completion do
   @moduledoc """
   Normalize completion messages from various sources to a common format.
 
@@ -49,7 +49,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.Completion do
   alias Skuld.Comp.Cancelled
   alias Skuld.Comp.Suspend
   alias Skuld.Comp.Throw
-  alias Skuld.Effects.NonBlockingAsync.AwaitRequest
+  alias Skuld.Effects.Async.AwaitRequest
 
   @type target_key :: AwaitRequest.target_key()
   @type result :: {:ok, term()} | {:error, term()}

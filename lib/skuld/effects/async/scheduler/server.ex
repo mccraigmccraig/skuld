@@ -1,4 +1,4 @@
-defmodule Skuld.Effects.NonBlockingAsync.Scheduler.Server do
+defmodule Skuld.Effects.Async.Scheduler.Server do
   @moduledoc """
   GenServer wrapper for the cooperative scheduler.
 
@@ -54,8 +54,8 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.Server do
 
   require Logger
 
-  alias Skuld.Effects.NonBlockingAsync.Scheduler
-  alias Skuld.Effects.NonBlockingAsync.Scheduler.State
+  alias Skuld.Effects.Async.Scheduler
+  alias Skuld.Effects.Async.Scheduler.State
 
   @type server :: GenServer.server()
   @type tag :: reference() | term()

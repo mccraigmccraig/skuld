@@ -1,8 +1,8 @@
-defmodule Skuld.Effects.NonBlockingAsync.AwaitSuspendTest do
+defmodule Skuld.Effects.Async.AwaitSuspendTest do
   use ExUnit.Case, async: true
 
-  alias Skuld.Effects.NonBlockingAsync.AwaitSuspend
-  alias Skuld.Effects.NonBlockingAsync.AwaitRequest
+  alias Skuld.Effects.Async.AwaitSuspend
+  alias Skuld.Effects.Async.AwaitRequest
   alias AwaitRequest.TaskTarget
   alias AwaitRequest.TimerTarget
   alias Skuld.Comp.ISentinel

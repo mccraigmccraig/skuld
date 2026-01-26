@@ -1,8 +1,8 @@
-defmodule Skuld.Effects.NonBlockingAsync.Scheduler.StateTest do
+defmodule Skuld.Effects.Async.Scheduler.StateTest do
   use ExUnit.Case, async: true
 
-  alias Skuld.Effects.NonBlockingAsync.Scheduler.State
-  alias Skuld.Effects.NonBlockingAsync.AwaitRequest
+  alias Skuld.Effects.Async.Scheduler.State
+  alias Skuld.Effects.Async.AwaitRequest
   alias AwaitRequest.TaskTarget
   alias AwaitRequest.TimerTarget
 

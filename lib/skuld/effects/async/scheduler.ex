@@ -1,6 +1,6 @@
-defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
+defmodule Skuld.Effects.Async.Scheduler do
   @moduledoc """
-  Cooperative scheduler for running multiple NonBlockingAsync computations.
+  Cooperative scheduler for running multiple Async computations.
 
   The scheduler runs computations until they yield `%AwaitSuspend{}`,
   tracks their await requests, and resumes them when completions arrive.
@@ -8,10 +8,10 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
   ## Single Computation
 
       comp do
-        h <- NonBlockingAsync.async(work())
-        NonBlockingAsync.await(h)
+        h <- Async.async(work())
+        Async.await(h)
       end
-      |> NonBlockingAsync.with_handler()
+      |> Async.with_handler()
       |> Scheduler.run_one()
 
   ## Multiple Computations
@@ -47,8 +47,8 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.Suspend
-  alias Skuld.Effects.NonBlockingAsync.AwaitRequest.TimerTarget
-  alias Skuld.Effects.NonBlockingAsync.AwaitSuspend
+  alias Skuld.Effects.Async.AwaitRequest.TimerTarget
+  alias Skuld.Effects.Async.AwaitSuspend
 
   @type computation :: Comp.Types.computation()
   @type result :: {:done, [term()]} | {:suspended, Suspend.t(), State.t()} | {:error, term()}
@@ -831,10 +831,10 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
   ## Fiber Helpers
   #############################################################################
 
-  @pending_fibers_key {Skuld.Effects.NonBlockingAsync, :pending_fibers}
+  @pending_fibers_key {Skuld.Effects.Async, :pending_fibers}
 
   # Extract pending fibers from env and add them to the scheduler state.
-  # The fibers are stored in env state by the NonBlockingAsync.fiber/1 handler.
+  # The fibers are stored in env state by the Async.fiber/1 handler.
   # Returns the updated state with fibers added to run queue.
   defp extract_and_enqueue_fibers(state, nil), do: state
 

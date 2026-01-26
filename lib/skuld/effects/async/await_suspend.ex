@@ -1,4 +1,4 @@
-defmodule Skuld.Effects.NonBlockingAsync.AwaitSuspend do
+defmodule Skuld.Effects.Async.AwaitSuspend do
   @moduledoc """
   Sentinel indicating computation is awaiting async completions.
 
@@ -23,7 +23,7 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitSuspend do
       }
   """
 
-  alias Skuld.Effects.NonBlockingAsync.AwaitRequest
+  alias Skuld.Effects.Async.AwaitRequest
 
   defstruct [:request, :resume]
 
@@ -41,19 +41,19 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitSuspend do
       transform.(await_suspend, env)
     end
 
-    def run!(%Skuld.Effects.NonBlockingAsync.AwaitSuspend{}) do
+    def run!(%Skuld.Effects.Async.AwaitSuspend{}) do
       raise "Computation suspended on await - use Scheduler to run cooperative computations"
     end
 
     def sentinel?(_), do: true
 
-    def get_resume(%Skuld.Effects.NonBlockingAsync.AwaitSuspend{resume: resume}), do: resume
+    def get_resume(%Skuld.Effects.Async.AwaitSuspend{resume: resume}), do: resume
 
     def with_resume(await_suspend, new_resume) do
-      %Skuld.Effects.NonBlockingAsync.AwaitSuspend{await_suspend | resume: new_resume}
+      %Skuld.Effects.Async.AwaitSuspend{await_suspend | resume: new_resume}
     end
 
-    def serializable_payload(%Skuld.Effects.NonBlockingAsync.AwaitSuspend{request: request}) do
+    def serializable_payload(%Skuld.Effects.Async.AwaitSuspend{request: request}) do
       # Serialize the request info without the resume function
       %{
         await_request: %{
@@ -65,10 +65,10 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitSuspend do
       }
     end
 
-    defp target_type(%Skuld.Effects.NonBlockingAsync.AwaitRequest.TaskTarget{}), do: :task
-    defp target_type(%Skuld.Effects.NonBlockingAsync.AwaitRequest.TimerTarget{}), do: :timer
+    defp target_type(%Skuld.Effects.Async.AwaitRequest.TaskTarget{}), do: :task
+    defp target_type(%Skuld.Effects.Async.AwaitRequest.TimerTarget{}), do: :timer
 
-    defp target_type(%Skuld.Effects.NonBlockingAsync.AwaitRequest.ComputationTarget{}),
+    defp target_type(%Skuld.Effects.Async.AwaitRequest.ComputationTarget{}),
       do: :computation
   end
 end
