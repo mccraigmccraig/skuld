@@ -17,17 +17,25 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest do
 
       # Race a task against a timeout
       request = AwaitRequest.new([TaskTarget.new(task), TimerTarget.new(5000)], :any)
+
+      # Wait for a fiber
+      request = AwaitRequest.new([FiberTarget.new(fiber_id)], :all)
   """
 
   alias __MODULE__.TaskTarget
   alias __MODULE__.TimerTarget
   alias __MODULE__.ComputationTarget
+  alias __MODULE__.FiberTarget
 
   defstruct [:id, :targets, :mode]
 
   @type mode :: :all | :any
-  @type target :: TaskTarget.t() | TimerTarget.t() | ComputationTarget.t()
-  @type target_key :: {:task, reference()} | {:timer, reference()} | {:computation, reference()}
+  @type target :: TaskTarget.t() | TimerTarget.t() | ComputationTarget.t() | FiberTarget.t()
+  @type target_key ::
+          {:task, reference()}
+          | {:timer, reference()}
+          | {:computation, reference()}
+          | {:fiber, reference()}
 
   @type t :: %__MODULE__{
           id: reference(),
@@ -213,5 +221,29 @@ defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest.ComputationTarget do
   defimpl Skuld.Effects.NonBlockingAsync.AwaitRequest.Target do
     # Use tag (not ref) because AsyncComputation messages are {AsyncComputation, tag, result}
     def key(%{runner: %{tag: tag}}), do: {:computation, tag}
+  end
+end
+
+defmodule Skuld.Effects.NonBlockingAsync.AwaitRequest.FiberTarget do
+  @moduledoc """
+  Target for awaiting a cooperative fiber.
+
+  Fibers are computations that run cooperatively in the scheduler process.
+  Unlike Tasks which run in separate Erlang processes, fibers share
+  the scheduler's process and yield explicitly.
+
+  The scheduler checks `fiber_results` to determine if a fiber has completed.
+  """
+
+  defstruct [:fiber_id]
+
+  @type t :: %__MODULE__{fiber_id: reference()}
+
+  @doc "Create a FiberTarget from a fiber ID reference."
+  @spec new(reference()) :: t()
+  def new(fiber_id) when is_reference(fiber_id), do: %__MODULE__{fiber_id: fiber_id}
+
+  defimpl Skuld.Effects.NonBlockingAsync.AwaitRequest.Target do
+    def key(%{fiber_id: fiber_id}), do: {:fiber, fiber_id}
   end
 end

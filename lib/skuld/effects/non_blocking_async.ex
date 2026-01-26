@@ -102,14 +102,14 @@ defmodule Skuld.Effects.NonBlockingAsync do
   def_op(Boundary, [:comp, :on_unawaited])
 
   #############################################################################
-  ## Handle Structure
+  ## Handle Structures
   #############################################################################
 
-  defmodule Handle do
+  defmodule TaskHandle do
     @moduledoc """
-    Opaque handle for an async computation.
+    Handle for a parallel Task spawned via `async/1`.
 
-    Contains the boundary it belongs to and the underlying task.
+    Contains the boundary it belongs to and the underlying Erlang Task.
     """
     @type t :: %__MODULE__{
             boundary_id: reference(),
@@ -117,6 +117,23 @@ defmodule Skuld.Effects.NonBlockingAsync do
           }
     defstruct [:boundary_id, :task]
   end
+
+  defmodule FiberHandle do
+    @moduledoc """
+    Handle for a cooperative fiber spawned via `fiber/1`.
+
+    Contains the boundary it belongs to and a unique fiber ID.
+    Fibers run cooperatively in the scheduler process, not as separate Erlang processes.
+    """
+    @type t :: %__MODULE__{
+            boundary_id: reference(),
+            fiber_id: reference()
+          }
+    defstruct [:boundary_id, :fiber_id]
+  end
+
+  # Union type for handles - either a TaskHandle or FiberHandle
+  @type handle :: TaskHandle.t() | FiberHandle.t()
 
   #############################################################################
   ## Public Operations
@@ -155,8 +172,12 @@ defmodule Skuld.Effects.NonBlockingAsync do
       handle <- NonBlockingAsync.async(work())
       result <- NonBlockingAsync.await(handle)
   """
-  @spec await(Handle.t()) :: Types.computation()
-  def await(%Handle{} = handle) do
+  @spec await(TaskHandle.t() | FiberHandle.t()) :: Types.computation()
+  def await(%TaskHandle{} = handle) do
+    Comp.effect(@sig, %AwaitOp{handle: handle})
+  end
+
+  def await(%FiberHandle{} = handle) do
     Comp.effect(@sig, %AwaitOp{handle: handle})
   end
 
@@ -171,7 +192,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
       h2 <- NonBlockingAsync.async(work2())
       [r1, r2] <- NonBlockingAsync.await_all([h1, h2])
   """
-  @spec await_all([Handle.t()]) :: Types.computation()
+  @spec await_all([TaskHandle.t() | FiberHandle.t()]) :: Types.computation()
   def await_all(handles) when is_list(handles) do
     Comp.effect(@sig, %AwaitAll{handles: handles})
   end
@@ -191,7 +212,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
       loser = if winner == h1, do: h2, else: h1
       _ <- NonBlockingAsync.cancel(loser)
   """
-  @spec await_any([Handle.t()]) :: Types.computation()
+  @spec await_any([TaskHandle.t() | FiberHandle.t()]) :: Types.computation()
   def await_any(handles) when is_list(handles) do
     Comp.effect(@sig, %AwaitAny{handles: handles})
   end
@@ -241,8 +262,12 @@ defmodule Skuld.Effects.NonBlockingAsync do
         result
       end)
   """
-  @spec cancel(Handle.t()) :: Types.computation()
-  def cancel(%Handle{} = handle) do
+  @spec cancel(TaskHandle.t() | FiberHandle.t()) :: Types.computation()
+  def cancel(%TaskHandle{} = handle) do
+    Comp.effect(@sig, %Cancel{handle: handle})
+  end
+
+  def cancel(%FiberHandle{} = handle) do
     Comp.effect(@sig, %Cancel{handle: handle})
   end
 
@@ -279,7 +304,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
         end
       )
   """
-  @spec boundary(Types.computation(), (term(), list(Handle.t()) -> term()) | nil) ::
+  @spec boundary(Types.computation(), (term(), list(handle()) -> term()) | nil) ::
           Types.computation()
   def boundary(comp, on_unawaited \\ nil) do
     on_unawaited =
@@ -391,11 +416,18 @@ defmodule Skuld.Effects.NonBlockingAsync do
           prev_boundary = Env.get_state(env_after, {@sig, :boundary_previous, boundary_id})
 
           # Kill all unawaited tasks (non-negotiable)
+          # Note: Only TaskHandles have actual tasks to kill. FiberHandles are cooperative
+          # and don't need termination since they run in the same process.
           sup = Env.get_state(env_after, @supervisor_key)
 
           if sup do
-            Enum.each(unawaited_handles, fn %Handle{task: task} ->
-              Task.Supervisor.terminate_child(sup, task.pid)
+            Enum.each(unawaited_handles, fn
+              %TaskHandle{task: task} ->
+                Task.Supervisor.terminate_child(sup, task.pid)
+
+              %FiberHandle{} ->
+                # Fibers don't need termination - they're in-process
+                :ok
             end)
           end
 
@@ -458,7 +490,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
         end)
 
       # Create handle and track it
-      handle = %Handle{boundary_id: current_boundary, task: task}
+      handle = %TaskHandle{boundary_id: current_boundary, task: task}
 
       boundaries = Env.get_state(env, @boundaries_key)
       boundary_tasks = Map.get(boundaries, current_boundary, MapSet.new())
@@ -471,7 +503,11 @@ defmodule Skuld.Effects.NonBlockingAsync do
     end
   end
 
-  def handle(%AwaitOp{handle: %Handle{boundary_id: handle_boundary, task: task} = handle}, env, k) do
+  def handle(
+        %AwaitOp{handle: %TaskHandle{boundary_id: handle_boundary, task: task} = handle},
+        env,
+        k
+      ) do
     current_boundary = Env.get_state(env, @current_boundary_key)
 
     if handle_boundary != current_boundary do
@@ -513,10 +549,11 @@ defmodule Skuld.Effects.NonBlockingAsync do
   def handle(%AwaitAll{handles: handles}, env, k) do
     current_boundary = Env.get_state(env, @current_boundary_key)
 
-    # Verify all handles are from current boundary
+    # Verify all handles are from current boundary (TaskHandles only for now)
     invalid =
-      Enum.find(handles, fn %Handle{boundary_id: bid} ->
-        bid != current_boundary
+      Enum.find(handles, fn
+        %TaskHandle{boundary_id: bid} -> bid != current_boundary
+        %FiberHandle{boundary_id: bid} -> bid != current_boundary
       end)
 
     if invalid do
@@ -540,7 +577,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
           # Some pending - yield to scheduler for ONLY the pending handles
           # (ready handles' messages were already consumed by check_ready)
           pending_targets =
-            Enum.map(pending_handles, fn %Handle{task: task} -> TaskTarget.new(task) end)
+            Enum.map(pending_handles, fn %TaskHandle{task: task} -> TaskTarget.new(task) end)
 
           request = AwaitRequest.new(pending_targets, :all)
 
@@ -553,13 +590,13 @@ defmodule Skuld.Effects.NonBlockingAsync do
             pending_results_map =
               pending_handles
               |> Enum.zip(pending_results)
-              |> Enum.map(fn {%Handle{task: task}, result} -> {task.ref, result} end)
+              |> Enum.map(fn {%TaskHandle{task: task}, result} -> {task.ref, result} end)
               |> Map.new()
 
             # Merge ready_results (from check_ready) with pending_results (from scheduler)
             # Return in original handle order
             all_results =
-              Enum.map(handles, fn %Handle{task: task} = handle ->
+              Enum.map(handles, fn %TaskHandle{task: task} = handle ->
                 case Map.get(ready_results, handle) do
                   nil -> Map.fetch!(pending_results_map, task.ref)
                   result -> result
@@ -580,8 +617,9 @@ defmodule Skuld.Effects.NonBlockingAsync do
 
     # Verify all handles are from current boundary
     invalid =
-      Enum.find(handles, fn %Handle{boundary_id: bid} ->
-        bid != current_boundary
+      Enum.find(handles, fn
+        %TaskHandle{boundary_id: bid} -> bid != current_boundary
+        %FiberHandle{boundary_id: bid} -> bid != current_boundary
       end)
 
     if invalid do
@@ -600,7 +638,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
 
         :none_ready ->
           # None ready - yield to scheduler
-          targets = Enum.map(handles, fn %Handle{task: task} -> TaskTarget.new(task) end)
+          targets = Enum.map(handles, fn %TaskHandle{task: task} -> TaskTarget.new(task) end)
           request = AwaitRequest.new(targets, :any)
 
           await_comp = Await.await(request)
@@ -631,7 +669,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
   end
 
   def handle(
-        %Cancel{handle: %Handle{boundary_id: handle_boundary, task: task} = handle},
+        %Cancel{handle: %TaskHandle{boundary_id: handle_boundary, task: task} = handle},
         env,
         k
       ) do
@@ -657,24 +695,34 @@ defmodule Skuld.Effects.NonBlockingAsync do
   ## Helpers
   #############################################################################
 
-  defp untrack_handle(env, %Handle{boundary_id: boundary_id} = handle) do
+  defp untrack_handle(env, handle) do
+    boundary_id = get_boundary_id(handle)
     boundaries = Env.get_state(env, @boundaries_key)
     boundary_tasks = Map.get(boundaries, boundary_id, MapSet.new())
     updated_tasks = MapSet.delete(boundary_tasks, handle)
     Env.put_state(env, @boundaries_key, Map.put(boundaries, boundary_id, updated_tasks))
   end
 
+  defp get_boundary_id(%TaskHandle{boundary_id: bid}), do: bid
+  defp get_boundary_id(%FiberHandle{boundary_id: bid}), do: bid
+
   # Check which handles have result messages already available.
   # Uses peek_task_result to avoid race condition with DOWN messages.
+  # Note: Currently only works for TaskHandles. FiberHandle support will be added later.
   defp check_ready(handles) do
-    Enum.reduce(handles, {%{}, []}, fn %Handle{task: task} = handle, {ready, pending} ->
-      case peek_task_result(task) do
-        {:ok, value} ->
-          {Map.put(ready, handle, {:ok, value}), pending}
+    Enum.reduce(handles, {%{}, []}, fn
+      %TaskHandle{task: task} = handle, {ready, pending} ->
+        case peek_task_result(task) do
+          {:ok, value} ->
+            {Map.put(ready, handle, {:ok, value}), pending}
 
-        :not_ready ->
-          {ready, [handle | pending]}
-      end
+          :not_ready ->
+            {ready, [handle | pending]}
+        end
+
+      %FiberHandle{} = handle, {ready, pending} ->
+        # FiberHandles are always pending - scheduler checks fiber_results
+        {ready, [handle | pending]}
     end)
     |> then(fn {ready, pending} -> {ready, Enum.reverse(pending)} end)
   end
@@ -705,15 +753,21 @@ defmodule Skuld.Effects.NonBlockingAsync do
 
   # Find first ready handle (has result message available).
   # Uses peek_task_result to avoid race condition with DOWN messages.
+  # Note: Currently only works for TaskHandles. FiberHandle support will be added later.
   defp find_ready(handles) do
-    Enum.find_value(handles, :none_ready, fn %Handle{task: task} = handle ->
-      case peek_task_result(task) do
-        {:ok, value} ->
-          {:ready, handle, {:ok, value}}
+    Enum.find_value(handles, :none_ready, fn
+      %TaskHandle{task: task} = handle ->
+        case peek_task_result(task) do
+          {:ok, value} ->
+            {:ready, handle, {:ok, value}}
 
-        :not_ready ->
-          nil
-      end
+          :not_ready ->
+            nil
+        end
+
+      %FiberHandle{} ->
+        # FiberHandles are always pending - scheduler checks fiber_results
+        nil
     end)
   end
 
@@ -732,10 +786,18 @@ defmodule Skuld.Effects.NonBlockingAsync do
     end
   end
 
-  # Find handle by target key (task ref)
+  # Find handle by target key (task ref or fiber id)
   defp find_handle_by_target_key(handles, {:task, ref}) do
-    Enum.find(handles, fn %Handle{task: %Task{ref: task_ref}} ->
-      task_ref == ref
+    Enum.find(handles, fn
+      %TaskHandle{task: %Task{ref: task_ref}} -> task_ref == ref
+      %FiberHandle{} -> false
+    end)
+  end
+
+  defp find_handle_by_target_key(handles, {:fiber, fiber_id}) do
+    Enum.find(handles, fn
+      %FiberHandle{fiber_id: fid} -> fid == fiber_id
+      %TaskHandle{} -> false
     end)
   end
 end
