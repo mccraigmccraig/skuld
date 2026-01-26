@@ -160,12 +160,19 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
             # Extract any fibers spawned
             state = extract_and_enqueue_fibers(state, env)
 
-            # Check if this is our computation (via the pending marker)
+            # Check if this is our computation (via the pending marker) or a fiber
             state =
               case Map.get(state.completed, request_id) do
                 {:pending, ^tag} ->
                   # This is our computation - store the actual result
                   %{state | completed: Map.put(state.completed, tag, result)}
+
+                {:fiber_tag, fiber_id} ->
+                  # This was a fiber - record fiber result to wake waiters
+                  case State.record_fiber_result(state, fiber_id, {:ok, result}) do
+                    {:woke, _wake_request_id, _wake_result, state} -> state
+                    {:waiting, state} -> state
+                  end
 
                 _ ->
                   State.record_completed(state, request_id, result)
@@ -442,12 +449,25 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
         run_fiber(state, fiber_id)
 
       {:ok, {request_id, resume, results}, state} ->
-        # Run the resumed computation
         case run_resume(resume, results) do
           {:done, result, env} ->
-            # Computation finished - extract fibers, resolve tag, store result
+            # Extract any fibers spawned
             state = extract_and_enqueue_fibers(state, env)
-            state = record_with_tag_resolution(state, request_id, result)
+
+            # Check if this was a fiber - if so, record fiber result to wake waiters
+            state =
+              case Map.get(state.completed, request_id) do
+                {:fiber_tag, fiber_id} ->
+                  # This was a fiber - record fiber result to wake waiters
+                  case State.record_fiber_result(state, fiber_id, {:ok, result}) do
+                    {:woke, _wake_request_id, _wake_result, state} -> state
+                    {:waiting, state} -> state
+                  end
+
+                _ ->
+                  record_with_tag_resolution(state, request_id, result)
+              end
+
             {:continue, state}
 
           {:await_suspend, %AwaitSuspend{request: request, resume: new_resume}, env} ->
@@ -823,8 +843,17 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
 
     # Add each fiber to the scheduler
     # Fibers are stored as {fiber_id, comp, boundary_id}
+    # Skip fibers that have already been added or completed (can happen when
+    # a resumed computation's env still has the fiber in pending_fibers)
     Enum.reduce(pending, state, fn {fiber_id, comp, boundary_id}, acc ->
-      State.add_fiber(acc, fiber_id, comp, boundary_id, env)
+      cond do
+        # Already running/pending - skip
+        Map.has_key?(acc.fibers, fiber_id) -> acc
+        # Already completed - skip
+        Map.has_key?(acc.fiber_results, fiber_id) -> acc
+        # New fiber - add it
+        true -> State.add_fiber(acc, fiber_id, comp, boundary_id, env)
+      end
     end)
   end
 

@@ -500,4 +500,497 @@ defmodule Skuld.Effects.NonBlockingAsyncTest do
       assert result == {:done, :instant}
     end
   end
+
+  #############################################################################
+  ## Fiber Tests - Cooperative Scheduling
+  #############################################################################
+
+  describe "basic fiber" do
+    test "single fiber can be spawned and awaited" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    42
+                  end
+                )
+
+              NonBlockingAsync.await(h)
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, 42}
+    end
+
+    test "fiber returns FiberHandle" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :fiber_result
+                  end
+                )
+
+              # Verify it's a FiberHandle, not a TaskHandle
+              is_fiber = match?(%NonBlockingAsync.FiberHandle{}, h)
+              r <- NonBlockingAsync.await(h)
+              {is_fiber, r}
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {true, :fiber_result}}
+    end
+
+    test "fiber outside boundary returns error" do
+      result =
+        comp do
+          NonBlockingAsync.fiber(
+            comp do
+              :work
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:error, {:throw, {:error, :fiber_outside_boundary}}}
+    end
+  end
+
+  describe "multiple fibers" do
+    test "multiple fibers can be spawned and awaited" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h1 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :a
+                  end
+                )
+
+              h2 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :b
+                  end
+                )
+
+              h3 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :c
+                  end
+                )
+
+              r1 <- NonBlockingAsync.await(h1)
+              r2 <- NonBlockingAsync.await(h2)
+              r3 <- NonBlockingAsync.await(h3)
+
+              {r1, r2, r3}
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:a, :b, :c}}
+    end
+
+    test "fibers run cooperatively in single process" do
+      # Verify fibers run in the scheduler process, not separate processes
+      scheduler_pid = self()
+
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    # Fiber runs in scheduler process
+                    self() == scheduler_pid
+                  end
+                )
+
+              NonBlockingAsync.await(h)
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, true}
+    end
+  end
+
+  describe "mixed fiber and task" do
+    test "fiber and async task can be mixed" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h_fiber <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :fiber_result
+                  end
+                )
+
+              h_task <-
+                NonBlockingAsync.async(
+                  comp do
+                    :task_result
+                  end
+                )
+
+              r1 <- NonBlockingAsync.await(h_fiber)
+              r2 <- NonBlockingAsync.await(h_task)
+              {r1, r2}
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:fiber_result, :task_result}}
+    end
+
+    test "task runs in separate process, fiber runs in scheduler" do
+      scheduler_pid = self()
+
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h_fiber <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    self()
+                  end
+                )
+
+              h_task <-
+                NonBlockingAsync.async(
+                  comp do
+                    self()
+                  end
+                )
+
+              fiber_pid <- NonBlockingAsync.await(h_fiber)
+              task_pid <- NonBlockingAsync.await(h_task)
+
+              {fiber_pid == scheduler_pid, task_pid != scheduler_pid}
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {true, true}}
+    end
+  end
+
+  describe "fiber await_all" do
+    test "await_all works with fibers" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h1 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :first
+                  end
+                )
+
+              h2 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :second
+                  end
+                )
+
+              h3 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :third
+                  end
+                )
+
+              NonBlockingAsync.await_all([h1, h2, h3])
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, [:first, :second, :third]}
+    end
+
+    test "await_all works with mixed fibers and tasks" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h1 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :fiber
+                  end
+                )
+
+              h2 <-
+                NonBlockingAsync.async(
+                  comp do
+                    :task
+                  end
+                )
+
+              NonBlockingAsync.await_all([h1, h2])
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, [:fiber, :task]}
+    end
+  end
+
+  describe "fiber await_any" do
+    test "await_any works with fibers" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h1 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :first_fiber
+                  end
+                )
+
+              h2 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :second_fiber
+                  end
+                )
+
+              {winner, value} <- NonBlockingAsync.await_any([h1, h2])
+              # Cancel the loser
+              loser = if winner == h1, do: h2, else: h1
+              _ <- NonBlockingAsync.cancel(loser)
+              value
+            end,
+            fn result, _unawaited -> result end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      # One of the fibers should win
+      assert result == {:done, :first_fiber} or result == {:done, :second_fiber}
+    end
+  end
+
+  describe "nested fibers" do
+    test "fiber can spawn another fiber" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h1 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    h2 <-
+                      NonBlockingAsync.fiber(
+                        comp do
+                          :inner
+                        end
+                      )
+
+                    inner_result <- NonBlockingAsync.await(h2)
+                    {:outer, inner_result}
+                  end
+                )
+
+              NonBlockingAsync.await(h1)
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:outer, :inner}}
+    end
+
+    test "deeply nested fibers work" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    h2 <-
+                      NonBlockingAsync.fiber(
+                        comp do
+                          h3 <-
+                            NonBlockingAsync.fiber(
+                              comp do
+                                :deep
+                              end
+                            )
+
+                          NonBlockingAsync.await(h3)
+                        end
+                      )
+
+                    NonBlockingAsync.await(h2)
+                  end
+                )
+
+              NonBlockingAsync.await(h)
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, :deep}
+    end
+  end
+
+  describe "fiber cancel" do
+    test "cancel removes fiber from unawaited set" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :will_be_cancelled
+                  end
+                )
+
+              _ <- NonBlockingAsync.cancel(h)
+              :done
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      # No unawaited error because we cancelled
+      assert result == {:done, :done}
+    end
+
+    test "cancel fiber returns :ok" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :work
+                  end
+                )
+
+              cancel_result <- NonBlockingAsync.cancel(h)
+              cancel_result
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, :ok}
+    end
+  end
+
+  describe "fiber boundary enforcement" do
+    test "unawaited fibers throw by default" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              _ <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :unawaited_fiber
+                  end
+                )
+
+              :done
+            end
+          )
+        catch
+          {Throw, err} -> {:caught, err}
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:caught, {:unawaited_tasks, 1}}}
+    end
+
+    test "await fiber across boundary returns error" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :outer_fiber
+                  end
+                )
+
+              NonBlockingAsync.boundary(
+                comp do
+                  # Try to await outer fiber from inner boundary
+                  NonBlockingAsync.await(h)
+                end
+              )
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:error, {:throw, {:error, :await_across_boundary}}}
+    end
+  end
 end
