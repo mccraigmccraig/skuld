@@ -1198,30 +1198,33 @@ defmodule Skuld.Effects.AsyncTest do
     end
 
     test "returns {:error, :timeout} when timeout fires first" do
-      result =
-        comp do
-          Async.boundary(
-            comp do
-              h <-
-                Async.async(
-                  comp do
-                    # Sleep longer than timeout
-                    _ = Process.sleep(1000)
-                    :slow_result
-                  end
-                )
+      # Capture the expected error log when the slow task gets killed
+      capture_log(fn ->
+        result =
+          comp do
+            Async.boundary(
+              comp do
+                h <-
+                  Async.async(
+                    comp do
+                      # Sleep longer than timeout
+                      _ = Process.sleep(1000)
+                      :slow_result
+                    end
+                  )
 
-              Async.await_with_timeout(h, 10)
-            end,
-            # Don't throw on unawaited - the task will be killed
-            fn result, _unawaited -> result end
-          )
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Scheduler.run_one()
+                Async.await_with_timeout(h, 10)
+              end,
+              # Don't throw on unawaited - the task will be killed
+              fn result, _unawaited -> result end
+            )
+          end
+          |> Async.with_handler()
+          |> Throw.with_handler()
+          |> Scheduler.run_one()
 
-      assert result == {:done, {:error, :timeout}}
+        assert result == {:done, {:error, :timeout}}
+      end)
     end
 
     test "works with fiber handle" do
@@ -1290,30 +1293,33 @@ defmodule Skuld.Effects.AsyncTest do
     end
 
     test "returns {:error, :timeout} when computation exceeds timeout" do
-      result =
-        comp do
-          Async.timeout(
-            10,
-            comp do
-              # This runs as a fiber, so we need to yield to let timer fire
-              # Use an async task that sleeps
-              h <-
-                Async.async(
-                  comp do
-                    _ = Process.sleep(1000)
-                    :too_slow
-                  end
-                )
+      # Capture the expected error log when the slow task gets killed
+      capture_log(fn ->
+        result =
+          comp do
+            Async.timeout(
+              10,
+              comp do
+                # This runs as a fiber, so we need to yield to let timer fire
+                # Use an async task that sleeps
+                h <-
+                  Async.async(
+                    comp do
+                      _ = Process.sleep(1000)
+                      :too_slow
+                    end
+                  )
 
-              Async.await(h)
-            end
-          )
-        end
-        |> Async.with_handler()
-        |> Throw.with_handler()
-        |> Scheduler.run_one()
+                Async.await(h)
+              end
+            )
+          end
+          |> Async.with_handler()
+          |> Throw.with_handler()
+          |> Scheduler.run_one()
 
-      assert result == {:done, {:error, :timeout}}
+        assert result == {:done, {:error, :timeout}}
+      end)
     end
 
     test "can be used with with_sequential_handler" do
