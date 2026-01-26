@@ -31,6 +31,9 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
     :run_queue,
     :completed,
     :early_completions,
+    # Fiber support
+    :fibers,
+    :fiber_results,
     :opts
   ]
 
@@ -46,12 +49,21 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
 
   @type ready_item :: {reference(), term()}
 
+  @type fiber_info :: %{
+          comp: Skuld.Comp.Types.computation(),
+          boundary_id: reference(),
+          env: Skuld.Comp.Env.t()
+        }
+
   @type t :: %__MODULE__{
           suspended: %{reference() => suspension_info()},
           waiting_for: %{target_key() => reference()},
           run_queue: :queue.queue(ready_item()),
           completed: %{reference() => term()},
           early_completions: %{target_key() => result()},
+          # Fiber support
+          fibers: %{reference() => fiber_info()},
+          fiber_results: %{reference() => result()},
           opts: keyword()
         }
 
@@ -73,6 +85,8 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
       run_queue: :queue.new(),
       completed: %{},
       early_completions: %{},
+      fibers: %{},
+      fiber_results: %{},
       opts: opts
     }
   end
@@ -279,11 +293,13 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
   end
 
   @doc """
-  Check if any computations are still active (suspended or in run queue).
+  Check if any computations are still active (suspended, in run queue, or fibers running).
   """
   @spec active?(t()) :: boolean()
   def active?(state) do
-    map_size(state.suspended) > 0 or not :queue.is_empty(state.run_queue)
+    map_size(state.suspended) > 0 or
+      not :queue.is_empty(state.run_queue) or
+      map_size(state.fibers) > 0
   end
 
   @doc """
@@ -298,7 +314,83 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.State do
     %{
       suspended: map_size(state.suspended),
       ready: :queue.len(state.run_queue),
-      completed: map_size(state.completed)
+      completed: map_size(state.completed),
+      fibers: map_size(state.fibers),
+      fiber_results: map_size(state.fiber_results)
     }
+  end
+
+  #############################################################################
+  ## Fiber Management
+  #############################################################################
+
+  @doc """
+  Add a fiber to the scheduler.
+
+  The fiber is stored in the fibers map and added to the run queue.
+  The env is captured so the fiber can inherit the parent's environment.
+  """
+  @spec add_fiber(
+          t(),
+          reference(),
+          Skuld.Comp.Types.computation(),
+          reference(),
+          Skuld.Comp.Env.t()
+        ) ::
+          t()
+  def add_fiber(state, fiber_id, comp, boundary_id, env) do
+    fiber_info = %{
+      comp: comp,
+      boundary_id: boundary_id,
+      env: env
+    }
+
+    state
+    |> put_in([Access.key(:fibers), fiber_id], fiber_info)
+    |> update_in([Access.key(:run_queue)], &:queue.in({:fiber, fiber_id}, &1))
+  end
+
+  @doc """
+  Get a fiber by ID.
+  """
+  @spec get_fiber(t(), reference()) :: fiber_info() | nil
+  def get_fiber(state, fiber_id) do
+    Map.get(state.fibers, fiber_id)
+  end
+
+  @doc """
+  Remove a fiber from the fibers map (after it completes or is cancelled).
+  """
+  @spec remove_fiber(t(), reference()) :: t()
+  def remove_fiber(state, fiber_id) do
+    %{state | fibers: Map.delete(state.fibers, fiber_id)}
+  end
+
+  @doc """
+  Record a fiber's completion result.
+
+  Stores the result in fiber_results for waiters to retrieve.
+  Also triggers wake check for any computations waiting on this fiber.
+  """
+  @spec record_fiber_result(t(), reference(), result()) ::
+          {:woke, reference(), term(), t()} | {:waiting, t()}
+  def record_fiber_result(state, fiber_id, result) do
+    # Store the result
+    state = %{state | fiber_results: Map.put(state.fiber_results, fiber_id, result)}
+
+    # Remove from fibers map
+    state = remove_fiber(state, fiber_id)
+
+    # Check if anyone is waiting for this fiber via FiberTarget
+    target_key = {:fiber, fiber_id}
+    record_completion(state, target_key, result)
+  end
+
+  @doc """
+  Check if a fiber result is available.
+  """
+  @spec get_fiber_result(t(), reference()) :: result() | nil
+  def get_fiber_result(state, fiber_id) do
+    Map.get(state.fiber_results, fiber_id)
   end
 end

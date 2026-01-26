@@ -73,11 +73,22 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
     tag = make_ref()
 
     case run_until_suspend(comp) do
-      {:done, result} ->
-        {:done, result}
+      {:done, result, env} ->
+        # Extract any fibers and run them if needed
+        state = extract_and_enqueue_fibers(state, env)
 
-      %AwaitSuspend{request: request, resume: resume} ->
-        # Track and run loop
+        if State.active?(state) do
+          # Fibers were spawned - need to run them
+          state = %{state | completed: Map.put(state.completed, tag, result)}
+          run_one_loop(state, tag)
+        else
+          {:done, result}
+        end
+
+      {:await_suspend, %AwaitSuspend{request: request, resume: resume}, env} ->
+        # Extract fibers, track and run loop
+        state = extract_and_enqueue_fibers(state, env)
+
         case State.add_suspension(state, request.id, request, resume) do
           {:ready, state} ->
             # Early completions satisfied immediately - run the ready computation
@@ -91,7 +102,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
             run_one_loop(state, tag)
         end
 
-      %Suspend{resume: resume} = suspend ->
+      {:suspend, %Suspend{resume: resume} = suspend, _env} ->
         # External yield - return to caller with resume function
         resume_fn = fn value ->
           resumed_result = resume.(value)
@@ -101,7 +112,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
 
         {:suspended, suspend, resume_fn}
 
-      {:error, reason} ->
+      {:error, reason, _env} ->
         {:error, reason}
     end
   end
@@ -139,9 +150,16 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
           {:done, result}
         end
 
+      {:ok, {:fiber, fiber_id}, state} ->
+        # Run a fiber
+        run_fiber(state, fiber_id)
+
       {:ok, {request_id, resume, results}, state} ->
         case run_resume(resume, results) do
-          {:done, result} ->
+          {:done, result, env} ->
+            # Extract any fibers spawned
+            state = extract_and_enqueue_fibers(state, env)
+
             # Check if this is our computation (via the pending marker)
             state =
               case Map.get(state.completed, request_id) do
@@ -155,7 +173,10 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
 
             {:continue, state}
 
-          %AwaitSuspend{request: request, resume: new_resume} ->
+          {:await_suspend, %AwaitSuspend{request: request, resume: new_resume}, env} ->
+            # Extract any fibers spawned
+            state = extract_and_enqueue_fibers(state, env)
+
             {status, state} = State.add_suspension(state, request.id, request, new_resume)
 
             # Transfer tag association to new request
@@ -184,10 +205,12 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
                 {:continue, state}
             end
 
-          %Suspend{} = suspend ->
+          {:suspend, %Suspend{} = suspend, _env} ->
             {:suspended, suspend, state}
 
-          {:error, reason} ->
+          {:error, reason, env} ->
+            # Extract any fibers spawned before error
+            state = extract_and_enqueue_fibers(state, env)
             handle_computation_error(state, request_id, reason)
         end
     end
@@ -414,16 +437,22 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
           {:done, state}
         end
 
+      {:ok, {:fiber, fiber_id}, state} ->
+        # Run a fiber
+        run_fiber(state, fiber_id)
+
       {:ok, {request_id, resume, results}, state} ->
         # Run the resumed computation
         case run_resume(resume, results) do
-          {:done, result} ->
-            # Computation finished - resolve tag and store result
+          {:done, result, env} ->
+            # Computation finished - extract fibers, resolve tag, store result
+            state = extract_and_enqueue_fibers(state, env)
             state = record_with_tag_resolution(state, request_id, result)
             {:continue, state}
 
-          %AwaitSuspend{request: request, resume: new_resume} ->
-            # Suspended again on new await - transfer tag association
+          {:await_suspend, %AwaitSuspend{request: request, resume: new_resume}, env} ->
+            # Suspended again on new await - extract fibers, transfer tag association
+            state = extract_and_enqueue_fibers(state, env)
             state = transfer_tag_association(state, request_id, request.id)
 
             case State.add_suspension(state, request.id, request, new_resume) do
@@ -436,11 +465,13 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
                 {:continue, state}
             end
 
-          %Suspend{} = suspend ->
+          {:suspend, %Suspend{} = suspend, _env} ->
             # External yield - pause this computation
             {:suspended, suspend, state}
 
-          {:error, reason} ->
+          {:error, reason, env} ->
+            # Extract any fibers before handling error
+            state = extract_and_enqueue_fibers(state, env)
             handle_computation_error(state, request_id, reason)
         end
     end
@@ -456,6 +487,17 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
         |> update_in([Access.key(:completed)], &Map.delete(&1, request_id))
         |> put_in([Access.key(:completed), user_tag], result)
 
+      {:fiber_tag, fiber_id} ->
+        # This was a fiber - record the fiber result
+        state
+        |> update_in([Access.key(:completed)], &Map.delete(&1, request_id))
+        |> then(fn s ->
+          case State.record_fiber_result(s, fiber_id, {:ok, result}) do
+            {:woke, _req_id, _wake_result, new_state} -> new_state
+            {:waiting, new_state} -> new_state
+          end
+        end)
+
       _ ->
         # No tag association - store under request_id (used by run/2)
         State.record_completed(state, request_id, result)
@@ -469,6 +511,11 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
         state
         |> update_in([Access.key(:completed)], &Map.delete(&1, old_request_id))
         |> put_in([Access.key(:completed), new_request_id], {:tag, user_tag})
+
+      {:fiber_tag, fiber_id} ->
+        state
+        |> update_in([Access.key(:completed)], &Map.delete(&1, old_request_id))
+        |> put_in([Access.key(:completed), new_request_id], {:fiber_tag, fiber_id})
 
       _ ->
         state
@@ -510,12 +557,15 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
   # Returns {:ok, state} or {:error, reason} depending on :on_error option
   defp spawn_computation(state, comp, tag) do
     case run_until_suspend(comp) do
-      {:done, result} ->
-        # Completed immediately
+      {:done, result, env} ->
+        # Completed immediately - extract any fibers spawned
+        state = extract_and_enqueue_fibers(state, env)
         {:ok, State.record_completed(state, tag, result)}
 
-      %AwaitSuspend{request: request, resume: resume} ->
-        # Waiting on async
+      {:await_suspend, %AwaitSuspend{request: request, resume: resume}, env} ->
+        # Waiting on async - extract fibers then track suspension
+        state = extract_and_enqueue_fibers(state, env)
+
         case State.add_suspension(state, request.id, request, resume) do
           {:ready, state} ->
             # Early completions satisfied immediately
@@ -527,13 +577,15 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
             {:ok, start_timers(state, request)}
         end
 
-      %Suspend{} = _suspend ->
+      {:suspend, %Suspend{}, _env} ->
         # External yield on first run - record as pending external
         # This is a bit unusual - typically computations start with async work
         Logger.warning("Computation yielded externally on spawn - not fully supported yet")
         {:ok, State.record_completed(state, tag, {:error, :external_yield_on_spawn})}
 
-      {:error, reason} ->
+      {:error, reason, env} ->
+        # Extract any fibers that were spawned before the error
+        state = extract_and_enqueue_fibers(state, env)
         handle_spawn_error(state, tag, reason)
     end
   end
@@ -556,96 +608,125 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
     end
   end
 
-  # Run a computation until it returns a value or suspends
+  # Run a computation until it returns a value or suspends.
+  # Returns {status, result_or_suspend, env} to allow fiber extraction.
   defp run_until_suspend(comp) do
     env = Env.new()
+    run_until_suspend(comp, env)
+  end
 
+  # Run a computation with a given env until it returns a value or suspends.
+  # Used for running fibers which inherit their parent's env.
+  defp run_until_suspend(comp, env) do
     try do
-      case Comp.call(comp, env, fn v, _e -> {:done, v} end) do
-        {:done, result} ->
-          {:done, result}
+      case Comp.call(comp, env, fn v, e -> {:done, v, e} end) do
+        {:done, result, final_env} ->
+          {:done, result, final_env}
 
         # Suspensions return {suspend, env} tuple
-        {%AwaitSuspend{} = suspend, _env} ->
-          suspend
+        {%AwaitSuspend{} = suspend, suspend_env} ->
+          {:await_suspend, suspend, suspend_env}
 
-        {%Suspend{} = suspend, _env} ->
-          suspend
+        {%Suspend{} = suspend, suspend_env} ->
+          {:suspend, suspend, suspend_env}
 
         # Handle Throw sentinels
-        {%Comp.Throw{} = throw, _env} ->
-          {:error, {:throw, throw.error}}
+        {%Comp.Throw{} = throw, throw_env} ->
+          {:error, {:throw, throw.error}, throw_env}
 
         # Handle Cancelled sentinels
-        {%Comp.Cancelled{} = cancelled, _env} ->
-          {:error, {:cancelled, cancelled.reason}}
+        {%Comp.Cancelled{} = cancelled, cancelled_env} ->
+          {:error, {:cancelled, cancelled.reason}, cancelled_env}
 
-        # Regular {value, env} tuples
-        {value, %Env{}} ->
-          {:done, value}
+        # Regular {value, env} tuples (shouldn't happen with new continuation)
+        {value, %Env{} = final_env} ->
+          {:done, value, final_env}
       end
     rescue
       e ->
-        {:error, {:exception, e, __STACKTRACE__}}
+        {:error, {:exception, e, __STACKTRACE__}, env}
     catch
       :throw, reason ->
-        {:error, {:throw, reason}}
+        {:error, {:throw, reason}, env}
 
       :exit, reason ->
-        {:error, {:exit, reason}}
+        {:error, {:exit, reason}, env}
     end
   end
 
-  # Resume a suspended computation with results
+  # Resume a suspended computation with results.
+  # Returns {status, result_or_suspend, env} to allow fiber extraction.
   defp run_resume(resume, results) do
     try do
       case resume.(results) do
-        {:done, result} ->
-          {:done, result}
+        {:done, result, env} ->
+          {:done, result, env}
 
         # Suspensions return {suspend, env} tuple
-        {%AwaitSuspend{} = suspend, _env} ->
-          suspend
+        {%AwaitSuspend{} = suspend, suspend_env} ->
+          {:await_suspend, suspend, suspend_env}
 
-        {%Suspend{} = suspend, _env} ->
-          suspend
+        {%Suspend{} = suspend, suspend_env} ->
+          {:suspend, suspend, suspend_env}
 
         # Handle Throw sentinels
-        {%Comp.Throw{} = throw, _env} ->
-          {:error, {:throw, throw.error}}
+        {%Comp.Throw{} = throw, throw_env} ->
+          {:error, {:throw, throw.error}, throw_env}
 
         # Handle Cancelled sentinels
-        {%Comp.Cancelled{} = cancelled, _env} ->
-          {:error, {:cancelled, cancelled.reason}}
+        {%Comp.Cancelled{} = cancelled, cancelled_env} ->
+          {:error, {:cancelled, cancelled.reason}, cancelled_env}
 
         # Regular {value, env} tuples
-        {value, %Env{}} ->
-          {:done, value}
+        {value, %Env{} = final_env} ->
+          {:done, value, final_env}
       end
     rescue
       e ->
-        {:error, {:exception, e, __STACKTRACE__}}
+        # No env available on exception
+        {:error, {:exception, e, __STACKTRACE__}, nil}
     catch
       :throw, reason ->
-        {:error, {:throw, reason}}
+        {:error, {:throw, reason}, nil}
 
       :exit, reason ->
-        {:error, {:exit, reason}}
+        {:error, {:exit, reason}, nil}
     end
   end
 
-  # Handle the result of resuming a suspended computation
+  # Handle the result of resuming a suspended computation.
+  # This handles raw results from calling resume.(value) directly.
   defp handle_resumed(result, opts) do
     case result do
-      {:done, value} ->
-        {:done, value}
-
-      {value, %Env{}} ->
-        {:done, value}
-
-      %AwaitSuspend{request: request, resume: resume} ->
-        # Back to scheduler loop
+      {:done, value, env} ->
+        # Extract any fibers and run them
         state = State.new(opts)
+        state = extract_and_enqueue_fibers(state, env)
+
+        if State.active?(state) do
+          # Fibers were spawned - need to run them
+          state = State.record_completed(state, :main, value)
+          run_loop(state)
+        else
+          {:done, value}
+        end
+
+      {value, %Env{} = env} ->
+        # Same as {:done, value, env}
+        state = State.new(opts)
+        state = extract_and_enqueue_fibers(state, env)
+
+        if State.active?(state) do
+          state = State.record_completed(state, :main, value)
+          run_loop(state)
+        else
+          {:done, value}
+        end
+
+      {%AwaitSuspend{request: request, resume: resume}, env} ->
+        # Suspended on await - extract fibers
+        state = State.new(opts)
+        state = extract_and_enqueue_fibers(state, env)
 
         case State.add_suspension(state, request.id, request, resume) do
           {:ready, state} ->
@@ -657,7 +738,7 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
             run_loop(state)
         end
 
-      %Suspend{resume: resume} = suspend ->
+      {%Suspend{resume: resume} = suspend, _env} ->
         # Another external yield
         resume_fn = fn value ->
           resumed_result = resume.(value)
@@ -665,6 +746,12 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
         end
 
         {:suspended, suspend, resume_fn}
+
+      {%Comp.Throw{error: error}, _env} ->
+        {:error, {:throw, error}}
+
+      {%Comp.Cancelled{reason: reason}, _env} ->
+        {:error, {:cancelled, reason}}
 
       {:error, reason} ->
         {:error, reason}
@@ -716,6 +803,90 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler do
         case fun.(reason, state) do
           {:continue, state} -> {:continue, state}
           {:stop, reason} -> {:error, reason}
+        end
+    end
+  end
+
+  #############################################################################
+  ## Fiber Helpers
+  #############################################################################
+
+  @pending_fibers_key {Skuld.Effects.NonBlockingAsync, :pending_fibers}
+
+  # Extract pending fibers from env and add them to the scheduler state.
+  # The fibers are stored in env state by the NonBlockingAsync.fiber/1 handler.
+  # Returns the updated state with fibers added to run queue.
+  defp extract_and_enqueue_fibers(state, nil), do: state
+
+  defp extract_and_enqueue_fibers(state, env) do
+    pending = Env.get_state(env, @pending_fibers_key, [])
+
+    # Add each fiber to the scheduler
+    # Fibers are stored as {fiber_id, comp, boundary_id}
+    Enum.reduce(pending, state, fn {fiber_id, comp, boundary_id}, acc ->
+      State.add_fiber(acc, fiber_id, comp, boundary_id, env)
+    end)
+  end
+
+  # Run a fiber from the run queue
+  defp run_fiber(state, fiber_id) do
+    case State.get_fiber(state, fiber_id) do
+      nil ->
+        # Fiber was cancelled or already completed
+        {:continue, state}
+
+      %{comp: comp, env: env} ->
+        # Clear pending fibers from env before running (they've been extracted)
+        env = Env.put_state(env, @pending_fibers_key, [])
+
+        case run_until_suspend(comp, env) do
+          {:done, result, final_env} ->
+            # Fiber completed - extract any fibers it spawned, then record result
+            state = extract_and_enqueue_fibers(state, final_env)
+
+            case State.record_fiber_result(state, fiber_id, {:ok, result}) do
+              {:woke, _request_id, _wake_result, state} -> {:continue, state}
+              {:waiting, state} -> {:continue, state}
+            end
+
+          {:await_suspend, suspend, suspend_env} ->
+            # Fiber suspended on await - extract fibers, track suspension
+            state = extract_and_enqueue_fibers(state, suspend_env)
+            state = State.remove_fiber(state, fiber_id)
+
+            # Track the fiber's suspension like a regular computation
+            # Use fiber_id as the tag for result tracking
+            request = suspend.request
+
+            case State.add_suspension(state, request.id, request, suspend.resume) do
+              {:ready, state} ->
+                # Early completions satisfied immediately
+                state = put_in(state.completed[request.id], {:fiber_tag, fiber_id})
+                {:continue, state}
+
+              {:suspended, state} ->
+                state = put_in(state.completed[request.id], {:fiber_tag, fiber_id})
+                state = start_timers(state, request)
+                {:continue, state}
+            end
+
+          {:suspend, _suspend, _suspend_env} ->
+            # External suspend from a fiber - not fully supported
+            Logger.warning("Fiber yielded externally - not fully supported")
+
+            case State.record_fiber_result(state, fiber_id, {:error, :external_yield}) do
+              {:woke, _request_id, _wake_result, state} -> {:continue, state}
+              {:waiting, state} -> {:continue, state}
+            end
+
+          {:error, reason, error_env} ->
+            # Fiber failed - extract any fibers it spawned, then record error
+            state = extract_and_enqueue_fibers(state, error_env)
+
+            case State.record_fiber_result(state, fiber_id, {:error, reason}) do
+              {:woke, _request_id, _wake_result, state} -> {:continue, state}
+              {:waiting, state} -> {:continue, state}
+            end
         end
     end
   end

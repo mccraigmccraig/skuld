@@ -12,7 +12,10 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
   describe "start_link/1" do
     test "starts with no computations" do
       {:ok, server} = Server.start_link()
-      assert Server.stats(server) == %{suspended: 0, ready: 0, completed: 0}
+      stats = Server.stats(server)
+      assert stats.suspended == 0
+      assert stats.ready == 0
+      assert stats.completed == 0
       Server.stop(server)
     end
 
@@ -106,7 +109,10 @@ defmodule Skuld.Effects.NonBlockingAsync.Scheduler.ServerTest do
       {:ok, server} = Server.start_link()
 
       # Initially empty
-      assert Server.stats(server) == %{suspended: 0, ready: 0, completed: 0}
+      stats = Server.stats(server)
+      assert stats.suspended == 0
+      assert stats.ready == 0
+      assert stats.completed == 0
 
       # Spawn a computation that waits for a signal
       test_pid = self()
