@@ -1652,10 +1652,30 @@ NonBlockingAsync.boundary(comp do
 end)
 ```
 
-**Timeout patterns with reusable timers:**
+**Timeout convenience functions:**
 
 ```elixir
-# Race a task against a timeout using await_any_raw
+# await_with_timeout - await a task or fiber with a timeout
+NonBlockingAsync.boundary(comp do
+  h <- NonBlockingAsync.async(comp do slow_work() end)
+  
+  case NonBlockingAsync.await_with_timeout(h, 5000) do
+    {:ok, result} -> handle_success(result)
+    {:error, :timeout} -> handle_timeout()
+  end
+end)
+
+# timeout/2 - run and await an entire computation with a timeout
+case NonBlockingAsync.timeout(slow_computation(), 5000) do
+  {:ok, result} -> handle_success(result)
+  {:error, :timeout} -> handle_timeout()
+end
+```
+
+**Manual timeout with reusable timers:**
+
+```elixir
+# For more control, use await_any_raw with a TimerTarget
 NonBlockingAsync.boundary(
   comp do
     h <- NonBlockingAsync.async(comp do slow_work() end)
@@ -1733,6 +1753,8 @@ Scheduler.Server.stop(server)
 | `fiber/1` (cooperative) | ❌                   | ❌                   | ✅                          |
 | `async/1` (parallel)    | Blocks on await      | N/A                  | ✅ Yields                   |
 | await behavior          | Blocks on Task.yield | Blocks               | Yields AwaitSuspend         |
+| `await_with_timeout/2`  | ✅                   | ❌                   | ✅                          |
+| `timeout/2`             | ✅                   | ❌                   | ✅                          |
 | Multiple computations   | No                   | Yes (self-contained) | Yes (via Scheduler)         |
 | Cooperative scheduling  | No                   | No                   | Yes (FIFO fair)             |
 | Reusable timeouts       | No                   | No                   | Yes                         |
@@ -1740,7 +1762,7 @@ Scheduler.Server.stop(server)
 | Use case                | Simple parallel      | Fork-join patterns   | Complex workflows, timeouts |
 
 Operations: `boundary/2`, `fiber/1`, `async/1`, `await/1`, `await_all/1`, `await_any/1`, 
-`await_any_raw/1`, `cancel/1`, `with_sequential_handler/1`
+`await_any_raw/1`, `await_with_timeout/2`, `timeout/2`, `cancel/1`, `with_sequential_handler/1`
 
 > **Note**: Like Async, NonBlockingAsync runs on the same BEAM node. For distributed 
 > work, use message passing between nodes.

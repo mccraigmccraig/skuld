@@ -25,15 +25,17 @@ defmodule Skuld.Effects.NonBlockingAsync do
 
   ## Key Differences from Async Effect
 
-  | Feature               | Async                | NonBlockingAsync            |
-  |-----------------------|----------------------|-----------------------------|
-  | `fiber/1`             | ❌                   | ✅ Cooperative scheduling   |
-  | `async/1`             | Blocks on await      | ✅ Yields, non-blocking     |
-  | `await_all/1`         | ❌                   | ✅                          |
-  | `await_any/1`         | ❌                   | ✅                          |
-  | Reusable timeouts     | ❌                   | ✅                          |
-  | Multiple computations | ❌                   | ✅ (via Scheduler)          |
-  | Use case              | Simple parallel work | Complex workflows, timeouts |
+  | Feature                 | Async                | NonBlockingAsync            |
+  |-------------------------|----------------------|-----------------------------|
+  | `fiber/1`               | ❌                   | ✅ Cooperative scheduling   |
+  | `async/1`               | Blocks on await      | ✅ Yields, non-blocking     |
+  | `await_all/1`           | ❌                   | ✅                          |
+  | `await_any/1`           | ❌                   | ✅                          |
+  | `await_with_timeout/2`  | ✅                   | ✅                          |
+  | `timeout/2`             | ✅                   | ✅                          |
+  | Reusable timeouts       | ❌                   | ✅                          |
+  | Multiple computations   | ❌                   | ✅ (via Scheduler)          |
+  | Use case                | Simple parallel work | Complex workflows, timeouts |
 
   ## Basic Usage
 
@@ -79,7 +81,26 @@ defmodule Skuld.Effects.NonBlockingAsync do
 
   ## Timeout Patterns
 
-  Use `await_any` with a timer for timeout:
+  ### Convenience Functions
+
+  Use `await_with_timeout/2` to await a task or fiber with a timeout:
+
+      h <- NonBlockingAsync.async(slow_work())
+      case NonBlockingAsync.await_with_timeout(h, 5000) do
+        {:ok, result} -> handle_success(result)
+        {:error, :timeout} -> handle_timeout()
+      end
+
+  Use `timeout/2` to run and await an entire computation with a timeout:
+
+      case NonBlockingAsync.timeout(slow_computation(), 5000) do
+        {:ok, result} -> handle_success(result)
+        {:error, :timeout} -> handle_timeout()
+      end
+
+  ### Manual Timeout with await_any_raw
+
+  For more control, use `await_any_raw` with a timer:
 
       timer = TimerTarget.new(5000)  # 5 second overall timeout
 
@@ -116,6 +137,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
   alias Skuld.Effects.NonBlockingAsync.AwaitRequest
   alias Skuld.Effects.NonBlockingAsync.AwaitRequest.FiberTarget
   alias Skuld.Effects.NonBlockingAsync.AwaitRequest.TaskTarget
+  alias Skuld.Effects.NonBlockingAsync.AwaitRequest.TimerTarget
   alias Skuld.Effects.NonBlockingAsync.Scheduler
   alias Skuld.Effects.Throw
 
@@ -140,6 +162,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
   def_op(AwaitAll, [:handles])
   def_op(AwaitAny, [:handles])
   def_op(AwaitAnyRaw, [:targets])
+  def_op(AwaitWithTimeout, [:handle, :timeout_ms])
   def_op(Cancel, [:handle])
   def_op(Boundary, [:comp, :on_unawaited])
 
@@ -332,6 +355,66 @@ defmodule Skuld.Effects.NonBlockingAsync do
   @spec await_any_raw([AwaitRequest.target()]) :: Types.computation()
   def await_any_raw(targets) when is_list(targets) do
     Comp.effect(@sig, %AwaitAnyRaw{targets: targets})
+  end
+
+  @doc """
+  Wait for a computation with a timeout.
+
+  Returns `{:ok, result}` if the computation completes before the timeout,
+  or `{:error, :timeout}` if the timeout fires first.
+
+  Works with both `TaskHandle` (from `async/1`) and `FiberHandle` (from `fiber/1`).
+
+  ## Example
+
+      h <- NonBlockingAsync.fiber(slow_work())
+      case <- NonBlockingAsync.await_with_timeout(h, 5000)
+      case do
+        {:ok, result} -> result
+        {:error, :timeout} -> :fallback
+      end
+  """
+  @spec await_with_timeout(TaskHandle.t() | FiberHandle.t(), non_neg_integer()) ::
+          Types.computation()
+  def await_with_timeout(handle, timeout_ms) when is_integer(timeout_ms) and timeout_ms >= 0 do
+    Comp.effect(@sig, %AwaitWithTimeout{handle: handle, timeout_ms: timeout_ms})
+  end
+
+  @doc """
+  Run a computation with a timeout.
+
+  This is a convenience function that wraps the computation in a boundary,
+  runs it as a fiber, and awaits with a timeout. Returns `{:ok, result}`
+  if the computation completes in time, or `{:error, :timeout}` if it times out.
+
+  ## Example
+
+      result <- NonBlockingAsync.timeout(5000, expensive_work())
+      case result do
+        {:ok, value} -> value
+        {:error, :timeout} -> :gave_up
+      end
+
+  This is equivalent to:
+
+      NonBlockingAsync.boundary(comp do
+        h <- NonBlockingAsync.fiber(expensive_work())
+        NonBlockingAsync.await_with_timeout(h, 5000)
+      end)
+  """
+  @spec timeout(non_neg_integer(), Types.computation()) :: Types.computation()
+  def timeout(timeout_ms, inner_comp) when is_integer(timeout_ms) and timeout_ms >= 0 do
+    # Build the composed computation
+    timeout_body =
+      Comp.bind(
+        fiber(inner_comp),
+        fn handle ->
+          await_with_timeout(handle, timeout_ms)
+        end
+      )
+
+    # Wrap in a boundary that ignores unawaited (fiber is always awaited or timed out)
+    boundary(timeout_body, fn result, _unawaited -> result end)
   end
 
   @doc """
@@ -881,6 +964,82 @@ defmodule Skuld.Effects.NonBlockingAsync do
     Comp.call(await_comp, env, fn {target_key, result}, env2 ->
       k.({target_key, result}, env2)
     end)
+  end
+
+  def handle(
+        %AwaitWithTimeout{
+          handle: %TaskHandle{boundary_id: handle_boundary} = handle,
+          timeout_ms: timeout_ms
+        },
+        env,
+        k
+      ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # Race handle against timer using await_any_raw
+      targets = [handle_to_target(handle), TimerTarget.new(timeout_ms)]
+      request = AwaitRequest.new(targets, :any)
+      await_comp = Await.await(request)
+
+      Comp.call(await_comp, env, fn {target_key, result}, env2 ->
+        # Always untrack the handle (whether it completed or timed out)
+        env_untracked = untrack_handle(env2, handle)
+
+        case target_key do
+          {:timer, _} ->
+            # Timed out - return error
+            k.({:error, :timeout}, env_untracked)
+
+          _other ->
+            # Handle completed - return result wrapped in ok/error
+            case result do
+              {:ok, value} -> k.({:ok, value}, env_untracked)
+              {:error, reason} -> k.({:error, reason}, env_untracked)
+            end
+        end
+      end)
+    end
+  end
+
+  def handle(
+        %AwaitWithTimeout{
+          handle: %FiberHandle{boundary_id: handle_boundary} = handle,
+          timeout_ms: timeout_ms
+        },
+        env,
+        k
+      ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # Race handle against timer using await_any_raw
+      targets = [handle_to_target(handle), TimerTarget.new(timeout_ms)]
+      request = AwaitRequest.new(targets, :any)
+      await_comp = Await.await(request)
+
+      Comp.call(await_comp, env, fn {target_key, result}, env2 ->
+        # Always untrack the handle (whether it completed or timed out)
+        env_untracked = untrack_handle(env2, handle)
+
+        case target_key do
+          {:timer, _} ->
+            # Timed out - return error
+            k.({:error, :timeout}, env_untracked)
+
+          _other ->
+            # Handle completed - return result wrapped in ok/error
+            case result do
+              {:ok, value} -> k.({:ok, value}, env_untracked)
+              {:error, reason} -> k.({:error, reason}, env_untracked)
+            end
+        end
+      end)
+    end
   end
 
   def handle(

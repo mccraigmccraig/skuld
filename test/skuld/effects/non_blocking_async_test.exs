@@ -1172,4 +1172,164 @@ defmodule Skuld.Effects.NonBlockingAsyncTest do
       assert result == 21
     end
   end
+
+  describe "await_with_timeout" do
+    test "returns {:ok, result} when computation completes before timeout" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :fast_result
+                  end
+                )
+
+              NonBlockingAsync.await_with_timeout(h, 5000)
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:ok, :fast_result}}
+    end
+
+    test "returns {:error, :timeout} when timeout fires first" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.async(
+                  comp do
+                    # Sleep longer than timeout
+                    _ = Process.sleep(1000)
+                    :slow_result
+                  end
+                )
+
+              NonBlockingAsync.await_with_timeout(h, 10)
+            end,
+            # Don't throw on unawaited - the task will be killed
+            fn result, _unawaited -> result end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:error, :timeout}}
+    end
+
+    test "works with fiber handle" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :fiber_result
+                  end
+                )
+
+              NonBlockingAsync.await_with_timeout(h, 1000)
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:ok, :fiber_result}}
+    end
+
+    test "works with task handle" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.async(
+                  comp do
+                    :task_result
+                  end
+                )
+
+              NonBlockingAsync.await_with_timeout(h, 1000)
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:ok, :task_result}}
+    end
+  end
+
+  describe "timeout" do
+    test "returns {:ok, result} when computation completes in time" do
+      result =
+        comp do
+          NonBlockingAsync.timeout(
+            5000,
+            comp do
+              :completed_in_time
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:ok, :completed_in_time}}
+    end
+
+    test "returns {:error, :timeout} when computation exceeds timeout" do
+      result =
+        comp do
+          NonBlockingAsync.timeout(
+            10,
+            comp do
+              # This runs as a fiber, so we need to yield to let timer fire
+              # Use an async task that sleeps
+              h <-
+                NonBlockingAsync.async(
+                  comp do
+                    _ = Process.sleep(1000)
+                    :too_slow
+                  end
+                )
+
+              NonBlockingAsync.await(h)
+            end
+          )
+        end
+        |> NonBlockingAsync.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, {:error, :timeout}}
+    end
+
+    test "can be used with with_sequential_handler" do
+      result =
+        comp do
+          NonBlockingAsync.timeout(
+            5000,
+            comp do
+              :quick_result
+            end
+          )
+        end
+        |> NonBlockingAsync.with_sequential_handler()
+        |> Comp.run!()
+
+      assert result == {:ok, :quick_result}
+    end
+  end
 end
