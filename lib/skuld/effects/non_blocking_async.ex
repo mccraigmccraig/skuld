@@ -76,6 +76,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
   alias Skuld.Effects.Helpers.TaskHelpers
   alias Skuld.Effects.NonBlockingAsync.Await
   alias Skuld.Effects.NonBlockingAsync.AwaitRequest
+  alias Skuld.Effects.NonBlockingAsync.AwaitRequest.FiberTarget
   alias Skuld.Effects.NonBlockingAsync.AwaitRequest.TaskTarget
   alias Skuld.Effects.Throw
 
@@ -88,12 +89,14 @@ defmodule Skuld.Effects.NonBlockingAsync do
   @supervisor_key {@sig, :supervisor}
   @boundaries_key {@sig, :boundaries}
   @current_boundary_key {@sig, :current_boundary}
+  @pending_fibers_key {@sig, :pending_fibers}
 
   #############################################################################
   ## Operation Structs
   #############################################################################
 
   def_op(Async, [:comp])
+  def_op(Fiber, [:comp])
   def_op(AwaitOp, [:handle])
   def_op(AwaitAll, [:handles])
   def_op(AwaitAny, [:handles])
@@ -157,6 +160,38 @@ defmodule Skuld.Effects.NonBlockingAsync do
   @spec async(Types.computation()) :: Types.computation()
   def async(comp) do
     Comp.effect(@sig, %Async{comp: comp})
+  end
+
+  @doc """
+  Start a computation as a cooperative fiber, returning a handle.
+
+  Unlike `async/1` which spawns an Erlang Task (parallel execution),
+  `fiber/1` registers the computation with the scheduler for cooperative
+  execution in the same process. Fibers yield explicitly and are scheduled
+  by the NonBlockingAsync scheduler.
+
+  Must be called within a `boundary/2` scope. The handle can only
+  be awaited within the same boundary.
+
+  ## Example
+
+      NonBlockingAsync.boundary(comp do
+        # Cooperative fibers - run in scheduler process
+        h1 <- NonBlockingAsync.fiber(work1())
+        h2 <- NonBlockingAsync.fiber(work2())
+
+        # Can mix with parallel tasks
+        h3 <- NonBlockingAsync.async(parallel_work())
+
+        r1 <- NonBlockingAsync.await(h1)
+        r2 <- NonBlockingAsync.await(h2)
+        r3 <- NonBlockingAsync.await(h3)
+        {r1, r2, r3}
+      end)
+  """
+  @spec fiber(Types.computation()) :: Types.computation()
+  def fiber(comp) do
+    Comp.effect(@sig, %Fiber{comp: comp})
   end
 
   @doc """
@@ -352,6 +387,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
         |> Env.put_state(@supervisor_key, sup)
         |> Env.put_state(@boundaries_key, %{})
         |> Env.put_state(@current_boundary_key, nil)
+        |> Env.put_state(@pending_fibers_key, [])
 
       finally_k = fn value, e ->
         sup = Env.get_state(e, @supervisor_key)
@@ -365,6 +401,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
                 |> Map.delete(@supervisor_key)
                 |> Map.delete(@boundaries_key)
                 |> Map.delete(@current_boundary_key)
+                |> Map.delete(@pending_fibers_key)
           }
 
         {value, cleaned}
@@ -503,6 +540,41 @@ defmodule Skuld.Effects.NonBlockingAsync do
     end
   end
 
+  def handle(%Fiber{comp: comp}, env, k) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if current_boundary == nil do
+      # No boundary - throw error via Throw effect
+      Comp.call(Throw.throw({:error, :fiber_outside_boundary}), env, k)
+    else
+      # Generate unique fiber ID
+      fiber_id = make_ref()
+
+      # Create handle and track it in boundary
+      handle = %FiberHandle{boundary_id: current_boundary, fiber_id: fiber_id}
+
+      boundaries = Env.get_state(env, @boundaries_key)
+      boundary_handles = Map.get(boundaries, current_boundary, MapSet.new())
+      updated_handles = MapSet.put(boundary_handles, handle)
+
+      env_tracked =
+        Env.put_state(
+          env,
+          @boundaries_key,
+          Map.put(boundaries, current_boundary, updated_handles)
+        )
+
+      # Store fiber in pending_fibers for scheduler to extract
+      pending = Env.get_state(env_tracked, @pending_fibers_key, [])
+      fiber_entry = {fiber_id, comp, current_boundary}
+      env_with_fiber = Env.put_state(env_tracked, @pending_fibers_key, [fiber_entry | pending])
+
+      # Continue immediately with handle - no yield!
+      # The fiber will be extracted by the scheduler when this computation yields/completes
+      k.(handle, env_with_fiber)
+    end
+  end
+
   def handle(
         %AwaitOp{handle: %TaskHandle{boundary_id: handle_boundary, task: task} = handle},
         env,
@@ -545,6 +617,37 @@ defmodule Skuld.Effects.NonBlockingAsync do
     end
   end
 
+  def handle(
+        %AwaitOp{handle: %FiberHandle{boundary_id: handle_boundary, fiber_id: fiber_id} = handle},
+        env,
+        k
+      ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :await_across_boundary}), env, k)
+    else
+      # Fibers are always yielded to scheduler - no fast path check here
+      # because fiber_results live in scheduler state, not in Env
+      target = FiberTarget.new(fiber_id)
+      request = AwaitRequest.new([target], :all)
+
+      await_comp = Await.await(request)
+
+      Comp.call(await_comp, env, fn [result], env2 ->
+        env_untracked = untrack_handle(env2, handle)
+
+        case result do
+          {:ok, value} ->
+            k.(value, env_untracked)
+
+          {:error, reason} ->
+            Comp.call(Throw.throw({:error, reason}), env_untracked, k)
+        end
+      end)
+    end
+  end
+
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def handle(%AwaitAll{handles: handles}, env, k) do
     current_boundary = Env.get_state(env, @current_boundary_key)
@@ -576,8 +679,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
         _ ->
           # Some pending - yield to scheduler for ONLY the pending handles
           # (ready handles' messages were already consumed by check_ready)
-          pending_targets =
-            Enum.map(pending_handles, fn %TaskHandle{task: task} -> TaskTarget.new(task) end)
+          pending_targets = Enum.map(pending_handles, &handle_to_target/1)
 
           request = AwaitRequest.new(pending_targets, :all)
 
@@ -586,19 +688,19 @@ defmodule Skuld.Effects.NonBlockingAsync do
           Comp.call(await_comp, env, fn pending_results, env2 ->
             env_untracked = Enum.reduce(handles, env2, &untrack_handle(&2, &1))
 
-            # Build map from task ref to result for pending handles
+            # Build map from target key to result for pending handles
             pending_results_map =
               pending_handles
               |> Enum.zip(pending_results)
-              |> Enum.map(fn {%TaskHandle{task: task}, result} -> {task.ref, result} end)
+              |> Enum.map(fn {handle, result} -> {handle_to_target_key(handle), result} end)
               |> Map.new()
 
             # Merge ready_results (from check_ready) with pending_results (from scheduler)
             # Return in original handle order
             all_results =
-              Enum.map(handles, fn %TaskHandle{task: task} = handle ->
+              Enum.map(handles, fn handle ->
                 case Map.get(ready_results, handle) do
-                  nil -> Map.fetch!(pending_results_map, task.ref)
+                  nil -> Map.fetch!(pending_results_map, handle_to_target_key(handle))
                   result -> result
                 end
               end)
@@ -638,7 +740,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
 
         :none_ready ->
           # None ready - yield to scheduler
-          targets = Enum.map(handles, fn %TaskHandle{task: task} -> TaskTarget.new(task) end)
+          targets = Enum.map(handles, &handle_to_target/1)
           request = AwaitRequest.new(targets, :any)
 
           await_comp = Await.await(request)
@@ -691,6 +793,27 @@ defmodule Skuld.Effects.NonBlockingAsync do
     end
   end
 
+  def handle(
+        %Cancel{handle: %FiberHandle{boundary_id: handle_boundary, fiber_id: fiber_id} = handle},
+        env,
+        k
+      ) do
+    current_boundary = Env.get_state(env, @current_boundary_key)
+
+    if handle_boundary != current_boundary do
+      Comp.call(Throw.throw({:error, :cancel_across_boundary}), env, k)
+    else
+      # Remove fiber from pending_fibers if it hasn't been extracted yet
+      pending = Env.get_state(env, @pending_fibers_key, [])
+      updated_pending = Enum.reject(pending, fn {fid, _comp, _bid} -> fid == fiber_id end)
+      env_updated = Env.put_state(env, @pending_fibers_key, updated_pending)
+
+      # Untrack the handle from boundary
+      env_untracked = untrack_handle(env_updated, handle)
+      k.(:ok, env_untracked)
+    end
+  end
+
   #############################################################################
   ## Helpers
   #############################################################################
@@ -705,6 +828,14 @@ defmodule Skuld.Effects.NonBlockingAsync do
 
   defp get_boundary_id(%TaskHandle{boundary_id: bid}), do: bid
   defp get_boundary_id(%FiberHandle{boundary_id: bid}), do: bid
+
+  # Convert a handle to an await target
+  defp handle_to_target(%TaskHandle{task: task}), do: TaskTarget.new(task)
+  defp handle_to_target(%FiberHandle{fiber_id: fiber_id}), do: FiberTarget.new(fiber_id)
+
+  # Get the target key for a handle (used for result correlation)
+  defp handle_to_target_key(%TaskHandle{task: %Task{ref: ref}}), do: {:task, ref}
+  defp handle_to_target_key(%FiberHandle{fiber_id: fiber_id}), do: {:fiber, fiber_id}
 
   # Check which handles have result messages already available.
   # Uses peek_task_result to avoid race condition with DOWN messages.
