@@ -1406,6 +1406,15 @@ Both can be mixed freely and awaited using the same `await/1` function.
 | `fiber/1` | Cooperative | Same          | CPU-bound, shared state |
 | `async/1` | Parallel    | Separate Task | I/O-bound, isolation    |
 
+**Structured Concurrency:**
+
+Async implements *structured concurrency* via the `boundary/2` function. All concurrent
+work (fibers and tasks) must be spawned within a boundary, and the boundary ensures that
+all work is accounted for before it exits—either awaited, cancelled, or explicitly handled.
+This prevents resource leaks and orphaned tasks. By default, exiting a boundary with
+unawaited tasks throws `{:unawaited_tasks, count}`, but you can provide a custom handler
+as the second argument to `boundary/2` to ignore or log unawaited work instead.
+
 **Basic usage with fibers:**
 
 ```elixir
@@ -1414,7 +1423,7 @@ comp do
     # Cooperative fibers - run in scheduler process
     h1 <- Async.fiber(comp do :result_1 end)
     h2 <- Async.fiber(comp do :result_2 end)
-    
+
     r1 <- Async.await(h1)
     r2 <- Async.await(h2)
     {r1, r2}
@@ -1433,10 +1442,10 @@ end
 Async.boundary(comp do
   # Fiber for CPU-bound work
   h1 <- Async.fiber(comp do expensive_calculation() end)
-  
+
   # Task for I/O-bound work (runs in parallel)
   h2 <- Async.async(comp do fetch_from_api() end)
-  
+
   r1 <- Async.await(h1)
   r2 <- Async.await(h2)
   {r1, r2}
@@ -1478,7 +1487,7 @@ results[{:index, 1}]  #=> result from second workflow
 Async.boundary(comp do
   h1 <- Async.fiber(comp do :first end)
   h2 <- Async.async(comp do :second end)
-  
+
   [r1, r2] <- Async.await_all([h1, h2])
   {r1, r2}
 end)
@@ -1487,7 +1496,7 @@ end)
 Async.boundary(comp do
   h1 <- Async.fiber(comp do :approach_a end)
   h2 <- Async.fiber(comp do :approach_b end)
-  
+
   {winner, result} <- Async.await_any([h1, h2])
   loser = if winner == h1, do: h2, else: h1
   _ <- Async.cancel(loser)
@@ -1501,7 +1510,7 @@ end)
 # await_with_timeout - await a task or fiber with a timeout
 Async.boundary(comp do
   h <- Async.async(comp do slow_work() end)
-  
+
   case Async.await_with_timeout(h, 5000) do
     {:ok, result} -> handle_success(result)
     {:error, :timeout} -> handle_timeout()
@@ -1523,14 +1532,14 @@ Async.boundary(
   comp do
     h <- Async.async(comp do slow_work() end)
     timer = TimerTarget.new(5000)  # 5 second timeout
-    
+
     {target_key, result} <- Async.await_any_raw([
       TaskTarget.new(h.task),
       timer
     ])
-    
+
     _ <- Async.cancel(h)
-    
+
     case target_key do
       {:task, _} -> {:ok, result}
       {:timer, _} -> {:error, :timeout}
@@ -1543,11 +1552,11 @@ Async.boundary(
 Async.boundary(
   comp do
     timer = TimerTarget.new(10_000)  # 10 second overall timeout
-    
+
     h1 <- Async.async(comp do step_1() end)
     {key1, r1} <- Async.await_any_raw([TaskTarget.new(h1.task), timer])
     _ <- Async.cancel(h1)
-    
+
     case key1 do
       {:timer, _} -> {:error, :timeout}
       {:task, _} ->
@@ -1555,7 +1564,7 @@ Async.boundary(
         h2 <- Async.async(comp do step_2(r1) end)
         {key2, r2} <- Async.await_any_raw([TaskTarget.new(h2.task), timer])
         _ <- Async.cancel(h2)
-        
+
         case key2 do
           {:timer, _} -> {:error, :timeout}
           {:task, _} -> {:ok, r2}
@@ -1604,7 +1613,7 @@ Scheduler.Server.stop(server)
 | GenServer mode          | Yes                         | No                   |
 | Use case                | Complex workflows, timeouts | Fork-join patterns   |
 
-Operations: `boundary/2`, `fiber/1`, `async/1`, `await/1`, `await_all/1`, `await_any/1`, 
+Operations: `boundary/2`, `fiber/1`, `async/1`, `await/1`, `await_all/1`, `await_any/1`,
 `await_any_raw/1`, `await_with_timeout/2`, `timeout/2`, `cancel/1`, `with_sequential_handler/1`
 
 > **Note**: Async runs on the same BEAM node. Closures cannot be serialized across nodes,
@@ -2060,7 +2069,7 @@ To enable property-based testing in your project:
 2. **Create in-memory implementations** - For each effect that touches external state,
    provide a pure alternative. Skuld includes test handlers for common effects:
    - `Query.with_test_handler/2` - Stub query responses
-   - `ChangesetPersist.Test.with_handler/2` - Stub persist operations  
+   - `ChangesetPersist.Test.with_handler/2` - Stub persist operations
    - `Fresh.with_test_handler/2` - Deterministic UUID generation
 
 3. **Write domain-specific generators** - Create StreamData generators for your
