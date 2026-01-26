@@ -11,17 +11,17 @@ defmodule Skuld.Effects.Async do
 
   ## Fiber vs Task
 
-  | Operation | Execution Model | Process       | Use Case                      |
-  |-----------|-----------------|---------------|-------------------------------|
-  | `fiber/1` | Cooperative     | Same process  | CPU-bound work, complex state |
-  | `async/1` | Parallel        | Separate Task | I/O-bound work, isolation     |
+  | Operation | Execution Model | Process       | Use Case                           |
+  |-----------|-----------------|---------------|------------------------------------|
+  | `fiber/1` | Cooperative     | Same process  | I/O-bound work, shared state       |
+  | `async/1` | Parallel        | Separate Task | CPU-bound work, process isolation  |
 
   **Fibers** run cooperatively in the scheduler process. They yield explicitly at `await`
-  points, allowing other fibers to run. Good for CPU-bound work or when you need to share
-  complex state without message passing.
+  points, allowing other fibers to run. Good for I/O-bound work where you're waiting anyway,
+  or when you need to share complex state without message passing.
 
-  **Tasks** run in parallel in separate Erlang processes. Good for I/O-bound work or when
-  you need process isolation for fault tolerance.
+  **Tasks** run in parallel in separate Erlang processes. Good for CPU-bound work where you
+  want to leverage multiple cores, or when you need process isolation for fault tolerance.
 
   ## Basic Usage
 

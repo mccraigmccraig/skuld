@@ -1401,10 +1401,10 @@ Both can be mixed freely and awaited using the same `await/1` function.
 
 **Fibers vs Tasks:**
 
-| Operation | Execution   | Process       | Use Case                |
-|-----------|-------------|---------------|-------------------------|
-| `fiber/1` | Cooperative | Same          | CPU-bound, shared state |
-| `async/1` | Parallel    | Separate Task | I/O-bound, isolation    |
+| Operation | Execution   | Process       | Use Case                     |
+|-----------|-------------|---------------|------------------------------|
+| `fiber/1` | Cooperative | Same          | I/O-bound, shared state      |
+| `async/1` | Parallel    | Separate Task | CPU-bound, process isolation |
 
 **Structured Concurrency:**
 
@@ -1440,11 +1440,11 @@ end
 
 ```elixir
 Async.boundary(comp do
-  # Fiber for CPU-bound work
-  h1 <- Async.fiber(comp do expensive_calculation() end)
+  # Fiber for I/O-bound work (yields while waiting)
+  h1 <- Async.fiber(comp do fetch_from_api() end)
 
-  # Task for I/O-bound work (runs in parallel)
-  h2 <- Async.async(comp do fetch_from_api() end)
+  # Task for CPU-bound work (runs in parallel on separate core)
+  h2 <- Async.async(comp do expensive_calculation() end)
 
   r1 <- Async.await(h1)
   r2 <- Async.await(h2)
