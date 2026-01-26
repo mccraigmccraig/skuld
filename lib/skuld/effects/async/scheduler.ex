@@ -637,102 +637,82 @@ defmodule Skuld.Effects.Async.Scheduler do
 
   # Run a computation with a given env until it returns a value or suspends.
   # Used for running fibers which inherit their parent's env.
+  # Note: uses implicit try - rescue/catch at function level
   defp run_until_suspend(comp, env) do
-    try do
-      case Comp.call(comp, env, fn v, e -> {:done, v, e} end) do
-        {:done, result, final_env} ->
-          {:done, result, final_env}
+    case Comp.call(comp, env, &Comp.identity_k/2) do
+      # Suspensions return {suspend, env} tuple
+      {%AwaitSuspend{} = suspend, suspend_env} ->
+        {:await_suspend, suspend, suspend_env}
 
-        # Suspensions return {suspend, env} tuple
-        {%AwaitSuspend{} = suspend, suspend_env} ->
-          {:await_suspend, suspend, suspend_env}
+      {%Suspend{} = suspend, suspend_env} ->
+        {:suspend, suspend, suspend_env}
 
-        {%Suspend{} = suspend, suspend_env} ->
-          {:suspend, suspend, suspend_env}
+      # Handle Throw sentinels
+      {%Comp.Throw{} = throw, throw_env} ->
+        {:error, {:throw, throw.error}, throw_env}
 
-        # Handle Throw sentinels
-        {%Comp.Throw{} = throw, throw_env} ->
-          {:error, {:throw, throw.error}, throw_env}
+      # Handle Cancelled sentinels
+      {%Comp.Cancelled{} = cancelled, cancelled_env} ->
+        {:error, {:cancelled, cancelled.reason}, cancelled_env}
 
-        # Handle Cancelled sentinels
-        {%Comp.Cancelled{} = cancelled, cancelled_env} ->
-          {:error, {:cancelled, cancelled.reason}, cancelled_env}
-
-        # Regular {value, env} tuples (shouldn't happen with new continuation)
-        {value, %Env{} = final_env} ->
-          {:done, value, final_env}
-      end
-    rescue
-      e ->
-        {:error, {:exception, e, __STACKTRACE__}, env}
-    catch
-      :throw, reason ->
-        {:error, {:throw, reason}, env}
-
-      :exit, reason ->
-        {:error, {:exit, reason}, env}
+      # Regular {value, env} tuples - normal completion
+      {value, %Env{} = final_env} ->
+        {:done, value, final_env}
     end
+  rescue
+    e ->
+      {:error, {:exception, e, __STACKTRACE__}, env}
+  catch
+    :throw, reason ->
+      {:error, {:throw, reason}, env}
+
+    :exit, reason ->
+      {:error, {:exit, reason}, env}
   end
 
   # Resume a suspended computation with results.
   # Returns {status, result_or_suspend, env} to allow fiber extraction.
+  # Note: uses implicit try - rescue/catch at function level
   defp run_resume(resume, results) do
-    try do
-      case resume.(results) do
-        {:done, result, env} ->
-          {:done, result, env}
+    case resume.(results) do
+      # Suspensions return {suspend, env} tuple
+      {%AwaitSuspend{} = suspend, suspend_env} ->
+        {:await_suspend, suspend, suspend_env}
 
-        # Suspensions return {suspend, env} tuple
-        {%AwaitSuspend{} = suspend, suspend_env} ->
-          {:await_suspend, suspend, suspend_env}
+      {%Suspend{} = suspend, suspend_env} ->
+        {:suspend, suspend, suspend_env}
 
-        {%Suspend{} = suspend, suspend_env} ->
-          {:suspend, suspend, suspend_env}
+      # Handle Throw sentinels
+      {%Comp.Throw{} = throw, throw_env} ->
+        {:error, {:throw, throw.error}, throw_env}
 
-        # Handle Throw sentinels
-        {%Comp.Throw{} = throw, throw_env} ->
-          {:error, {:throw, throw.error}, throw_env}
+      # Handle Cancelled sentinels
+      {%Comp.Cancelled{} = cancelled, cancelled_env} ->
+        {:error, {:cancelled, cancelled.reason}, cancelled_env}
 
-        # Handle Cancelled sentinels
-        {%Comp.Cancelled{} = cancelled, cancelled_env} ->
-          {:error, {:cancelled, cancelled.reason}, cancelled_env}
-
-        # Regular {value, env} tuples
-        {value, %Env{} = final_env} ->
-          {:done, value, final_env}
-      end
-    rescue
-      e ->
-        # No env available on exception
-        {:error, {:exception, e, __STACKTRACE__}, nil}
-    catch
-      :throw, reason ->
-        {:error, {:throw, reason}, nil}
-
-      :exit, reason ->
-        {:error, {:exit, reason}, nil}
+      # Regular {value, env} tuples - normal completion
+      {value, %Env{} = final_env} ->
+        {:done, value, final_env}
     end
+  rescue
+    e ->
+      # No env available on exception
+      {:error, {:exception, e, __STACKTRACE__}, nil}
+  catch
+    :throw, reason ->
+      {:error, {:throw, reason}, nil}
+
+    :exit, reason ->
+      {:error, {:exit, reason}, nil}
   end
 
   # Handle the result of resuming a suspended computation.
   # This handles raw results from calling resume.(value) directly.
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp handle_resumed(result, opts) do
     case result do
-      {:done, value, env} ->
-        # Extract any fibers and run them
-        state = State.new(opts)
-        state = extract_and_enqueue_fibers(state, env)
-
-        if State.active?(state) do
-          # Fibers were spawned - need to run them
-          state = State.record_completed(state, :main, value)
-          run_loop(state)
-        else
-          {:done, value}
-        end
-
       {value, %Env{} = env} ->
-        # Same as {:done, value, env}
+        # Normal completion - extract any fibers and run them
         state = State.new(opts)
         state = extract_and_enqueue_fibers(state, env)
 
@@ -858,6 +838,7 @@ defmodule Skuld.Effects.Async.Scheduler do
   end
 
   # Run a fiber from the run queue
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_fiber(state, fiber_id) do
     case State.get_fiber(state, fiber_id) do
       nil ->

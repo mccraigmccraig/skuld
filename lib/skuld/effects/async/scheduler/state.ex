@@ -47,7 +47,7 @@ defmodule Skuld.Effects.Async.Scheduler.State do
           suspended_at: integer()
         }
 
-  @type ready_item :: {reference(), term()}
+  @type ready_item :: {reference(), (term() -> term()), term()} | {:fiber, reference()}
 
   @type fiber_info :: %{
           comp: Skuld.Comp.Types.computation(),
@@ -271,9 +271,16 @@ defmodule Skuld.Effects.Async.Scheduler.State do
   @doc """
   Dequeue the next ready computation (FIFO - front of queue).
 
-  Returns `{:ok, {request_id, resume, results}, state}` or `{:empty, state}`.
+  Returns `{:ok, item, state}` or `{:empty, state}`.
+
+  Items can be:
+  - `{request_id, resume, results}` - a computation ready to resume
+  - `{:fiber, fiber_id}` - a fiber ready to run
   """
-  @spec dequeue_one(t()) :: {:ok, {reference(), (term() -> term()), term()}, t()} | {:empty, t()}
+  @spec dequeue_one(t()) ::
+          {:ok, {reference(), (term() -> term()), term()}, t()}
+          | {:ok, {:fiber, reference()}, t()}
+          | {:empty, t()}
   def dequeue_one(state) do
     case :queue.out(state.run_queue) do
       {{:value, item}, queue} ->
@@ -286,8 +293,11 @@ defmodule Skuld.Effects.Async.Scheduler.State do
 
   @doc """
   Record a computation's final result.
+
+  The tag can be any term - typically a reference, but can also be atoms
+  like `:main` or tuples like `{:index, idx}` for tracking purposes.
   """
-  @spec record_completed(t(), reference(), term()) :: t()
+  @spec record_completed(t(), term(), term()) :: t()
   def record_completed(state, request_id, result) do
     %{state | completed: Map.put(state.completed, request_id, result)}
   end
@@ -308,7 +318,9 @@ defmodule Skuld.Effects.Async.Scheduler.State do
   @spec counts(t()) :: %{
           suspended: non_neg_integer(),
           ready: non_neg_integer(),
-          completed: non_neg_integer()
+          completed: non_neg_integer(),
+          fibers: non_neg_integer(),
+          fiber_results: non_neg_integer()
         }
   def counts(state) do
     %{
