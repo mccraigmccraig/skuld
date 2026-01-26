@@ -2,18 +2,38 @@ defmodule Skuld.Effects.NonBlockingAsync do
   @moduledoc """
   Non-blocking async effect for cooperative multitasking.
 
-  Like `Async` but yields `%AwaitSuspend{}` instead of blocking,
-  enabling cooperative scheduling of multiple computations in a
-  single process.
+  Provides two mechanisms for concurrent work:
 
-  ## Key Differences from Async
+  - **`async/1`** - Spawns an Erlang Task for parallel execution
+  - **`fiber/1`** - Registers a computation for cooperative scheduling (no process spawned)
 
-  | Feature | Async | NonBlockingAsync |
-  |---------|-------|------------------|
-  | await behavior | Blocks on Task.yield | Yields AwaitSuspend |
-  | Multiple computations | No | Yes (via Scheduler) |
-  | Cooperative scheduling | No | Yes |
-  | Use case | Simple parallel work | Complex workflows, timeouts |
+  Both can be mixed freely within a `boundary/2` and awaited using the same `await/1` function.
+
+  ## Fiber vs Task
+
+  | Operation | Execution Model | Process       | Use Case                      |
+  |-----------|-----------------|---------------|-------------------------------|
+  | `fiber/1` | Cooperative     | Same process  | CPU-bound work, complex state |
+  | `async/1` | Parallel        | Separate Task | I/O-bound work, isolation     |
+
+  **Fibers** run cooperatively in the scheduler process. They yield explicitly at `await`
+  points, allowing other fibers to run. Good for CPU-bound work or when you need to share
+  complex state without message passing.
+
+  **Tasks** run in parallel in separate Erlang processes. Good for I/O-bound work or when
+  you need process isolation for fault tolerance.
+
+  ## Key Differences from Async Effect
+
+  | Feature               | Async                | NonBlockingAsync            |
+  |-----------------------|----------------------|-----------------------------|
+  | `fiber/1`             | ❌                   | ✅ Cooperative scheduling   |
+  | `async/1`             | Blocks on await      | ✅ Yields, non-blocking     |
+  | `await_all/1`         | ❌                   | ✅                          |
+  | `await_any/1`         | ❌                   | ✅                          |
+  | Reusable timeouts     | ❌                   | ✅                          |
+  | Multiple computations | ❌                   | ✅ (via Scheduler)          |
+  | Use case              | Simple parallel work | Complex workflows, timeouts |
 
   ## Basic Usage
 
@@ -24,20 +44,38 @@ defmodule Skuld.Effects.NonBlockingAsync do
 
       comp do
         result <- NonBlockingAsync.boundary(comp do
-          h1 <- NonBlockingAsync.async(work1())
-          h2 <- NonBlockingAsync.async(work2())
+          # Cooperative fibers - run in scheduler process
+          h1 <- NonBlockingAsync.fiber(work1())
+          h2 <- NonBlockingAsync.fiber(work2())
+
+          # Or parallel tasks - run in separate processes
+          h3 <- NonBlockingAsync.async(io_work())
 
           r1 <- NonBlockingAsync.await(h1)
           r2 <- NonBlockingAsync.await(h2)
+          r3 <- NonBlockingAsync.await(h3)
 
-          {r1, r2}
+          {r1, r2, r3}
         end)
 
         result
       end
       |> NonBlockingAsync.with_handler()
       |> Throw.with_handler()
-      |> Scheduler.run()
+      |> Scheduler.run_one()
+
+  ## Simple Usage with `with_sequential_handler`
+
+  For simpler cases (especially testing), use `with_sequential_handler/1`:
+
+      comp do
+        NonBlockingAsync.boundary(comp do
+          h <- NonBlockingAsync.fiber(work())
+          NonBlockingAsync.await(h)
+        end)
+      end
+      |> NonBlockingAsync.with_sequential_handler()
+      |> Comp.run!()
 
   ## Timeout Patterns
 
@@ -48,10 +86,10 @@ defmodule Skuld.Effects.NonBlockingAsync do
       h1 <- NonBlockingAsync.async(slow_work())
 
       # Race task against timer
-      case <- NonBlockingAsync.await_any_raw([TaskTarget.new(h1.task), timer])
-      case do
-        {{:task, _}, {:ok, result}} -> result
-        {{:timer, _}, _} -> :timeout
+      {target_key, result} <- NonBlockingAsync.await_any_raw([TaskTarget.new(h1.task), timer])
+      case target_key do
+        {:task, _} -> {:ok, result}
+        {:timer, _} -> {:error, :timeout}
       end
 
   ## Cooperative Scheduling
@@ -78,6 +116,7 @@ defmodule Skuld.Effects.NonBlockingAsync do
   alias Skuld.Effects.NonBlockingAsync.AwaitRequest
   alias Skuld.Effects.NonBlockingAsync.AwaitRequest.FiberTarget
   alias Skuld.Effects.NonBlockingAsync.AwaitRequest.TaskTarget
+  alias Skuld.Effects.NonBlockingAsync.Scheduler
   alias Skuld.Effects.Throw
 
   @sig __MODULE__
@@ -143,7 +182,12 @@ defmodule Skuld.Effects.NonBlockingAsync do
   #############################################################################
 
   @doc """
-  Start a computation asynchronously, returning a handle.
+  Start a computation as a parallel Task, returning a handle.
+
+  Spawns an Erlang Task to run the computation in a separate process.
+  Use this for I/O-bound work or when you need process isolation.
+
+  For cooperative scheduling in the same process, use `fiber/1` instead.
 
   Must be called within a `boundary/2` scope. The handle can only
   be awaited within the same boundary.
@@ -151,7 +195,8 @@ defmodule Skuld.Effects.NonBlockingAsync do
   ## Example
 
       NonBlockingAsync.boundary(comp do
-        handle <- NonBlockingAsync.async(expensive_work())
+        # Runs in separate process
+        handle <- NonBlockingAsync.async(io_work())
         # ... do other work ...
         result <- NonBlockingAsync.await(handle)
         result
@@ -195,17 +240,23 @@ defmodule Skuld.Effects.NonBlockingAsync do
   end
 
   @doc """
-  Wait for an async computation to complete and return its result.
+  Wait for an async computation or fiber to complete and return its result.
 
-  Unlike `Async.await/1`, this yields an `%AwaitSuspend{}` if the task
-  is not immediately ready, allowing other computations to run.
+  Works with both `TaskHandle` (from `async/1`) and `FiberHandle` (from `fiber/1`).
+  Unlike `Async.await/1`, this yields an `%AwaitSuspend{}` if the computation
+  is not immediately ready, allowing other fibers and computations to run.
 
   Returns the unwrapped result directly. Errors are propagated.
 
   ## Example
 
-      handle <- NonBlockingAsync.async(work())
-      result <- NonBlockingAsync.await(handle)
+      # Await a fiber
+      fiber_handle <- NonBlockingAsync.fiber(cpu_work())
+      result1 <- NonBlockingAsync.await(fiber_handle)
+
+      # Await a task
+      task_handle <- NonBlockingAsync.async(io_work())
+      result2 <- NonBlockingAsync.await(task_handle)
   """
   @spec await(TaskHandle.t() | FiberHandle.t()) :: Types.computation()
   def await(%TaskHandle{} = handle) do
@@ -233,16 +284,21 @@ defmodule Skuld.Effects.NonBlockingAsync do
   end
 
   @doc """
-  Wait for any async computation to complete.
+  Wait for any computation to complete.
+
+  Works with both `TaskHandle` (from `async/1`) and `FiberHandle` (from `fiber/1`).
+  Can mix fibers and tasks freely.
 
   Returns `{winning_handle, result}` for the first to complete.
-  Other tasks remain running and can be awaited or cancelled.
+  Other computations remain running and can be awaited or cancelled.
 
   ## Example
 
-      h1 <- NonBlockingAsync.async(approach_a())
+      # Race a fiber against a task
+      h1 <- NonBlockingAsync.fiber(approach_a())
       h2 <- NonBlockingAsync.async(approach_b())
       {winner, result} <- NonBlockingAsync.await_any([h1, h2])
+
       # Cancel the loser if desired
       loser = if winner == h1, do: h2, else: h1
       _ <- NonBlockingAsync.cancel(loser)
@@ -410,6 +466,63 @@ defmodule Skuld.Effects.NonBlockingAsync do
       {modified, finally_k}
     end)
     |> Comp.with_handler(@sig, &handle/3)
+  end
+
+  @doc """
+  Run a computation with NonBlockingAsync effects handled sequentially.
+
+  Wraps the computation with handlers and runs it through the cooperative
+  scheduler. This is useful for testing where you want deterministic execution
+  in a single process.
+
+  All fibers run cooperatively in the current process (no parallelism).
+  Tasks are still spawned but awaited through the scheduler.
+
+  ## Example
+
+      comp do
+        result <- NonBlockingAsync.boundary(comp do
+          h1 <- NonBlockingAsync.fiber(work1())
+          h2 <- NonBlockingAsync.fiber(work2())
+          r1 <- NonBlockingAsync.await(h1)
+          r2 <- NonBlockingAsync.await(h2)
+          {r1, r2}
+        end)
+        result
+      end
+      |> NonBlockingAsync.with_sequential_handler()
+      |> Comp.run!()
+
+  ## Differences from with_handler
+
+  - `with_handler/1` - Returns a computation that must be run through `Scheduler.run_one`
+  - `with_sequential_handler/1` - Returns a computation that can be run directly via `Comp.run!`
+
+  ## Error Handling
+
+  Errors from the computation are propagated via `Throw.throw/1`.
+  """
+  @spec with_sequential_handler(Types.computation()) :: Types.computation()
+  def with_sequential_handler(comp) do
+    fn env, k ->
+      # Wrap in handlers and run through scheduler
+      handled_comp =
+        comp
+        |> with_handler()
+        |> Throw.with_handler()
+
+      case Scheduler.run_one(handled_comp) do
+        {:done, result} ->
+          k.(result, env)
+
+        {:error, reason} ->
+          Comp.call(Throw.throw(reason), env, k)
+
+        {:suspended, suspend, _resume_fn} ->
+          # External yield - propagate as suspend
+          {suspend, env}
+      end
+    end
   end
 
   @doc """

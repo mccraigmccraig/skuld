@@ -5,8 +5,10 @@ defmodule Skuld.Effects.NonBlockingAsyncTest do
 
   use Skuld.Syntax
 
+  alias Skuld.Comp
   alias Skuld.Effects.NonBlockingAsync
   alias Skuld.Effects.NonBlockingAsync.Scheduler
+  alias Skuld.Effects.Reader
   alias Skuld.Effects.Throw
 
   # Helper to raise without triggering "typing violation" warnings.
@@ -991,6 +993,183 @@ defmodule Skuld.Effects.NonBlockingAsyncTest do
         |> Scheduler.run_one()
 
       assert result == {:error, {:throw, {:error, :await_across_boundary}}}
+    end
+  end
+
+  describe "with_sequential_handler" do
+    test "runs computation and returns result directly" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    42
+                  end
+                )
+
+              NonBlockingAsync.await(h)
+            end
+          )
+        end
+        |> NonBlockingAsync.with_sequential_handler()
+        |> Comp.run!()
+
+      assert result == 42
+    end
+
+    test "multiple fibers run cooperatively" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h1 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :first
+                  end
+                )
+
+              h2 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :second
+                  end
+                )
+
+              r1 <- NonBlockingAsync.await(h1)
+              r2 <- NonBlockingAsync.await(h2)
+              {r1, r2}
+            end
+          )
+        end
+        |> NonBlockingAsync.with_sequential_handler()
+        |> Comp.run!()
+
+      assert result == {:first, :second}
+    end
+
+    test "nested fibers work" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h1 <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    h2 <-
+                      NonBlockingAsync.fiber(
+                        comp do
+                          :inner
+                        end
+                      )
+
+                    inner_result <- NonBlockingAsync.await(h2)
+                    {:outer, inner_result}
+                  end
+                )
+
+              NonBlockingAsync.await(h1)
+            end
+          )
+        end
+        |> NonBlockingAsync.with_sequential_handler()
+        |> Comp.run!()
+
+      assert result == {:outer, :inner}
+    end
+
+    test "mixed fibers and tasks work" do
+      result =
+        comp do
+          NonBlockingAsync.boundary(
+            comp do
+              h_fiber <-
+                NonBlockingAsync.fiber(
+                  comp do
+                    :fiber_result
+                  end
+                )
+
+              h_task <-
+                NonBlockingAsync.async(
+                  comp do
+                    :task_result
+                  end
+                )
+
+              r1 <- NonBlockingAsync.await(h_fiber)
+              r2 <- NonBlockingAsync.await(h_task)
+              {r1, r2}
+            end
+          )
+        end
+        |> NonBlockingAsync.with_sequential_handler()
+        |> Comp.run!()
+
+      assert result == {:fiber_result, :task_result}
+    end
+
+    test "errors are propagated via Throw" do
+      # Throws inside the computation propagate out via Throw.throw
+      # Use catch_error to handle the re-thrown error
+      result =
+        comp do
+          r <-
+            Throw.catch_error(
+              comp do
+                NonBlockingAsync.boundary(
+                  comp do
+                    _ <- Throw.throw(:test_error)
+                    :unreachable
+                  end
+                )
+              end
+              |> NonBlockingAsync.with_sequential_handler(),
+              fn error -> {:caught, error} end
+            )
+
+          r
+        end
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      # Error is wrapped as {:throw, original_error} by scheduler
+      assert result == {:caught, {:throw, :test_error}}
+    end
+
+    test "can be composed with other effects" do
+      # Reader effect works outside the sequential handler
+      result =
+        comp do
+          x <- Reader.ask()
+
+          boundary_result <-
+            comp do
+              NonBlockingAsync.boundary(
+                comp do
+                  h <-
+                    NonBlockingAsync.fiber(
+                      comp do
+                        # x is captured from outer scope
+                        x * 2
+                      end
+                    )
+
+                  NonBlockingAsync.await(h)
+                end
+              )
+            end
+            |> NonBlockingAsync.with_sequential_handler()
+
+          boundary_result + 1
+        end
+        |> Throw.with_handler()
+        |> Reader.with_handler(10)
+        |> Comp.run!()
+
+      assert result == 21
     end
   end
 end

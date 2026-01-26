@@ -1549,18 +1549,28 @@ Operations: `start/2`, `start_sync/2`, `resume/2`, `resume_sync/3`, `cancel/1`
 
 #### NonBlockingAsync
 
-Cooperative multitasking for complex async workflows. Unlike `Async` which blocks on 
-`Task.yield`, NonBlockingAsync yields `%AwaitSuspend{}` to a scheduler, enabling 
-JavaScript event loop-style concurrency where multiple computations interleave fairly 
-in a single process.
+Cooperative multitasking for complex async workflows. Provides two mechanisms:
 
-**Basic usage with single computation:**
+- **`fiber/1`** - Cooperative scheduling in the same process (no Task spawned)
+- **`async/1`** - Parallel execution via Erlang Task
+
+Both can be mixed freely and awaited using the same `await/1` function.
+
+**Fibers vs Tasks:**
+
+| Operation | Execution   | Process       | Use Case                |
+|-----------|-------------|---------------|-------------------------|
+| `fiber/1` | Cooperative | Same          | CPU-bound, shared state |
+| `async/1` | Parallel    | Separate Task | I/O-bound, isolation    |
+
+**Basic usage with fibers:**
 
 ```elixir
 comp do
   result <- NonBlockingAsync.boundary(comp do
-    h1 <- NonBlockingAsync.async(comp do :result_1 end)
-    h2 <- NonBlockingAsync.async(comp do :result_2 end)
+    # Cooperative fibers - run in scheduler process
+    h1 <- NonBlockingAsync.fiber(comp do :result_1 end)
+    h2 <- NonBlockingAsync.fiber(comp do :result_2 end)
     
     r1 <- NonBlockingAsync.await(h1)
     r2 <- NonBlockingAsync.await(h2)
@@ -1572,6 +1582,36 @@ end
 |> Throw.with_handler()
 |> Scheduler.run_one()
 #=> {:done, {:result_1, :result_2}}
+```
+
+**Mixing fibers and tasks:**
+
+```elixir
+NonBlockingAsync.boundary(comp do
+  # Fiber for CPU-bound work
+  h1 <- NonBlockingAsync.fiber(comp do expensive_calculation() end)
+  
+  # Task for I/O-bound work (runs in parallel)
+  h2 <- NonBlockingAsync.async(comp do fetch_from_api() end)
+  
+  r1 <- NonBlockingAsync.await(h1)
+  r2 <- NonBlockingAsync.await(h2)
+  {r1, r2}
+end)
+```
+
+**Simple usage with `with_sequential_handler`:**
+
+```elixir
+# For simpler cases (especially testing), skip the Scheduler:
+comp do
+  NonBlockingAsync.boundary(comp do
+    h <- NonBlockingAsync.fiber(comp do work() end)
+    NonBlockingAsync.await(h)
+  end)
+end
+|> NonBlockingAsync.with_sequential_handler()
+|> Comp.run!()
 ```
 
 **Multiple computations with fair scheduling:**
@@ -1591,9 +1631,9 @@ results[{:index, 1}]  #=> result from second workflow
 **await_all and await_any:**
 
 ```elixir
-# Wait for all - results in order
+# Wait for all - results in order (works with both fibers and tasks)
 NonBlockingAsync.boundary(comp do
-  h1 <- NonBlockingAsync.async(comp do :first end)
+  h1 <- NonBlockingAsync.fiber(comp do :first end)
   h2 <- NonBlockingAsync.async(comp do :second end)
   
   [r1, r2] <- NonBlockingAsync.await_all([h1, h2])
@@ -1602,11 +1642,11 @@ end)
 
 # Race - first to complete wins
 NonBlockingAsync.boundary(comp do
-  h1 <- NonBlockingAsync.async(comp do :approach_a end)
-  h2 <- NonBlockingAsync.async(comp do :approach_b end)
+  h1 <- NonBlockingAsync.fiber(comp do :approach_a end)
+  h2 <- NonBlockingAsync.fiber(comp do :approach_b end)
   
   {winner, result} <- NonBlockingAsync.await_any([h1, h2])
-  loser = if winner.task.ref == h1.task.ref, do: h2, else: h1
+  loser = if winner == h1, do: h2, else: h1
   _ <- NonBlockingAsync.cancel(loser)
   result
 end)
@@ -1688,17 +1728,19 @@ Scheduler.Server.stop(server)
 
 **Comparison with other concurrency effects:**
 
-| Feature | Async | Parallel | NonBlockingAsync |
-|---------|-------|----------|------------------|
-| await behavior | Blocks on Task.yield | Blocks | Yields AwaitSuspend |
-| Multiple computations | No | Yes (self-contained) | Yes (via Scheduler) |
-| Cooperative scheduling | No | No | Yes (FIFO fair) |
-| Reusable timeouts | No | No | Yes |
-| GenServer mode | No | No | Yes |
-| Use case | Simple parallel | Fork-join patterns | Complex workflows, timeouts |
+| Feature                 | Async                | Parallel             | NonBlockingAsync            |
+|-------------------------|----------------------|----------------------|-----------------------------|
+| `fiber/1` (cooperative) | ❌                   | ❌                   | ✅                          |
+| `async/1` (parallel)    | Blocks on await      | N/A                  | ✅ Yields                   |
+| await behavior          | Blocks on Task.yield | Blocks               | Yields AwaitSuspend         |
+| Multiple computations   | No                   | Yes (self-contained) | Yes (via Scheduler)         |
+| Cooperative scheduling  | No                   | No                   | Yes (FIFO fair)             |
+| Reusable timeouts       | No                   | No                   | Yes                         |
+| GenServer mode          | No                   | No                   | Yes                         |
+| Use case                | Simple parallel      | Fork-join patterns   | Complex workflows, timeouts |
 
-Operations: `boundary/2`, `async/1`, `await/1`, `await_all/1`, `await_any/1`, 
-`await_any_raw/1`, `cancel/1`
+Operations: `boundary/2`, `fiber/1`, `async/1`, `await/1`, `await_all/1`, `await_any/1`, 
+`await_any_raw/1`, `cancel/1`, `with_sequential_handler/1`
 
 > **Note**: Like Async, NonBlockingAsync runs on the same BEAM node. For distributed 
 > work, use message passing between nodes.
