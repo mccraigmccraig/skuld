@@ -222,12 +222,10 @@ working with suspendable computations (like those using Yield).
 ### Cancelling Suspended Computations
 
 A computation can suspend (via Yield or other control effects), returning a
-`%Suspend{}` struct instead of completing. Unlike JavaScript Promises or Elixir
-Tasks, **Skuld computations can be fully cancelled** - you're not forced to await
-or ignore them.
-
-When you cancel a suspended computation, Skuld invokes the `leave_scope` chain,
-allowing effects to clean up resources (close connections, release locks, etc.):
+`%Suspend{}` struct instead of completing. Unlike, say, JavaScript Promises (which
+cannot be cancelled), **Skuld computations support cancellation with guaranteed
+cleanup** - the `leave_scope` chain runs, allowing effects to release resources
+(close connections, release locks, etc.):
 
 ```elixir
 alias Skuld.Comp
