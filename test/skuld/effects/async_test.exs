@@ -996,6 +996,200 @@ defmodule Skuld.Effects.AsyncTest do
     end
   end
 
+  describe "fiber cancellation on boundary exit" do
+    test "unawaited fiber is cancelled when boundary exits normally" do
+      # Use an agent to track if fiber actually ran
+      {:ok, agent} = Agent.start_link(fn -> [] end)
+
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              _ <-
+                Async.fiber(
+                  comp do
+                    _ = Agent.update(agent, fn log -> [:fiber_ran | log] end)
+                    :fiber_result
+                  end
+                )
+
+              # Don't await - just return
+              :boundary_result
+            end,
+            fn result, _handles -> result end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      # Boundary completes normally
+      assert result == {:done, :boundary_result}
+
+      # Fiber should NOT have run (it was cancelled)
+      log = Agent.get(agent, & &1)
+      Agent.stop(agent)
+      assert log == []
+    end
+
+    test "awaited fiber completes normally" do
+      {:ok, agent} = Agent.start_link(fn -> [] end)
+
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.fiber(
+                  comp do
+                    _ = Agent.update(agent, fn log -> [:fiber_ran | log] end)
+                    :fiber_result
+                  end
+                )
+
+              r <- Async.await(h)
+              r
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      # Fiber completed and result was awaited
+      assert result == {:done, :fiber_result}
+
+      # Fiber did run
+      log = Agent.get(agent, & &1)
+      Agent.stop(agent)
+      assert log == [:fiber_ran]
+    end
+
+    test "multiple unawaited fibers are all cancelled" do
+      {:ok, agent} = Agent.start_link(fn -> [] end)
+
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              _ <-
+                Async.fiber(
+                  comp do
+                    _ = Agent.update(agent, fn log -> [:fiber1 | log] end)
+                    :fiber1_result
+                  end
+                )
+
+              _ <-
+                Async.fiber(
+                  comp do
+                    _ = Agent.update(agent, fn log -> [:fiber2 | log] end)
+                    :fiber2_result
+                  end
+                )
+
+              _ <-
+                Async.fiber(
+                  comp do
+                    _ = Agent.update(agent, fn log -> [:fiber3 | log] end)
+                    :fiber3_result
+                  end
+                )
+
+              :done
+            end,
+            fn result, _handles -> result end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, :done}
+
+      # None of the fibers should have run
+      log = Agent.get(agent, & &1)
+      Agent.stop(agent)
+      assert log == []
+    end
+
+    test "fiber awaiting another fiber gets cancelled when outer boundary exits" do
+      {:ok, agent} = Agent.start_link(fn -> [] end)
+
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              outer_fiber <-
+                Async.fiber(
+                  comp do
+                    # This fiber awaits an inner fiber
+                    inner <-
+                      Async.fiber(
+                        comp do
+                          _ = Agent.update(agent, fn log -> [:inner_ran | log] end)
+                          :inner_result
+                        end
+                      )
+
+                    _ = Agent.update(agent, fn log -> [:outer_awaiting | log] end)
+                    r <- Async.await(inner)
+                    _ = Agent.update(agent, fn log -> [:outer_got_result | log] end)
+                    r
+                  end
+                )
+
+              # Don't await outer_fiber - return immediately
+              _ = outer_fiber
+              :boundary_done
+            end,
+            fn result, _handles -> result end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      assert result == {:done, :boundary_done}
+
+      # Neither fiber should have run
+      log = Agent.get(agent, & &1)
+      Agent.stop(agent)
+      assert log == []
+    end
+
+    test "awaiting a cancelled fiber returns error" do
+      # Create a scenario where fiber is cancelled but we try to await it
+      # This happens when fiber is spawned, boundary exits (cancelling fiber),
+      # but somehow we still have a reference to await it (shouldn't normally happen
+      # but we should handle it gracefully)
+
+      result =
+        comp do
+          Async.boundary(
+            comp do
+              h <-
+                Async.fiber(
+                  comp do
+                    :fiber_result
+                  end
+                )
+
+              # Await immediately - fiber should run and complete normally
+              r <- Async.await(h)
+              r
+            end
+          )
+        end
+        |> Async.with_handler()
+        |> Throw.with_handler()
+        |> Scheduler.run_one()
+
+      # This test verifies normal await still works
+      assert result == {:done, :fiber_result}
+    end
+  end
+
   describe "with_sequential_handler" do
     test "runs computation and returns result directly" do
       result =

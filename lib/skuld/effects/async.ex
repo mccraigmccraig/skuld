@@ -137,6 +137,7 @@ defmodule Skuld.Effects.Async do
   @boundaries_key {@sig, :boundaries}
   @current_boundary_key {@sig, :current_boundary}
   @pending_fibers_key {@sig, :pending_fibers}
+  @fibers_to_cancel_key {@sig, :fibers_to_cancel}
 
   #############################################################################
   ## Operation Structs
@@ -634,10 +635,14 @@ defmodule Skuld.Effects.Async do
 
           prev_boundary = Env.get_state(env_after, {@sig, :boundary_previous, boundary_id})
 
-          # Kill all unawaited tasks (non-negotiable)
-          # Note: Only TaskHandles have actual tasks to kill. FiberHandles are cooperative
-          # and don't need termination since they run in the same process.
+          # Kill all unawaited tasks and mark fibers for cancellation
+          # TaskHandles have actual tasks to kill via supervisor
+          # FiberHandles are marked for cancellation - scheduler will cancel them
           sup = Env.get_state(env_after, @supervisor_key)
+
+          # Collect fiber_ids to cancel
+          fiber_ids_to_cancel =
+            for %FiberHandle{fiber_id: fid} <- unawaited_handles, do: fid
 
           if sup do
             Enum.each(unawaited_handles, fn
@@ -645,16 +650,19 @@ defmodule Skuld.Effects.Async do
                 Task.Supervisor.terminate_child(sup, task.pid)
 
               %FiberHandle{} ->
-                # Fibers don't need termination - they're in-process
+                # Fibers are cancelled via scheduler - see fiber_ids_to_cancel
                 :ok
             end)
           end
 
-          # Clean up boundary and restore previous
+          # Clean up boundary, restore previous, and mark fibers for cancellation
+          existing_cancellations = Env.get_state(env_after, @fibers_to_cancel_key, [])
+
           env_cleaned =
             env_after
             |> Env.put_state(@boundaries_key, Map.delete(boundaries_after, boundary_id))
             |> Env.put_state(@current_boundary_key, prev_boundary)
+            |> Env.put_state(@fibers_to_cancel_key, fiber_ids_to_cancel ++ existing_cancellations)
             |> then(fn e2 ->
               %{e2 | state: Map.delete(e2.state, {@sig, :boundary_previous, boundary_id})}
             end)

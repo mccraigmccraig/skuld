@@ -812,13 +812,22 @@ defmodule Skuld.Effects.Async.Scheduler do
   #############################################################################
 
   @pending_fibers_key {Skuld.Effects.Async, :pending_fibers}
+  @fibers_to_cancel_key {Skuld.Effects.Async, :fibers_to_cancel}
 
-  # Extract pending fibers from env and add them to the scheduler state.
-  # The fibers are stored in env state by the Async.fiber/1 handler.
-  # Returns the updated state with fibers added to run queue.
+  # Extract pending fibers from env and add them to the scheduler state,
+  # and also extract any fiber cancellation requests from boundary exits.
+  # This is the main entry point - called after running any computation segment.
   defp extract_and_enqueue_fibers(state, nil), do: state
 
   defp extract_and_enqueue_fibers(state, env) do
+    state
+    |> do_extract_pending_fibers(env)
+    |> do_extract_fibers_to_cancel(env)
+  end
+
+  # Extract pending fibers from env and add them to the scheduler state.
+  # The fibers are stored in env state by the Async.fiber/1 handler.
+  defp do_extract_pending_fibers(state, env) do
     pending = Env.get_state(env, @pending_fibers_key, [])
 
     # Add each fiber to the scheduler
@@ -837,15 +846,71 @@ defmodule Skuld.Effects.Async.Scheduler do
     end)
   end
 
+  # Extract fiber cancellation requests from env and mark them in scheduler state.
+  # Also immediately cancels any suspended fibers (they won't be run again).
+  # Called after running computations to pick up cancellation requests from boundary exits.
+  defp do_extract_fibers_to_cancel(state, env) do
+    fiber_ids = Env.get_state(env, @fibers_to_cancel_key, [])
+
+    if fiber_ids == [] do
+      state
+    else
+      # Mark for cancellation (handles fibers in run queue)
+      state = State.mark_fibers_to_cancel(state, fiber_ids)
+
+      # Also cancel any suspended fibers immediately
+      cancel_suspended_fibers(state, fiber_ids)
+    end
+  end
+
+  # Cancel suspended fibers whose fiber_ids are in the cancellation list.
+  # These are fibers that suspended on await and whose boundary has exited.
+  defp cancel_suspended_fibers(state, fiber_ids) do
+    fiber_id_map = Map.new(fiber_ids, fn id -> {id, true} end)
+
+    # Find request_ids for suspended fibers by looking for {:fiber_tag, fiber_id} in completed
+    request_ids_to_cancel =
+      state.completed
+      |> Enum.filter(fn
+        {_request_id, {:fiber_tag, fiber_id}} -> Map.has_key?(fiber_id_map, fiber_id)
+        _ -> false
+      end)
+      |> Enum.map(fn {request_id, {:fiber_tag, fiber_id}} -> {request_id, fiber_id} end)
+
+    # Cancel each suspended fiber
+    Enum.reduce(request_ids_to_cancel, state, fn {request_id, fiber_id}, acc ->
+      # Remove the suspension
+      acc = State.remove_suspension(acc, request_id)
+
+      # Record error result for the fiber
+      case State.record_fiber_result(acc, fiber_id, {:error, :boundary_exited}) do
+        {:woke, _rid, _wake_result, acc} -> acc
+        {:waiting, acc} -> acc
+      end
+    end)
+  end
+
   # Run a fiber from the run queue
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_fiber(state, fiber_id) do
-    case State.get_fiber(state, fiber_id) do
-      nil ->
-        # Fiber was cancelled or already completed
+    cond do
+      # Check if fiber was marked for cancellation (e.g., its boundary exited)
+      State.fiber_cancelled?(state, fiber_id) ->
+        # Clear cancellation flag and record error result
+        state = State.clear_cancelled_fiber(state, fiber_id)
+        state = State.remove_fiber(state, fiber_id)
+
+        case State.record_fiber_result(state, fiber_id, {:error, :boundary_exited}) do
+          {:woke, _request_id, _wake_result, state} -> {:continue, state}
+          {:waiting, state} -> {:continue, state}
+        end
+
+      # Fiber no longer exists (already completed or cancelled elsewhere)
+      State.get_fiber(state, fiber_id) == nil ->
         {:continue, state}
 
-      %{comp: comp, env: env} ->
+      true ->
+        %{comp: comp, env: env} = State.get_fiber(state, fiber_id)
         # Clear pending fibers from env before running (they've been extracted)
         env = Env.put_state(env, @pending_fibers_key, [])
 

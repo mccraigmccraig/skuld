@@ -34,6 +34,7 @@ defmodule Skuld.Effects.Async.Scheduler.State do
     # Fiber support
     :fibers,
     :fiber_results,
+    :fibers_to_cancel,
     :opts
   ]
 
@@ -64,6 +65,7 @@ defmodule Skuld.Effects.Async.Scheduler.State do
           # Fiber support
           fibers: %{reference() => fiber_info()},
           fiber_results: %{reference() => result()},
+          fibers_to_cancel: %{reference() => true},
           opts: keyword()
         }
 
@@ -87,6 +89,7 @@ defmodule Skuld.Effects.Async.Scheduler.State do
       early_completions: %{},
       fibers: %{},
       fiber_results: %{},
+      fibers_to_cancel: %{},
       opts: opts
     }
   end
@@ -320,7 +323,8 @@ defmodule Skuld.Effects.Async.Scheduler.State do
           ready: non_neg_integer(),
           completed: non_neg_integer(),
           fibers: non_neg_integer(),
-          fiber_results: non_neg_integer()
+          fiber_results: non_neg_integer(),
+          fibers_to_cancel: non_neg_integer()
         }
   def counts(state) do
     %{
@@ -328,8 +332,36 @@ defmodule Skuld.Effects.Async.Scheduler.State do
       ready: :queue.len(state.run_queue),
       completed: map_size(state.completed),
       fibers: map_size(state.fibers),
-      fiber_results: map_size(state.fiber_results)
+      fiber_results: map_size(state.fiber_results),
+      fibers_to_cancel: map_size(state.fibers_to_cancel)
     }
+  end
+
+  @doc """
+  Mark fiber IDs for cancellation.
+
+  When the scheduler tries to run these fibers, it will cancel them instead.
+  """
+  @spec mark_fibers_to_cancel(t(), [reference()]) :: t()
+  def mark_fibers_to_cancel(state, fiber_ids) do
+    new_cancellations = Map.new(fiber_ids, fn id -> {id, true} end)
+    %{state | fibers_to_cancel: Map.merge(state.fibers_to_cancel, new_cancellations)}
+  end
+
+  @doc """
+  Check if a fiber is marked for cancellation.
+  """
+  @spec fiber_cancelled?(t(), reference()) :: boolean()
+  def fiber_cancelled?(state, fiber_id) do
+    Map.has_key?(state.fibers_to_cancel, fiber_id)
+  end
+
+  @doc """
+  Remove a fiber from the cancellation set (after it's been cancelled).
+  """
+  @spec clear_cancelled_fiber(t(), reference()) :: t()
+  def clear_cancelled_fiber(state, fiber_id) do
+    %{state | fibers_to_cancel: Map.delete(state.fibers_to_cancel, fiber_id)}
   end
 
   #############################################################################
