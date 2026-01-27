@@ -45,6 +45,10 @@ some common side-effecting operations and their effectful equivalents:
 - [Installation](#installation)
 - [Demo Application](#demo-application)
 - [Quick Start](#quick-start)
+- [Computations](#computations)
+  - [The Computation Type](#the-computation-type)
+  - [Running Computations](#running-computations)
+  - [Cancelling Suspended Computations](#cancelling-suspended-computations)
 - [Syntax](#syntax)
   - [The comp Block](#the-comp-block)
   - [Effectful Binds and Pure Matches](#effectful-binds-and-pure-matches)
@@ -160,6 +164,106 @@ Example.example()
 
 #=> {{{:my_config, 0}, {:final_state, 1}}, {:log, ["processed item 0"]}}
 ```
+
+## Computations
+
+### The Computation Type
+
+In Skuld, a **computation** is a suspended effectful program - a lazy description of
+work that only executes when explicitly run. This is fundamentally different from
+eager evaluation where calling a function immediately performs its side effects.
+
+```elixir
+# This doesn't run anything yet - it returns a computation
+computation = comp do
+  count <- State.get()
+  _ <- State.put(count + 1)
+  count
+end
+
+# The computation is just data until we run it
+computation
+|> State.with_handler(0)
+|> Comp.run!()
+#=> {0, %{}}
+```
+
+This lazy evaluation enables powerful patterns:
+- **Composition**: Build complex computations from simpler ones
+- **Handler installation**: Add effect handlers before execution
+- **Reuse**: Run the same computation multiple times with different handlers
+- **Testing**: Use test handlers (pure, in-memory) with production code
+
+### Running Computations
+
+Skuld provides two functions for running computations:
+
+**`Comp.run!/1`** - Runs a computation, extracting just the result value:
+
+```elixir
+State.get()
+|> State.with_handler(42)
+|> Comp.run!()
+#=> {42, %{}}
+```
+
+**`Comp.run/1`** - Runs a computation, returning both the result and the final environment:
+
+```elixir
+{result, env} = State.get()
+|> State.with_handler(42)
+|> Comp.run()
+#=> {%Skuld.Comp.Done{value: {42, %{}}}, %{...}}
+```
+
+Use `Comp.run/1` when you need access to the environment after execution, or when
+working with suspendable computations (like those using Yield).
+
+### Cancelling Suspended Computations
+
+A computation can suspend (via Yield or other control effects), returning a
+`%Suspend{}` struct instead of completing. Unlike JavaScript Promises or Elixir
+Tasks, **Skuld computations can be fully cancelled** - you're not forced to await
+or ignore them.
+
+When you cancel a suspended computation, Skuld invokes the `leave_scope` chain,
+allowing effects to clean up resources (close connections, release locks, etc.):
+
+```elixir
+alias Skuld.Comp
+alias Skuld.Comp.{Suspend, Cancelled}
+
+# A computation with scoped cleanup
+computation =
+  Yield.yield(:waiting)
+  |> Comp.scoped(fn env ->
+    IO.puts("Entering scope")
+    finally_k = fn result, e ->
+      IO.puts("Cleanup called with: #{inspect(result.__struct__)}")
+      {result, e}
+    end
+    {env, finally_k}
+  end)
+  |> Yield.with_handler()
+
+# Run until suspension
+{%Suspend{value: :waiting} = suspend, env} = Comp.run(computation)
+# Prints: Entering scope
+
+# Cancel instead of resuming - triggers cleanup
+{%Cancelled{reason: :user_cancelled}, _final_env} =
+  Comp.cancel(suspend, env, :user_cancelled)
+# Prints: Cleanup called with: Skuld.Comp.Cancelled
+```
+
+The `Comp.cancel/3` function:
+- Creates a `%Cancelled{reason: reason}` result
+- Invokes the `leave_scope` chain for proper effect cleanup
+- Returns `{%Cancelled{}, final_env}`
+
+This is used internally by `AsyncComputation.cancel/1` and `Yield.run_with_driver/2`
+(via `{:cancel, reason}` driver return) to ensure effects can clean up when
+computations are cancelled.
 
 ## Syntax
 
@@ -893,48 +997,6 @@ end)
 # Prints: Got: 1, Got: 2, Got: 3
 #=> {:done, :done, _env}
 ```
-
-#### Cancelling Suspended Computations
-
-When a computation yields, you can either resume it or cancel it. Cancellation invokes
-the `leave_scope` chain, allowing effects to clean up resources (close connections,
-release locks, etc.):
-
-```elixir
-alias Skuld.Comp
-alias Skuld.Comp.{Suspend, Cancelled}
-
-# A computation with scoped cleanup
-computation =
-  Yield.yield(:waiting)
-  |> Comp.scoped(fn env ->
-    IO.puts("Entering scope")
-    finally_k = fn result, e ->
-      IO.puts("Cleanup called with: #{inspect(result.__struct__)}")
-      {result, e}
-    end
-    {env, finally_k}
-  end)
-  |> Yield.with_handler()
-
-# Run until suspension
-{%Suspend{value: :waiting}, env} = Comp.run(computation)
-# Prints: Entering scope
-
-# Cancel instead of resuming - triggers cleanup
-{%Cancelled{reason: :user_cancelled}, _final_env} =
-  Comp.cancel(suspend, env, :user_cancelled)
-# Prints: Cleanup called with: Skuld.Comp.Cancelled
-```
-
-The `Comp.cancel/3` function:
-- Creates a `%Cancelled{reason: reason}` result
-- Invokes the `leave_scope` chain for proper effect cleanup
-- Returns `{%Cancelled{}, final_env}`
-
-This is used internally by `AsyncComputation.cancel/1` and `Yield.run_with_driver/2`
-(via `{:cancel, reason}` driver return) to ensure effects can clean up when
-computations are cancelled.
 
 #### Yield.respond - Internal Yield Handling
 
