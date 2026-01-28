@@ -69,6 +69,15 @@ defmodule Skuld.Effects.PortTest do
       {result, _env} = Comp.run(comp)
       assert {:ok, [%{id: 1}, %{id: 2}]} = result
     end
+
+    test "handles multiple keyword params" do
+      comp =
+        Port.request(TestQueries, :multi_param, id: 42, name: "Alice")
+        |> Port.with_handler(%{TestQueries => :direct})
+
+      {result, _env} = Comp.run(comp)
+      assert {:ok, %{id: 42, name: "Alice"}} = result
+    end
   end
 
   describe "with_handler/2 - :direct resolver" do
@@ -248,6 +257,22 @@ defmodule Skuld.Effects.PortTest do
 
       {result, _env} = Comp.run(comp)
       assert {:error, :not_found} = result
+    end
+
+    test "matches multi-param keys regardless of order" do
+      # Key built with one order
+      responses = %{
+        Port.key(TestQueries, :multi_param, name: "Bob", id: 99) =>
+          {:ok, %{id: 99, name: "Stubbed Bob"}}
+      }
+
+      # Request with different order
+      comp =
+        Port.request(TestQueries, :multi_param, id: 99, name: "Bob")
+        |> Port.with_test_handler(responses)
+
+      {result, _env} = Comp.run(comp)
+      assert {:ok, %{id: 99, name: "Stubbed Bob"}} = result
     end
   end
 
