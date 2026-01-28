@@ -7,7 +7,7 @@ defmodule Skuld.Effects.Port do
 
     * `mod` – module implementing the function
     * `name` – function name inside `mod`
-    * `params` – map/struct of parameters
+    * `params` – keyword list of parameters
 
   ## Use Cases
 
@@ -33,7 +33,7 @@ defmodule Skuld.Effects.Port do
 
       # Implementation returns result tuples
       defmodule MyApp.UserQueries do
-        def find_by_id(%{id: id}) do
+        def find_by_id(id: id) do
           case Repo.get(User, id) do
             nil -> {:error, {:not_found, User, id}}
             user -> {:ok, user}
@@ -43,7 +43,7 @@ defmodule Skuld.Effects.Port do
 
       # Using request/3 - returns result tuple
       defcomp find_user(id) do
-        result <- Port.request(MyApp.UserQueries, :find_by_id, %{id: id})
+        result <- Port.request(MyApp.UserQueries, :find_by_id, id: id)
         case result do
           {:ok, user} -> return(user)
           {:error, _} -> return(nil)
@@ -52,7 +52,7 @@ defmodule Skuld.Effects.Port do
 
       # Using request!/3 - unwraps or throws
       defcomp find_user!(id) do
-        user <- Port.request!(MyApp.UserQueries, :find_by_id, %{id: id})
+        user <- Port.request!(MyApp.UserQueries, :find_by_id, id: id)
         return(user)
       end
 
@@ -62,11 +62,19 @@ defmodule Skuld.Effects.Port do
       |> Throw.with_handler()
       |> Comp.run!()
 
-      # Test: stub responses (use result tuples)
+      # Test: stub responses with exact key matching
       find_user!(123)
       |> Port.with_test_handler(%{
-        Port.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => {:ok, %{id: 123, name: "Alice"}}
+        Port.key(MyApp.UserQueries, :find_by_id, id: 123) => {:ok, %{id: 123, name: "Alice"}}
       })
+      |> Throw.with_handler()
+      |> Comp.run!()
+
+      # Test: function-based handler with pattern matching
+      find_user!(123)
+      |> Port.with_fn_handler(fn
+        MyApp.UserQueries, :find_by_id, [id: id] -> {:ok, %{id: id, name: "User \#{id}"}}
+      end)
       |> Throw.with_handler()
       |> Comp.run!()
   """
@@ -101,8 +109,8 @@ defmodule Skuld.Effects.Port do
   @typedoc "Function exported by `port_module`"
   @type port_name :: atom()
 
-  @typedoc "Opaque parameter payload"
-  @type params :: map() | struct()
+  @typedoc "Keyword list of parameters"
+  @type params :: keyword()
 
   @typedoc """
   Registry entry for dispatching requests.
@@ -121,6 +129,9 @@ defmodule Skuld.Effects.Port do
   @typedoc "Registry mapping port modules to resolvers"
   @type registry :: %{port_module() => resolver()}
 
+  @typedoc "Function handler for test scenarios - receives (mod, name, params)"
+  @type fn_handler :: (port_module(), port_name(), params() -> term())
+
   #############################################################################
   ## Operations
   #############################################################################
@@ -133,11 +144,11 @@ defmodule Skuld.Effects.Port do
 
   ## Example
 
-      Port.request(MyApp.UserQueries, :find_by_id, %{id: 123})
+      Port.request(MyApp.UserQueries, :find_by_id, id: 123)
       # => {:ok, %User{...}} or {:error, {:not_found, User, 123}}
   """
   @spec request(port_module(), port_name(), params()) :: Types.computation()
-  def request(mod, name, params \\ %{}) do
+  def request(mod, name, params \\ []) do
     Comp.effect(@sig, %Request{mod: mod, name: name, params: params})
   end
 
@@ -152,11 +163,11 @@ defmodule Skuld.Effects.Port do
 
   ## Example
 
-      Port.request!(MyApp.UserQueries, :find_by_id, %{id: 123})
+      Port.request!(MyApp.UserQueries, :find_by_id, id: 123)
       # => %User{...} or throws {:not_found, User, 123}
   """
   @spec request!(port_module(), port_name(), params()) :: Types.computation()
-  def request!(mod, name, params \\ %{}) do
+  def request!(mod, name, params \\ []) do
     Comp.bind(request(mod, name, params), fn
       {:ok, value} -> Comp.pure(value)
       {:error, reason} -> Throw.throw(reason)
@@ -170,12 +181,12 @@ defmodule Skuld.Effects.Port do
   @doc """
   Build a canonical key usable with `with_test_handler/2`.
 
-  Parameters are normalized so that structurally-equal maps/structs produce the
-  same key, independent of key ordering.
+  Parameters are normalized so that keyword lists with the same keys and values
+  produce the same key, independent of key ordering.
 
   ## Example
 
-      Port.key(MyApp.UserQueries, :find_by_id, %{id: 123})
+      Port.key(MyApp.UserQueries, :find_by_id, id: 123)
   """
   @spec key(port_module(), port_name(), params()) ::
           {port_module(), port_name(), binary()}
@@ -193,7 +204,6 @@ defmodule Skuld.Effects.Port do
 
   defp canonical_term(%_{} = struct) do
     # Convert struct to list of {key, value} pairs including __struct__
-    # Don't use Map.put back as that creates a map matching %_{} again
     struct_name = struct.__struct__
 
     struct
@@ -209,7 +219,17 @@ defmodule Skuld.Effects.Port do
     |> Enum.sort_by(&elem(&1, 0))
   end
 
-  defp canonical_term(list) when is_list(list), do: Enum.map(list, &canonical_term/1)
+  defp canonical_term(list) when is_list(list) do
+    if Keyword.keyword?(list) do
+      # Keyword list - sort by key for canonical form
+      list
+      |> Enum.map(fn {k, v} -> {k, canonical_term(v)} end)
+      |> Enum.sort_by(&elem(&1, 0))
+    else
+      # Regular list - preserve order
+      Enum.map(list, &canonical_term/1)
+    end
+  end
 
   defp canonical_term(tuple) when is_tuple(tuple) do
     {:__tuple__, tuple |> Tuple.to_list() |> Enum.map(&canonical_term/1)}
@@ -275,29 +295,132 @@ defmodule Skuld.Effects.Port do
   def __handle__(comp, registry) when is_map(registry), do: with_handler(comp, registry)
 
   #############################################################################
-  ## Handler Installation - Test
+  ## Handler Installation - Test (Map-based)
   #############################################################################
 
   @doc """
   Install a test handler with canned responses.
 
   Provide a map of responses keyed by `Port.key/3`. Missing keys will
-  throw `{:port_not_stubbed, key}`.
+  throw `{:port_not_stubbed, key}` unless a `fallback:` function is provided.
+
+  ## Options
+
+    * `:fallback` - A function `(mod, name, params) -> result` to call when
+      no exact key match is found. Useful for handling dynamic parameters
+      while still using exact matching for known cases.
+    * `:output` - Transform result when leaving scope
+    * `:suspend` - Decorate Suspend values when yielding
 
   ## Example
 
       responses = %{
-        Port.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => %{id: 123, name: "Alice"},
-        Port.key(MyApp.UserQueries, :find_by_id, %{id: 456}) => nil
+        Port.key(MyApp.UserQueries, :find_by_id, id: 123) => {:ok, %{name: "Alice"}},
+        Port.key(MyApp.UserQueries, :find_by_id, id: 456) => {:error, :not_found}
       }
 
       my_comp
       |> Port.with_test_handler(responses)
       |> Throw.with_handler()
       |> Comp.run!()
+
+      # With fallback for dynamic cases
+      my_comp
+      |> Port.with_test_handler(responses, fallback: fn
+        MyApp.AuditQueries, _name, _params -> :ok
+        mod, name, params -> raise "Unhandled: \#{inspect(mod)}.\#{name}"
+      end)
+      |> Throw.with_handler()
+      |> Comp.run!()
   """
   @spec with_test_handler(Types.computation(), map(), keyword()) :: Types.computation()
   def with_test_handler(comp, responses, opts \\ []) when is_map(responses) do
+    fallback = Keyword.get(opts, :fallback)
+    output = Keyword.get(opts, :output)
+    suspend = Keyword.get(opts, :suspend)
+
+    scoped_opts =
+      []
+      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
+      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
+
+    state =
+      if fallback do
+        {:test, responses, fallback}
+      else
+        {:test, responses}
+      end
+
+    comp
+    |> Comp.with_scoped_state(@state_key, state, scoped_opts)
+    |> Comp.with_handler(@sig, &__MODULE__.handle/3)
+  end
+
+  #############################################################################
+  ## Handler Installation - Test (Function-based)
+  #############################################################################
+
+  @doc """
+  Install a function-based test handler.
+
+  The handler function receives `(mod, name, params)` and can use Elixir's
+  full pattern matching power including guards, pins, and wildcards.
+
+  If no function clause matches, throws `{:port_not_handled, mod, name, params}`.
+
+  ## Example
+
+      handler = fn
+        # Pin specific values
+        MyApp.UserQueries, :find_by_id, [id: ^expected_id] ->
+          {:ok, %{id: expected_id, name: "Expected"}}
+
+        # Match any value with wildcard
+        MyApp.UserQueries, :find_by_id, [id: _any_id] ->
+          {:ok, %{id: "default", name: "Default"}}
+
+        # Match with guards
+        MyApp.Queries, :paginate, [limit: l] when l > 100 ->
+          {:error, :limit_too_high}
+
+        # Match specific module, any function
+        MyApp.AuditQueries, _function, _params ->
+          :ok
+
+        # Catch-all (optional)
+        mod, fun, params ->
+          raise "Unhandled: \#{inspect(mod)}.\#{fun}(\#{inspect(params)})"
+      end
+
+      my_comp
+      |> Port.with_fn_handler(handler)
+      |> Throw.with_handler()
+      |> Comp.run!()
+
+  ## Property-Based Testing
+
+  Function handlers are ideal for property-based tests where exact values
+  aren't known upfront:
+
+      property "user lookup succeeds" do
+        check all user_id <- uuid_generator() do
+          handler = fn
+            UserQueries, :find_by_id, [id: ^user_id] ->
+              {:ok, %{id: user_id, name: "Test User"}}
+          end
+
+          result =
+            find_user(user_id)
+            |> Port.with_fn_handler(handler)
+            |> Throw.with_handler()
+            |> Comp.run!()
+
+          assert {:ok, _} = result
+        end
+      end
+  """
+  @spec with_fn_handler(Types.computation(), fn_handler(), keyword()) :: Types.computation()
+  def with_fn_handler(comp, handler_fn, opts \\ []) when is_function(handler_fn, 3) do
     output = Keyword.get(opts, :output)
     suspend = Keyword.get(opts, :suspend)
 
@@ -307,7 +430,7 @@ defmodule Skuld.Effects.Port do
       |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
 
     comp
-    |> Comp.with_scoped_state(@state_key, {:test, responses}, scoped_opts)
+    |> Comp.with_scoped_state(@state_key, {:fn_handler, handler_fn}, scoped_opts)
     |> Comp.with_handler(@sig, &__MODULE__.handle/3)
   end
 
@@ -322,7 +445,13 @@ defmodule Skuld.Effects.Port do
         handle_runtime(registry, mod, name, params, env, k)
 
       {:test, responses} ->
-        handle_test(responses, mod, name, params, env, k)
+        handle_test(responses, nil, mod, name, params, env, k)
+
+      {:test, responses, fallback} ->
+        handle_test(responses, fallback, mod, name, params, env, k)
+
+      {:fn_handler, handler_fn} ->
+        handle_fn(handler_fn, mod, name, params, env, k)
 
       nil ->
         # No handler state - this shouldn't happen if with_handler was called
@@ -341,17 +470,34 @@ defmodule Skuld.Effects.Port do
     end
   end
 
-  defp handle_test(responses, mod, name, params, env, k) do
+  defp handle_test(responses, fallback, mod, name, params, env, k) do
     request_key = key(mod, name, params)
 
     case Map.fetch(responses, request_key) do
       {:ok, result} ->
         k.(result, env)
 
+      :error when is_function(fallback, 3) ->
+        # Try fallback function
+        handle_fn(fallback, mod, name, params, env, k)
+
       :error ->
-        # Return Throw sentinel directly - it will be handled by leave_scope chain
+        # No match and no fallback
         {%ThrowResult{error: {:port_not_stubbed, request_key}}, env}
     end
+  end
+
+  defp handle_fn(handler_fn, mod, name, params, env, k) do
+    result = handler_fn.(mod, name, params)
+    k.(result, env)
+  rescue
+    e in FunctionClauseError ->
+      # No matching clause - report what we received
+      {%ThrowResult{error: {:port_not_handled, mod, name, params, e}}, env}
+
+    e ->
+      # Other error in handler
+      {%ThrowResult{error: {:port_handler_error, mod, name, e}}, env}
   end
 
   #############################################################################

@@ -507,8 +507,8 @@ defmodule MyDomain do
   use Skuld.Syntax
 
   defcomp fetch_user_data(user_id) do
-    user <- Port.request(Users, :find, %{id: user_id})
-    profile <- Port.request(Profiles, :find, %{user_id: user_id})
+    user <- Port.request(Users, :find, id: user_id)
+    profile <- Port.request(Profiles, :find, user_id: user_id)
     {user, profile}
   end
 end
@@ -1744,32 +1744,50 @@ Dispatch parameterizable blocking calls to pluggable backends. Ideal for wrappin
 any existing side-effecting code (database queries, HTTP calls, file I/O, etc.):
 
 ```elixir
-# Define a module with side-effecting functions
+# Define a module with side-effecting functions (accepts keyword list params)
 defmodule MyQueries do
-  def find_user(%{id: id}), do: %{id: id, name: "User #{id}"}
+  def find_user(id: id), do: %{id: id, name: "User #{id}"}
 end
 
 # Runtime: dispatch to actual modules
 comp do
-  user <- Port.request(MyQueries, :find_user, %{id: 123})
+  user <- Port.request(MyQueries, :find_user, id: 123)
   user
 end
 |> Port.with_handler(%{MyQueries => :direct})
 |> Comp.run!()
 #=> %{id: 123, name: "User 123"}
 
-# Test: stub responses
+# Test: exact key matching with stub responses
 comp do
-  user <- Port.request(MyQueries, :find_user, %{id: 456})
+  user <- Port.request(MyQueries, :find_user, id: 456)
   user
 end
 |> Port.with_test_handler(%{
-  Port.key(MyQueries, :find_user, %{id: 456}) => %{id: 456, name: "Stubbed"}
+  Port.key(MyQueries, :find_user, id: 456) => %{id: 456, name: "Stubbed"}
 })
 |> Throw.with_handler()
 |> Comp.run!()
 #=> %{id: 456, name: "Stubbed"}
+
+# Test: function-based handler with pattern matching (ideal for property tests)
+comp do
+  user <- Port.request(MyQueries, :find_user, id: 789)
+  user
+end
+|> Port.with_fn_handler(fn
+  MyQueries, :find_user, [id: id] -> %{id: id, name: "Generated User #{id}"}
+  MyQueries, :list_users, [limit: n] when n > 100 -> {:error, :limit_too_high}
+  _mod, _fun, _params -> :default
+end)
+|> Comp.run!()
+#=> %{id: 789, name: "Generated User 789"}
 ```
+
+The function handler enables Elixir's full pattern matching power - pins, guards,
+wildcards - making it ideal for property-based tests where exact values aren't
+known upfront. Use `with_test_handler` for simple exact-match cases and
+`with_fn_handler` for complex dynamic scenarios.
 
 #### Command
 
