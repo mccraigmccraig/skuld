@@ -1,17 +1,27 @@
-defmodule Skuld.Effects.Query do
+defmodule Skuld.Effects.Port do
   @moduledoc """
-  Backend-agnostic data query effect.
+  Effect for dispatching parameterizable blocking calls to pluggable backends.
 
-  This effect lets domain code express "run this query" without binding to a
-  particular storage layer. Each request specifies:
+  This effect lets domain code express "call this function" without binding to a
+  particular implementation. Each request specifies:
 
-    * `mod` – module implementing the query
+    * `mod` – module implementing the function
     * `name` – function name inside `mod`
-    * `params` – map/struct of query parameters
+    * `params` – map/struct of parameters
+
+  ## Use Cases
+
+  Port is ideal for wrapping any existing side-effecting Elixir code:
+
+    * Database queries
+    * HTTP API calls
+    * File system operations
+    * External service integrations
+    * Legacy code that performs I/O
 
   ## Result Tuple Convention
 
-  Query handlers should return `{:ok, value}` or `{:error, reason}` tuples.
+  Port handlers should return `{:ok, value}` or `{:error, reason}` tuples.
   This convention enables two request modes:
 
     * `request/3` – returns the result tuple as-is for caller to handle
@@ -19,9 +29,9 @@ defmodule Skuld.Effects.Query do
 
   ## Example
 
-      alias Skuld.Effects.Query
+      alias Skuld.Effects.Port
 
-      # Query implementation returns result tuples
+      # Implementation returns result tuples
       defmodule MyApp.UserQueries do
         def find_by_id(%{id: id}) do
           case Repo.get(User, id) do
@@ -33,7 +43,7 @@ defmodule Skuld.Effects.Query do
 
       # Using request/3 - returns result tuple
       defcomp find_user(id) do
-        result <- Query.request(MyApp.UserQueries, :find_by_id, %{id: id})
+        result <- Port.request(MyApp.UserQueries, :find_by_id, %{id: id})
         case result do
           {:ok, user} -> return(user)
           {:error, _} -> return(nil)
@@ -42,20 +52,20 @@ defmodule Skuld.Effects.Query do
 
       # Using request!/3 - unwraps or throws
       defcomp find_user!(id) do
-        user <- Query.request!(MyApp.UserQueries, :find_by_id, %{id: id})
+        user <- Port.request!(MyApp.UserQueries, :find_by_id, %{id: id})
         return(user)
       end
 
-      # Runtime: dispatch to actual query modules
+      # Runtime: dispatch to actual modules
       find_user!(123)
-      |> Query.with_handler(%{MyApp.UserQueries => :direct})
+      |> Port.with_handler(%{MyApp.UserQueries => :direct})
       |> Throw.with_handler()
       |> Comp.run!()
 
       # Test: stub responses (use result tuples)
       find_user!(123)
-      |> Query.with_test_handler(%{
-        Query.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => {:ok, %{id: 123, name: "Alice"}}
+      |> Port.with_test_handler(%{
+        Port.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => {:ok, %{id: 123, name: "Alice"}}
       })
       |> Throw.with_handler()
       |> Comp.run!()
@@ -85,56 +95,56 @@ defmodule Skuld.Effects.Query do
   ## Types
   #############################################################################
 
-  @typedoc "Query module implementing `name/1`"
-  @type query_module :: module()
+  @typedoc "Module implementing `name/1`"
+  @type port_module :: module()
 
-  @typedoc "Function exported by `query_module`"
-  @type query_name :: atom()
+  @typedoc "Function exported by `port_module`"
+  @type port_name :: atom()
 
   @typedoc "Opaque parameter payload"
   @type params :: map() | struct()
 
   @typedoc """
-  Registry entry for dispatching queries.
+  Registry entry for dispatching requests.
 
     * `:direct` – call `apply(mod, name, [params])`
     * `function` (arity 3) – `fun.(mod, name, params)`
     * `{module, function}` – invokes `apply(module, function, [mod, name, params])`
-    * `module` – invokes `module.handle_query(mod, name, params)`
+    * `module` – invokes `module.handle_port(mod, name, params)`
   """
   @type resolver ::
           :direct
-          | (query_module(), query_name(), params() -> term())
+          | (port_module(), port_name(), params() -> term())
           | {module(), atom()}
           | module()
 
-  @typedoc "Registry mapping query modules to resolvers"
-  @type registry :: %{query_module() => resolver()}
+  @typedoc "Registry mapping port modules to resolvers"
+  @type registry :: %{port_module() => resolver()}
 
   #############################################################################
   ## Operations
   #############################################################################
 
   @doc """
-  Build a query request for the given module/function.
+  Build a request for the given module/function.
 
   Returns the result tuple `{:ok, value}` or `{:error, reason}` as-is,
   allowing the caller to handle errors explicitly.
 
   ## Example
 
-      Query.request(MyApp.UserQueries, :find_by_id, %{id: 123})
+      Port.request(MyApp.UserQueries, :find_by_id, %{id: 123})
       # => {:ok, %User{...}} or {:error, {:not_found, User, 123}}
   """
-  @spec request(query_module(), query_name(), params()) :: Types.computation()
+  @spec request(port_module(), port_name(), params()) :: Types.computation()
   def request(mod, name, params \\ %{}) do
     Comp.effect(@sig, %Request{mod: mod, name: name, params: params})
   end
 
   @doc """
-  Build a query request that unwraps the result or throws on error.
+  Build a request that unwraps the result or throws on error.
 
-  Expects the query handler to return `{:ok, value}` or `{:error, reason}`.
+  Expects the handler to return `{:ok, value}` or `{:error, reason}`.
   On success, returns the unwrapped `value`. On error, dispatches a
   `Skuld.Effects.Throw` effect with the `reason`.
 
@@ -142,10 +152,10 @@ defmodule Skuld.Effects.Query do
 
   ## Example
 
-      Query.request!(MyApp.UserQueries, :find_by_id, %{id: 123})
+      Port.request!(MyApp.UserQueries, :find_by_id, %{id: 123})
       # => %User{...} or throws {:not_found, User, 123}
   """
-  @spec request!(query_module(), query_name(), params()) :: Types.computation()
+  @spec request!(port_module(), port_name(), params()) :: Types.computation()
   def request!(mod, name, params \\ %{}) do
     Comp.bind(request(mod, name, params), fn
       {:ok, value} -> Comp.pure(value)
@@ -165,10 +175,10 @@ defmodule Skuld.Effects.Query do
 
   ## Example
 
-      Query.key(MyApp.UserQueries, :find_by_id, %{id: 123})
+      Port.key(MyApp.UserQueries, :find_by_id, %{id: 123})
   """
-  @spec key(query_module(), query_name(), params()) ::
-          {query_module(), query_name(), binary()}
+  @spec key(port_module(), port_name(), params()) ::
+          {port_module(), port_name(), binary()}
   def key(mod, name, params) do
     {mod, name, normalize_params(params)}
   end
@@ -212,15 +222,15 @@ defmodule Skuld.Effects.Query do
   #############################################################################
 
   @doc """
-  Install a scoped Query handler for a computation.
+  Install a scoped Port handler for a computation.
 
-  Pass a registry map keyed by query module to control how queries are
+  Pass a registry map keyed by module to control how requests are
   dispatched. Each entry can be one of:
 
     * `:direct` – call `apply(mod, name, [params])`
     * `function` (arity 3) – `fun.(mod, name, params)`
     * `{module, function}` – invokes `apply(module, function, [mod, name, params])`
-    * `module` – invokes `module.handle_query(mod, name, params)`
+    * `module` – invokes `module.handle_port(mod, name, params)`
 
   Handlers may return any value. To signal errors, raise or use
   `Skuld.Effects.Throw.throw/1`.
@@ -228,9 +238,9 @@ defmodule Skuld.Effects.Query do
   ## Example
 
       my_comp
-      |> Query.with_handler(%{
+      |> Port.with_handler(%{
         MyApp.UserQueries => :direct,
-        MyApp.OrderQueries => MyApp.CachedQueryHandler
+        MyApp.OrderQueries => MyApp.CachedHandler
       })
       |> Comp.run!()
   """
@@ -250,13 +260,13 @@ defmodule Skuld.Effects.Query do
   end
 
   @doc """
-  Install Query handler via catch clause syntax.
+  Install Port handler via catch clause syntax.
 
   Config is the registry map, or `{registry, opts}`:
 
       catch
-        Query -> %{MyQueries => :direct}
-        Query -> {%{MyQueries => :direct}, output: fn r, s -> {r, s} end}
+        Port -> %{MyModule => :direct}
+        Port -> {%{MyModule => :direct}, output: fn r, s -> {r, s} end}
   """
   @impl Skuld.Comp.IInstall
   def __handle__(comp, {registry, opts}) when is_map(registry) and is_list(opts),
@@ -271,18 +281,18 @@ defmodule Skuld.Effects.Query do
   @doc """
   Install a test handler with canned responses.
 
-  Provide a map of responses keyed by `Query.key/3`. Missing keys will
-  throw `{:query_not_stubbed, key}`.
+  Provide a map of responses keyed by `Port.key/3`. Missing keys will
+  throw `{:port_not_stubbed, key}`.
 
   ## Example
 
       responses = %{
-        Query.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => %{id: 123, name: "Alice"},
-        Query.key(MyApp.UserQueries, :find_by_id, %{id: 456}) => nil
+        Port.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => %{id: 123, name: "Alice"},
+        Port.key(MyApp.UserQueries, :find_by_id, %{id: 456}) => nil
       }
 
       my_comp
-      |> Query.with_test_handler(responses)
+      |> Port.with_test_handler(responses)
       |> Throw.with_handler()
       |> Comp.run!()
   """
@@ -316,7 +326,7 @@ defmodule Skuld.Effects.Query do
 
       nil ->
         # No handler state - this shouldn't happen if with_handler was called
-        {%ThrowResult{error: {:query_handler_not_configured, mod, name}}, env}
+        {%ThrowResult{error: {:port_handler_not_configured, mod, name}}, env}
     end
   end
 
@@ -332,15 +342,15 @@ defmodule Skuld.Effects.Query do
   end
 
   defp handle_test(responses, mod, name, params, env, k) do
-    query_key = key(mod, name, params)
+    request_key = key(mod, name, params)
 
-    case Map.fetch(responses, query_key) do
+    case Map.fetch(responses, request_key) do
       {:ok, result} ->
         k.(result, env)
 
       :error ->
         # Return Throw sentinel directly - it will be handled by leave_scope chain
-        {%ThrowResult{error: {:query_not_stubbed, query_key}}, env}
+        {%ThrowResult{error: {:port_not_stubbed, request_key}}, env}
     end
   end
 
@@ -355,11 +365,11 @@ defmodule Skuld.Effects.Query do
           {:ok, invoke(resolver, mod, name, params)}
         rescue
           exception ->
-            {:error, {:query_failed, mod, name, exception}}
+            {:error, {:port_failed, mod, name, exception}}
         end
 
       :error ->
-        {:error, {:unknown_query_module, mod}}
+        {:error, {:unknown_port_module, mod}}
     end
   end
 
@@ -376,11 +386,11 @@ defmodule Skuld.Effects.Query do
   end
 
   defp invoke(module, mod, name, params) when is_atom(module) do
-    if function_exported?(module, :handle_query, 3) do
-      module.handle_query(mod, name, params)
+    if function_exported?(module, :handle_port, 3) do
+      module.handle_port(mod, name, params)
     else
       raise ArgumentError,
-            "#{inspect(module)} must export handle_query/3 to be used as a Query handler entry"
+            "#{inspect(module)} must export handle_port/3 to be used as a Port handler entry"
     end
   end
 end

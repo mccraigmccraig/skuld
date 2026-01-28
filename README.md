@@ -30,7 +30,7 @@ some common side-effecting operations and their effectful equivalents:
 | Async tasks / parallel work     | Async, Parallel              |
 | Run effects from LiveView       | AsyncComputation             |
 | Database transactions           | DBTransaction                |
-| Database queries                | Query                        |
+| Blocking calls to external code | Port                         |
 | Ecto Repo operations            | ChangesetPersist             |
 | Decider pattern                 | Command, EventAccumulator    |
 | Tracing, replay & resume        | EffectLogger                 |
@@ -85,7 +85,7 @@ some common side-effecting operations and their effectful equivalents:
     - [Async](#async)
   - [Persistence & Data](#persistence--data)
     - [DBTransaction](#dbtransaction)
-    - [Query](#query)
+    - [Port](#port)
     - [Command](#command)
     - [EventAccumulator](#eventaccumulator)
     - [ChangesetPersist](#changesetpersist)
@@ -507,8 +507,8 @@ defmodule MyDomain do
   use Skuld.Syntax
 
   defcomp fetch_user_data(user_id) do
-    user <- Query.request(Users, :find, %{id: user_id})
-    profile <- Query.request(Profiles, :find, %{user_id: user_id})
+    user <- Port.request(Users, :find, %{id: user_id})
+    profile <- Port.request(Profiles, :find, %{user_id: user_id})
     {user, profile}
   end
 end
@@ -614,7 +614,7 @@ alias Skuld.Effects.{
   State, Reader, Writer, Throw, Yield,
   FxList, FxFasterList,
   Fresh, Random, AtomicState, Async, Parallel, Async, Bracket,
-  Query, Command, EventAccumulator, EffectLogger,
+  Port, Command, EventAccumulator, EffectLogger,
   DBTransaction, ChangesetPersist, ChangeEvent
 }
 alias Skuld.Effects.Async.Scheduler
@@ -715,7 +715,7 @@ end
 
 #### Scoped State Transformation
 
-Effects that use scoped state (State, Writer, Reader, Fresh, Random, Query, AtomicState)
+Effects that use scoped state (State, Writer, Reader, Fresh, Random, Port, AtomicState)
 support `:output` and `:suspend` options for transforming values at scope boundaries:
 
 **`:output` - Transform result when leaving scope**
@@ -1738,32 +1738,33 @@ create_order.(123, [:item_a, :item_b])
 #=> %{id: 1, user_id: 123, items: [:item_a, :item_b]}
 ```
 
-#### Query
+#### Port
 
-Backend-agnostic data queries with pluggable handlers:
+Dispatch parameterizable blocking calls to pluggable backends. Ideal for wrapping
+any existing side-effecting code (database queries, HTTP calls, file I/O, etc.):
 
 ```elixir
-# Define a query module (in real code, this would have actual implementations)
+# Define a module with side-effecting functions
 defmodule MyQueries do
   def find_user(%{id: id}), do: %{id: id, name: "User #{id}"}
 end
 
-# Runtime: dispatch to actual query modules
+# Runtime: dispatch to actual modules
 comp do
-  user <- Query.request(MyQueries, :find_user, %{id: 123})
+  user <- Port.request(MyQueries, :find_user, %{id: 123})
   user
 end
-|> Query.with_handler(%{MyQueries => :direct})
+|> Port.with_handler(%{MyQueries => :direct})
 |> Comp.run!()
 #=> %{id: 123, name: "User 123"}
 
 # Test: stub responses
 comp do
-  user <- Query.request(MyQueries, :find_user, %{id: 456})
+  user <- Port.request(MyQueries, :find_user, %{id: 456})
   user
 end
-|> Query.with_test_handler(%{
-  Query.key(MyQueries, :find_user, %{id: 456}) => %{id: 456, name: "Stubbed"}
+|> Port.with_test_handler(%{
+  Port.key(MyQueries, :find_user, %{id: 456}) => %{id: 456, name: "Stubbed"}
 })
 |> Throw.with_handler()
 |> Comp.run!()
@@ -2069,7 +2070,7 @@ this approach. The domain handlers use effects for all I/O:
 # Domain logic in Todos.Handlers - uses effects, doesn't perform I/O directly
 defcomp handle(%ToggleTodo{id: id}) do
   ctx <- Reader.ask(CommandContext)
-  todo <- Repository.get_todo!(ctx.tenant_id, id)  # Query effect
+  todo <- Repository.get_todo!(ctx.tenant_id, id)  # Port effect
   changeset = Todo.changeset(todo, %{completed: not todo.completed})
   updated <- ChangesetPersist.update(changeset)    # Persist effect
   {:ok, updated}
@@ -2081,12 +2082,12 @@ The `Run.execute/2` function composes different handler stacks based on mode:
 ```elixir
 # Production: real database
 Run.execute(operation, mode: :database, tenant_id: tenant_id)
-# -> Query.with_handler(%{Repository.Ecto => :direct})
+# -> Port.with_handler(%{Repository.Ecto => :direct})
 # -> ChangesetPersist.Ecto.with_handler(Repo)
 
 # Testing: pure in-memory
 Run.execute(operation, mode: :in_memory, tenant_id: tenant_id)
-# -> Query.with_handler(%{Repository.Ecto => {Repository.InMemory, :delegate}})
+# -> Port.with_handler(%{Repository.Ecto => {Repository.InMemory, :delegate}})
 # -> InMemoryPersist.with_handler()
 ```
 
@@ -2123,12 +2124,12 @@ end
 
 To enable property-based testing in your project:
 
-1. **Structure domain logic with effects** - Use `Query`, `ChangesetPersist`, `Reader`, etc.
+1. **Structure domain logic with effects** - Use `Port`, `ChangesetPersist`, `Reader`, etc.
    instead of direct Repo calls or process dictionary access.
 
 2. **Create in-memory implementations** - For each effect that touches external state,
    provide a pure alternative. Skuld includes test handlers for common effects:
-   - `Query.with_test_handler/2` - Stub query responses
+   - `Port.with_test_handler/2` - Stub responses for external calls
    - `ChangesetPersist.Test.with_handler/2` - Stub persist operations
    - `Fresh.with_test_handler/2` - Deterministic UUID generation
 

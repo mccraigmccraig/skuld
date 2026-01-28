@@ -42,7 +42,7 @@ defmodule Skuld.MixProject do
             Skuld.Effects.DBTransaction.Ecto,
             Skuld.Effects.DBTransaction.Noop,
             Skuld.Effects.EctoPersist,
-            Skuld.Effects.Query
+            Skuld.Effects.Port
           ],
           "Event & Logging Effects": [
             Skuld.Effects.EventAccumulator,

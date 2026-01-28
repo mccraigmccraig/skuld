@@ -1,12 +1,12 @@
-defmodule Skuld.Effects.QueryTest do
+defmodule Skuld.Effects.PortTest do
   use ExUnit.Case, async: true
 
   alias Skuld.Comp
   alias Skuld.Comp.Throw, as: ThrowResult
-  alias Skuld.Effects.Query
+  alias Skuld.Effects.Port
   alias Skuld.Effects.Throw
 
-  # Test query module - returns {:ok, _} | {:error, _} result tuples
+  # Test module - returns {:ok, _} | {:error, _} result tuples
   defmodule TestQueries do
     def find_user(%{id: id}) do
       {:ok, %{id: id, name: "User #{id}"}}
@@ -24,24 +24,24 @@ defmodule Skuld.Effects.QueryTest do
       {:ok, Enum.map(1..limit, &%{id: &1, name: "User #{&1}"})}
     end
 
-    def failing_query(_params) do
-      raise "Query failed!"
+    def failing_request(_params) do
+      raise "Request failed!"
     end
   end
 
   # Test handler module - wraps result in {:handled, _}
-  defmodule TestQueryHandler do
-    def handle_query(mod, name, params) do
+  defmodule TestPortHandler do
+    def handle_port(mod, name, params) do
       result = apply(mod, name, [params])
       {:ok, {:handled, result}}
     end
   end
 
   describe "request/3" do
-    test "creates a query request computation returning result tuple" do
+    test "creates a request computation returning result tuple" do
       comp =
-        Query.request(TestQueries, :find_user, %{id: 123})
-        |> Query.with_handler(%{TestQueries => :direct})
+        Port.request(TestQueries, :find_user, %{id: 123})
+        |> Port.with_handler(%{TestQueries => :direct})
 
       {result, _env} = Comp.run(comp)
       assert {:ok, %{id: 123, name: "User 123"}} = result
@@ -49,8 +49,8 @@ defmodule Skuld.Effects.QueryTest do
 
     test "returns error tuple as-is" do
       comp =
-        Query.request(TestQueries, :find_user_or_error, %{id: -1})
-        |> Query.with_handler(%{TestQueries => :direct})
+        Port.request(TestQueries, :find_user_or_error, %{id: -1})
+        |> Port.with_handler(%{TestQueries => :direct})
 
       {result, _env} = Comp.run(comp)
       assert {:error, {:not_found, :user, -1}} = result
@@ -58,8 +58,8 @@ defmodule Skuld.Effects.QueryTest do
 
     test "default params is empty map" do
       comp =
-        Query.request(TestQueries, :list_users, %{limit: 2})
-        |> Query.with_handler(%{TestQueries => :direct})
+        Port.request(TestQueries, :list_users, %{limit: 2})
+        |> Port.with_handler(%{TestQueries => :direct})
 
       {result, _env} = Comp.run(comp)
       assert {:ok, [%{id: 1}, %{id: 2}]} = result
@@ -69,8 +69,8 @@ defmodule Skuld.Effects.QueryTest do
   describe "with_handler/2 - :direct resolver" do
     test "dispatches directly to module function" do
       comp =
-        Query.request(TestQueries, :find_user, %{id: 42})
-        |> Query.with_handler(%{TestQueries => :direct})
+        Port.request(TestQueries, :find_user, %{id: 42})
+        |> Port.with_handler(%{TestQueries => :direct})
 
       {result, _env} = Comp.run(comp)
       assert {:ok, %{id: 42, name: "User 42"}} = result
@@ -80,8 +80,8 @@ defmodule Skuld.Effects.QueryTest do
   describe "request!/3" do
     test "unwraps {:ok, value} and returns value" do
       comp =
-        Query.request!(TestQueries, :find_user, %{id: 42})
-        |> Query.with_handler(%{TestQueries => :direct})
+        Port.request!(TestQueries, :find_user, %{id: 42})
+        |> Port.with_handler(%{TestQueries => :direct})
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
@@ -90,8 +90,8 @@ defmodule Skuld.Effects.QueryTest do
 
     test "dispatches Throw on {:error, reason}" do
       comp =
-        Query.request!(TestQueries, :find_user_or_error, %{id: -1})
-        |> Query.with_handler(%{TestQueries => :direct})
+        Port.request!(TestQueries, :find_user_or_error, %{id: -1})
+        |> Port.with_handler(%{TestQueries => :direct})
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
@@ -100,8 +100,8 @@ defmodule Skuld.Effects.QueryTest do
 
     test "unwraps list results" do
       comp =
-        Query.request!(TestQueries, :list_users, %{limit: 3})
-        |> Query.with_handler(%{TestQueries => :direct})
+        Port.request!(TestQueries, :list_users, %{limit: 3})
+        |> Port.with_handler(%{TestQueries => :direct})
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
@@ -110,12 +110,12 @@ defmodule Skuld.Effects.QueryTest do
 
     test "works with test handler stubs" do
       responses = %{
-        Query.key(TestQueries, :find_user, %{id: 999}) => {:ok, %{id: 999, name: "Stubbed"}}
+        Port.key(TestQueries, :find_user, %{id: 999}) => {:ok, %{id: 999, name: "Stubbed"}}
       }
 
       comp =
-        Query.request!(TestQueries, :find_user, %{id: 999})
-        |> Query.with_test_handler(responses)
+        Port.request!(TestQueries, :find_user, %{id: 999})
+        |> Port.with_test_handler(responses)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
@@ -124,12 +124,12 @@ defmodule Skuld.Effects.QueryTest do
 
     test "throws on stubbed error response" do
       responses = %{
-        Query.key(TestQueries, :find_user, %{id: 404}) => {:error, :user_not_found}
+        Port.key(TestQueries, :find_user, %{id: 404}) => {:error, :user_not_found}
       }
 
       comp =
-        Query.request!(TestQueries, :find_user, %{id: 404})
-        |> Query.with_test_handler(responses)
+        Port.request!(TestQueries, :find_user, %{id: 404})
+        |> Port.with_test_handler(responses)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
@@ -144,8 +144,8 @@ defmodule Skuld.Effects.QueryTest do
       end
 
       comp =
-        Query.request(TestQueries, :find_user, %{id: 99})
-        |> Query.with_handler(%{TestQueries => resolver})
+        Port.request(TestQueries, :find_user, %{id: 99})
+        |> Port.with_handler(%{TestQueries => resolver})
 
       {result, _env} = Comp.run(comp)
       assert {:ok, %{id: 99, name: "Custom 99"}} = result
@@ -161,8 +161,8 @@ defmodule Skuld.Effects.QueryTest do
 
     test "dispatches to module/function tuple" do
       comp =
-        Query.request(TestQueries, :find_user, %{id: 77})
-        |> Query.with_handler(%{TestQueries => {MFResolver, :resolve}})
+        Port.request(TestQueries, :find_user, %{id: 77})
+        |> Port.with_handler(%{TestQueries => {MFResolver, :resolve}})
 
       {result, _env} = Comp.run(comp)
       assert {:ok, %{id: 77, name: "MF 77"}} = result
@@ -170,10 +170,10 @@ defmodule Skuld.Effects.QueryTest do
   end
 
   describe "with_handler/2 - module resolver" do
-    test "dispatches to module with handle_query/3" do
+    test "dispatches to module with handle_port/3" do
       comp =
-        Query.request(TestQueries, :find_user, %{id: 55})
-        |> Query.with_handler(%{TestQueries => TestQueryHandler})
+        Port.request(TestQueries, :find_user, %{id: 55})
+        |> Port.with_handler(%{TestQueries => TestPortHandler})
 
       {result, _env} = Comp.run(comp)
       assert {:ok, {:handled, {:ok, %{id: 55, name: "User 55"}}}} = result
@@ -183,23 +183,23 @@ defmodule Skuld.Effects.QueryTest do
   describe "with_handler/2 - error handling" do
     test "throws on unknown module" do
       comp =
-        Query.request(UnknownModule, :some_query, %{})
-        |> Query.with_handler(%{TestQueries => :direct})
+        Port.request(UnknownModule, :some_request, %{})
+        |> Port.with_handler(%{TestQueries => :direct})
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
-      assert %ThrowResult{error: {:unknown_query_module, UnknownModule}} = result
+      assert %ThrowResult{error: {:unknown_port_module, UnknownModule}} = result
     end
 
-    test "throws on query exception" do
+    test "throws on request exception" do
       comp =
-        Query.request(TestQueries, :failing_query, %{})
-        |> Query.with_handler(%{TestQueries => :direct})
+        Port.request(TestQueries, :failing_request, %{})
+        |> Port.with_handler(%{TestQueries => :direct})
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
 
-      assert %ThrowResult{error: {:query_failed, TestQueries, :failing_query, %RuntimeError{}}} =
+      assert %ThrowResult{error: {:port_failed, TestQueries, :failing_request, %RuntimeError{}}} =
                result
     end
   end
@@ -207,12 +207,12 @@ defmodule Skuld.Effects.QueryTest do
   describe "with_test_handler/2" do
     test "returns stubbed response for matching key" do
       responses = %{
-        Query.key(TestQueries, :find_user, %{id: 123}) => {:ok, %{id: 123, name: "Stubbed Alice"}}
+        Port.key(TestQueries, :find_user, %{id: 123}) => {:ok, %{id: 123, name: "Stubbed Alice"}}
       }
 
       comp =
-        Query.request(TestQueries, :find_user, %{id: 123})
-        |> Query.with_test_handler(responses)
+        Port.request(TestQueries, :find_user, %{id: 123})
+        |> Port.with_test_handler(responses)
 
       {result, _env} = Comp.run(comp)
       assert {:ok, %{id: 123, name: "Stubbed Alice"}} = result
@@ -220,26 +220,26 @@ defmodule Skuld.Effects.QueryTest do
 
     test "throws on missing stub" do
       responses = %{
-        Query.key(TestQueries, :find_user, %{id: 123}) => {:ok, %{id: 123, name: "Alice"}}
+        Port.key(TestQueries, :find_user, %{id: 123}) => {:ok, %{id: 123, name: "Alice"}}
       }
 
       comp =
-        Query.request(TestQueries, :find_user, %{id: 999})
-        |> Query.with_test_handler(responses)
+        Port.request(TestQueries, :find_user, %{id: 999})
+        |> Port.with_test_handler(responses)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
-      assert %ThrowResult{error: {:query_not_stubbed, {TestQueries, :find_user, _}}} = result
+      assert %ThrowResult{error: {:port_not_stubbed, {TestQueries, :find_user, _}}} = result
     end
 
     test "can stub error responses" do
       responses = %{
-        Query.key(TestQueries, :find_user, %{id: 404}) => {:error, :not_found}
+        Port.key(TestQueries, :find_user, %{id: 404}) => {:error, :not_found}
       }
 
       comp =
-        Query.request(TestQueries, :find_user, %{id: 404})
-        |> Query.with_test_handler(responses)
+        Port.request(TestQueries, :find_user, %{id: 404})
+        |> Port.with_test_handler(responses)
 
       {result, _env} = Comp.run(comp)
       assert {:error, :not_found} = result
@@ -248,76 +248,76 @@ defmodule Skuld.Effects.QueryTest do
 
   describe "key/3" do
     test "produces same key for equivalent params regardless of key order" do
-      key1 = Query.key(TestQueries, :find, %{a: 1, b: 2})
-      key2 = Query.key(TestQueries, :find, %{b: 2, a: 1})
+      key1 = Port.key(TestQueries, :find, %{a: 1, b: 2})
+      key2 = Port.key(TestQueries, :find, %{b: 2, a: 1})
       assert key1 == key2
     end
 
     test "different params produce different keys" do
-      key1 = Query.key(TestQueries, :find, %{id: 1})
-      key2 = Query.key(TestQueries, :find, %{id: 2})
+      key1 = Port.key(TestQueries, :find, %{id: 1})
+      key2 = Port.key(TestQueries, :find, %{id: 2})
       assert key1 != key2
     end
 
     test "handles nested maps" do
-      key1 = Query.key(TestQueries, :find, %{filter: %{a: 1, b: 2}})
-      key2 = Query.key(TestQueries, :find, %{filter: %{b: 2, a: 1}})
+      key1 = Port.key(TestQueries, :find, %{filter: %{a: 1, b: 2}})
+      key2 = Port.key(TestQueries, :find, %{filter: %{b: 2, a: 1}})
       assert key1 == key2
     end
 
     test "handles structs" do
       # Use URI struct as a test case
-      key1 = Query.key(TestQueries, :find, %URI{host: "example.com", port: 80})
-      key2 = Query.key(TestQueries, :find, %URI{host: "example.com", port: 80})
+      key1 = Port.key(TestQueries, :find, %URI{host: "example.com", port: 80})
+      key2 = Port.key(TestQueries, :find, %URI{host: "example.com", port: 80})
       assert key1 == key2
     end
 
     test "handles lists" do
-      key1 = Query.key(TestQueries, :find, %{ids: [1, 2, 3]})
-      key2 = Query.key(TestQueries, :find, %{ids: [1, 2, 3]})
+      key1 = Port.key(TestQueries, :find, %{ids: [1, 2, 3]})
+      key2 = Port.key(TestQueries, :find, %{ids: [1, 2, 3]})
       assert key1 == key2
     end
 
     test "handles tuples" do
-      key1 = Query.key(TestQueries, :find, %{range: {1, 10}})
-      key2 = Query.key(TestQueries, :find, %{range: {1, 10}})
+      key1 = Port.key(TestQueries, :find, %{range: {1, 10}})
+      key2 = Port.key(TestQueries, :find, %{range: {1, 10}})
       assert key1 == key2
     end
   end
 
   describe "composition" do
-    test "multiple queries in sequence using request!" do
+    test "multiple requests in sequence using request!" do
       responses = %{
-        Query.key(TestQueries, :find_user, %{id: 1}) => {:ok, %{id: 1, name: "Alice"}},
-        Query.key(TestQueries, :find_user, %{id: 2}) => {:ok, %{id: 2, name: "Bob"}}
+        Port.key(TestQueries, :find_user, %{id: 1}) => {:ok, %{id: 1, name: "Alice"}},
+        Port.key(TestQueries, :find_user, %{id: 2}) => {:ok, %{id: 2, name: "Bob"}}
       }
 
       comp =
-        Comp.bind(Query.request!(TestQueries, :find_user, %{id: 1}), fn user1 ->
-          Comp.bind(Query.request!(TestQueries, :find_user, %{id: 2}), fn user2 ->
+        Comp.bind(Port.request!(TestQueries, :find_user, %{id: 1}), fn user1 ->
+          Comp.bind(Port.request!(TestQueries, :find_user, %{id: 2}), fn user2 ->
             Comp.pure([user1, user2])
           end)
         end)
-        |> Query.with_test_handler(responses)
+        |> Port.with_test_handler(responses)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
       assert [%{name: "Alice"}, %{name: "Bob"}] = result
     end
 
-    test "multiple queries with request returning result tuples" do
+    test "multiple requests with request returning result tuples" do
       responses = %{
-        Query.key(TestQueries, :find_user, %{id: 1}) => {:ok, %{id: 1, name: "Alice"}},
-        Query.key(TestQueries, :find_user, %{id: 2}) => {:error, :not_found}
+        Port.key(TestQueries, :find_user, %{id: 1}) => {:ok, %{id: 1, name: "Alice"}},
+        Port.key(TestQueries, :find_user, %{id: 2}) => {:error, :not_found}
       }
 
       comp =
-        Comp.bind(Query.request(TestQueries, :find_user, %{id: 1}), fn result1 ->
-          Comp.bind(Query.request(TestQueries, :find_user, %{id: 2}), fn result2 ->
+        Comp.bind(Port.request(TestQueries, :find_user, %{id: 1}), fn result1 ->
+          Comp.bind(Port.request(TestQueries, :find_user, %{id: 2}), fn result2 ->
             Comp.pure([result1, result2])
           end)
         end)
-        |> Query.with_test_handler(responses)
+        |> Port.with_test_handler(responses)
 
       {result, _env} = Comp.run(comp)
       assert [{:ok, %{name: "Alice"}}, {:error, :not_found}] = result
@@ -327,18 +327,18 @@ defmodule Skuld.Effects.QueryTest do
       alias Skuld.Effects.State
 
       responses = %{
-        Query.key(TestQueries, :find_user, %{id: 1}) => {:ok, %{id: 1, name: "Alice"}}
+        Port.key(TestQueries, :find_user, %{id: 1}) => {:ok, %{id: 1, name: "Alice"}}
       }
 
       comp =
-        Comp.bind(Query.request!(TestQueries, :find_user, %{id: 1}), fn user ->
+        Comp.bind(Port.request!(TestQueries, :find_user, %{id: 1}), fn user ->
           Comp.bind(State.get(), fn count ->
             Comp.bind(State.put(count + 1), fn _ ->
               Comp.pure({user, count})
             end)
           end)
         end)
-        |> Query.with_test_handler(responses)
+        |> Port.with_test_handler(responses)
         |> State.with_handler(0)
         |> Throw.with_handler()
 
