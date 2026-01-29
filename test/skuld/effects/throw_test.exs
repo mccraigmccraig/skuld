@@ -203,5 +203,98 @@ defmodule Skuld.Effects.ThrowTest do
 
       assert {:error, :failed} = result
     end
+
+    test "unwraps raised exceptions to the exception struct" do
+      comp =
+        Throw.try_catch(
+          Comp.bind(Comp.pure(nil), fn _ ->
+            raise ArgumentError, "bad input"
+          end)
+        )
+
+      {result, _env} =
+        comp
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert {:error, %ArgumentError{message: "bad input"}} = result
+    end
+
+    test "wraps erlang :throw as {:thrown, value}" do
+      comp =
+        Throw.try_catch(
+          Comp.bind(Comp.pure(nil), fn _ ->
+            :erlang.throw(:some_value)
+          end)
+        )
+
+      {result, _env} =
+        comp
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert {:error, {:thrown, :some_value}} = result
+    end
+
+    test "wraps erlang :exit as {:exit, reason}" do
+      comp =
+        Throw.try_catch(
+          Comp.bind(Comp.pure(nil), fn _ ->
+            :erlang.exit(:shutdown)
+          end)
+        )
+
+      {result, _env} =
+        comp
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert {:error, {:exit, :shutdown}} = result
+    end
+  end
+
+  describe "try_catch with Throwable protocol" do
+    # Uses Skuld.Test.NotFoundError from test/support/test_exceptions.ex
+    # which has a Throwable implementation compiled before protocol consolidation
+
+    test "applies Throwable.unwrap to domain exceptions" do
+      comp =
+        Throw.try_catch(
+          Comp.bind(Comp.pure(nil), fn _ ->
+            raise Skuld.Test.NotFoundError, entity: :user, id: 123
+          end)
+        )
+
+      {result, _env} =
+        comp
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert {:error, {:not_found, :user, 123}} = result
+    end
+
+    test "enables clean pattern matching on domain errors" do
+      comp =
+        Throw.try_catch(
+          Comp.bind(Comp.pure(nil), fn _ ->
+            raise Skuld.Test.NotFoundError, entity: :post, id: 456
+          end)
+        )
+
+      {result, _env} =
+        comp
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      # This is the pattern matching we want to enable
+      response =
+        case result do
+          {:ok, value} -> {:success, value}
+          {:error, {:not_found, entity, id}} -> {:missing, entity, id}
+          {:error, _other} -> :unexpected_error
+        end
+
+      assert {:missing, :post, 456} = response
+    end
   end
 end

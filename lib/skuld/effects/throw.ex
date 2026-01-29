@@ -22,6 +22,7 @@ defmodule Skuld.Effects.Throw do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
+  alias Skuld.Comp.Throwable
   alias Skuld.Comp.Types
 
   @sig __MODULE__
@@ -116,20 +117,60 @@ defmodule Skuld.Effects.Throw do
   - Success: `{:ok, value}`
   - Error: `{:error, error}`
 
+  ## Exception Handling
+
+  When exceptions are raised inside computations, they are caught and converted
+  to `{:error, unwrapped_value}`. The `Skuld.Comp.Throwable` protocol determines
+  how exceptions are unwrapped:
+
+  - By default, exceptions are returned as-is (e.g., `{:error, %ArgumentError{}}`)
+  - Domain exceptions can implement `Throwable` to return cleaner error values
+
+  For other exception kinds:
+  - `:throw` values become `{:error, {:thrown, value}}`
+  - `:exit` reasons become `{:error, {:exit, reason}}`
+
   ## Example
 
       result = Throw.try_catch(risky_computation())
       case result do
         {:ok, value} -> handle_success(value)
-        {:error, err} -> handle_error(err)
+        {:error, %ArgumentError{}} -> handle_bad_input()
+        {:error, {:not_found, id}} -> handle_not_found(id)
+      end
+
+  ## Throwable Protocol
+
+  Implement `Skuld.Comp.Throwable` for domain exceptions to get clean error values:
+
+      defimpl Skuld.Comp.Throwable, for: MyApp.NotFoundError do
+        def unwrap(%{entity: entity, id: id}), do: {:not_found, entity, id}
       end
   """
   @spec try_catch(Types.computation()) :: Types.computation()
   def try_catch(comp) do
     catch_error(
       Comp.map(comp, fn value -> {:ok, value} end),
-      fn error -> Comp.pure({:error, error}) end
+      fn error -> Comp.pure({:error, unwrap_error(error)}) end
     )
+  end
+
+  # Unwrap caught errors for try_catch
+  defp unwrap_error(%{kind: :error, payload: exception}) do
+    Throwable.unwrap(exception)
+  end
+
+  defp unwrap_error(%{kind: :throw, payload: value}) do
+    {:thrown, value}
+  end
+
+  defp unwrap_error(%{kind: :exit, payload: reason}) do
+    {:exit, reason}
+  end
+
+  defp unwrap_error(other) do
+    # Direct Throw.throw values pass through unchanged
+    other
   end
 
   @doc """

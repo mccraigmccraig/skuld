@@ -1,0 +1,15 @@
+defmodule Skuld.Test.NotFoundError do
+  @moduledoc """
+  Test exception for verifying Throwable protocol behavior.
+  """
+  defexception [:entity, :id]
+
+  @impl true
+  def message(%{entity: entity, id: id}) do
+    "#{entity} not found: #{id}"
+  end
+end
+
+defimpl Skuld.Comp.Throwable, for: Skuld.Test.NotFoundError do
+  def unwrap(%{entity: entity, id: id}), do: {:not_found, entity, id}
+end

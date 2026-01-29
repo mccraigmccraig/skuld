@@ -603,6 +603,77 @@ The map contains:
 - `:payload` - the exception struct, thrown value, or exit reason
 - `:stacktrace` - the original stacktrace from where the error occurred
 
+### try_catch for Either-Style Results
+
+`Throw.try_catch/1` wraps a computation and returns Either-style `{:ok, value}` or
+`{:error, error}` results. It automatically unwraps caught exceptions for cleaner
+pattern matching:
+
+```elixir
+# Raised exceptions become {:error, exception_struct}
+Throw.try_catch(comp do
+  raise ArgumentError, "bad input"
+end)
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:error, %ArgumentError{message: "bad input"}}
+
+# Elixir throw becomes {:error, {:thrown, value}}
+Throw.try_catch(comp do
+  throw(:some_value)
+end)
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:error, {:thrown, :some_value}}
+
+# Skuld Throw.throw passes through unchanged
+Throw.try_catch(comp do
+  _ <- Throw.throw(:my_error)
+  :ok
+end)
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:error, :my_error}
+```
+
+### Throwable Protocol for Domain Exceptions
+
+For domain exceptions that represent expected failures (validation errors, not-found,
+permission denied), implement the `Skuld.Comp.Throwable` protocol to get cleaner
+error values from `try_catch`:
+
+```elixir
+defmodule MyApp.NotFoundError do
+  defexception [:entity, :id]
+
+  @impl true
+  def message(%{entity: entity, id: id}), do: "#{entity} not found: #{id}"
+end
+
+defimpl Skuld.Comp.Throwable, for: MyApp.NotFoundError do
+  def unwrap(%{entity: entity, id: id}), do: {:not_found, entity, id}
+end
+
+# Now try_catch returns the unwrapped value
+Throw.try_catch(comp do
+  raise MyApp.NotFoundError, entity: :user, id: 123
+end)
+|> Throw.with_handler()
+|> Comp.run!()
+#=> {:error, {:not_found, :user, 123}}
+
+# Enables clean pattern matching on domain errors
+case result do
+  {:ok, user} -> handle_user(user)
+  {:error, {:not_found, :user, id}} -> handle_not_found(id)
+  {:error, %ArgumentError{}} -> handle_bad_input()
+end
+```
+
+By default (without a `Throwable` implementation), exceptions are returned as-is,
+which is appropriate for unexpected errors where you want the full exception for
+debugging.
+
 ## Effects
 
 All examples below assume the following setup (paste once into IEx):
