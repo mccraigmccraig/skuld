@@ -1,3 +1,4 @@
+# credo:disable-for-next-line Credo.Check.Consistency.ExceptionNames
 defmodule Skuld.Test.NotFoundError do
   @moduledoc """
   Test exception for verifying Throwable protocol behavior.
