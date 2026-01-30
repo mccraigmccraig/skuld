@@ -7,7 +7,7 @@ defmodule Skuld.Effects.Port do
 
     * `mod` – module implementing the function
     * `name` – function name inside `mod`
-    * `params` – keyword list of parameters
+    * `params` – map of parameters
 
   ## Use Cases
 
@@ -31,9 +31,9 @@ defmodule Skuld.Effects.Port do
 
       alias Skuld.Effects.Port
 
-      # Implementation returns result tuples
+      # Implementation returns result tuples - use Map pattern matching
       defmodule MyApp.UserQueries do
-        def find_by_id(id: id) do
+        def find_by_id(%{id: id}) do
           case Repo.get(User, id) do
             nil -> {:error, {:not_found, User, id}}
             user -> {:ok, user}
@@ -43,7 +43,7 @@ defmodule Skuld.Effects.Port do
 
       # Using request/3 - returns result tuple
       defcomp find_user(id) do
-        result <- Port.request(MyApp.UserQueries, :find_by_id, id: id)
+        result <- Port.request(MyApp.UserQueries, :find_by_id, %{id: id})
         case result do
           {:ok, user} -> return(user)
           {:error, _} -> return(nil)
@@ -52,7 +52,7 @@ defmodule Skuld.Effects.Port do
 
       # Using request!/3 - unwraps or throws
       defcomp find_user!(id) do
-        user <- Port.request!(MyApp.UserQueries, :find_by_id, id: id)
+        user <- Port.request!(MyApp.UserQueries, :find_by_id, %{id: id})
         return(user)
       end
 
@@ -65,7 +65,7 @@ defmodule Skuld.Effects.Port do
       # Test: stub responses with exact key matching
       find_user!(123)
       |> Port.with_test_handler(%{
-        Port.key(MyApp.UserQueries, :find_by_id, id: 123) => {:ok, %{id: 123, name: "Alice"}}
+        Port.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => {:ok, %{id: 123, name: "Alice"}}
       })
       |> Throw.with_handler()
       |> Comp.run!()
@@ -73,7 +73,7 @@ defmodule Skuld.Effects.Port do
       # Test: function-based handler with pattern matching
       find_user!(123)
       |> Port.with_fn_handler(fn
-        MyApp.UserQueries, :find_by_id, [id: id] -> {:ok, %{id: id, name: "User \#{id}"}}
+        MyApp.UserQueries, :find_by_id, %{id: id} -> {:ok, %{id: id, name: "User \#{id}"}}
       end)
       |> Throw.with_handler()
       |> Comp.run!()
@@ -109,8 +109,8 @@ defmodule Skuld.Effects.Port do
   @typedoc "Function exported by `port_module`"
   @type port_name :: atom()
 
-  @typedoc "Keyword list of parameters"
-  @type params :: keyword()
+  @typedoc "Map of parameters"
+  @type params :: map()
 
   @typedoc """
   Registry entry for dispatching requests.
@@ -144,11 +144,11 @@ defmodule Skuld.Effects.Port do
 
   ## Example
 
-      Port.request(MyApp.UserQueries, :find_by_id, id: 123)
+      Port.request(MyApp.UserQueries, :find_by_id, %{id: 123})
       # => {:ok, %User{...}} or {:error, {:not_found, User, 123}}
   """
   @spec request(port_module(), port_name(), params()) :: Types.computation()
-  def request(mod, name, params \\ []) do
+  def request(mod, name, params \\ %{}) do
     Comp.effect(@sig, %Request{mod: mod, name: name, params: params})
   end
 
@@ -163,11 +163,11 @@ defmodule Skuld.Effects.Port do
 
   ## Example
 
-      Port.request!(MyApp.UserQueries, :find_by_id, id: 123)
+      Port.request!(MyApp.UserQueries, :find_by_id, %{id: 123})
       # => %User{...} or throws {:not_found, User, 123}
   """
   @spec request!(port_module(), port_name(), params()) :: Types.computation()
-  def request!(mod, name, params \\ []) do
+  def request!(mod, name, params \\ %{}) do
     Comp.bind(request(mod, name, params), fn
       {:ok, value} -> Comp.pure(value)
       {:error, reason} -> Throw.throw(reason)
@@ -181,12 +181,12 @@ defmodule Skuld.Effects.Port do
   @doc """
   Build a canonical key usable with `with_test_handler/2`.
 
-  Parameters are normalized so that keyword lists with the same keys and values
-  produce the same key, independent of key ordering.
+  Parameters are normalized to produce consistent keys regardless of
+  internal map ordering.
 
   ## Example
 
-      Port.key(MyApp.UserQueries, :find_by_id, id: 123)
+      Port.key(MyApp.UserQueries, :find_by_id, %{id: 123})
   """
   @spec key(port_module(), port_name(), params()) ::
           {port_module(), port_name(), binary()}
@@ -315,8 +315,8 @@ defmodule Skuld.Effects.Port do
   ## Example
 
       responses = %{
-        Port.key(MyApp.UserQueries, :find_by_id, id: 123) => {:ok, %{name: "Alice"}},
-        Port.key(MyApp.UserQueries, :find_by_id, id: 456) => {:error, :not_found}
+        Port.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => {:ok, %{name: "Alice"}},
+        Port.key(MyApp.UserQueries, :find_by_id, %{id: 456}) => {:error, :not_found}
       }
 
       my_comp
@@ -372,15 +372,15 @@ defmodule Skuld.Effects.Port do
 
       handler = fn
         # Pin specific values
-        MyApp.UserQueries, :find_by_id, [id: ^expected_id] ->
+        MyApp.UserQueries, :find_by_id, %{id: ^expected_id} ->
           {:ok, %{id: expected_id, name: "Expected"}}
 
         # Match any value with wildcard
-        MyApp.UserQueries, :find_by_id, [id: _any_id] ->
+        MyApp.UserQueries, :find_by_id, %{id: _any_id} ->
           {:ok, %{id: "default", name: "Default"}}
 
         # Match with guards
-        MyApp.Queries, :paginate, [limit: l] when l > 100 ->
+        MyApp.Queries, :paginate, %{limit: l} when l > 100 ->
           {:error, :limit_too_high}
 
         # Match specific module, any function
@@ -405,7 +405,7 @@ defmodule Skuld.Effects.Port do
       property "user lookup succeeds" do
         check all user_id <- uuid_generator() do
           handler = fn
-            UserQueries, :find_by_id, [id: ^user_id] ->
+            UserQueries, :find_by_id, %{id: ^user_id} ->
               {:ok, %{id: user_id, name: "Test User"}}
           end
 
