@@ -34,6 +34,7 @@ defmodule Skuld.Fiber do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
+  alias Skuld.Fiber.FiberPool.BatchSuspend
 
   @type status :: :pending | :running | :suspended | :completed | :cancelled | :error
 
@@ -81,6 +82,7 @@ defmodule Skuld.Fiber do
 
   - `{:completed, result, env}` - Fiber completed with result
   - `{:suspended, fiber}` - Fiber suspended, updated fiber has `:suspended_k` and `:env`
+  - `{:batch_suspended, fiber, batch_suspend}` - Fiber suspended for batch operation
   - `{:error, reason, env}` - Fiber errored
 
   The returned fiber (on suspension) can be resumed with `resume/2`.
@@ -91,12 +93,14 @@ defmodule Skuld.Fiber do
       case Fiber.run_until_suspend(fiber) do
         {:completed, result, _env} -> IO.puts("Done: \#{inspect(result)}")
         {:suspended, fiber} -> IO.puts("Suspended, can resume later")
+        {:batch_suspended, fiber, batch} -> IO.puts("Batch suspended: \#{inspect(batch)}")
         {:error, reason, _env} -> IO.puts("Error: \#{inspect(reason)}")
       end
   """
   @spec run_until_suspend(t()) ::
           {:completed, term(), Types.env()}
           | {:suspended, t()}
+          | {:batch_suspended, t(), BatchSuspend.t()}
           | {:error, term(), Types.env() | nil}
   def run_until_suspend(%__MODULE__{status: :pending, computation: comp, env: env} = fiber) do
     fiber = %{fiber | status: :running, computation: nil}
@@ -125,12 +129,14 @@ defmodule Skuld.Fiber do
       case Fiber.resume(fiber, result) do
         {:completed, final, _env} -> final
         {:suspended, fiber} -> # suspended again
+        {:batch_suspended, fiber, batch} -> # batch suspended
         {:error, reason, _env} -> # errored
       end
   """
   @spec resume(t(), term()) ::
           {:completed, term(), Types.env()}
           | {:suspended, t()}
+          | {:batch_suspended, t(), BatchSuspend.t()}
           | {:error, term(), Types.env() | nil}
   def resume(%__MODULE__{status: :suspended, suspended_k: k, env: env} = fiber, value)
       when is_function(k, 2) do
@@ -176,6 +182,9 @@ defmodule Skuld.Fiber do
       {%Comp.Suspend{} = suspend, suspend_env} ->
         handle_suspend(fiber, suspend, suspend_env)
 
+      {%BatchSuspend{} = batch_suspend, batch_env} ->
+        handle_batch_suspend(fiber, batch_suspend, batch_env)
+
       {%Comp.Throw{} = throw, throw_env} ->
         {:error, {:throw, throw.error}, throw_env}
 
@@ -201,6 +210,9 @@ defmodule Skuld.Fiber do
     case k.(value, env) do
       {%Comp.Suspend{} = suspend, suspend_env} ->
         handle_suspend(fiber, suspend, suspend_env)
+
+      {%BatchSuspend{} = batch_suspend, batch_env} ->
+        handle_batch_suspend(fiber, batch_suspend, batch_env)
 
       {%Comp.Throw{} = throw, throw_env} ->
         {:error, {:throw, throw.error}, throw_env}
@@ -240,5 +252,24 @@ defmodule Skuld.Fiber do
     }
 
     {:suspended, suspended_fiber}
+  end
+
+  # Handle a BatchSuspend sentinel - return the batch suspend for scheduler to handle
+  defp handle_batch_suspend(fiber, %BatchSuspend{resume: resume} = batch_suspend, env) do
+    # Store the resume function in the fiber so it can be resumed after batch execution
+    suspended_k = fn value, _env ->
+      # BatchSuspend.resume is (val -> {result, env})
+      resume.(value)
+    end
+
+    suspended_fiber = %{
+      fiber
+      | status: :suspended,
+        suspended_k: suspended_k,
+        env: env
+    }
+
+    # Return the batch_suspend so the scheduler can extract the op for batching
+    {:batch_suspended, suspended_fiber, batch_suspend}
   end
 end

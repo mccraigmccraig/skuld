@@ -51,6 +51,7 @@ defmodule Skuld.Effects.FiberPool do
   alias Skuld.Fiber.Handle
   alias Skuld.Fiber.FiberPool.State
   alias Skuld.Fiber.FiberPool.Scheduler
+  alias Skuld.Fiber.FiberPool.Batching
   alias Skuld.Fiber.FiberPool.Suspend, as: FPSuspend
 
   @sig __MODULE__
@@ -472,22 +473,113 @@ defmodule Skuld.Effects.FiberPool do
 
       result ->
         # Main computation completed - just run remaining fibers/tasks
-        case Scheduler.run(state, env) do
-          {:done, _results, _final_state} ->
-            {result, env}
-
-          {:suspended, _fiber, _state} ->
-            # External suspension - shouldn't happen without Task integration
-            {result, env}
-
-          {:waiting_for_tasks, state} ->
-            # Fibers done but tasks still running - wait for them
-            wait_for_tasks(state, env, result)
-
-          {:error, reason, _state} ->
-            {{:error, reason}, env}
-        end
+        run_fibers_to_completion(state, env, result)
     end
+  end
+
+  # Run all fibers to completion, handling batch suspensions along the way
+  defp run_fibers_to_completion(state, env, result) do
+    case Scheduler.run(state, env) do
+      {:done, _results, _final_state} ->
+        {result, env}
+
+      {:suspended, _fiber, _state} ->
+        # External suspension - shouldn't happen in normal operation
+        {result, env}
+
+      {:waiting_for_tasks, state} ->
+        # Fibers done but tasks still running - wait for them
+        wait_for_tasks(state, env, result)
+
+      {:batch_ready, state} ->
+        # Execute batches and continue
+        {state, env} = execute_batches(state, env)
+        run_fibers_to_completion(state, env, result)
+
+      {:error, reason, _state} ->
+        {{:error, reason}, env}
+    end
+  end
+
+  # Execute all pending batch suspensions
+  defp execute_batches(state, env) do
+    {suspensions, state} = State.pop_all_batch_suspensions(state)
+
+    if suspensions == [] do
+      {state, env}
+    else
+      # Group suspensions by batch_key
+      {groups, non_batchable} = Batching.group_suspended(suspensions)
+
+      # Execute each batch group
+      {state, env} =
+        Enum.reduce(groups, {state, env}, fn {batch_key, group}, {acc_state, acc_env} ->
+          execute_batch_group(acc_state, acc_env, batch_key, group)
+        end)
+
+      # Handle non-batchable individually (shouldn't happen if IBatchable is implemented correctly)
+      state =
+        Enum.reduce(non_batchable, state, fn {fiber_id, batch_suspend}, acc ->
+          # Resume with error - no batch executor available
+          resume_fiber_with_result(acc, fiber_id, {:error, {:not_batchable, batch_suspend.op}})
+        end)
+
+      {state, env}
+    end
+  end
+
+  # Execute a single batch group
+  defp execute_batch_group(state, env, batch_key, group) do
+    batch_comp = Batching.execute_group(batch_key, group, env)
+
+    # Run the batch computation
+    case Comp.call(batch_comp, env, &Comp.identity_k/2) do
+      {%Throw{error: error}, new_env} ->
+        # Batch execution failed - resume all fibers with error
+        state =
+          Enum.reduce(group, state, fn {fiber_id, _suspend}, acc ->
+            resume_fiber_with_result(acc, fiber_id, {:error, error})
+          end)
+
+        {state, new_env}
+
+      {fiber_results, new_env} when is_list(fiber_results) ->
+        # Resume each fiber with its result
+        state =
+          Enum.reduce(fiber_results, state, fn {fiber_id, result}, acc ->
+            resume_fiber_with_result(acc, fiber_id, {:ok, result})
+          end)
+
+        {state, new_env}
+    end
+  end
+
+  # Resume a fiber with a batch result
+  defp resume_fiber_with_result(state, fiber_id, result) do
+    # Remove from fibers map and re-add to run queue
+    case State.get_fiber(state, fiber_id) do
+      nil ->
+        state
+
+      _fiber ->
+        # The fiber is already in the fibers map with suspended_k set
+        # Just enqueue it to run
+        state = State.remove_batch_suspension(state, fiber_id)
+
+        # Store wake result wrapped in :batch_wake tuple (to distinguish from nil)
+        # and enqueue
+        wake_value = unwrap_batch_result(result)
+        state = put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:batch_wake, wake_value})
+        State.enqueue(state, fiber_id)
+    end
+  end
+
+  # Unwrap batch result for resuming fiber
+  defp unwrap_batch_result({:ok, value}), do: value
+
+  defp unwrap_batch_result({:error, reason}) do
+    # Return the error as a Throw so the fiber sees an error
+    %Throw{error: reason}
   end
 
   # Spawn tasks using the Task.Supervisor
@@ -634,6 +726,11 @@ defmodule Skuld.Effects.FiberPool do
         # A fiber yielded externally - for now, treat as error
         {{:error, :external_suspension}, env}
 
+      {:batch_ready, state} ->
+        # Execute batches and continue running fibers
+        {state, env} = execute_batches(state, env)
+        run_until_await_satisfied(state, env, awaiter_id, resume, mode)
+
       # Reserved for future error handling
       # {:error, reason, _state} ->
       #   {{:error, reason}, env}
@@ -692,20 +789,7 @@ defmodule Skuld.Effects.FiberPool do
 
       _ ->
         # Main computation completed - run any remaining fibers/tasks
-        case Scheduler.run(state, new_env) do
-          {:done, _results, _final_state} ->
-            {new_result, new_env}
-
-          {:suspended, _fiber, _state} ->
-            {new_result, new_env}
-
-          {:waiting_for_tasks, state} ->
-            # Fibers done but tasks remain - wait for them
-            wait_for_tasks(state, new_env, new_result)
-
-          {:error, reason, _state} ->
-            {{:error, reason}, new_env}
-        end
+        run_fibers_to_completion(state, new_env, new_result)
     end
   end
 end

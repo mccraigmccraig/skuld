@@ -14,10 +14,12 @@ defmodule Skuld.Fiber.FiberPool.State do
   - `awaiting` - Map of fiber_id => [awaiter_fiber_id] reverse index for wake-up
   - `tasks` - Map of task_ref => handle_id for running BEAM tasks
   - `task_supervisor` - Task.Supervisor pid for spawning tasks
+  - `batch_suspended` - Map of fiber_id => BatchSuspend.t() for batch-waiting fibers
   - `opts` - Configuration options
   """
 
   alias Skuld.Fiber
+  alias Skuld.Fiber.FiberPool.BatchSuspend
 
   @type fiber_id :: reference()
   @type task_ref :: reference()
@@ -38,6 +40,7 @@ defmodule Skuld.Fiber.FiberPool.State do
           awaiting: %{fiber_id() => [fiber_id()]},
           tasks: %{task_ref() => fiber_id()},
           task_supervisor: pid() | nil,
+          batch_suspended: %{fiber_id() => BatchSuspend.t()},
           opts: keyword()
         }
 
@@ -50,6 +53,7 @@ defmodule Skuld.Fiber.FiberPool.State do
     :awaiting,
     :tasks,
     :task_supervisor,
+    :batch_suspended,
     :opts
   ]
 
@@ -74,6 +78,7 @@ defmodule Skuld.Fiber.FiberPool.State do
       awaiting: %{},
       tasks: %{},
       task_supervisor: Keyword.get(opts, :task_supervisor),
+      batch_suspended: %{},
       opts: opts
     }
   end
@@ -392,18 +397,69 @@ defmodule Skuld.Fiber.FiberPool.State do
   end
 
   #############################################################################
+  ## Batch Suspension Management
+  #############################################################################
+
+  @doc """
+  Record a fiber as suspended waiting for batch execution.
+
+  The fiber will be resumed when batch results are available.
+  """
+  @spec add_batch_suspension(t(), fiber_id(), BatchSuspend.t()) :: t()
+  def add_batch_suspension(state, fiber_id, batch_suspend) do
+    %{state | batch_suspended: Map.put(state.batch_suspended, fiber_id, batch_suspend)}
+  end
+
+  @doc """
+  Get all batch-suspended fibers as a list of {fiber_id, BatchSuspend.t()}.
+  """
+  @spec get_batch_suspensions(t()) :: [{fiber_id(), BatchSuspend.t()}]
+  def get_batch_suspensions(state) do
+    Map.to_list(state.batch_suspended)
+  end
+
+  @doc """
+  Remove a batch suspension (after fiber is resumed).
+  """
+  @spec remove_batch_suspension(t(), fiber_id()) :: t()
+  def remove_batch_suspension(state, fiber_id) do
+    %{state | batch_suspended: Map.delete(state.batch_suspended, fiber_id)}
+  end
+
+  @doc """
+  Clear all batch suspensions and return them.
+
+  Used when executing a batch - all suspended fibers are removed and will be
+  resumed with their results.
+  """
+  @spec pop_all_batch_suspensions(t()) :: {[{fiber_id(), BatchSuspend.t()}], t()}
+  def pop_all_batch_suspensions(state) do
+    suspensions = Map.to_list(state.batch_suspended)
+    {suspensions, %{state | batch_suspended: %{}}}
+  end
+
+  @doc """
+  Check if there are any batch-suspended fibers.
+  """
+  @spec has_batch_suspensions?(t()) :: boolean()
+  def has_batch_suspensions?(state) do
+    map_size(state.batch_suspended) > 0
+  end
+
+  #############################################################################
   ## Status Checks
   #############################################################################
 
   @doc """
-  Check if any work is pending (fibers in queue, suspended, or tasks running).
+  Check if any work is pending (fibers in queue, suspended, batch-suspended, or tasks running).
   """
   @spec active?(t()) :: boolean()
   def active?(state) do
     not :queue.is_empty(state.run_queue) or
       map_size(state.suspended) > 0 or
       map_size(state.fibers) > 0 or
-      map_size(state.tasks) > 0
+      map_size(state.tasks) > 0 or
+      map_size(state.batch_suspended) > 0
   end
 
   @doc """
@@ -414,7 +470,8 @@ defmodule Skuld.Fiber.FiberPool.State do
     :queue.is_empty(state.run_queue) and
       map_size(state.suspended) == 0 and
       map_size(state.fibers) == 0 and
-      map_size(state.tasks) == 0
+      map_size(state.tasks) == 0 and
+      map_size(state.batch_suspended) == 0
   end
 
   @doc """
@@ -427,7 +484,8 @@ defmodule Skuld.Fiber.FiberPool.State do
       run_queue: :queue.len(state.run_queue),
       suspended: map_size(state.suspended),
       completed: map_size(state.completed),
-      tasks: map_size(state.tasks)
+      tasks: map_size(state.tasks),
+      batch_suspended: map_size(state.batch_suspended)
     }
   end
 end

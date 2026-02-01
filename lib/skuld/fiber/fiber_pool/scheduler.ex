@@ -29,12 +29,14 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
           {:continue, State.t()}
           | {:done, State.t()}
           | {:suspended, Fiber.t(), State.t()}
+          | {:batch_ready, State.t()}
           | {:error, term(), State.t()}
 
   @type run_result ::
           {:done, %{reference() => term()}, State.t()}
           | {:suspended, Fiber.t(), State.t()}
           | {:waiting_for_tasks, State.t()}
+          | {:batch_ready, State.t()}
           | {:error, term(), State.t()}
 
   #############################################################################
@@ -76,17 +78,24 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   - `{:continue, state}` - Step completed, more work may be available
   - `{:done, state}` - No more work to do
   - `{:suspended, fiber, state}` - Fiber yielded externally
+  - `{:batch_ready, state}` - Queue empty but batch suspensions ready for execution
   - `{:error, reason, state}` - Fiber errored (with on_error: :stop)
   """
   @spec step(State.t(), Types.env()) :: step_result()
   def step(state, env) do
     case State.dequeue(state) do
       {:empty, state} ->
-        if State.all_done?(state) do
-          {:done, state}
-        else
-          # Fibers are suspended, waiting for something
-          {:done, state}
+        cond do
+          State.all_done?(state) ->
+            {:done, state}
+
+          State.has_batch_suspensions?(state) ->
+            # Batch suspensions are ready for execution
+            {:batch_ready, state}
+
+          true ->
+            # Fibers are suspended waiting for something else (await, tasks, etc.)
+            {:done, state}
         end
 
       {:ok, fiber_id, state} ->
@@ -116,6 +125,10 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
       {:suspended, fiber, state} ->
         {:suspended, fiber, state}
 
+      {:batch_ready, state} ->
+        # Batch suspensions are ready - return control for batch execution
+        {:batch_ready, state}
+
         # Reserved for future error handling with on_error: :stop
         # {:error, reason, state} ->
         #   {:error, reason, state}
@@ -129,13 +142,17 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
         {:continue, state}
 
       fiber ->
-        # Check if this is a wake-up (fiber was suspended awaiting)
+        # Check if this is a wake-up (fiber was suspended awaiting or batch)
         {wake_result, state} = State.pop_wake_result(state, fiber_id)
 
         case wake_result do
           nil ->
             # Normal run - fiber is pending
             run_pending_fiber(state, fiber, env)
+
+          {:batch_wake, result} ->
+            # Fiber is being resumed with batch result (unwrap the tuple)
+            resume_fiber(state, fiber, result)
 
           result ->
             # Fiber is being resumed with await result
@@ -160,6 +177,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
       {:suspended, suspended_fiber} ->
         handle_suspension(state, suspended_fiber)
 
+      {:batch_suspended, suspended_fiber, batch_suspend} ->
+        handle_batch_suspension(state, suspended_fiber, batch_suspend)
+
       {:error, reason, _env} ->
         handle_completion(state, fiber.id, {:error, reason})
     end
@@ -172,6 +192,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
       {:suspended, suspended_fiber} ->
         handle_suspension(state, suspended_fiber)
+
+      {:batch_suspended, suspended_fiber, batch_suspend} ->
+        handle_batch_suspension(state, suspended_fiber, batch_suspend)
 
       {:error, reason, _env} ->
         handle_completion(state, fiber.id, {:error, reason})
@@ -190,6 +213,13 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     # and convert them to proper State.suspend_awaiting calls
     state = State.put_fiber(state, fiber)
     {:suspended, fiber, state}
+  end
+
+  defp handle_batch_suspension(state, fiber, batch_suspend) do
+    # Store the fiber and add to batch-suspended tracking
+    state = State.put_fiber(state, fiber)
+    state = State.add_batch_suspension(state, fiber.id, batch_suspend)
+    {:continue, state}
   end
 
   defp collect_results(state) do
