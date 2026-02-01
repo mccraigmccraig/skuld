@@ -15,11 +15,13 @@ defmodule Skuld.Fiber.FiberPool.State do
   - `tasks` - Map of task_ref => handle_id for running BEAM tasks
   - `task_supervisor` - Task.Supervisor pid for spawning tasks
   - `batch_suspended` - Map of fiber_id => BatchSuspend.t() for batch-waiting fibers
+  - `channel_suspended` - Map of fiber_id => ChannelSuspend.t() for channel-waiting fibers
   - `opts` - Configuration options
   """
 
   alias Skuld.Fiber
   alias Skuld.Fiber.FiberPool.BatchSuspend
+  alias Skuld.Effects.Channel.Suspend, as: ChannelSuspend
 
   @type fiber_id :: reference()
   @type task_ref :: reference()
@@ -41,6 +43,7 @@ defmodule Skuld.Fiber.FiberPool.State do
           tasks: %{task_ref() => fiber_id()},
           task_supervisor: pid() | nil,
           batch_suspended: %{fiber_id() => BatchSuspend.t()},
+          channel_suspended: %{fiber_id() => ChannelSuspend.t()},
           opts: keyword()
         }
 
@@ -54,6 +57,7 @@ defmodule Skuld.Fiber.FiberPool.State do
     :tasks,
     :task_supervisor,
     :batch_suspended,
+    :channel_suspended,
     :opts
   ]
 
@@ -79,6 +83,7 @@ defmodule Skuld.Fiber.FiberPool.State do
       tasks: %{},
       task_supervisor: Keyword.get(opts, :task_supervisor),
       batch_suspended: %{},
+      channel_suspended: %{},
       opts: opts
     }
   end
@@ -447,11 +452,57 @@ defmodule Skuld.Fiber.FiberPool.State do
   end
 
   #############################################################################
+  ## Channel Suspension Management
+  #############################################################################
+
+  @doc """
+  Record a fiber as suspended waiting for a channel operation.
+
+  The fiber will be resumed when the channel state changes (item available or space freed).
+  """
+  @spec add_channel_suspension(t(), fiber_id(), ChannelSuspend.t()) :: t()
+  def add_channel_suspension(state, fiber_id, channel_suspend) do
+    %{state | channel_suspended: Map.put(state.channel_suspended, fiber_id, channel_suspend)}
+  end
+
+  @doc """
+  Get all channel-suspended fibers as a list of {fiber_id, ChannelSuspend.t()}.
+  """
+  @spec get_channel_suspensions(t()) :: [{fiber_id(), ChannelSuspend.t()}]
+  def get_channel_suspensions(state) do
+    Map.to_list(state.channel_suspended)
+  end
+
+  @doc """
+  Remove a channel suspension (after fiber is resumed).
+  """
+  @spec remove_channel_suspension(t(), fiber_id()) :: t()
+  def remove_channel_suspension(state, fiber_id) do
+    %{state | channel_suspended: Map.delete(state.channel_suspended, fiber_id)}
+  end
+
+  @doc """
+  Get a specific channel suspension.
+  """
+  @spec get_channel_suspension(t(), fiber_id()) :: ChannelSuspend.t() | nil
+  def get_channel_suspension(state, fiber_id) do
+    Map.get(state.channel_suspended, fiber_id)
+  end
+
+  @doc """
+  Check if there are any channel-suspended fibers.
+  """
+  @spec has_channel_suspensions?(t()) :: boolean()
+  def has_channel_suspensions?(state) do
+    map_size(state.channel_suspended) > 0
+  end
+
+  #############################################################################
   ## Status Checks
   #############################################################################
 
   @doc """
-  Check if any work is pending (fibers in queue, suspended, batch-suspended, or tasks running).
+  Check if any work is pending (fibers in queue, suspended, batch-suspended, channel-suspended, or tasks running).
   """
   @spec active?(t()) :: boolean()
   def active?(state) do
@@ -459,7 +510,8 @@ defmodule Skuld.Fiber.FiberPool.State do
       map_size(state.suspended) > 0 or
       map_size(state.fibers) > 0 or
       map_size(state.tasks) > 0 or
-      map_size(state.batch_suspended) > 0
+      map_size(state.batch_suspended) > 0 or
+      map_size(state.channel_suspended) > 0
   end
 
   @doc """
@@ -471,7 +523,8 @@ defmodule Skuld.Fiber.FiberPool.State do
       map_size(state.suspended) == 0 and
       map_size(state.fibers) == 0 and
       map_size(state.tasks) == 0 and
-      map_size(state.batch_suspended) == 0
+      map_size(state.batch_suspended) == 0 and
+      map_size(state.channel_suspended) == 0
   end
 
   @doc """
@@ -485,7 +538,8 @@ defmodule Skuld.Fiber.FiberPool.State do
       suspended: map_size(state.suspended),
       completed: map_size(state.completed),
       tasks: map_size(state.tasks),
-      batch_suspended: map_size(state.batch_suspended)
+      batch_suspended: map_size(state.batch_suspended),
+      channel_suspended: map_size(state.channel_suspended)
     }
   end
 end

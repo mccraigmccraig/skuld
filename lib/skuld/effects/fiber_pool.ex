@@ -53,6 +53,7 @@ defmodule Skuld.Effects.FiberPool do
   alias Skuld.Fiber.FiberPool.Scheduler
   alias Skuld.Fiber.FiberPool.Batching
   alias Skuld.Fiber.FiberPool.Suspend, as: FPSuspend
+  alias Skuld.Effects.Channel
 
   @sig __MODULE__
 
@@ -267,6 +268,9 @@ defmodule Skuld.Effects.FiberPool do
 
     state = State.new(task_supervisor: task_sup)
 
+    # Initialize channel storage for this pool run
+    Channel.init_storage()
+
     try do
       {result, env} = Comp.call(comp, env, &Comp.identity_k/2)
 
@@ -282,6 +286,9 @@ defmodule Skuld.Effects.FiberPool do
         run_with_fibers(state, env, result, pending_fibers, pending_tasks)
       end
     after
+      # Cleanup channel storage
+      Channel.cleanup_storage()
+
       if should_stop_sup do
         Supervisor.stop(task_sup)
       end
@@ -477,8 +484,11 @@ defmodule Skuld.Effects.FiberPool do
     end
   end
 
-  # Run all fibers to completion, handling batch suspensions along the way
+  # Run all fibers to completion, handling batch and channel suspensions
   defp run_fibers_to_completion(state, env, result) do
+    # Process any pending channel wakes first
+    state = process_channel_wakes(state)
+
     case Scheduler.run(state, env) do
       {:done, _results, _final_state} ->
         {result, env}
@@ -498,6 +508,32 @@ defmodule Skuld.Effects.FiberPool do
 
       {:error, reason, _state} ->
         {{:error, reason}, env}
+    end
+  end
+
+  # Process pending channel wakes (from put/take operations that wake waiting fibers)
+  defp process_channel_wakes(state) do
+    wakes = Channel.pop_channel_wakes()
+
+    Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
+      resume_channel_fiber(acc_state, fiber_id, result)
+    end)
+  end
+
+  # Resume a fiber that was waiting on a channel operation
+  defp resume_channel_fiber(state, fiber_id, result) do
+    case State.get_channel_suspension(state, fiber_id) do
+      nil ->
+        # Fiber not found in channel suspensions - might have been cancelled
+        state
+
+      _channel_suspend ->
+        # Remove from channel_suspended and enqueue with result
+        state = State.remove_channel_suspension(state, fiber_id)
+
+        # Store wake result wrapped in :channel_wake tuple and enqueue
+        state = put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:channel_wake, result})
+        State.enqueue(state, fiber_id)
     end
   end
 
@@ -689,6 +725,9 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   defp run_until_await_satisfied(state, env, awaiter_id, resume, mode) do
+    # Process any pending channel wakes first
+    state = process_channel_wakes(state)
+
     case Scheduler.step(state, env) do
       {:continue, state} ->
         # Check if our await is now satisfied

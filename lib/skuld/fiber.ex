@@ -35,6 +35,7 @@ defmodule Skuld.Fiber do
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
   alias Skuld.Fiber.FiberPool.BatchSuspend
+  alias Skuld.Effects.Channel.Suspend, as: ChannelSuspend
 
   @type status :: :pending | :running | :suspended | :completed | :cancelled | :error
 
@@ -101,6 +102,7 @@ defmodule Skuld.Fiber do
           {:completed, term(), Types.env()}
           | {:suspended, t()}
           | {:batch_suspended, t(), BatchSuspend.t()}
+          | {:channel_suspended, t(), ChannelSuspend.t()}
           | {:error, term(), Types.env() | nil}
   def run_until_suspend(%__MODULE__{status: :pending, computation: comp, env: env} = fiber) do
     fiber = %{fiber | status: :running, computation: nil}
@@ -137,6 +139,7 @@ defmodule Skuld.Fiber do
           {:completed, term(), Types.env()}
           | {:suspended, t()}
           | {:batch_suspended, t(), BatchSuspend.t()}
+          | {:channel_suspended, t(), ChannelSuspend.t()}
           | {:error, term(), Types.env() | nil}
   def resume(%__MODULE__{status: :suspended, suspended_k: k, env: env} = fiber, value)
       when is_function(k, 2) do
@@ -185,6 +188,9 @@ defmodule Skuld.Fiber do
       {%BatchSuspend{} = batch_suspend, batch_env} ->
         handle_batch_suspend(fiber, batch_suspend, batch_env)
 
+      {%ChannelSuspend{} = channel_suspend, channel_env} ->
+        handle_channel_suspend(fiber, channel_suspend, channel_env)
+
       {%Comp.Throw{} = throw, throw_env} ->
         {:error, {:throw, throw.error}, throw_env}
 
@@ -213,6 +219,9 @@ defmodule Skuld.Fiber do
 
       {%BatchSuspend{} = batch_suspend, batch_env} ->
         handle_batch_suspend(fiber, batch_suspend, batch_env)
+
+      {%ChannelSuspend{} = channel_suspend, channel_env} ->
+        handle_channel_suspend(fiber, channel_suspend, channel_env)
 
       {%Comp.Throw{} = throw, throw_env} ->
         {:error, {:throw, throw.error}, throw_env}
@@ -271,5 +280,24 @@ defmodule Skuld.Fiber do
 
     # Return the batch_suspend so the scheduler can extract the op for batching
     {:batch_suspended, suspended_fiber, batch_suspend}
+  end
+
+  # Handle a ChannelSuspend sentinel - return the channel suspend for scheduler to handle
+  defp handle_channel_suspend(fiber, %ChannelSuspend{resume: resume} = channel_suspend, env) do
+    # Store the resume function in the fiber so it can be resumed when channel is ready
+    suspended_k = fn value, _env ->
+      # ChannelSuspend.resume is (val -> {result, env})
+      resume.(value)
+    end
+
+    suspended_fiber = %{
+      fiber
+      | status: :suspended,
+        suspended_k: suspended_k,
+        env: env
+    }
+
+    # Return the channel_suspend so the scheduler can track it
+    {:channel_suspended, suspended_fiber, channel_suspend}
   end
 end

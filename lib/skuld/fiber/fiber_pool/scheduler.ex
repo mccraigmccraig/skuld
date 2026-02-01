@@ -24,6 +24,10 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   alias Skuld.Fiber
   alias Skuld.Fiber.FiberPool.State
   alias Skuld.Comp.Types
+  alias Skuld.Comp.Env
+  alias Skuld.Effects.Channel
+
+  @fiber_id_key :__current_fiber_id__
 
   @type step_result ::
           {:continue, State.t()}
@@ -108,18 +112,29 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   #############################################################################
 
   defp run_loop(state, env) do
+    # Process any pending channel wakes before each step
+    state = process_channel_wakes(state)
+
     case step(state, env) do
       {:continue, state} ->
         run_loop(state, env)
 
       {:done, state} ->
-        # Check if there are still running tasks
-        if State.has_tasks?(state) do
-          {:waiting_for_tasks, state}
+        # Process any final channel wakes
+        state = process_channel_wakes(state)
+
+        # Check if we now have work to do
+        if not State.queue_empty?(state) do
+          run_loop(state, env)
         else
-          # Collect results for completed fibers/tasks
-          results = collect_results(state)
-          {:done, results, state}
+          # Check if there are still running tasks
+          if State.has_tasks?(state) do
+            {:waiting_for_tasks, state}
+          else
+            # Collect results for completed fibers/tasks
+            results = collect_results(state)
+            {:done, results, state}
+          end
         end
 
       {:suspended, fiber, state} ->
@@ -154,6 +169,10 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
             # Fiber is being resumed with batch result (unwrap the tuple)
             resume_fiber(state, fiber, result)
 
+          {:channel_wake, result} ->
+            # Fiber is being resumed with channel result (unwrap the tuple)
+            resume_fiber(state, fiber, result)
+
           result ->
             # Fiber is being resumed with await result
             resume_fiber(state, fiber, result)
@@ -163,11 +182,14 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
   defp run_pending_fiber(state, fiber, env) do
     # Update fiber's env if needed (inherit from pool env)
+    # Also set the current fiber ID in the env for Channel operations
     fiber =
       if fiber.env == nil do
-        %{fiber | env: env}
+        fiber_env = Env.put_state(env, @fiber_id_key, fiber.id)
+        %{fiber | env: fiber_env}
       else
-        fiber
+        fiber_env = Env.put_state(fiber.env, @fiber_id_key, fiber.id)
+        %{fiber | env: fiber_env}
       end
 
     case Fiber.run_until_suspend(fiber) do
@@ -179,6 +201,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
       {:batch_suspended, suspended_fiber, batch_suspend} ->
         handle_batch_suspension(state, suspended_fiber, batch_suspend)
+
+      {:channel_suspended, suspended_fiber, channel_suspend} ->
+        handle_channel_suspension(state, suspended_fiber, channel_suspend)
 
       {:error, reason, _env} ->
         handle_completion(state, fiber.id, {:error, reason})
@@ -195,6 +220,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
       {:batch_suspended, suspended_fiber, batch_suspend} ->
         handle_batch_suspension(state, suspended_fiber, batch_suspend)
+
+      {:channel_suspended, suspended_fiber, channel_suspend} ->
+        handle_channel_suspension(state, suspended_fiber, channel_suspend)
 
       {:error, reason, _env} ->
         handle_completion(state, fiber.id, {:error, reason})
@@ -222,10 +250,43 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     {:continue, state}
   end
 
+  defp handle_channel_suspension(state, fiber, channel_suspend) do
+    # Store the fiber and add to channel-suspended tracking
+    state = State.put_fiber(state, fiber)
+    state = State.add_channel_suspension(state, fiber.id, channel_suspend)
+    {:continue, state}
+  end
+
   defp collect_results(state) do
     # Return completed results, filtering out wake markers
     state.completed
     |> Enum.reject(fn {key, _} -> match?({:wake, _}, key) end)
     |> Map.new()
+  end
+
+  # Process pending channel wakes
+  defp process_channel_wakes(state) do
+    wakes = Channel.pop_channel_wakes()
+
+    Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
+      resume_channel_fiber(acc_state, fiber_id, result)
+    end)
+  end
+
+  # Resume a fiber that was waiting on a channel operation
+  defp resume_channel_fiber(state, fiber_id, result) do
+    case State.get_channel_suspension(state, fiber_id) do
+      nil ->
+        # Fiber not found in channel suspensions - might have been cancelled
+        state
+
+      _channel_suspend ->
+        # Remove from channel_suspended and enqueue with result
+        state = State.remove_channel_suspension(state, fiber_id)
+
+        # Store wake result wrapped in :channel_wake tuple and enqueue
+        state = put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:channel_wake, result})
+        State.enqueue(state, fiber_id)
+    end
   end
 end
