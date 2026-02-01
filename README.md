@@ -27,7 +27,7 @@ some common side-effecting operations and their effectful equivalents:
 | Process dictionary              | State, Writer                |
 | Random values                   | Random                       |
 | Generating IDs (UUIDs)          | Fresh                        |
-| Async tasks / parallel work     | Async, Parallel              |
+| Concurrent fibers / streaming   | FiberPool, Channel, Stream   |
 | Run effects from LiveView       | AsyncComputation             |
 | Database transactions           | DBTransaction                |
 | Blocking calls to external code | Port                         |
@@ -80,9 +80,10 @@ some common side-effecting operations and their effectful equivalents:
     - [Random](#random)
   - [Concurrency](#concurrency)
     - [AtomicState](#atomicstate)
-    - [Parallel](#parallel)
+    - [FiberPool](#fiberpool)
+    - [Channel](#channel)
+    - [Stream](#stream)
     - [AsyncComputation](#asynccomputation)
-    - [Async](#async)
   - [Persistence & Data](#persistence--data)
     - [DBTransaction](#dbtransaction)
     - [Port](#port)
@@ -684,12 +685,11 @@ alias Skuld.Comp
 alias Skuld.Effects.{
   State, Reader, Writer, Throw, Yield,
   FxList, FxFasterList,
-  Fresh, Random, AtomicState, Async, Parallel, Async, Bracket,
+  Fresh, Random, AtomicState, Parallel, Bracket,
   Port, Command, EventAccumulator, EffectLogger,
-  DBTransaction, ChangesetPersist, ChangeEvent
+  DBTransaction, ChangesetPersist, ChangeEvent,
+  FiberPool, Channel, Stream
 }
-alias Skuld.Effects.Async.Scheduler
-alias Skuld.Effects.Async.AwaitRequest.{TaskTarget, TimerTarget}
 alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
 alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
 ```
@@ -1360,8 +1360,8 @@ Operations: `get/1`, `put/2`, `modify/2`, `atomic_state/2` (get-and-update), `ca
 
 #### Parallel
 
-Simple fork-join concurrency with built-in boundaries. Unlike `Async`, each operation
-is self-contained with automatic task management:
+Simple fork-join concurrency with built-in boundaries. Each operation is self-contained
+with automatic task management:
 
 ```elixir
 # Run multiple computations in parallel, get all results
@@ -1517,238 +1517,184 @@ end
 - Cancellation triggers proper cleanup via `leave_scope` chain
 - Linked by default (use `link: false` for unlinked)
 - `Suspend.data` contains decorations from scoped effects (e.g., `data[EffectLogger]` has the current log)
-- Use this for non-effectful callers; use `Async` effect when inside a computation
+- Use this for non-effectful callers; use `FiberPool` effect when inside a computation
 
 Operations: `start/2`, `start_sync/2`, `resume/2`, `resume_sync/3`, `cancel/1`
 
-#### Async
+#### FiberPool
 
-Cooperative multitasking for complex async workflows. Provides two mechanisms:
+Cooperative fiber-based concurrency with automatic I/O batching. Fibers are lightweight
+computations that yield cooperatively and can be scheduled together for efficient execution.
 
-- **`fiber/1`** - Cooperative scheduling in the same process (no Task spawned)
-- **`async/1`** - Parallel execution via Erlang Task
-
-Both can be mixed freely and awaited using the same `await/1` function.
-
-**Fibers vs Tasks:**
-
-| Operation | Execution   | Process       | Use Case                     |
-|-----------|-------------|---------------|------------------------------|
-| `fiber/1` | Cooperative | Same          | I/O-bound, shared state      |
-| `async/1` | Parallel    | Separate Task | CPU-bound, process isolation |
-
-**Structured Concurrency:**
-
-Async implements *structured concurrency* via the `boundary/2` function. All concurrent
-work (fibers and tasks) must be spawned within a boundary, and the boundary ensures that
-all work is accounted for before it exits—either awaited, cancelled, or explicitly handled.
-This prevents resource leaks and orphaned tasks. By default, exiting a boundary with
-unawaited tasks throws `{:unawaited_tasks, count}`, but you can provide a custom handler
-as the second argument to `boundary/2` to ignore or log unawaited work instead.
-
-**Basic usage with fibers:**
+**Basic usage:**
 
 ```elixir
 comp do
-  result <- Async.boundary(comp do
-    # Cooperative fibers - run in scheduler process
-    h1 <- Async.fiber(comp do :result_1 end)
-    h2 <- Async.fiber(comp do :result_2 end)
+  # Spawn fibers
+  h1 <- FiberPool.submit(comp do :result_1 end)
+  h2 <- FiberPool.submit(comp do :result_2 end)
 
-    r1 <- Async.await(h1)
-    r2 <- Async.await(h2)
-    {r1, r2}
-  end)
-  result
-end
-|> Async.with_handler()
-|> Throw.with_handler()
-|> Scheduler.run_one()
-#=> {:done, {:result_1, :result_2}}
-```
-
-**Mixing fibers and tasks:**
-
-```elixir
-Async.boundary(comp do
-  # Fiber for I/O-bound work (yields while waiting)
-  h1 <- Async.fiber(comp do fetch_from_api() end)
-
-  # Task for CPU-bound work (runs in parallel on separate core)
-  h2 <- Async.async(comp do expensive_calculation() end)
-
-  r1 <- Async.await(h1)
-  r2 <- Async.await(h2)
+  # Await results
+  r1 <- FiberPool.await(h1)
+  r2 <- FiberPool.await(h2)
   {r1, r2}
-end)
+end
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+#=> {:result_1, :result_2}
 ```
 
-**Simple usage with `with_sequential_handler`:**
+**Await multiple fibers:**
 
 ```elixir
-# For simpler cases (especially testing), skip the Scheduler:
 comp do
-  Async.boundary(comp do
-    h <- Async.fiber(comp do work() end)
-    Async.await(h)
+  h1 <- FiberPool.submit(comp do :first end)
+  h2 <- FiberPool.submit(comp do :second end)
+
+  # Wait for all - results in order
+  results <- FiberPool.await_all([h1, h2])
+  results
+end
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+#=> [:first, :second]
+```
+
+**I/O Batching:**
+
+FiberPool automatically batches I/O operations across suspended fibers:
+
+```elixir
+# Multiple fibers fetching from DB - batched into single query
+comp do
+  h1 <- FiberPool.submit(comp do DB.fetch(User, 1) end)
+  h2 <- FiberPool.submit(comp do DB.fetch(User, 2) end)
+  h3 <- FiberPool.submit(comp do DB.fetch(User, 3) end)
+
+  results <- FiberPool.await_all([h1, h2, h3])
+  results
+end
+|> DB.with_executors()
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+# Only 1 DB query executed, fetching all 3 users
+```
+
+**Parallel Tasks:**
+
+For CPU-bound work that benefits from parallel execution:
+
+```elixir
+comp do
+  # Task runs in separate process
+  h <- FiberPool.submit_task(comp do expensive_calculation() end)
+  FiberPool.await(h)
+end
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+```
+
+Operations: `submit/1`, `submit_task/1`, `await/1`, `await_all/1`, `await_any/1`, `cancel/1`
+
+#### Channel
+
+Bounded channels for communication between fibers with backpressure:
+
+```elixir
+comp do
+  ch <- Channel.new(10)  # buffer capacity
+
+  # Producer fiber
+  _producer <- FiberPool.submit(comp do
+    _ <- Channel.put(ch, :item1)
+    _ <- Channel.put(ch, :item2)
+    Channel.close(ch)
   end)
+
+  # Consumer
+  r1 <- Channel.take(ch)  # {:ok, :item1}
+  r2 <- Channel.take(ch)  # {:ok, :item2}
+  r3 <- Channel.take(ch)  # :closed
+
+  {r1, r2, r3}
 end
-|> Async.with_sequential_handler()
-|> Comp.run!()
+|> Channel.with_handler()
+|> FiberPool.with_handler()
+|> FiberPool.run!()
 ```
 
-**Multiple computations with fair scheduling:**
+**Backpressure:**
+
+- `put/2` suspends when buffer is full
+- `take/1` suspends when buffer is empty
+- Fibers automatically wake when space/items become available
+
+**Error propagation:**
 
 ```elixir
-# Run multiple workflows cooperatively - FIFO fair interleaving
-{:done, results} = Scheduler.run([
-  user_workflow(user_id_1),
-  user_workflow(user_id_2),
-  user_workflow(user_id_3)
-])
-
-results[{:index, 0}]  #=> result from first workflow
-results[{:index, 1}]  #=> result from second workflow
+# Errors flow downstream through channels
+_ <- Channel.error(ch, :something_failed)
+Channel.take(ch)  #=> {:error, :something_failed}
 ```
 
-**await_all and await_any:**
+Operations: `new/1`, `put/2`, `take/1`, `peek/1`, `close/1`, `error/2`
+
+#### Stream
+
+High-level streaming API built on channels:
 
 ```elixir
-# Wait for all - results in order (works with both fibers and tasks)
-Async.boundary(comp do
-  h1 <- Async.fiber(comp do :first end)
-  h2 <- Async.async(comp do :second end)
+comp do
+  # Create stream from enumerable
+  source <- Stream.from_enum(1..100)
 
-  [r1, r2] <- Async.await_all([h1, h2])
-  {r1, r2}
-end)
+  # Transform with optional concurrency
+  mapped <- Stream.map(source, fn x -> x * 2 end, concurrency: 4)
 
-# Race - first to complete wins
-Async.boundary(comp do
-  h1 <- Async.fiber(comp do :approach_a end)
-  h2 <- Async.fiber(comp do :approach_b end)
+  # Filter
+  filtered <- Stream.filter(mapped, fn x -> rem(x, 4) == 0 end)
 
-  {winner, result} <- Async.await_any([h1, h2])
-  loser = if winner == h1, do: h2, else: h1
-  _ <- Async.cancel(loser)
-  result
-end)
+  # Collect results
+  Stream.to_list(filtered)
+end
+|> Channel.with_handler()
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+#=> [4, 8, 12, 16, ...]
 ```
 
-**Timeout convenience functions:**
+**Producer functions:**
 
 ```elixir
-# await_with_timeout - await a task or fiber with a timeout
-Async.boundary(comp do
-  h <- Async.async(comp do slow_work() end)
+comp do
+  source <- Stream.from_function(fn ->
+    case fetch_next_batch() do
+      {:ok, items} -> {:items, items}
+      :done -> :done
+      {:error, e} -> {:error, e}
+    end
+  end)
 
-  case Async.await_with_timeout(h, 5000) do
-    {:ok, result} -> handle_success(result)
-    {:error, :timeout} -> handle_timeout()
-  end
-end)
-
-# timeout/2 - run and await an entire computation with a timeout
-case Async.timeout(slow_computation(), 5000) do
-  {:ok, result} -> handle_success(result)
-  {:error, :timeout} -> handle_timeout()
+  Stream.each(source, &process/1)
 end
 ```
 
-**Manual timeout with reusable timers:**
+**I/O Batching in Streams:**
 
 ```elixir
-# For more control, use await_any_raw with a TimerTarget
-Async.boundary(
-  comp do
-    h <- Async.async(comp do slow_work() end)
-    timer = TimerTarget.new(5000)  # 5 second timeout
-
-    {target_key, result} <- Async.await_any_raw([
-      TaskTarget.new(h.task),
-      timer
-    ])
-
-    _ <- Async.cancel(h)
-
-    case target_key do
-      {:task, _} -> {:ok, result}
-      {:timer, _} -> {:error, :timeout}
-    end
-  end,
-  fn result, _unawaited -> result end
-)
-
-# Reusable timer for overall operation timeout
-Async.boundary(
-  comp do
-    timer = TimerTarget.new(10_000)  # 10 second overall timeout
-
-    h1 <- Async.async(comp do step_1() end)
-    {key1, r1} <- Async.await_any_raw([TaskTarget.new(h1.task), timer])
-    _ <- Async.cancel(h1)
-
-    case key1 do
-      {:timer, _} -> {:error, :timeout}
-      {:task, _} ->
-        # Same timer continues counting down
-        h2 <- Async.async(comp do step_2(r1) end)
-        {key2, r2} <- Async.await_any_raw([TaskTarget.new(h2.task), timer])
-        _ <- Async.cancel(h2)
-
-        case key2 do
-          {:timer, _} -> {:error, :timeout}
-          {:task, _} -> {:ok, r2}
-        end
-    end
-  end,
-  fn result, _unawaited -> result end
-)
+# Transform functions can use effects - batching works!
+comp do
+  source <- Stream.from_enum(user_ids)
+  users <- Stream.map(source, fn id -> DB.fetch(User, id) end, concurrency: 10)
+  Stream.to_list(users)
+end
+|> DB.with_executors()
+|> Channel.with_handler()
+|> FiberPool.with_handler()
+|> FiberPool.run!()
 ```
 
-**GenServer mode for long-lived schedulers:**
-
-```elixir
-# Start a scheduler server
-{:ok, server} = Scheduler.Server.start_link(
-  computations: [workflow(user1), workflow(user2)],
-  scheduler_opts: [on_error: :log_and_continue]
-)
-
-# Spawn additional computations dynamically
-{:ok, tag} = Scheduler.Server.spawn(server, workflow(user3))
-
-# Check status
-Scheduler.Server.stats(server)
-#=> %{suspended: 2, ready: 0, completed: 1}
-
-# Get a completed result
-{:ok, result} = Scheduler.Server.get_result(server, tag)
-
-# Stop the server
-Scheduler.Server.stop(server)
-```
-
-**Comparison with Parallel:**
-
-| Feature                 | Async                       | Parallel             |
-|-------------------------|-----------------------------|----------------------|
-| `fiber/1` (cooperative) | ✅                          | ❌                   |
-| `async/1` (parallel)    | ✅ Yields                   | N/A                  |
-| await behavior          | Yields AwaitSuspend         | Blocks               |
-| `await_with_timeout/2`  | ✅                          | ❌                   |
-| `timeout/2`             | ✅                          | ❌                   |
-| Multiple computations   | Yes (via Scheduler)         | Yes (self-contained) |
-| Cooperative scheduling  | Yes (FIFO fair)             | No                   |
-| Reusable timeouts       | Yes                         | No                   |
-| GenServer mode          | Yes                         | No                   |
-| Use case                | Complex workflows, timeouts | Fork-join patterns   |
-
-Operations: `boundary/2`, `fiber/1`, `async/1`, `await/1`, `await_all/1`, `await_any/1`,
-`await_any_raw/1`, `await_with_timeout/2`, `timeout/2`, `cancel/1`, `with_sequential_handler/1`
-
-> **Note**: Async runs on the same BEAM node. Closures cannot be serialized across nodes,
-> so distributed async is not supported. For distributed work, use message passing between nodes.
+Operations: `from_enum/2`, `from_function/2`, `map/3`, `filter/3`, `each/2`, `run/2`, `to_list/1`
 
 ### Persistence & Data
 
