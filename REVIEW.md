@@ -26,7 +26,7 @@ Skuld is an algebraic effects library using evidence-passing style with CPS (con
 | State management | State, Reader, Writer, AtomicState          |
 | Control flow     | Throw, Yield, Bracket                       |
 | Concurrency      | FiberPool, Channel, Parallel                |
-| Streaming        | Stream (map, filter, merge_join, rate_limit)|
+| Streaming        | Stream (map, filter, each, to_list)         |
 | I/O abstraction  | Port, DB, DBTransaction, ChangesetPersist   |
 | Value generation | Fresh, Random                               |
 | Debugging        | EffectLogger (with replay/resume)           |
@@ -159,9 +159,11 @@ end
 Combinators include:
 - `from_enum/1`, `from_function/1` - sources
 - `map/3`, `filter/3` - transforms with optional concurrency
+- `each/2`, `to_list/1`, `run/2` - sinks
+
+Planned combinators (not yet implemented):
 - `merge_join/3` - database-style joins on sorted streams
 - `rate_limit/2` - token bucket rate limiting
-- `each/2`, `to_list/1`, `run/2` - sinks
 
 ### 9. Excellent Documentation & Test Coverage
 
@@ -280,7 +282,7 @@ No built-in hooks for:
 | Coroutines (Yield)                                  | Excellent |
 | Concurrency (FiberPool, Parallel, AtomicState)      | Excellent |
 | Channels (bounded, backpressure, error propagation) | Excellent |
-| Streaming (map, filter, join, rate limit)           | Very Good |
+| Streaming (map, filter, each, to_list)              | Very Good |
 | I/O batching (IBatchable, scoped executors)         | Excellent |
 | I/O abstraction (Port, DB)                          | Good      |
 | Testing support                                     | Excellent |
