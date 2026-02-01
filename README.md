@@ -1739,7 +1739,17 @@ end
 **I/O Batching in Streams:**
 
 ```elixir
-# Uses User struct and mock_executor from previous example
+defmodule User do
+  defstruct [:id, :name]
+end
+
+mock_executor = fn ops ->
+  IO.puts("Executor called with #{length(ops)} operations")  # proves batching
+  Comp.pure(Map.new(ops, fn {ref, %DB.Fetch{id: id}} ->
+    {ref, %User{id: id, name: "User #{id}"}}
+  end))
+end
+
 user_ids = [1, 2, 3, 4, 5]
 
 comp do
