@@ -688,8 +688,9 @@ alias Skuld.Effects.{
   Fresh, Random, AtomicState, Parallel, Bracket,
   Port, Command, EventAccumulator, EffectLogger,
   DBTransaction, ChangesetPersist, ChangeEvent,
-  FiberPool, Channel, Stream
+  FiberPool, Channel, Stream, DB
 }
+alias Skuld.Fiber.FiberPool.BatchExecutor
 alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
 alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
 ```
@@ -1565,19 +1566,32 @@ end
 FiberPool automatically batches I/O operations across suspended fibers:
 
 ```elixir
+# Define a schema struct and mock executor
+defmodule User do
+  defstruct [:id, :name]
+end
+
+mock_executor = fn ops ->
+  IO.puts("Executor called with #{length(ops)} operations")  # proves batching
+  Comp.pure(Map.new(ops, fn {ref, %DB.Fetch{id: id}} ->
+    {ref, %User{id: id, name: "User #{id}"}}
+  end))
+end
+
 # Multiple fibers fetching from DB - batched into single query
 comp do
-  h1 <- FiberPool.fiber(comp do DB.fetch(User, 1) end)
-  h2 <- FiberPool.fiber(comp do DB.fetch(User, 2) end)
-  h3 <- FiberPool.fiber(comp do DB.fetch(User, 3) end)
+  h1 <- FiberPool.fiber(DB.fetch(User, 1))
+  h2 <- FiberPool.fiber(DB.fetch(User, 2))
+  h3 <- FiberPool.fiber(DB.fetch(User, 3))
 
   results <- FiberPool.await_all([h1, h2, h3])
   results
 end
-|> DB.with_executors()
+|> BatchExecutor.with_executor({:db_fetch, User}, mock_executor)
 |> FiberPool.with_handler()
 |> FiberPool.run!()
-# Only 1 DB query executed, fetching all 3 users
+# Prints: Executor called with 3 operations
+#=> [%User{id: 1, name: "User 1"}, %User{id: 2, name: "User 2"}, %User{id: 3, name: "User 3"}]
 ```
 
 **Parallel Tasks:**
@@ -1682,16 +1696,20 @@ end
 **I/O Batching in Streams:**
 
 ```elixir
-# Transform functions can use effects - batching works!
+# Uses User struct and mock_executor from previous example
+user_ids = [1, 2, 3, 4, 5]
+
 comp do
   source <- Stream.from_enum(user_ids)
   users <- Stream.map(source, fn id -> DB.fetch(User, id) end, concurrency: 10)
   Stream.to_list(users)
 end
-|> DB.with_executors()
+|> BatchExecutor.with_executor({:db_fetch, User}, mock_executor)
 |> Channel.with_handler()
 |> FiberPool.with_handler()
 |> FiberPool.run!()
+# Prints: Executor called with 5 operations
+#=> [%User{id: 1, ...}, %User{id: 2, ...}, ...]
 ```
 
 Operations: `from_enum/2`, `from_function/2`, `map/3`, `filter/3`, `each/2`, `run/2`, `to_list/1`
