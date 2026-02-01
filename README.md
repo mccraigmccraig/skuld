@@ -1653,6 +1653,48 @@ Channel.take(ch)  #=> {:error, :something_failed}
 
 Operations: `new/1`, `put/2`, `take/1`, `peek/1`, `close/1`, `error/2`
 
+**Async operations for ordered concurrent processing:**
+
+`put_async/2` and `take_async/1` enable ordered concurrent transformations. When
+you need to transform items concurrently but preserve their original order:
+
+```elixir
+comp do
+  ch <- Channel.new(10)  # buffer size = max concurrent transforms
+
+  # Producer: spawns transform fibers, stores handles in order
+  _producer <- FiberPool.fiber(comp do
+    _ <- Channel.put_async(ch, expensive_transform(item1))
+    _ <- Channel.put_async(ch, expensive_transform(item2))
+    _ <- Channel.put_async(ch, expensive_transform(item3))
+    Channel.close(ch)
+  end)
+
+  # Consumer: awaits results in put-order
+  r1 <- Channel.take_async(ch)  # {:ok, transformed1}
+  r2 <- Channel.take_async(ch)  # {:ok, transformed2}
+  r3 <- Channel.take_async(ch)  # {:ok, transformed3}
+
+  {r1, r2, r3}
+end
+|> Channel.with_handler()
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+```
+
+**How it works:**
+- `put_async(ch, computation)` spawns a fiber for the computation and stores
+  the fiber handle in the buffer (not the result)
+- `take_async(ch)` takes the next fiber handle and awaits its completion
+- Order is preserved because handles are stored in FIFO order, and we await
+  them sequentially regardless of which computation finishes first
+
+**Buffer size controls concurrency:** If the buffer capacity is 10, at most 10
+transform fibers run in parallel—`put_async` blocks when the buffer is full,
+providing natural backpressure.
+
+Operations: `put_async/2`, `take_async/1`
+
 #### Stream
 
 High-level streaming API built on channels:
