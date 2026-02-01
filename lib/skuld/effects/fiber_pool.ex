@@ -69,7 +69,8 @@ defmodule Skuld.Effects.FiberPool do
   defmodule Await do
     @moduledoc false
     # raising: true for await!, false for await
-    defstruct [:handle, raising: true]
+    # consume: true to remove result from completed after retrieval (single-consumer optimization)
+    defstruct [:handle, raising: true, consume: false]
   end
 
   defmodule AwaitAll do
@@ -183,6 +184,20 @@ defmodule Skuld.Effects.FiberPool do
   @spec await!(Handle.t()) :: Comp.Types.computation()
   def await!(handle) do
     Comp.effect(@sig, %Await{handle: handle, raising: true})
+  end
+
+  @doc """
+  Await a fiber's result with single-consumer semantics.
+
+  Like `await/1`, but removes the result from the completed map after retrieval.
+  Use this when you know the fiber will only be awaited once, to enable
+  garbage collection of the result.
+
+  This is used internally by Channel.take_async for memory-efficient streaming.
+  """
+  @spec await_consume(Handle.t()) :: Comp.Types.computation()
+  def await_consume(handle) do
+    Comp.effect(@sig, %Await{handle: handle, raising: false, consume: true})
   end
 
   @doc """
@@ -381,14 +396,14 @@ defmodule Skuld.Effects.FiberPool do
     k.(handle, env)
   end
 
-  defp handle(%Await{handle: handle, raising: raising}, env, k) do
+  defp handle(%Await{handle: handle, raising: raising, consume: consume}, env, k) do
     # Yield a FiberPool suspension for the scheduler to handle
     resume = fn result ->
       value = if raising, do: unwrap_result(result), else: result
       k.(value, env)
     end
 
-    suspend = FPSuspend.await_one(handle, resume)
+    suspend = FPSuspend.await_one(handle, resume, consume: consume)
     {suspend, env}
   end
 

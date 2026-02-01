@@ -360,8 +360,8 @@ defmodule Skuld.Effects.Channel do
 
       case result do
         {:ok, {:__channel_async_fiber__, fiber_handle}} ->
-          # Await the fiber - returns {:ok, value} | {:error, reason}
-          FiberPool.await(fiber_handle)
+          # Await and consume the fiber - single-consumer pattern for streaming
+          FiberPool.await_consume(fiber_handle)
 
         {:ok, other} ->
           # Not an async fiber - return as-is (allows mixed usage)

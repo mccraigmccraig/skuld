@@ -177,6 +177,8 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
           result ->
             # Fiber is being resumed with await result
+            # Check for and clean up any consume_ids
+            state = pop_and_cleanup_consume_ids(state, fiber_id)
             resume_fiber(state, fiber, result)
         end
     end
@@ -322,19 +324,55 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     {:continue, state}
   end
 
-  defp handle_fp_suspension(state, fiber, %{handles: handles, mode: mode}) do
+  defp handle_fp_suspension(state, fiber, %{handles: handles, mode: mode, consume_ids: consume_ids}) do
     # A fiber is awaiting other fibers - use the State's await tracking
     waiting_for = Enum.map(handles, & &1.id)
 
     case State.suspend_awaiting(state, fiber.id, waiting_for, mode) do
       {:ready, result, state} ->
         # Results already available - resume immediately
+        # Clean up consumed fiber IDs if specified
+        state = cleanup_consumed_ids(state, consume_ids)
         resume_fiber(state, fiber, result)
 
       {:suspended, state} ->
-        # Need to wait - store the fiber
+        # Need to wait - store the fiber and track consume_ids for later cleanup
         state = State.put_fiber(state, fiber)
+        # Store consume_ids in suspension info for cleanup when woken
+        state = store_consume_ids(state, fiber.id, consume_ids)
         {:continue, state}
+    end
+  end
+
+  # Clean up fiber results that have been consumed (single-consumer optimization)
+  defp cleanup_consumed_ids(state, []), do: state
+
+  defp cleanup_consumed_ids(state, consume_ids) do
+    Enum.reduce(consume_ids, state, fn fid, acc ->
+      %{acc | completed: Map.delete(acc.completed, fid)}
+    end)
+  end
+
+  # Store consume_ids in suspension for later cleanup
+  defp store_consume_ids(state, _fiber_id, []), do: state
+
+  defp store_consume_ids(state, fiber_id, consume_ids) do
+    # Store in a special key in the state for retrieval when woken
+    key = {:consume_ids, fiber_id}
+    put_in(state, [Access.key(:completed), key], consume_ids)
+  end
+
+  # Pop and clean up consume_ids when a fiber is woken from await
+  defp pop_and_cleanup_consume_ids(state, fiber_id) do
+    key = {:consume_ids, fiber_id}
+
+    case Map.pop(state.completed, key) do
+      {nil, _} ->
+        state
+
+      {consume_ids, completed} ->
+        state = %{state | completed: completed}
+        cleanup_consumed_ids(state, consume_ids)
     end
   end
 

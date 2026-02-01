@@ -232,6 +232,9 @@ defmodule Skuld.Fiber.FiberPool.State do
     # Check if we can satisfy immediately
     case check_wake_condition(mode, waiting_for, collected) do
       {:ready, result} ->
+        # Note: we don't clean up here because the fiber might be awaited again
+        # (e.g., by scope's await_all). Cleanup happens in wake_awaiters when
+        # a fiber completes with registered awaiters.
         {:ready, result, state}
 
       :waiting ->
@@ -295,6 +298,10 @@ defmodule Skuld.Fiber.FiberPool.State do
     Enum.reduce(awaiters, state, fn awaiter_fid, acc ->
       wake_if_ready(acc, awaiter_fid, completed_fid, result)
     end)
+
+    # Note: We don't clean up completed[completed_fid] here because the fiber
+    # might be awaited again later (e.g., by scope's await_all). The completed
+    # map is cleaned up when the FiberPool run ends.
   end
 
   # Check if an awaiter is ready to wake

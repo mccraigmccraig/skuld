@@ -19,21 +19,25 @@ defmodule Skuld.Fiber.FiberPool.Suspend do
           op: :await,
           handles: [Handle.t()],
           mode: await_mode(),
-          resume: (term() -> {term(), Skuld.Comp.Types.env()})
+          resume: (term() -> {term(), Skuld.Comp.Types.env()}),
+          consume_ids: [reference()]
         }
 
-  defstruct [:op, :handles, :mode, :resume]
+  defstruct [:op, :handles, :mode, :resume, consume_ids: []]
 
   @doc """
   Create an await suspension for a single handle.
   """
-  @spec await_one(Handle.t(), (term() -> {term(), Skuld.Comp.Types.env()})) :: t()
-  def await_one(handle, resume) do
+  @spec await_one(Handle.t(), (term() -> {term(), Skuld.Comp.Types.env()}), keyword()) :: t()
+  def await_one(handle, resume, opts \\ []) do
+    consume = Keyword.get(opts, :consume, false)
+
     %__MODULE__{
       op: :await,
       handles: [handle],
       mode: :one,
-      resume: resume
+      resume: resume,
+      consume_ids: if(consume, do: [handle.id], else: [])
     }
   end
 
