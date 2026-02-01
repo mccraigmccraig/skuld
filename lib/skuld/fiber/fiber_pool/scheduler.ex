@@ -34,6 +34,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   @type run_result ::
           {:done, %{reference() => term()}, State.t()}
           | {:suspended, Fiber.t(), State.t()}
+          | {:waiting_for_tasks, State.t()}
           | {:error, term(), State.t()}
 
   #############################################################################
@@ -44,8 +45,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   Run all fibers until completion or external suspension.
 
   Returns:
-  - `{:done, results, state}` - All fibers completed, results map by fiber_id
+  - `{:done, results, state}` - All fibers and tasks completed
   - `{:suspended, fiber, state}` - A fiber yielded externally (not an await)
+  - `{:waiting_for_tasks, state}` - Fibers done but tasks still running
   - `{:error, reason, state}` - Fatal error (when on_error: :stop)
   """
   @spec run(State.t(), Types.env()) :: run_result()
@@ -102,16 +104,21 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
         run_loop(state, env)
 
       {:done, state} ->
-        # Collect results for completed fibers
-        results = collect_results(state)
-        {:done, results, state}
+        # Check if there are still running tasks
+        if State.has_tasks?(state) do
+          {:waiting_for_tasks, state}
+        else
+          # Collect results for completed fibers/tasks
+          results = collect_results(state)
+          {:done, results, state}
+        end
 
       {:suspended, fiber, state} ->
         {:suspended, fiber, state}
 
-      # Reserved for future error handling with on_error: :stop
-      # {:error, reason, state} ->
-      #   {:error, reason, state}
+        # Reserved for future error handling with on_error: :stop
+        # {:error, reason, state} ->
+        #   {:error, reason, state}
     end
   end
 

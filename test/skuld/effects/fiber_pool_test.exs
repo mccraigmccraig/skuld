@@ -303,4 +303,118 @@ defmodule Skuld.Effects.FiberPoolTest do
       assert result == 42
     end
   end
+
+  describe "submit_task" do
+    test "submits and awaits a task" do
+      result =
+        comp do
+          h <- FiberPool.submit_task(Comp.pure(42))
+          FiberPool.await(h)
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == 42
+    end
+
+    test "task runs in parallel process" do
+      # Use self() to verify task runs in different process
+      parent = self()
+
+      task_comp = fn _env, k ->
+        k.(self() != parent, %{})
+      end
+
+      result =
+        comp do
+          h <- FiberPool.submit_task(task_comp)
+          FiberPool.await(h)
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      # Task should have run in a different process
+      assert result == true
+    end
+
+    test "submits multiple tasks and awaits all" do
+      result =
+        comp do
+          h1 <- FiberPool.submit_task(Comp.pure(10))
+          h2 <- FiberPool.submit_task(Comp.pure(20))
+          h3 <- FiberPool.submit_task(Comp.pure(12))
+
+          FiberPool.await_all([h1, h2, h3])
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == [10, 20, 12]
+    end
+
+    test "task that crashes returns error on await" do
+      crash_comp = fn _env, _k ->
+        raise "task crashed!"
+      end
+
+      # Task crashes are wrapped as {:task_crashed, reason}
+      assert_raise RuntimeError, ~r/Fiber failed/, fn ->
+        comp do
+          h <- FiberPool.submit_task(crash_comp)
+          FiberPool.await(h)
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+      end
+    end
+
+    test "mixed fibers and tasks" do
+      result =
+        comp do
+          # Submit both fibers and tasks
+          fiber_h <- FiberPool.submit(Comp.pure(:fiber_result))
+          task_h <- FiberPool.submit_task(Comp.pure(:task_result))
+
+          # Await both
+          fiber_r <- FiberPool.await(fiber_h)
+          task_r <- FiberPool.await(task_h)
+
+          {fiber_r, task_r}
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == {:fiber_result, :task_result}
+    end
+
+    test "tasks without explicit await still run" do
+      # Tasks that aren't awaited will still run, but we need to await something
+      # to trigger the scheduler to wait for task completion
+      result =
+        comp do
+          h1 <- FiberPool.submit_task(Comp.pure(100))
+          _ <- FiberPool.submit_task(Comp.pure(:ignored))
+          # Only await h1
+          FiberPool.await(h1)
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == 100
+    end
+
+    test "await_any with tasks" do
+      {_handle, result} =
+        comp do
+          h1 <- FiberPool.submit_task(Comp.pure(:first))
+          h2 <- FiberPool.submit_task(Comp.pure(:second))
+
+          FiberPool.await_any([h1, h2])
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result in [:first, :second]
+    end
+  end
 end

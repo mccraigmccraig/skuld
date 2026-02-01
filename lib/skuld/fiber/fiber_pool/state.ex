@@ -12,12 +12,15 @@ defmodule Skuld.Fiber.FiberPool.State do
   - `suspended` - Map of fiber_id => suspension_info for awaiting fibers
   - `completed` - Map of fiber_id => result for completed fibers
   - `awaiting` - Map of fiber_id => [awaiter_fiber_id] reverse index for wake-up
+  - `tasks` - Map of task_ref => handle_id for running BEAM tasks
+  - `task_supervisor` - Task.Supervisor pid for spawning tasks
   - `opts` - Configuration options
   """
 
   alias Skuld.Fiber
 
   @type fiber_id :: reference()
+  @type task_ref :: reference()
   @type result :: {:ok, term()} | {:error, term()}
 
   @type suspension_info :: %{
@@ -33,6 +36,8 @@ defmodule Skuld.Fiber.FiberPool.State do
           suspended: %{fiber_id() => suspension_info()},
           completed: %{fiber_id() => result()},
           awaiting: %{fiber_id() => [fiber_id()]},
+          tasks: %{task_ref() => fiber_id()},
+          task_supervisor: pid() | nil,
           opts: keyword()
         }
 
@@ -43,6 +48,8 @@ defmodule Skuld.Fiber.FiberPool.State do
     :suspended,
     :completed,
     :awaiting,
+    :tasks,
+    :task_supervisor,
     :opts
   ]
 
@@ -54,6 +61,7 @@ defmodule Skuld.Fiber.FiberPool.State do
   - `:on_error` - Error handling strategy (default: `:continue`)
     - `:continue` - Continue with other fibers on error
     - `:stop` - Stop scheduler on first error
+  - `:task_supervisor` - Task.Supervisor pid for spawning tasks
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
@@ -64,6 +72,8 @@ defmodule Skuld.Fiber.FiberPool.State do
       suspended: %{},
       completed: %{},
       awaiting: %{},
+      tasks: %{},
+      task_supervisor: Keyword.get(opts, :task_supervisor),
       opts: opts
     }
   end
@@ -340,27 +350,71 @@ defmodule Skuld.Fiber.FiberPool.State do
   end
 
   #############################################################################
+  ## Task Management
+  #############################################################################
+
+  @doc """
+  Register a running task with its handle_id.
+
+  The task_ref is the reference from Task.async, used to match completion messages.
+  The handle_id is the fiber_id used in the Handle returned to the user.
+  """
+  @spec add_task(t(), task_ref(), fiber_id()) :: t()
+  def add_task(state, task_ref, handle_id) do
+    %{state | tasks: Map.put(state.tasks, task_ref, handle_id)}
+  end
+
+  @doc """
+  Get the handle_id for a task_ref.
+  """
+  @spec get_task_handle(t(), task_ref()) :: fiber_id() | nil
+  def get_task_handle(state, task_ref) do
+    Map.get(state.tasks, task_ref)
+  end
+
+  @doc """
+  Remove a task and return its handle_id.
+  """
+  @spec pop_task(t(), task_ref()) :: {fiber_id() | nil, t()}
+  def pop_task(state, task_ref) do
+    case Map.pop(state.tasks, task_ref) do
+      {nil, _} -> {nil, state}
+      {handle_id, tasks} -> {handle_id, %{state | tasks: tasks}}
+    end
+  end
+
+  @doc """
+  Check if there are any running tasks.
+  """
+  @spec has_tasks?(t()) :: boolean()
+  def has_tasks?(state) do
+    map_size(state.tasks) > 0
+  end
+
+  #############################################################################
   ## Status Checks
   #############################################################################
 
   @doc """
-  Check if any work is pending (fibers in queue or suspended).
+  Check if any work is pending (fibers in queue, suspended, or tasks running).
   """
   @spec active?(t()) :: boolean()
   def active?(state) do
     not :queue.is_empty(state.run_queue) or
       map_size(state.suspended) > 0 or
-      map_size(state.fibers) > 0
+      map_size(state.fibers) > 0 or
+      map_size(state.tasks) > 0
   end
 
   @doc """
-  Check if all submitted fibers have completed.
+  Check if all submitted fibers and tasks have completed.
   """
   @spec all_done?(t()) :: boolean()
   def all_done?(state) do
     :queue.is_empty(state.run_queue) and
       map_size(state.suspended) == 0 and
-      map_size(state.fibers) == 0
+      map_size(state.fibers) == 0 and
+      map_size(state.tasks) == 0
   end
 
   @doc """
@@ -372,7 +426,8 @@ defmodule Skuld.Fiber.FiberPool.State do
       fibers: map_size(state.fibers),
       run_queue: :queue.len(state.run_queue),
       suspended: map_size(state.suspended),
-      completed: map_size(state.completed)
+      completed: map_size(state.completed),
+      tasks: map_size(state.tasks)
     }
   end
 end
