@@ -2,9 +2,9 @@
 
 ## Overview
 
-Skuld is an algebraic effects library using evidence-passing style with CPS (continuation-passing style). It's well-designed and comprehensive, but there are gaps and areas for improvement.
+Skuld is an algebraic effects library using evidence-passing style with CPS (continuation-passing style). It's well-designed and comprehensive, featuring a unified fiber-based concurrency model with automatic I/O batching and streaming support.
 
-**Version reviewed**: 0.1.17
+**Version reviewed**: 0.1.17 (post Fiber-Based Streaming epic)
 
 ---
 
@@ -19,17 +19,18 @@ Skuld is an algebraic effects library using evidence-passing style with CPS (con
 
 ### 2. Comprehensive Effect Library
 
-20 built-in effects covering most common needs:
+23 built-in effects covering most common needs:
 
-| Category         | Effects                               |
-|------------------|---------------------------------------|
-| State management | State, Reader, Writer, AtomicState    |
-| Control flow     | Throw, Yield, Bracket                 |
-| Concurrency      | Async (with scheduler), Parallel      |
-| I/O abstraction  | Port, DBTransaction, ChangesetPersist |
-| Value generation | Fresh, Random                         |
-| Debugging        | EffectLogger (with replay/resume)     |
-| Collections      | FxList, FxFasterList                  |
+| Category         | Effects                                     |
+|------------------|---------------------------------------------|
+| State management | State, Reader, Writer, AtomicState          |
+| Control flow     | Throw, Yield, Bracket                       |
+| Concurrency      | FiberPool, Channel, Parallel                |
+| Streaming        | Stream (map, filter, merge_join, rate_limit)|
+| I/O abstraction  | Port, DB, DBTransaction, ChangesetPersist   |
+| Value generation | Fresh, Random                               |
+| Debugging        | EffectLogger (with replay/resume)           |
+| Collections      | FxList, FxFasterList                        |
 
 ### 3. Ergonomic Syntax
 
@@ -52,6 +53,7 @@ end
 - Every effect has test handlers (deterministic, in-memory)
 - Port allows pattern-matched stubs
 - Fresh/Random support seeded handlers
+- BatchExecutor can be mocked per-scope for testing
 - Enables property-based testing of effectful code
 
 ```elixir
@@ -64,20 +66,107 @@ comp |> Port.with_test_handler(%{
 })
 ```
 
-### 5. Mature Async Support
+### 5. Unified Fiber-Based Concurrency (FiberPool)
 
-The Async effect is sophisticated:
+The FiberPool effect provides a clean, unified concurrency model:
 
-- Structured concurrency with boundaries
-- Both fibers (cooperative) and tasks (parallel)
-- Fair FIFO scheduler
-- Timeout support
-- Proper cleanup of unawaited work
+- **Cooperative fibers** - lightweight, scheduler-managed execution units
+- **BEAM Tasks** - parallel execution for CPU-bound or blocking work
+- **Structured concurrency** - automatic cleanup via scopes
+- **Fair FIFO scheduling** - deterministic, predictable execution order
+- **Simpler API** than predecessor Async - fewer concepts, cleaner semantics
 
-### 6. Excellent Documentation & Test Coverage
+```elixir
+comp do
+  # Submit concurrent work
+  h1 <- FiberPool.submit(fetch_user(id))
+  h2 <- FiberPool.submit_task(expensive_computation())
 
-- 775 tests
-- Comprehensive README
+  # Await results
+  user <- FiberPool.await(h1)
+  result <- FiberPool.await(h2)
+
+  {user, result}
+end
+|> FiberPool.with_handler()
+```
+
+### 6. Automatic I/O Batching
+
+The IBatchable protocol enables automatic batching of I/O operations across fibers:
+
+```elixir
+# Multiple concurrent fetches automatically batch into single IN query
+comp do
+  handles <- FiberPool.submit_all(user_ids, fn id -> DB.fetch(User, id) end)
+  users <- FiberPool.await_all(handles)
+  users
+end
+|> DB.with_executors()  # Install batch executors
+|> FiberPool.with_handler()
+```
+
+Key features:
+- **Protocol-based** - any effect can implement IBatchable
+- **Scoped executors** - different execution strategies per scope (test vs prod)
+- **Wildcard matching** - `{:db_fetch, :_}` matches any schema
+- **Automatic grouping** - scheduler groups suspended fibers by batch_key
+
+### 7. Channel-Based Communication
+
+Bounded channels with backpressure for fiber communication:
+
+```elixir
+comp do
+  ch <- Channel.new(capacity: 10)
+
+  # Producer fiber
+  _ <- FiberPool.submit(comp do
+    _ <- Enum.each(1..100, fn i -> Channel.put(ch, i) end)
+    Channel.close(ch)
+  end)
+
+  # Consumer - backpressure automatically applied
+  _ <- Channel.each(ch, fn item -> process(item) end)
+end
+```
+
+Features:
+- **Bounded buffers** with configurable capacity
+- **Automatic backpressure** - put suspends when full, take suspends when empty
+- **Error propagation** - errors flow through channels to consumers
+- **Peek support** - for merge joins without consuming
+
+### 8. High-Level Streaming API
+
+GenStage-like streaming without process-per-stage overhead:
+
+```elixir
+comp do
+  ch <- Stream.from_enum(1..1000)
+
+  mapped <- Stream.map(ch, fn x ->
+    result <- some_effect(x)
+    result * 2
+  end, concurrency: 4)
+
+  filtered <- Stream.filter(mapped, fn x -> x > 10 end)
+
+  Stream.to_list(filtered)
+end
+```
+
+Combinators include:
+- `from_enum/1`, `from_function/1` - sources
+- `map/3`, `filter/3` - transforms with optional concurrency
+- `merge_join/3` - database-style joins on sorted streams
+- `rate_limit/2` - token bucket rate limiting
+- `each/2`, `to_list/1`, `run/2` - sinks
+
+### 9. Excellent Documentation & Test Coverage
+
+- 758 tests
+- Comprehensive README with examples for all effects
 - Architecture documentation
 - Benchmark documentation
 
@@ -129,15 +218,21 @@ There's no "default stack" or automatic composition. For complex apps, this beco
 
 **Potential improvement**: A `Comp.with_handlers/2` that takes a list of `{effect, config}` tuples.
 
-### 4. Async Scheduler Complexity
+### 4. FiberPool System Complexity
 
-The Async effect is ~1200 lines with a separate 440-line Scheduler.State module. The complexity is justified for the features but:
+The FiberPool system is ~2,400 lines across multiple modules:
 
-- Learning curve is steep
-- Debugging suspended computations is difficult
-- The interaction between fibers, tasks, boundaries, and timers has many edge cases
+- Fiber (~300 LOC)
+- FiberPool effect (~825 LOC)
+- Scheduler + State (~840 LOC)
+- Batching infrastructure (~430 LOC)
 
-**Mitigation**: The `with_sequential_handler/1` provides a simpler testing mode.
+The complexity is justified for the features (batching, channels, streaming) but:
+
+- Learning curve for understanding the internals
+- Debugging suspended computations requires understanding fiber state
+
+**Mitigation**: The API surface is clean and most users don't need to understand internals. Sequential testing mode available via `with_sequential_handler/1`.
 
 ### 5. EffectLogger Cold Resume is Fragile
 
@@ -156,7 +251,7 @@ Missing:
 - Phoenix integration guide
 - Ecto integration beyond basic transactions
 - GenServer integration patterns
-- LiveView patterns
+- LiveView patterns (though AsyncComputation helps)
 
 The library is complete but the ecosystem integration story is light.
 
@@ -168,7 +263,7 @@ No built-in hooks for:
 - Counting effect invocations
 - OpenTelemetry integration
 
-**Fix**: Add optional telemetry hooks in `Comp.call/3`.
+**Fix**: Add optional telemetry hooks in `Comp.call/3`. (Planned for M8)
 
 ---
 
@@ -176,34 +271,36 @@ No built-in hooks for:
 
 ### Complete
 
-| Area                                             | Status    |
-|--------------------------------------------------|-----------|
-| Core computation machinery                       | Excellent |
-| State effects (State, Reader, Writer)            | Excellent |
-| Error handling (Throw)                           | Excellent |
-| Resource management (Bracket)                    | Excellent |
-| Coroutines (Yield)                               | Excellent |
-| Async/concurrency (Async, Parallel, AtomicState) | Excellent |
-| I/O abstraction (Port)                           | Good      |
-| Testing support                                  | Excellent |
-| Documentation                                    | Very good |
+| Area                                                | Status    |
+|-----------------------------------------------------|-----------|
+| Core computation machinery                          | Excellent |
+| State effects (State, Reader, Writer)               | Excellent |
+| Error handling (Throw)                              | Excellent |
+| Resource management (Bracket)                       | Excellent |
+| Coroutines (Yield)                                  | Excellent |
+| Concurrency (FiberPool, Parallel, AtomicState)      | Excellent |
+| Channels (bounded, backpressure, error propagation) | Excellent |
+| Streaming (map, filter, join, rate limit)           | Very Good |
+| I/O batching (IBatchable, scoped executors)         | Excellent |
+| I/O abstraction (Port, DB)                          | Good      |
+| Testing support                                     | Excellent |
+| Documentation                                       | Very good |
 
 ### Partial
 
-| Area                  | Status  | Gap                                        |
-|-----------------------|---------|--------------------------------------------|
-| Database integration  | Basic   | Only simple transaction/changeset ops      |
-| Logging/observability | Basic   | No telemetry, no structured logging effect |
-| Caching               | Missing | No cache effect                            |
-| HTTP client           | Missing | Would need Port wrapping                   |
-| Retry/circuit breaker | Missing | Common patterns not built-in               |
+| Area                  | Status  | Gap                                             |
+|-----------------------|---------|-------------------------------------------------|
+| Database integration  | Good    | Basic fetch/fetch_all batching, more ops needed |
+| Logging/observability | Basic   | No telemetry, no structured logging effect      |
+| Caching               | Missing | No cache effect                                 |
+| HTTP client           | Missing | Would need Port wrapping                        |
+| Retry/circuit breaker | Missing | Common patterns not built-in                    |
 
 ### Missing (But Possibly Out of Scope)
 
 | Area                 | Notes                             |
 |----------------------|-----------------------------------|
 | Distributed effects  | No distributed state/coordination |
-| Streaming            | No stream processing primitives   |
 | Effect type tracking | Fundamental language limitation   |
 
 ---
@@ -214,7 +311,7 @@ No built-in hooks for:
 
 1. **Better error messages** for missing handlers
 2. **`Comp.with_handlers/2`** convenience function for installing multiple handlers
-3. **Telemetry hooks** - optional integration points
+3. **More DB operations** - insert, update, delete with batching
 4. **Integration guide** for Phoenix/Ecto/LiveView
 
 ### Medium-term (Features)
@@ -223,18 +320,26 @@ No built-in hooks for:
 6. **Retry effect** with backoff strategies
 7. **HTTP effect** wrapping common HTTP clients
 8. **Structured logging effect** with context propagation
+9. **Telemetry hooks** - optional integration points (M8 planned)
 
 ### Long-term (Research)
 
-9. **Explore Dialyzer specs** for effect documentation (even if not enforced)
-10. **Effect "bundles"** - predefined stacks for common scenarios
+10. **Explore Dialyzer specs** for effect documentation (even if not enforced)
+11. **Effect "bundles"** - predefined stacks for common scenarios
+12. **Fiber priorities** and deterministic testing (M8 planned)
 
 ---
 
 ## Verdict
 
-**Skuld is a mature, well-designed algebraic effects library.** The core is solid, the effect library is comprehensive, and the testing story is excellent. The main weaknesses are around ecosystem integration and developer experience polish rather than fundamental design issues.
+**Skuld is a mature, well-designed algebraic effects library with excellent concurrency support.** The Fiber-Based Streaming epic has significantly improved the concurrency story:
 
-For building testable, composable domain logic in Elixir, it's an excellent choice. The investment in learning the effect patterns pays off in code quality and testability.
+- **FiberPool** provides a cleaner, more unified model than the previous Async
+- **Automatic I/O batching** solves the N+1 problem elegantly
+- **Channels and Streams** enable GenStage-like patterns without process overhead
 
-**Rating**: 8/10 - Production-ready with room for ecosystem growth.
+The core is solid, the effect library is comprehensive, and the testing story is excellent. The main weaknesses are around ecosystem integration and developer experience polish rather than fundamental design issues.
+
+For building testable, composable domain logic in Elixir with sophisticated concurrency needs, it's an excellent choice. The investment in learning the effect patterns pays off in code quality and testability.
+
+**Rating**: 8.5/10 - Production-ready with strong concurrency primitives.
