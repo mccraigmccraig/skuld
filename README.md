@@ -1769,16 +1769,34 @@ Configure with the `buffer` option: `Stream.map(source, &transform/1, buffer: 20
 Skuld Streams are optimized for throughput via transparent chunking (processing items
 in batches of 100 by default). Here's how they compare to GenStage:
 
-| Stages | Input Size | Skuld | GenStage | Skuld Speedup |
-|--------|-----------|-------|----------|---------------|
-| 1 | 1k | 0.17ms | 53ms | 312x |
-| 1 | 10k | 1.6ms | 57ms | 36x |
-| 1 | 100k | 15ms | 594ms | 38x |
-| 5 | 1k | 0.79ms | 53ms | 67x |
-| 5 | 10k | 7ms | 57ms | 8x |
-| 5 | 100k | 63ms | 586ms | 9x |
+| Stages | Input Size | Skuld  | GenStage | Skuld Speedup |
+|--------|------------|--------|----------|---------------|
+| 1      | 1k         | 0.17ms | 53ms     | 312x          |
+| 1      | 10k        | 1.6ms  | 57ms     | 36x           |
+| 1      | 100k       | 15ms   | 594ms    | 38x           |
+| 5      | 1k         | 0.79ms | 53ms     | 67x           |
+| 5      | 10k        | 7ms    | 57ms     | 8x            |
+| 5      | 100k       | 63ms   | 586ms    | 9x            |
 
 *Run with `mix run bench/stream_vs_genstage.exs`*
+
+**Stage count scaling (10k items):**
+
+| Stages | Skuld   | GenStage | Winner   |
+|--------|---------|----------|----------|
+| 1      | 1.9ms   | 27ms     | Skuld    |
+| 5      | 7ms     | 27ms     | Skuld    |
+| 10     | 14ms    | 27ms     | Skuld    |
+| 15     | 23ms    | 27ms     | Skuld    |
+| 20     | 29ms    | 27ms     | GenStage |
+| 30     | 44ms    | 28ms     | GenStage |
+
+GenStage runs each stage in a separate process, so stages execute in parallel—total
+time stays constant regardless of stage count. Skuld runs all stages cooperatively
+in a single process, so time grows linearly (~1.5ms per stage). The crossover point
+is around 15-20 stages for trivial transforms. CPU-heavy transforms would favor
+GenStage (parallel execution across cores), while I/O-heavy transforms would favor
+Skuld (automatic batching and non-blocking cooperative scheduling).
 
 **Architecture tradeoffs:**
 
@@ -1786,14 +1804,14 @@ Skuld Streams run in a **single BEAM process** with cooperative fiber scheduling
 while GenStage uses **multiple processes** with demand-based flow control. This
 leads to different characteristics:
 
-| Aspect | Skuld Streams | GenStage |
-|--------|---------------|----------|
-| Scheduling | Cooperative (fibers) | Preemptive (processes) |
-| Communication | Direct (shared memory) | Message passing |
-| Parallelism | Single process | Multi-process |
-| Best for | I/O-bound pipelines | CPU-bound pipelines |
-| Memory model | Higher peak, chunked | Lower, item-by-item |
-| Startup cost | Minimal | ~50ms process setup |
+| Aspect        | Skuld Streams          | GenStage               |
+|---------------|------------------------|------------------------|
+| Scheduling    | Cooperative (fibers)   | Preemptive (processes) |
+| Communication | Direct (shared memory) | Message passing        |
+| Parallelism   | Single process         | Multi-process          |
+| Best for      | I/O-bound pipelines    | CPU-bound pipelines    |
+| Memory model  | Higher peak, chunked   | Lower, item-by-item    |
+| Startup cost  | Minimal                | ~50ms process setup    |
 
 **When to use each:**
 
