@@ -4,7 +4,7 @@ defmodule Skuld.AsyncComputation do
   back to the calling process via messages.
 
   This is for running effectful computations from non-effectful code (e.g., LiveView).
-  If you're inside a computation and want concurrency, use `Skuld.Effects.Async` instead.
+  If you're inside a computation and want concurrency, use `Skuld.Effects.FiberPool` instead.
 
   ## Messages
 
