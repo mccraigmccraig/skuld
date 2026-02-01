@@ -6,9 +6,9 @@ An analysis of Skuld's suitability as a foundation for LLM-agent-built systems.
 
 ## Executive Summary
 
-Skuld's algebraic effects provide **significant advantages for LLM agents** building and maintaining systems. The explicit effect boundaries, consistent patterns, and separation of pure logic from side effects align well with how LLMs reason about code. However, the paradigm shift from imperative Elixir and the complexity of some subsystems create learning challenges.
+Skuld's algebraic effects provide **significant advantages for LLM agents** building and maintaining systems. The explicit effect boundaries, consistent patterns, and separation of pure logic from side effects align well with how LLMs reason about code. The new FiberPool-based concurrency model with automatic I/O batching and streaming further improves the story by reducing boilerplate and eliminating common N+1 query problems.
 
-**Verdict**: Strongly recommended for LLM-agent development, with some caveats.
+**Verdict**: Strongly recommended for LLM-agent development.
 
 ---
 
@@ -59,6 +59,8 @@ Skuld enforces consistent patterns:
 | Install handler  | `\|> Effect.with_handler(config)`    |
 | Test stub        | `\|> Port.with_test_handler(%{...})` |
 | Error handling   | `catch {Throw, pattern} -> recovery` |
+| Concurrency      | `h <- FiberPool.submit(comp)`        |
+| Streaming        | `ch <- Stream.from_enum(items)`      |
 
 **LLM Advantage**: Once an agent learns the patterns, it can apply them mechanically. There's less "art" and more "engineering" - the consistent syntax means fewer creative decisions that could go wrong.
 
@@ -170,6 +172,79 @@ end
 
 **LLM Advantage**: Each sub-computation's effects are handled by the same handlers. There's no hidden state sharing, no implicit database transactions spanning calls, no surprising interactions. The agent can reason about each piece independently.
 
+### 8. Automatic I/O Batching Eliminates N+1 Problems
+
+The IBatchable protocol and FiberPool scheduler automatically batch I/O operations:
+
+```elixir
+# LLM can write this without worrying about N+1 queries
+defcomp get_users_with_profiles(user_ids) do
+  handles <- FiberPool.submit_all(user_ids, fn id ->
+    comp do
+      user <- DB.fetch(User, id)
+      profile <- DB.fetch(Profile, user.profile_id)
+      {user, profile}
+    end
+  end)
+  FiberPool.await_all(handles)
+end
+```
+
+The scheduler automatically batches `DB.fetch` calls across all fibers into single `WHERE id IN (...)` queries.
+
+**LLM Advantage**: Agents don't need to think about query optimization. They write the obvious code (fetch each user), and the system optimizes it automatically. This eliminates a whole class of performance bugs that LLMs commonly introduce.
+
+### 9. Streaming Pipelines are Declarative
+
+The Stream effect enables GenStage-like pipelines without process complexity:
+
+```elixir
+# LLM can compose streaming pipelines declaratively
+defcomp process_orders(order_ids) do
+  ch <- Stream.from_enum(order_ids)
+
+  enriched <- Stream.map(ch, fn id ->
+    order <- DB.fetch(Order, id)
+    user <- DB.fetch(User, order.user_id)
+    {order, user}
+  end, concurrency: 4)
+
+  valid <- Stream.filter(enriched, fn {order, _} ->
+    order.status == :pending
+  end)
+
+  Stream.each(valid, fn {order, user} ->
+    process_order(order, user)
+  end)
+end
+```
+
+**LLM Advantage**: Streaming patterns are expressed as simple combinator chains. The agent doesn't need to understand GenStage, demand management, or process supervision. Backpressure is automatic.
+
+### 10. Scoped Executors Enable Clean Testing
+
+BatchExecutor allows different I/O strategies per scope:
+
+```elixir
+# Production - real database
+comp
+|> DB.with_executors()
+|> FiberPool.with_handler()
+|> Comp.run()
+
+# Test - mock executor
+comp
+|> BatchExecutor.with_executor({:db_fetch, User}, fn ops ->
+  Comp.pure(Map.new(ops, fn {ref, %{id: id}} ->
+    {ref, %User{id: id, name: "Test User #{id}"}}
+  end))
+end)
+|> FiberPool.with_handler()
+|> Comp.run()
+```
+
+**LLM Advantage**: Test isolation is explicit and scoped. The agent can see exactly what's being mocked and at what level. No global mocks or test pollution.
+
 ---
 
 ## Disadvantages for LLM Agents
@@ -245,40 +320,39 @@ comp
 
 **LLM Disadvantage**: Agents need to understand which handlers wrap others and how output transformations compose. Most handlers are order-independent, but the exceptions are subtle.
 
-### 4. Async Complexity is High
+### 4. FiberPool Concepts Require Understanding
 
-The Async effect has many concepts:
-- Boundaries (structured concurrency scopes)
-- Fibers (cooperative, same process)
-- Tasks (parallel, separate process)
-- Handles (TaskHandle vs FiberHandle)
-- Scheduler (fair FIFO scheduling)
-- Timeouts (await_with_timeout, TimerTarget)
+While simpler than the old Async system, FiberPool still has concepts to learn:
+
+- **Fibers** - cooperative, scheduler-managed execution units
+- **Tasks** - parallel execution in separate BEAM processes
+- **Channels** - bounded communication with backpressure
+- **Handles** - references to submitted work
+- **BatchSuspend** - automatic I/O batching
 
 ```elixir
-# Lots of concepts to juggle
-defcomp complex_async() do
-  result <- Async.boundary(comp do
-    h1 <- Async.fiber(work1())      # Cooperative
-    h2 <- Async.async(work2())       # Parallel
-    timer = TimerTarget.new(5000)
+# Concepts to understand
+defcomp concurrent_work() do
+  # Channel for communication
+  ch <- Channel.new(capacity: 10)
 
-    {winner, result} <- Async.await_any_raw([
-      TaskTarget.new(h2.task),
-      FiberTarget.new(h1.fiber_id),
-      timer
-    ])
+  # Submit fiber (cooperative)
+  producer <- FiberPool.submit(produce_items(ch))
 
-    case winner do
-      {:timer, _} -> :timeout
-      _ -> result
-    end
-  end)
-  result
+  # Submit task (parallel)
+  analyzer <- FiberPool.submit_task(heavy_computation())
+
+  # Consume with backpressure
+  items <- Stream.to_list(ch)
+
+  # Await parallel work
+  analysis <- FiberPool.await(analyzer)
+
+  {items, analysis}
 end
 ```
 
-**LLM Disadvantage**: The complexity creates many opportunities for bugs. Agents may confuse fibers and tasks, forget boundaries, mishandle timeouts, or create unawaited work that gets killed.
+**LLM Disadvantage**: Agents need to understand when to use fibers vs tasks, how channels provide backpressure, and how batching works. However, the common patterns are straightforward.
 
 ### 5. Limited Training Examples
 
@@ -350,15 +424,17 @@ end
 1. **Start with simple effects** - State, Reader, Throw, Port
 2. **Use Port for all I/O** - Creates clean test boundaries
 3. **Always install Throw.with_handler()** - Catches errors cleanly
-4. **Use with_sequential_handler for Async tests** - Simpler debugging
-5. **Leverage EffectLogger for debugging** - Structured effect traces
-6. **Create effect "bundles"** - Standard handler stacks for common scenarios
+4. **Use FiberPool for concurrency** - Unified model for fibers and tasks
+5. **Let batching work automatically** - Use DB.fetch, trust the scheduler
+6. **Use Stream for data pipelines** - Declarative, handles backpressure
+7. **Leverage EffectLogger for debugging** - Structured effect traces
+8. **Create effect "bundles"** - Standard handler stacks for common scenarios
 
 ### Don't
 
 1. **Don't mix paradigms** - Either use effects everywhere or nowhere
-2. **Don't use Async.fiber for simple parallelism** - Use Parallel.all instead
-3. **Don't forget boundaries** - Unawaited work gets killed
+2. **Don't manually batch I/O** - Let IBatchable handle it
+3. **Don't use raw processes for concurrency** - Use FiberPool.submit_task
 4. **Don't rely on handler order** - Be explicit about what you need
 
 ### Patterns for LLM Agents
@@ -376,12 +452,40 @@ def run_with_standard_handlers(comp, opts \\ []) do
 end
 ```
 
+**With FiberPool and batching:**
+```elixir
+def run_with_fiber_pool(comp, opts \\ []) do
+  comp
+  |> DB.with_executors()
+  |> Port.with_handler(opts[:port_registry] || %{})
+  |> Reader.with_handler(opts[:config] || %{})
+  |> FiberPool.with_handler()
+  |> Throw.with_handler()
+  |> Comp.run()
+end
+```
+
 **Test helper:**
 ```elixir
 def run_with_test_handlers(comp, stubs) do
   comp
   |> Port.with_test_handler(stubs)
   |> State.with_handler(%{})
+  |> Throw.with_handler()
+  |> Comp.run!()
+end
+```
+
+**Test with mock batch executor:**
+```elixir
+def run_with_mock_db(comp, mock_data) do
+  comp
+  |> BatchExecutor.with_executor({:db_fetch, :_}, fn ops ->
+    Comp.pure(Map.new(ops, fn {ref, %{id: id}} ->
+      {ref, Map.get(mock_data, id)}
+    end))
+  end)
+  |> FiberPool.with_handler()
   |> Throw.with_handler()
   |> Comp.run!()
 end
@@ -394,13 +498,15 @@ end
 ### For LLM Agents, Skuld Provides:
 
 | Benefit                    | Impact                                             |
-|----------------------------|----------------------------------------------------|
-| Explicit effects           | High - enables reasoning about side effects        |
-| Consistent patterns        | High - reduces generation errors                   |
-| Pure domain logic          | High - easier to understand and refactor           |
-| Mechanical test generation | High - test stubs follow patterns                  |
-| Effect logging             | High - structured history superior to stack traces |
-| Composition                | Medium - predictable combining                     |
+|----------------------------|-----------------------------------------------------|
+| Explicit effects           | High - enables reasoning about side effects         |
+| Consistent patterns        | High - reduces generation errors                    |
+| Pure domain logic          | High - easier to understand and refactor            |
+| Mechanical test generation | High - test stubs follow patterns                   |
+| Effect logging             | High - structured history superior to stack traces  |
+| Automatic I/O batching     | High - eliminates N+1 bugs automatically            |
+| Declarative streaming      | Medium - simpler than GenStage                      |
+| Composition                | Medium - predictable combining                      |
 
 ### Challenges:
 
@@ -408,16 +514,22 @@ end
 |----------------------|----------------------------------|
 | Paradigm shift       | Medium - requires learning       |
 | Handler installation | Medium - error-prone             |
-| Async complexity     | High - many concepts             |
+| FiberPool concepts   | Low-Medium - simpler than Async  |
 | Limited examples     | Medium - less to learn from      |
 | No static tracking   | Low - manageable with discipline |
 
 ### Final Assessment
 
-**Skuld is well-suited for LLM-agent development** because it makes implicit things explicit. Side effects become visible. Dependencies become trackable. Tests become mechanical.
+**Skuld is well-suited for LLM-agent development** because it makes implicit things explicit. Side effects become visible. Dependencies become trackable. Tests become mechanical. I/O batching happens automatically.
+
+The FiberPool-based concurrency model is a significant improvement for LLM agents:
+- **Simpler API** than the old Async system
+- **Automatic batching** eliminates a common source of performance bugs
+- **Declarative streaming** avoids GenStage complexity
+- **Unified model** for cooperative and parallel work
 
 The main risk is the paradigm shift. An LLM agent needs to be "taught" the effect patterns, either through examples in context or fine-tuning. Once learned, the patterns are consistent and mechanical - exactly what LLM agents excel at.
 
-**Recommendation**: Use Skuld for new systems where LLM agents will be primary maintainers. The upfront learning investment pays off in more reliable code generation and easier automated maintenance.
+**Recommendation**: Use Skuld for new systems where LLM agents will be primary maintainers. The upfront learning investment pays off in more reliable code generation, automatic performance optimization, and easier automated maintenance.
 
-**Rating for LLM-Agent Use**: 8.5/10 - Strong fit with manageable learning curve.
+**Rating for LLM-Agent Use**: 9/10 - Excellent fit with automatic I/O optimization.
