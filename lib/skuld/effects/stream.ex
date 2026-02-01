@@ -255,20 +255,10 @@ defmodule Skuld.Effects.Stream do
       output <- Channel.new(buffer)
 
       # Producer: reads input in order, spawns transforms via put_async
-      _producer <-
-        FiberPool.fiber(
-          comp do
-            map_producer(input, intermediate, transform_fn)
-          end
-        )
+      _ <- FiberPool.fiber(map_producer(input, intermediate, transform_fn))
 
       # Reorderer: awaits transforms in order via take_async, puts to output
-      _reorderer <-
-        FiberPool.fiber(
-          comp do
-            map_reorderer(intermediate, output)
-          end
-        )
+      _ <- FiberPool.fiber(map_reorderer(intermediate, output))
 
       Comp.pure(output)
     end
