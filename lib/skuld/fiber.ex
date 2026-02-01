@@ -275,9 +275,10 @@ defmodule Skuld.Fiber do
   # Handle a BatchSuspend sentinel - return the batch suspend for scheduler to handle
   defp handle_batch_suspend(fiber, %BatchSuspend{resume: resume} = batch_suspend, env) do
     # Store the resume function in the fiber so it can be resumed after batch execution
-    suspended_k = fn value, _env ->
-      # BatchSuspend.resume is (val -> {result, env})
-      resume.(value)
+    suspended_k = fn value, resume_env ->
+      # BatchSuspend.resume is (val, env -> {result, env})
+      # Pass the resume_env (which has pending fibers cleared) to avoid re-collecting
+      resume.(value, resume_env)
     end
 
     suspended_fiber = %{
@@ -294,9 +295,10 @@ defmodule Skuld.Fiber do
   # Handle a ChannelSuspend sentinel - return the channel suspend for scheduler to handle
   defp handle_channel_suspend(fiber, %ChannelSuspend{resume: resume} = channel_suspend, env) do
     # Store the resume function in the fiber so it can be resumed when channel is ready
-    suspended_k = fn value, _env ->
-      # ChannelSuspend.resume is (val -> {result, env})
-      resume.(value)
+    suspended_k = fn value, resume_env ->
+      # ChannelSuspend.resume is (val, env -> {result, env})
+      # Pass the resume_env (which has pending fibers cleared) to avoid re-collecting
+      resume.(value, resume_env)
     end
 
     suspended_fiber = %{
@@ -313,9 +315,10 @@ defmodule Skuld.Fiber do
   # Handle an FPSuspend (FiberPool await) - return the suspend for scheduler to handle
   defp handle_fp_suspend(fiber, %FPSuspend{resume: resume} = fp_suspend, env) do
     # Store the resume function in the fiber so it can be resumed when await is satisfied
-    suspended_k = fn value, _env ->
-      # FPSuspend.resume is (val -> {result, env})
-      resume.(value)
+    suspended_k = fn value, resume_env ->
+      # FPSuspend.resume is (val, env -> {result, env})
+      # Pass the resume_env (which has pending fibers cleared) to avoid re-collecting
+      resume.(value, resume_env)
     end
 
     suspended_fiber = %{

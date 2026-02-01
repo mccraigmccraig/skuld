@@ -172,7 +172,8 @@ defmodule Skuld.Effects.Channel do
               fiber_id = get_fiber_id(env)
 
               # Add to waiting puts list so take() can find and wake us
-              resume_fn = fn result -> k.(result, env) end
+              # Note: resume_fn takes env as parameter to avoid capturing stale env with pending fibers
+              resume_fn = fn result, resume_env -> k.(result, resume_env) end
               state = State.add_waiting_put(state, fiber_id, item, resume_fn)
               env = update_channel(env, channel_id, state)
 
@@ -256,7 +257,8 @@ defmodule Skuld.Effects.Channel do
               fiber_id = get_fiber_id(env)
 
               # Add to waiting takes list so put() can find and wake us
-              resume_fn = fn result -> k.(result, env) end
+              # Note: resume_fn takes env as parameter to avoid capturing stale env with pending fibers
+              resume_fn = fn result, resume_env -> k.(result, resume_env) end
               state = State.add_waiting_take(state, fiber_id, resume_fn)
               env = update_channel(env, channel_id, state)
 

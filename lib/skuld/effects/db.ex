@@ -106,10 +106,11 @@ defmodule Skuld.Effects.DB do
     fn env, k ->
       op = %Fetch{schema: schema, id: id}
 
+      # Note: resume takes env as parameter to avoid capturing stale env with pending fibers
       suspend =
         BatchSuspend.new(
           op,
-          fn result -> k.(result, env) end
+          fn result, resume_env -> k.(result, resume_env) end
         )
 
       {suspend, env}
@@ -129,10 +130,11 @@ defmodule Skuld.Effects.DB do
     fn env, k ->
       op = %FetchAll{schema: schema, filter_key: filter_key, filter_value: filter_value}
 
+      # Note: resume takes env as parameter to avoid capturing stale env with pending fibers
       suspend =
         BatchSuspend.new(
           op,
-          fn result -> k.(result, env) end
+          fn result, resume_env -> k.(result, resume_env) end
         )
 
       {suspend, env}

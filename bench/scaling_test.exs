@@ -1,50 +1,74 @@
-# Micro-benchmark to test iteration scaling in Skuld
-#
-# Run with: mix run bench/scaling_test.exs
+# Test: Does Skuld Stream scale linearly with input size?
 
-alias Skuld.Comp
-alias Skuld.Effects.State, as: SkuldState
-alias Skuld.Effects.FxList, as: SkuldFxList
+alias Skuld.Effects.Stream, as: S
+alias Skuld.Effects.Channel
+alias Skuld.Effects.FiberPool
 
 defmodule ScalingTest do
-  def skuld_fxlist(n) do
-    SkuldFxList.fx_each(1..n, fn _i ->
-      SkuldState.get()
-      |> Comp.bind(fn x ->
-        SkuldState.put(x + 1)
-      end)
-    end)
-    |> SkuldState.with_handler(0)
+  use Skuld.Syntax
+
+  def run(n, num_stages) do
+    build_pipeline(n, num_stages)
+    |> Channel.with_handler()
+    |> FiberPool.with_handler()
+    |> FiberPool.run!()
   end
 
-  def time_it(label, n) do
-    comp = skuld_fxlist(n)
-    {time, _} = :timer.tc(fn -> Comp.run(comp) end)
-    per_op = time / n
-    IO.puts("#{label}: #{n} ops in #{div(time, 1000)}ms = #{Float.round(per_op, 3)}µs/op")
-    {n, time, per_op}
+  defp build_pipeline(n, num_stages) do
+    comp do
+      source <- S.from_enum(1..n, chunk_size: 100, buffer: 10)
+      final <- apply_stages(source, num_stages)
+      S.each(final, fn _x -> :ok end)
+    end
+  end
+
+  defp apply_stages(source, 0), do: Skuld.Comp.pure(source)
+
+  defp apply_stages(source, n) do
+    comp do
+      next <- S.map(source, fn x -> x + 1 end, buffer: 10)
+      apply_stages(next, n - 1)
+    end
+  end
+
+  def time_run(n, num_stages, iterations \\ 3) do
+    # Warmup
+    run(n, num_stages)
+    :erlang.garbage_collect()
+
+    times =
+      for _ <- 1..iterations do
+        {time, _} = :timer.tc(fn -> run(n, num_stages) end)
+        :erlang.garbage_collect()
+        time
+      end
+
+    avg = Enum.sum(times) / iterations
+    {avg / 1000, Enum.min(times) / 1000, Enum.max(times) / 1000}
   end
 end
 
-IO.puts("Skuld FxList Scaling Test")
-IO.puts("=========================")
-IO.puts("")
+IO.puts("Scaling Test: Time vs Input Size")
+IO.puts("=" |> String.duplicate(60))
 
-# Warmup
-_ = Comp.run(ScalingTest.skuld_fxlist(100))
-_ = Comp.run(ScalingTest.skuld_fxlist(100))
+for stages <- [1, 5] do
+  IO.puts("\n#{stages} Stage(s):")
+  IO.puts("-" |> String.duplicate(40))
 
-_results = [
-  ScalingTest.time_it("    500", 500),
-  ScalingTest.time_it("  1,000", 1_000),
-  ScalingTest.time_it("  2,000", 2_000),
-  ScalingTest.time_it("  5,000", 5_000),
-  ScalingTest.time_it(" 10,000", 10_000),
-  ScalingTest.time_it(" 20,000", 20_000),
-  ScalingTest.time_it(" 50,000", 50_000),
-  ScalingTest.time_it("100,000", 100_000)
-]
+  results =
+    for n <- [100, 500, 1000, 2000, 5000, 10000] do
+      {avg, min, max} = ScalingTest.time_run(n, stages)
+      per_item = avg / n
+      IO.puts("  #{String.pad_leading(Integer.to_string(n), 5)} items: #{Float.round(avg, 2)} ms (#{Float.round(per_item, 4)} ms/item)")
+      {n, avg, per_item}
+    end
 
-IO.puts("")
-IO.puts("If linear: per-op time should be constant")
-IO.puts("If O(n²): per-op time should grow linearly with n")
+  # Check scaling factor
+  [{n1, t1, _}, {n2, t2, _}] = Enum.take(results, -2)
+  expected = t1 * (n2 / n1)
+  actual_ratio = t2 / t1
+  expected_ratio = n2 / n1
+  IO.puts("\n  Scaling from #{n1} to #{n2}:")
+  IO.puts("    Expected: #{Float.round(expected, 2)} ms (#{expected_ratio}x)")
+  IO.puts("    Actual:   #{Float.round(t2, 2)} ms (#{Float.round(actual_ratio, 2)}x)")
+end

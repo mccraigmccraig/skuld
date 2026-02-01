@@ -23,7 +23,8 @@ defmodule Skuld.Effects.Channel.Suspend do
           operation: operation(),
           item: term() | nil,
           fiber_id: reference(),
-          resume: (term() -> {term(), Skuld.Comp.Types.env()})
+          # resume takes (result, env) -> {result, env} to avoid capturing stale env
+          resume: (term(), Skuld.Comp.Types.env() -> {term(), Skuld.Comp.Types.env()})
         }
 
   defstruct [:channel_id, :operation, :item, :fiber_id, :resume]
@@ -31,7 +32,7 @@ defmodule Skuld.Effects.Channel.Suspend do
   @doc """
   Create a new suspension for a put operation.
   """
-  @spec new_put(reference(), reference(), term(), (term() -> {term(), Skuld.Comp.Types.env()})) ::
+  @spec new_put(reference(), reference(), term(), (term(), Skuld.Comp.Types.env() -> {term(), Skuld.Comp.Types.env()})) ::
           t()
   def new_put(channel_id, fiber_id, item, resume) do
     %__MODULE__{
@@ -46,7 +47,7 @@ defmodule Skuld.Effects.Channel.Suspend do
   @doc """
   Create a new suspension for a take operation.
   """
-  @spec new_take(reference(), reference(), (term() -> {term(), Skuld.Comp.Types.env()})) :: t()
+  @spec new_take(reference(), reference(), (term(), Skuld.Comp.Types.env() -> {term(), Skuld.Comp.Types.env()})) :: t()
   def new_take(channel_id, fiber_id, resume) do
     %__MODULE__{
       channel_id: channel_id,

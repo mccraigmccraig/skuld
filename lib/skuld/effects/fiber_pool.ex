@@ -398,9 +398,10 @@ defmodule Skuld.Effects.FiberPool do
 
   defp handle(%Await{handle: handle, raising: raising, consume: consume}, env, k) do
     # Yield a FiberPool suspension for the scheduler to handle
-    resume = fn result ->
+    # Note: resume takes env as parameter to avoid capturing stale env with pending fibers
+    resume = fn result, resume_env ->
       value = if raising, do: unwrap_result(result), else: result
-      k.(value, env)
+      k.(value, resume_env)
     end
 
     suspend = FPSuspend.await_one(handle, resume, consume: consume)
@@ -408,7 +409,8 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   defp handle(%AwaitAll{handles: handles, raising: raising}, env, k) do
-    resume = fn results ->
+    # Note: resume takes env as parameter to avoid capturing stale env with pending fibers
+    resume = fn results, resume_env ->
       # Results is a list of {:ok, val} | {:error, reason}
       values =
         if raising do
@@ -419,7 +421,7 @@ defmodule Skuld.Effects.FiberPool do
           results
         end
 
-      k.(values, env)
+      k.(values, resume_env)
     end
 
     suspend = FPSuspend.await_all(handles, resume)
@@ -427,7 +429,8 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   defp handle(%AwaitAny{handles: handles, raising: raising}, env, k) do
-    resume = fn {fiber_id, result} ->
+    # Note: resume takes env as parameter to avoid capturing stale env with pending fibers
+    resume = fn {fiber_id, result}, resume_env ->
       # Find the handle that completed
       handle = Enum.find(handles, &(&1.id == fiber_id))
 
@@ -438,7 +441,7 @@ defmodule Skuld.Effects.FiberPool do
           {handle, result}
         end
 
-      k.(value, env)
+      k.(value, resume_env)
     end
 
     suspend = FPSuspend.await_any(handles, resume)
@@ -883,7 +886,7 @@ defmodule Skuld.Effects.FiberPool do
     end
   end
 
-  defp handle_await_result(state, _env, result, resume, mode) do
+  defp handle_await_result(state, env, result, resume, mode) do
     # Unwrap result based on mode
     # State returns:
     # - :all mode -> [{:ok, v1}, {:ok, v2}, ...] (results in order)
@@ -904,8 +907,8 @@ defmodule Skuld.Effects.FiberPool do
           result
       end
 
-    # Resume the main computation
-    {new_result, new_env} = resume.(unwrapped)
+    # Resume the main computation with env (avoids capturing stale env with pending fibers)
+    {new_result, new_env} = resume.(unwrapped, env)
 
     # Check if we got another suspension
     case new_result do
