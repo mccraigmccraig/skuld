@@ -1697,7 +1697,8 @@ Operations: `put_async/2`, `take_async/1`
 
 #### Stream
 
-High-level streaming API built on channels:
+High-level streaming API built on channels, with automatic backpressure via
+bounded channel buffers—producers block when downstream consumers can't keep up:
 
 ```elixir
 comp do
@@ -1758,6 +1759,10 @@ end
 internally (see Channel section above for details on how this works).
 
 Operations: `from_enum/2`, `from_function/2`, `map/3`, `filter/3`, `each/2`, `run/2`, `to_list/1`
+
+**Backpressure:** Each stream stage uses a bounded channel buffer (default: 10).
+When a buffer fills, the upstream producer blocks until the consumer catches up.
+Configure with the `buffer` option: `Stream.map(source, &transform/1, buffer: 20)`.
 
 **Performance vs GenStage:**
 
