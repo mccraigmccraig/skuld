@@ -552,10 +552,10 @@ defmodule Skuld.Effects.Stream do
 
       case result do
         {:ok, item} ->
-          to_list_acc(input, acc ++ [item])
+          to_list_acc(input, [item | acc])
 
         :closed ->
-          Comp.pure(acc)
+          Comp.pure(Enum.reverse(acc))
 
         {:error, reason} ->
           Comp.pure({:error, reason})
