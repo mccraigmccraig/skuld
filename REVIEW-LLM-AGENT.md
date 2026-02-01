@@ -59,7 +59,7 @@ Skuld enforces consistent patterns:
 | Install handler  | `\|> Effect.with_handler(config)`    |
 | Test stub        | `\|> Port.with_test_handler(%{...})` |
 | Error handling   | `catch {Throw, pattern} -> recovery` |
-| Concurrency      | `h <- FiberPool.submit(comp)`        |
+| Concurrency      | `h <- FiberPool.fiber(comp)`        |
 | Streaming        | `ch <- Stream.from_enum(items)`      |
 
 **LLM Advantage**: Once an agent learns the patterns, it can apply them mechanically. There's less "art" and more "engineering" - the consistent syntax means fewer creative decisions that could go wrong.
@@ -179,7 +179,7 @@ The IBatchable protocol and FiberPool scheduler automatically batch I/O operatio
 ```elixir
 # LLM can write this without worrying about N+1 queries
 defcomp get_users_with_profiles(user_ids) do
-  handles <- FiberPool.submit_all(user_ids, fn id ->
+  handles <- FiberPool.fiber_all(user_ids, fn id ->
     comp do
       user <- DB.fetch(User, id)
       profile <- DB.fetch(Profile, user.profile_id)
@@ -337,10 +337,10 @@ defcomp concurrent_work() do
   ch <- Channel.new(capacity: 10)
 
   # Submit fiber (cooperative)
-  producer <- FiberPool.submit(produce_items(ch))
+  producer <- FiberPool.fiber(produce_items(ch))
 
   # Submit task (parallel)
-  analyzer <- FiberPool.submit_task(heavy_computation())
+  analyzer <- FiberPool.task(heavy_computation())
 
   # Consume with backpressure
   items <- Stream.to_list(ch)
@@ -434,7 +434,7 @@ end
 
 1. **Don't mix paradigms** - Either use effects everywhere or nowhere
 2. **Don't manually batch I/O** - Let IBatchable handle it
-3. **Don't use raw processes for concurrency** - Use FiberPool.submit_task
+3. **Don't use raw processes for concurrency** - Use FiberPool.task
 4. **Don't rely on handler order** - Be explicit about what you need
 
 ### Patterns for LLM Agents

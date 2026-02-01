@@ -85,7 +85,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Producer - puts more items than capacity
           producer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ <- Channel.put(ch, 1)
                 _ = send(test_pid, {:put, 1})
@@ -100,7 +100,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Consumer - takes items to free space
           consumer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 # Small delay to let producer fill buffer
                 r1 <- Channel.take(ch)
@@ -140,7 +140,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Consumer starts first on empty buffer
           consumer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, :consumer_waiting)
                 r <- Channel.take(ch)
@@ -151,7 +151,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Producer puts item later
           producer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, :producer_putting)
                 _ <- Channel.put(ch, :item)
@@ -186,7 +186,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Consumer waits on empty channel
           consumer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, :consumer_waiting)
                 r <- Channel.take(ch)
@@ -197,7 +197,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Producer puts - should hand off directly
           producer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, :producer_putting)
                 result <- Channel.put(ch, :direct_handoff)
@@ -240,7 +240,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Producer tries to put more - should suspend
           producer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, :producer_waiting)
                 result <- Channel.put(ch, :from_putter)
@@ -251,7 +251,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Consumer takes - should get from buffer, then putter adds item
           consumer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 r1 <- Channel.take(ch)
                 _ = send(test_pid, {:consumer_got_1, r1})
@@ -321,7 +321,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Consumer waits on empty channel
           consumer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, :consumer_waiting)
                 r <- Channel.take(ch)
@@ -332,7 +332,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Close the channel - should wake consumer
           closer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, :closing)
                 _ <- Channel.close(ch)
@@ -431,7 +431,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Multiple consumers wait
           c1 <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, {:c1, :waiting})
                 r <- Channel.take(ch)
@@ -441,7 +441,7 @@ defmodule Skuld.Effects.ChannelTest do
             )
 
           c2 <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, {:c2, :waiting})
                 r <- Channel.take(ch)
@@ -452,7 +452,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Error the channel - should wake all consumers
           errorer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, :erroring)
                 _ <- Channel.error(ch, :propagated_error)
@@ -489,7 +489,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Putter waits
           putter <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, :putter_waiting)
                 r <- Channel.put(ch, :more)
@@ -500,7 +500,7 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Error the channel
           errorer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 _ = send(test_pid, :erroring)
                 _ <- Channel.error(ch, :putter_error)
@@ -609,7 +609,7 @@ defmodule Skuld.Effects.ChannelTest do
           ch <- Channel.new(5)
 
           producer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 # Use simple recursion for iteration
                 put_items(ch, 1, 10)
@@ -617,7 +617,7 @@ defmodule Skuld.Effects.ChannelTest do
             )
 
           consumer <-
-            FiberPool.submit(
+            FiberPool.fiber(
               comp do
                 take_items(ch, [])
               end

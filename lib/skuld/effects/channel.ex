@@ -21,7 +21,7 @@ defmodule Skuld.Effects.Channel do
         ch <- Channel.new(10)
 
         # Producer fiber
-        producer <- FiberPool.submit(comp do
+        producer <- FiberPool.fiber(comp do
           Enum.each(1..100, fn i ->
             _ <- Channel.put(ch, i)  # Suspends if buffer full
           end)
@@ -29,7 +29,7 @@ defmodule Skuld.Effects.Channel do
         end)
 
         # Consumer fiber
-        consumer <- FiberPool.submit(comp do
+        consumer <- FiberPool.fiber(comp do
           consume_loop(ch)
         end)
 

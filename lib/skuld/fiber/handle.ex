@@ -11,7 +11,7 @@ defmodule Skuld.Fiber.Handle do
   ## Example
 
       comp do
-        handle <- FiberPool.submit(my_computation)
+        handle <- FiberPool.fiber(my_computation)
         # ... do other work ...
         result <- FiberPool.await(handle)
         result

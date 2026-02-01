@@ -79,8 +79,8 @@ The FiberPool effect provides a clean, unified concurrency model:
 ```elixir
 comp do
   # Submit concurrent work
-  h1 <- FiberPool.submit(fetch_user(id))
-  h2 <- FiberPool.submit_task(expensive_computation())
+  h1 <- FiberPool.fiber(fetch_user(id))
+  h2 <- FiberPool.task(expensive_computation())
 
   # Await results
   user <- FiberPool.await(h1)
@@ -98,7 +98,7 @@ The IBatchable protocol enables automatic batching of I/O operations across fibe
 ```elixir
 # Multiple concurrent fetches automatically batch into single IN query
 comp do
-  handles <- FiberPool.submit_all(user_ids, fn id -> DB.fetch(User, id) end)
+  handles <- FiberPool.fiber_all(user_ids, fn id -> DB.fetch(User, id) end)
   users <- FiberPool.await_all(handles)
   users
 end
@@ -121,7 +121,7 @@ comp do
   ch <- Channel.new(capacity: 10)
 
   # Producer fiber
-  _ <- FiberPool.submit(comp do
+  _ <- FiberPool.fiber(comp do
     _ <- Enum.each(1..100, fn i -> Channel.put(ch, i) end)
     Channel.close(ch)
   end)

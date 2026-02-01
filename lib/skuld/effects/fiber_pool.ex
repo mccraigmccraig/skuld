@@ -8,9 +8,9 @@ defmodule Skuld.Effects.FiberPool do
   ## Basic Usage
 
       comp do
-        # Submit work as a fiber
-        h1 <- FiberPool.submit(expensive_computation())
-        h2 <- FiberPool.submit(another_computation())
+        # Run work as a fiber (cooperative, same process)
+        h1 <- FiberPool.fiber(expensive_computation())
+        h2 <- FiberPool.fiber(another_computation())
 
         # Do other work while fibers run...
 
@@ -29,8 +29,8 @@ defmodule Skuld.Effects.FiberPool do
 
       comp do
         FiberPool.scope(comp do
-          h1 <- FiberPool.submit(work1())
-          h2 <- FiberPool.submit(work2())
+          h1 <- FiberPool.fiber(work1())
+          h2 <- FiberPool.fiber(work2())
           # Both h1 and h2 will complete (or be cancelled) before scope exits
           FiberPool.await_all([h1, h2])
         end)
@@ -61,7 +61,7 @@ defmodule Skuld.Effects.FiberPool do
   ## Operations
   #############################################################################
 
-  defmodule Submit do
+  defmodule FiberOp do
     @moduledoc false
     defstruct [:comp, :opts]
   end
@@ -86,7 +86,7 @@ defmodule Skuld.Effects.FiberPool do
     defstruct [:handle]
   end
 
-  defmodule SubmitTask do
+  defmodule TaskOp do
     @moduledoc false
     defstruct [:comp, :opts]
   end
@@ -101,7 +101,7 @@ defmodule Skuld.Effects.FiberPool do
   #############################################################################
 
   @doc """
-  Submit a computation to run as a fiber (cooperative, same process).
+  Run a computation as a fiber (cooperative, same process).
 
   Returns a handle that can be used to await the result.
 
@@ -109,13 +109,13 @@ defmodule Skuld.Effects.FiberPool do
 
   - `:priority` - Fiber priority (future use)
   """
-  @spec submit(Comp.Types.computation(), keyword()) :: Comp.Types.computation()
-  def submit(computation, opts \\ []) do
-    Comp.effect(@sig, %Submit{comp: computation, opts: opts})
+  @spec fiber(Comp.Types.computation(), keyword()) :: Comp.Types.computation()
+  def fiber(computation, opts \\ []) do
+    Comp.effect(@sig, %FiberOp{comp: computation, opts: opts})
   end
 
   @doc """
-  Submit a computation to run as a BEAM Task (parallel, separate process).
+  Run a computation as a BEAM Task (parallel, separate process).
 
   The computation runs in a separate BEAM process, allowing true parallelism.
   Returns a handle that can be awaited just like fiber handles.
@@ -128,8 +128,8 @@ defmodule Skuld.Effects.FiberPool do
 
       comp do
         # CPU-bound work runs in parallel
-        h1 <- FiberPool.submit_task(expensive_cpu_work())
-        h2 <- FiberPool.submit_task(another_cpu_work())
+        h1 <- FiberPool.task(expensive_cpu_work())
+        h2 <- FiberPool.task(another_cpu_work())
 
         # Await results
         r1 <- FiberPool.await(h1)
@@ -138,9 +138,9 @@ defmodule Skuld.Effects.FiberPool do
         {r1, r2}
       end
   """
-  @spec submit_task(Comp.Types.computation(), keyword()) :: Comp.Types.computation()
-  def submit_task(computation, opts \\ []) do
-    Comp.effect(@sig, %SubmitTask{comp: computation, opts: opts})
+  @spec task(Comp.Types.computation(), keyword()) :: Comp.Types.computation()
+  def task(computation, opts \\ []) do
+    Comp.effect(@sig, %TaskOp{comp: computation, opts: opts})
   end
 
   @doc """
@@ -204,8 +204,8 @@ defmodule Skuld.Effects.FiberPool do
   ## Example
 
       FiberPool.scope(comp do
-        h1 <- FiberPool.submit(work1())
-        h2 <- FiberPool.submit(work2())
+        h1 <- FiberPool.fiber(work1())
+        h2 <- FiberPool.fiber(work2())
         # Both h1 and h2 will complete before scope exits
         FiberPool.await(h1)
       end)
@@ -310,7 +310,7 @@ defmodule Skuld.Effects.FiberPool do
   ## Handler Implementation
   #############################################################################
 
-  defp handle(%Submit{comp: comp, opts: _opts}, env, k) do
+  defp handle(%FiberOp{comp: comp, opts: _opts}, env, k) do
     # Create a fiber for the computation
     pool_id = Env.get_state(env, {__MODULE__, :pool_id}, make_ref())
     fiber = Fiber.new(comp, env)
@@ -364,7 +364,7 @@ defmodule Skuld.Effects.FiberPool do
     k.(:ok, env)
   end
 
-  defp handle(%SubmitTask{comp: comp, opts: opts}, env, k) do
+  defp handle(%TaskOp{comp: comp, opts: opts}, env, k) do
     # Create a unique handle_id for this task (like a fiber_id)
     handle_id = make_ref()
     pool_id = Env.get_state(env, {__MODULE__, :pool_id}, make_ref())
@@ -421,10 +421,10 @@ defmodule Skuld.Effects.FiberPool do
         end
       end)
 
-    # Override the Submit handler to also track in scope
-    scope_submit_handler = fn
-      %Submit{} = op, handler_env, handler_k ->
-        # First do the normal submit
+    # Override the FiberOp handler to also track in scope
+    scope_fiber_handler = fn
+      %FiberOp{} = op, handler_env, handler_k ->
+        # First do the normal fiber spawn
         {result, new_env} = handle(op, handler_env, &Comp.identity_k/2)
 
         # Track the handle in this scope
@@ -445,7 +445,7 @@ defmodule Skuld.Effects.FiberPool do
     # Run wrapped with scope-aware handler
     inner_comp =
       wrapped
-      |> Comp.with_handler(@sig, scope_submit_handler)
+      |> Comp.with_handler(@sig, scope_fiber_handler)
 
     Comp.call(inner_comp, env, k)
   end
@@ -529,7 +529,9 @@ defmodule Skuld.Effects.FiberPool do
         state = State.remove_channel_suspension(state, fiber_id)
 
         # Store wake result wrapped in :channel_wake tuple and enqueue
-        state = put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:channel_wake, result})
+        state =
+          put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:channel_wake, result})
+
         State.enqueue(state, fiber_id)
     end
   end
@@ -602,7 +604,10 @@ defmodule Skuld.Effects.FiberPool do
         # Store wake result wrapped in :batch_wake tuple (to distinguish from nil)
         # and enqueue
         wake_value = unwrap_batch_result(result)
-        state = put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:batch_wake, wake_value})
+
+        state =
+          put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:batch_wake, wake_value})
+
         State.enqueue(state, fiber_id)
     end
   end
@@ -761,9 +766,9 @@ defmodule Skuld.Effects.FiberPool do
         {state, env} = execute_batches(state, env)
         run_until_await_satisfied(state, env, awaiter_id, resume, mode)
 
-      # Reserved for future error handling
-      # {:error, reason, _state} ->
-      #   {{:error, reason}, env}
+        # Reserved for future error handling
+        # {:error, reason, _state} ->
+        #   {{:error, reason}, env}
     end
   end
 

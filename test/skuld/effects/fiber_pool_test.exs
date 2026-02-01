@@ -6,11 +6,11 @@ defmodule Skuld.Effects.FiberPoolTest do
   alias Skuld.Effects.FiberPool
   alias Skuld.Effects.State
 
-  describe "submit and await" do
-    test "submits and awaits a pure computation" do
+  describe "fiber and await" do
+    test "runs and awaits a pure computation as fiber" do
       result =
         comp do
-          h <- FiberPool.submit(Comp.pure(42))
+          h <- FiberPool.fiber(Comp.pure(42))
           FiberPool.await(h)
         end
         |> FiberPool.with_handler()
@@ -19,10 +19,10 @@ defmodule Skuld.Effects.FiberPoolTest do
       assert result == 42
     end
 
-    test "submits and awaits a computation that transforms a value" do
+    test "runs and awaits a computation that transforms a value as fiber" do
       result =
         comp do
-          h <- FiberPool.submit(Comp.pure(21) |> Comp.map(&(&1 * 2)))
+          h <- FiberPool.fiber(Comp.pure(21) |> Comp.map(&(&1 * 2)))
           FiberPool.await(h)
         end
         |> FiberPool.with_handler()
@@ -31,12 +31,12 @@ defmodule Skuld.Effects.FiberPoolTest do
       assert result == 42
     end
 
-    test "submits multiple fibers and awaits them sequentially" do
+    test "runs multiple fibers and awaits them sequentially" do
       result =
         comp do
-          h1 <- FiberPool.submit(Comp.pure(10))
-          h2 <- FiberPool.submit(Comp.pure(20))
-          h3 <- FiberPool.submit(Comp.pure(12))
+          h1 <- FiberPool.fiber(Comp.pure(10))
+          h2 <- FiberPool.fiber(Comp.pure(20))
+          h3 <- FiberPool.fiber(Comp.pure(12))
 
           r1 <- FiberPool.await(h1)
           r2 <- FiberPool.await(h2)
@@ -61,7 +61,7 @@ defmodule Skuld.Effects.FiberPoolTest do
 
       result =
         comp do
-          h <- FiberPool.submit(fiber_comp)
+          h <- FiberPool.fiber(fiber_comp)
           FiberPool.await(h)
         end
         |> FiberPool.with_handler()
@@ -75,9 +75,9 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "awaits multiple fibers at once" do
       result =
         comp do
-          h1 <- FiberPool.submit(Comp.pure(10))
-          h2 <- FiberPool.submit(Comp.pure(20))
-          h3 <- FiberPool.submit(Comp.pure(12))
+          h1 <- FiberPool.fiber(Comp.pure(10))
+          h2 <- FiberPool.fiber(Comp.pure(20))
+          h3 <- FiberPool.fiber(Comp.pure(12))
 
           FiberPool.await_all([h1, h2, h3])
         end
@@ -101,9 +101,9 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "await_all preserves order" do
       result =
         comp do
-          h1 <- FiberPool.submit(Comp.pure(:first))
-          h2 <- FiberPool.submit(Comp.pure(:second))
-          h3 <- FiberPool.submit(Comp.pure(:third))
+          h1 <- FiberPool.fiber(Comp.pure(:first))
+          h2 <- FiberPool.fiber(Comp.pure(:second))
+          h3 <- FiberPool.fiber(Comp.pure(:third))
 
           FiberPool.await_all([h3, h1, h2])
         end
@@ -118,8 +118,8 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "returns first completed fiber" do
       {handle, result} =
         comp do
-          h1 <- FiberPool.submit(Comp.pure(:one))
-          h2 <- FiberPool.submit(Comp.pure(:two))
+          h1 <- FiberPool.fiber(Comp.pure(:one))
+          h2 <- FiberPool.fiber(Comp.pure(:two))
 
           FiberPool.await_any([h1, h2])
         end
@@ -136,7 +136,7 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "cancel returns :ok" do
       result =
         comp do
-          h <- FiberPool.submit(Comp.pure(42))
+          h <- FiberPool.fiber(Comp.pure(42))
           FiberPool.cancel(h)
         end
         |> FiberPool.with_handler()
@@ -154,7 +154,7 @@ defmodule Skuld.Effects.FiberPoolTest do
 
       assert_raise RuntimeError, ~r/Fiber failed/, fn ->
         comp do
-          h <- FiberPool.submit(fiber_comp)
+          h <- FiberPool.fiber(fiber_comp)
           FiberPool.await(h)
         end
         |> FiberPool.with_handler()
@@ -182,7 +182,7 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "run returns {result, env} tuple" do
       {result, env} =
         comp do
-          h <- FiberPool.submit(Comp.pure(42))
+          h <- FiberPool.fiber(Comp.pure(42))
           FiberPool.await(h)
         end
         |> FiberPool.with_handler()
@@ -214,11 +214,13 @@ defmodule Skuld.Effects.FiberPoolTest do
 
       result =
         comp do
-          FiberPool.scope(comp do
-            _ <- FiberPool.submit(fiber1)
-            _ <- FiberPool.submit(fiber2)
-            :scope_body_done
-          end)
+          FiberPool.scope(
+            comp do
+              _ <- FiberPool.fiber(fiber1)
+              _ <- FiberPool.fiber(fiber2)
+              :scope_body_done
+            end
+          )
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -230,11 +232,13 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "scope returns body result even with awaited fibers" do
       result =
         comp do
-          FiberPool.scope(comp do
-            h <- FiberPool.submit(Comp.pure(100))
-            r <- FiberPool.await(h)
-            r + 5
-          end)
+          FiberPool.scope(
+            comp do
+              h <- FiberPool.fiber(Comp.pure(100))
+              r <- FiberPool.await(h)
+              r + 5
+            end
+          )
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -245,18 +249,22 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "nested scopes work correctly" do
       result =
         comp do
-          FiberPool.scope(comp do
-            h1 <- FiberPool.submit(Comp.pure(10))
+          FiberPool.scope(
+            comp do
+              h1 <- FiberPool.fiber(Comp.pure(10))
 
-            inner_result <-
-              FiberPool.scope(comp do
-                h2 <- FiberPool.submit(Comp.pure(20))
-                FiberPool.await(h2)
-              end)
+              inner_result <-
+                FiberPool.scope(
+                  comp do
+                    h2 <- FiberPool.fiber(Comp.pure(20))
+                    FiberPool.await(h2)
+                  end
+                )
 
-            outer_result <- FiberPool.await(h1)
-            {outer_result, inner_result}
-          end)
+              outer_result <- FiberPool.await(h1)
+              {outer_result, inner_result}
+            end
+          )
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -274,8 +282,8 @@ defmodule Skuld.Effects.FiberPoolTest do
         comp do
           FiberPool.scope(
             comp do
-              _ <- FiberPool.submit(Comp.pure(1))
-              _ <- FiberPool.submit(Comp.pure(2))
+              _ <- FiberPool.fiber(Comp.pure(1))
+              _ <- FiberPool.fiber(Comp.pure(2))
               :body_done
             end,
             on_exit: on_exit_comp
@@ -291,11 +299,13 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "scope with no fibers spawned" do
       result =
         comp do
-          FiberPool.scope(comp do
-            x = 40
-            y = 2
-            x + y
-          end)
+          FiberPool.scope(
+            comp do
+              x = 40
+              y = 2
+              x + y
+            end
+          )
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -304,11 +314,11 @@ defmodule Skuld.Effects.FiberPoolTest do
     end
   end
 
-  describe "submit_task" do
-    test "submits and awaits a task" do
+  describe "task" do
+    test "runs and awaits a task" do
       result =
         comp do
-          h <- FiberPool.submit_task(Comp.pure(42))
+          h <- FiberPool.task(Comp.pure(42))
           FiberPool.await(h)
         end
         |> FiberPool.with_handler()
@@ -327,7 +337,7 @@ defmodule Skuld.Effects.FiberPoolTest do
 
       result =
         comp do
-          h <- FiberPool.submit_task(task_comp)
+          h <- FiberPool.task(task_comp)
           FiberPool.await(h)
         end
         |> FiberPool.with_handler()
@@ -337,12 +347,12 @@ defmodule Skuld.Effects.FiberPoolTest do
       assert result == true
     end
 
-    test "submits multiple tasks and awaits all" do
+    test "runs multiple tasks and awaits all" do
       result =
         comp do
-          h1 <- FiberPool.submit_task(Comp.pure(10))
-          h2 <- FiberPool.submit_task(Comp.pure(20))
-          h3 <- FiberPool.submit_task(Comp.pure(12))
+          h1 <- FiberPool.task(Comp.pure(10))
+          h2 <- FiberPool.task(Comp.pure(20))
+          h3 <- FiberPool.task(Comp.pure(12))
 
           FiberPool.await_all([h1, h2, h3])
         end
@@ -360,7 +370,7 @@ defmodule Skuld.Effects.FiberPoolTest do
       # Task crashes are wrapped as {:task_crashed, reason}
       assert_raise RuntimeError, ~r/Fiber failed/, fn ->
         comp do
-          h <- FiberPool.submit_task(crash_comp)
+          h <- FiberPool.task(crash_comp)
           FiberPool.await(h)
         end
         |> FiberPool.with_handler()
@@ -372,8 +382,8 @@ defmodule Skuld.Effects.FiberPoolTest do
       result =
         comp do
           # Submit both fibers and tasks
-          fiber_h <- FiberPool.submit(Comp.pure(:fiber_result))
-          task_h <- FiberPool.submit_task(Comp.pure(:task_result))
+          fiber_h <- FiberPool.fiber(Comp.pure(:fiber_result))
+          task_h <- FiberPool.task(Comp.pure(:task_result))
 
           # Await both
           fiber_r <- FiberPool.await(fiber_h)
@@ -392,8 +402,8 @@ defmodule Skuld.Effects.FiberPoolTest do
       # to trigger the scheduler to wait for task completion
       result =
         comp do
-          h1 <- FiberPool.submit_task(Comp.pure(100))
-          _ <- FiberPool.submit_task(Comp.pure(:ignored))
+          h1 <- FiberPool.task(Comp.pure(100))
+          _ <- FiberPool.task(Comp.pure(:ignored))
           # Only await h1
           FiberPool.await(h1)
         end
@@ -406,8 +416,8 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "await_any with tasks" do
       {_handle, result} =
         comp do
-          h1 <- FiberPool.submit_task(Comp.pure(:first))
-          h2 <- FiberPool.submit_task(Comp.pure(:second))
+          h1 <- FiberPool.task(Comp.pure(:first))
+          h2 <- FiberPool.task(Comp.pure(:second))
 
           FiberPool.await_any([h1, h2])
         end

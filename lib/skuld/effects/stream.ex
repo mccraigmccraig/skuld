@@ -83,7 +83,7 @@ defmodule Skuld.Effects.Stream do
 
       # Spawn producer fiber
       _producer <-
-        FiberPool.submit(
+        FiberPool.fiber(
           comp do
             produce_from_enum(output, Enum.to_list(enumerable))
           end
@@ -143,7 +143,10 @@ defmodule Skuld.Effects.Stream do
         Stream.to_list(source)
       end
   """
-  @spec from_function((-> {:item, term()} | {:items, [term()]} | :done | {:error, term()}), keyword()) ::
+  @spec from_function(
+          (-> {:item, term()} | {:items, [term()]} | :done | {:error, term()}),
+          keyword()
+        ) ::
           Comp.Types.computation()
   def from_function(producer_fn, opts \\ []) do
     buffer = Keyword.get(opts, :buffer, 10)
@@ -152,7 +155,7 @@ defmodule Skuld.Effects.Stream do
       output <- Channel.new(buffer)
 
       _producer <-
-        FiberPool.submit(
+        FiberPool.fiber(
           comp do
             produce_from_function(output, producer_fn)
           end
@@ -362,7 +365,7 @@ defmodule Skuld.Effects.Stream do
       output <- Channel.new(buffer)
 
       _worker <-
-        FiberPool.submit(
+        FiberPool.fiber(
           comp do
             filter_loop(input, output, pred_fn)
           end
@@ -429,7 +432,7 @@ defmodule Skuld.Effects.Stream do
   def each(input, consumer_fn) do
     # Run consumer in a fiber so channel operations work
     comp do
-      handle <- FiberPool.submit(each_loop(input, consumer_fn))
+      handle <- FiberPool.fiber(each_loop(input, consumer_fn))
       FiberPool.await(handle)
     end
   end
@@ -470,7 +473,7 @@ defmodule Skuld.Effects.Stream do
   def run(input, consumer_fn) do
     # Run consumer in a fiber so channel operations work
     comp do
-      handle <- FiberPool.submit(run_loop(input, consumer_fn))
+      handle <- FiberPool.fiber(run_loop(input, consumer_fn))
       FiberPool.await(handle)
     end
   end
@@ -538,7 +541,7 @@ defmodule Skuld.Effects.Stream do
   def to_list(input) do
     # Run consumer in a fiber so channel operations work
     comp do
-      handle <- FiberPool.submit(to_list_acc(input, []))
+      handle <- FiberPool.fiber(to_list_acc(input, []))
       FiberPool.await(handle)
     end
   end
@@ -574,7 +577,7 @@ defmodule Skuld.Effects.Stream do
 
   defp spawn_workers_acc(count, worker_fn, acc) do
     comp do
-      handle <- FiberPool.submit(worker_fn.())
+      handle <- FiberPool.fiber(worker_fn.())
       spawn_workers_acc(count - 1, worker_fn, [handle | acc])
     end
   end

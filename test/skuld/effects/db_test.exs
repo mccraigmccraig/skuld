@@ -29,7 +29,7 @@ defmodule Skuld.Effects.DBTest do
 
       result =
         comp do
-          h <- FiberPool.submit(DB.fetch(User, 1))
+          h <- FiberPool.fiber(DB.fetch(User, 1))
           FiberPool.await(h)
         end
         |> BatchExecutor.with_executor({:db_fetch, User}, mock_executor)
@@ -55,9 +55,9 @@ defmodule Skuld.Effects.DBTest do
 
       result =
         comp do
-          h1 <- FiberPool.submit(DB.fetch(User, 1))
-          h2 <- FiberPool.submit(DB.fetch(User, 2))
-          h3 <- FiberPool.submit(DB.fetch(User, 3))
+          h1 <- FiberPool.fiber(DB.fetch(User, 1))
+          h2 <- FiberPool.fiber(DB.fetch(User, 2))
+          h3 <- FiberPool.fiber(DB.fetch(User, 3))
 
           FiberPool.await_all([h1, h2, h3])
         end
@@ -101,10 +101,10 @@ defmodule Skuld.Effects.DBTest do
 
       result =
         comp do
-          h1 <- FiberPool.submit(DB.fetch(User, 1))
-          h2 <- FiberPool.submit(DB.fetch(Post, 1))
-          h3 <- FiberPool.submit(DB.fetch(User, 2))
-          h4 <- FiberPool.submit(DB.fetch(Post, 2))
+          h1 <- FiberPool.fiber(DB.fetch(User, 1))
+          h2 <- FiberPool.fiber(DB.fetch(Post, 1))
+          h3 <- FiberPool.fiber(DB.fetch(User, 2))
+          h4 <- FiberPool.fiber(DB.fetch(Post, 2))
 
           FiberPool.await_all([h1, h2, h3, h4])
         end
@@ -146,8 +146,8 @@ defmodule Skuld.Effects.DBTest do
 
       result =
         comp do
-          h1 <- FiberPool.submit(DB.fetch(User, 1))
-          h2 <- FiberPool.submit(DB.fetch(User, 2))
+          h1 <- FiberPool.fiber(DB.fetch(User, 1))
+          h2 <- FiberPool.fiber(DB.fetch(User, 2))
 
           FiberPool.await_all([h1, h2])
         end
@@ -183,8 +183,8 @@ defmodule Skuld.Effects.DBTest do
 
       result =
         comp do
-          h1 <- FiberPool.submit(DB.fetch_all(User, :org_id, 1))
-          h2 <- FiberPool.submit(DB.fetch_all(User, :org_id, 2))
+          h1 <- FiberPool.fiber(DB.fetch_all(User, :org_id, 1))
+          h2 <- FiberPool.fiber(DB.fetch_all(User, :org_id, 2))
 
           FiberPool.await_all([h1, h2])
         end
@@ -205,7 +205,7 @@ defmodule Skuld.Effects.DBTest do
     test "missing executor raises error" do
       assert_raise RuntimeError, ~r/no_batch_executor/, fn ->
         comp do
-          h <- FiberPool.submit(DB.fetch(User, 1))
+          h <- FiberPool.fiber(DB.fetch(User, 1))
           FiberPool.await(h)
         end
         # No executor installed!
@@ -221,7 +221,7 @@ defmodule Skuld.Effects.DBTest do
 
       assert_raise RuntimeError, ~r/Fiber failed/, fn ->
         comp do
-          h <- FiberPool.submit(DB.fetch(User, 1))
+          h <- FiberPool.fiber(DB.fetch(User, 1))
           FiberPool.await(h)
         end
         |> BatchExecutor.with_executor({:db_fetch, User}, error_executor)
@@ -243,8 +243,8 @@ defmodule Skuld.Effects.DBTest do
 
       result =
         comp do
-          h1 <- FiberPool.submit(DB.fetch(User, 1))
-          h2 <- FiberPool.submit(DB.fetch(User, 999))
+          h1 <- FiberPool.fiber(DB.fetch(User, 1))
+          h2 <- FiberPool.fiber(DB.fetch(User, 999))
 
           FiberPool.await_all([h1, h2])
         end
@@ -275,8 +275,8 @@ defmodule Skuld.Effects.DBTest do
       result =
         comp do
           # First batch of fetches
-          h1 <- FiberPool.submit(DB.fetch(User, 1))
-          h2 <- FiberPool.submit(DB.fetch(User, 2))
+          h1 <- FiberPool.fiber(DB.fetch(User, 1))
+          h2 <- FiberPool.fiber(DB.fetch(User, 2))
 
           FiberPool.await_all([h1, h2])
         end
@@ -307,8 +307,8 @@ defmodule Skuld.Effects.DBTest do
       # Test that explicit executor overrides wildcard
       result =
         comp do
-          h1 <- FiberPool.submit(DB.fetch(User, 1))
-          h2 <- FiberPool.submit(DB.fetch(User, 2))
+          h1 <- FiberPool.fiber(DB.fetch(User, 1))
+          h2 <- FiberPool.fiber(DB.fetch(User, 2))
           FiberPool.await_all([h1, h2])
         end
         # Wildcard executor

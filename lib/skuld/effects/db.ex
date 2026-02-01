@@ -19,9 +19,9 @@ defmodule Skuld.Effects.DB do
 
       comp do
         # Submit multiple fibers that each fetch a user
-        h1 <- FiberPool.submit(DB.fetch(User, 1))
-        h2 <- FiberPool.submit(DB.fetch(User, 2))
-        h3 <- FiberPool.submit(DB.fetch(User, 3))
+        h1 <- FiberPool.fiber(DB.fetch(User, 1))
+        h2 <- FiberPool.fiber(DB.fetch(User, 2))
+        h3 <- FiberPool.fiber(DB.fetch(User, 3))
 
         # Await all - the DB.fetch calls will be batched into one query
         FiberPool.await_all([h1, h2, h3])
@@ -106,10 +106,11 @@ defmodule Skuld.Effects.DB do
     fn env, k ->
       op = %Fetch{schema: schema, id: id}
 
-      suspend = BatchSuspend.new(
-        op,
-        fn result -> k.(result, env) end
-      )
+      suspend =
+        BatchSuspend.new(
+          op,
+          fn result -> k.(result, env) end
+        )
 
       {suspend, env}
     end
@@ -128,10 +129,11 @@ defmodule Skuld.Effects.DB do
     fn env, k ->
       op = %FetchAll{schema: schema, filter_key: filter_key, filter_value: filter_value}
 
-      suspend = BatchSuspend.new(
-        op,
-        fn result -> k.(result, env) end
-      )
+      suspend =
+        BatchSuspend.new(
+          op,
+          fn result -> k.(result, env) end
+        )
 
       {suspend, env}
     end

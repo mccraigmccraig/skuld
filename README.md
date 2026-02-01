@@ -1531,8 +1531,8 @@ computations that yield cooperatively and can be scheduled together for efficien
 ```elixir
 comp do
   # Spawn fibers
-  h1 <- FiberPool.submit(comp do :result_1 end)
-  h2 <- FiberPool.submit(comp do :result_2 end)
+  h1 <- FiberPool.fiber(comp do :result_1 end)
+  h2 <- FiberPool.fiber(comp do :result_2 end)
 
   # Await results
   r1 <- FiberPool.await(h1)
@@ -1548,8 +1548,8 @@ end
 
 ```elixir
 comp do
-  h1 <- FiberPool.submit(comp do :first end)
-  h2 <- FiberPool.submit(comp do :second end)
+  h1 <- FiberPool.fiber(comp do :first end)
+  h2 <- FiberPool.fiber(comp do :second end)
 
   # Wait for all - results in order
   results <- FiberPool.await_all([h1, h2])
@@ -1567,9 +1567,9 @@ FiberPool automatically batches I/O operations across suspended fibers:
 ```elixir
 # Multiple fibers fetching from DB - batched into single query
 comp do
-  h1 <- FiberPool.submit(comp do DB.fetch(User, 1) end)
-  h2 <- FiberPool.submit(comp do DB.fetch(User, 2) end)
-  h3 <- FiberPool.submit(comp do DB.fetch(User, 3) end)
+  h1 <- FiberPool.fiber(comp do DB.fetch(User, 1) end)
+  h2 <- FiberPool.fiber(comp do DB.fetch(User, 2) end)
+  h3 <- FiberPool.fiber(comp do DB.fetch(User, 3) end)
 
   results <- FiberPool.await_all([h1, h2, h3])
   results
@@ -1587,14 +1587,14 @@ For CPU-bound work that benefits from parallel execution:
 ```elixir
 comp do
   # Task runs in separate process
-  h <- FiberPool.submit_task(comp do expensive_calculation() end)
+  h <- FiberPool.task(comp do expensive_calculation() end)
   FiberPool.await(h)
 end
 |> FiberPool.with_handler()
 |> FiberPool.run!()
 ```
 
-Operations: `submit/1`, `submit_task/1`, `await/1`, `await_all/1`, `await_any/1`, `cancel/1`
+Operations: `fiber/1`, `task/1`, `await/1`, `await_all/1`, `await_any/1`, `cancel/1`
 
 #### Channel
 
@@ -1605,7 +1605,7 @@ comp do
   ch <- Channel.new(10)  # buffer capacity
 
   # Producer fiber
-  _producer <- FiberPool.submit(comp do
+  _producer <- FiberPool.fiber(comp do
     _ <- Channel.put(ch, :item1)
     _ <- Channel.put(ch, :item2)
     Channel.close(ch)
