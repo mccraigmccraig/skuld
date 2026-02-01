@@ -1,12 +1,22 @@
 defmodule Skuld.Effects.Stream do
   @moduledoc """
-  High-level streaming API built on channels.
+  High-level streaming API built on channels with transparent chunking.
 
   Stream provides combinators for building streaming pipelines with:
   - Backpressure via bounded channels
   - Automatic error propagation
   - Optional concurrency for transformations
   - Integration with Skuld effects (batching works!)
+  - Transparent chunking for efficiency
+
+  ## Transparent Chunking
+
+  Internally, streams operate on chunks of values rather than individual values.
+  This is transparent to users - you write operations like `map` and `filter`
+  that operate on individual values, and the library handles chunking automatically.
+
+  Chunking dramatically reduces synchronization overhead by batching values
+  together, reducing the number of fiber spawns and channel operations.
 
   ## Basic Usage
 
@@ -29,7 +39,8 @@ defmodule Skuld.Effects.Stream do
 
   ## Error Propagation
 
-  Errors automatically flow downstream through channels:
+  Errors automatically flow downstream through channels. If an error occurs
+  while processing any value in a chunk, the stream is immediately errored:
 
       comp do
         source <- Stream.from_function(fn ->
@@ -53,6 +64,29 @@ defmodule Skuld.Effects.Stream do
   alias Skuld.Effects.Channel
   alias Skuld.Effects.FiberPool
 
+  @default_chunk_size 100
+
+  #############################################################################
+  ## Chunk Type
+  #############################################################################
+
+  defmodule Chunk do
+    @moduledoc """
+    Internal wrapper for chunked stream values.
+
+    Users don't interact with this directly - it's transparent.
+    """
+    defstruct [:values]
+
+    @type t :: %__MODULE__{values: [term()]}
+
+    def new(values) when is_list(values), do: %__MODULE__{values: values}
+
+    def chunk?(value), do: match?(%__MODULE__{}, value)
+
+    def values(%__MODULE__{values: vs}), do: vs
+  end
+
   #############################################################################
   ## Sources
   #############################################################################
@@ -60,12 +94,13 @@ defmodule Skuld.Effects.Stream do
   @doc """
   Create a stream from an enumerable.
 
-  Spawns a producer fiber that puts each item into the output channel,
+  Spawns a producer fiber that puts chunks of items into the output channel,
   then closes the channel when exhausted.
 
   ## Options
 
-  - `:buffer` - Output channel capacity (default: 10)
+  - `:buffer` - Output channel capacity in chunks (default: 10)
+  - `:chunk_size` - Number of items per chunk (default: 100)
 
   ## Example
 
@@ -77,6 +112,7 @@ defmodule Skuld.Effects.Stream do
   @spec from_enum(Enumerable.t(), keyword()) :: Comp.Types.computation()
   def from_enum(enumerable, opts \\ []) do
     buffer = Keyword.get(opts, :buffer, 10)
+    chunk_size = Keyword.get(opts, :chunk_size, @default_chunk_size)
 
     comp do
       output <- Channel.new(buffer)
@@ -85,7 +121,7 @@ defmodule Skuld.Effects.Stream do
       _producer <-
         FiberPool.fiber(
           comp do
-            produce_from_enum(output, Enum.to_list(enumerable))
+            produce_chunks(output, Enum.to_list(enumerable), chunk_size)
           end
         )
 
@@ -93,24 +129,26 @@ defmodule Skuld.Effects.Stream do
     end
   end
 
-  # Recursive producer for enumerable
-  defp produce_from_enum(output, []) do
+  # Produce chunks from a list
+  defp produce_chunks(output, [], _chunk_size) do
     comp do
       _close_result <- Channel.close(output)
       Comp.pure(:producer_done)
     end
   end
 
-  defp produce_from_enum(output, [item | rest]) do
+  defp produce_chunks(output, items, chunk_size) do
+    {chunk_items, rest} = Enum.split(items, chunk_size)
+    chunk = Chunk.new(chunk_items)
+
     comp do
-      result <- Channel.put(output, item)
+      result <- Channel.put(output, chunk)
 
       case result do
         :ok ->
-          produce_from_enum(output, rest)
+          produce_chunks(output, rest, chunk_size)
 
         {:error, _reason} ->
-          # Channel closed or errored, stop producing
           Comp.pure(:producer_stopped)
       end
     end
@@ -122,13 +160,14 @@ defmodule Skuld.Effects.Stream do
   The producer function is called repeatedly until it signals completion.
   It should return:
   - `{:item, value}` - emit a single item
-  - `{:items, [values]}` - emit multiple items
+  - `{:items, [values]}` - emit multiple items (will be chunked)
   - `:done` - close the channel normally
   - `{:error, reason}` - signal error to consumers
 
   ## Options
 
-  - `:buffer` - Output channel capacity (default: 10)
+  - `:buffer` - Output channel capacity in chunks (default: 10)
+  - `:chunk_size` - Number of items per chunk (default: 100)
 
   ## Example
 
@@ -150,6 +189,7 @@ defmodule Skuld.Effects.Stream do
           Comp.Types.computation()
   def from_function(producer_fn, opts \\ []) do
     buffer = Keyword.get(opts, :buffer, 10)
+    chunk_size = Keyword.get(opts, :chunk_size, @default_chunk_size)
 
     comp do
       output <- Channel.new(buffer)
@@ -157,7 +197,7 @@ defmodule Skuld.Effects.Stream do
       _producer <-
         FiberPool.fiber(
           comp do
-            produce_from_function(output, producer_fn)
+            produce_from_function(output, producer_fn, [], chunk_size)
           end
         )
 
@@ -165,43 +205,69 @@ defmodule Skuld.Effects.Stream do
     end
   end
 
-  defp produce_from_function(output, producer_fn) do
+  # Accumulate items until we have a full chunk, then emit
+  defp produce_from_function(output, producer_fn, acc, chunk_size) do
     case producer_fn.() do
       {:item, item} ->
-        produce_item(output, producer_fn, item)
+        new_acc = [item | acc]
+
+        if length(new_acc) >= chunk_size do
+          emit_chunk_and_continue(output, producer_fn, Enum.reverse(new_acc), chunk_size)
+        else
+          produce_from_function(output, producer_fn, new_acc, chunk_size)
+        end
 
       {:items, items} ->
-        put_items_and_continue(output, items, producer_fn)
+        new_acc = Enum.reverse(items) ++ acc
+
+        if length(new_acc) >= chunk_size do
+          {to_emit, remaining} = Enum.split(Enum.reverse(new_acc), chunk_size)
+          emit_chunk_and_continue_with_acc(output, producer_fn, to_emit, remaining, chunk_size)
+        else
+          produce_from_function(output, producer_fn, new_acc, chunk_size)
+        end
 
       :done ->
-        close_channel(output, :producer_done)
+        # Emit any remaining items as a partial chunk
+        if acc == [] do
+          close_channel(output, :producer_done)
+        else
+          emit_final_chunk(output, Enum.reverse(acc))
+        end
 
       {:error, reason} ->
         error_channel(output, reason, :producer_errored)
     end
   end
 
-  defp produce_item(output, producer_fn, item) do
+  defp emit_chunk_and_continue(output, producer_fn, chunk_items, chunk_size) do
     comp do
-      result <- Channel.put(output, item)
+      result <- Channel.put(output, Chunk.new(chunk_items))
 
       case result do
-        :ok -> produce_from_function(output, producer_fn)
+        :ok -> produce_from_function(output, producer_fn, [], chunk_size)
         {:error, _} -> Comp.pure(:producer_stopped)
       end
     end
   end
 
-  defp put_items_and_continue(output, [], producer_fn) do
-    produce_from_function(output, producer_fn)
-  end
-
-  defp put_items_and_continue(output, [item | rest], producer_fn) do
+  defp emit_chunk_and_continue_with_acc(output, producer_fn, chunk_items, remaining, chunk_size) do
     comp do
-      result <- Channel.put(output, item)
+      result <- Channel.put(output, Chunk.new(chunk_items))
 
       case result do
-        :ok -> put_items_and_continue(output, rest, producer_fn)
+        :ok -> produce_from_function(output, producer_fn, Enum.reverse(remaining), chunk_size)
+        {:error, _} -> Comp.pure(:producer_stopped)
+      end
+    end
+  end
+
+  defp emit_final_chunk(output, chunk_items) do
+    comp do
+      result <- Channel.put(output, Chunk.new(chunk_items))
+
+      case result do
+        :ok -> close_channel(output, :producer_done)
         {:error, _} -> Comp.pure(:producer_stopped)
       end
     end
@@ -214,14 +280,16 @@ defmodule Skuld.Effects.Stream do
   @doc """
   Transform each item in the stream.
 
-  Spawns worker fiber(s) that read from input, apply the transform function,
-  and write to output. The transform function can be a pure function or
-  return a computation.
+  Spawns worker fiber(s) that read chunks from input, apply the transform
+  function to each item in the chunk, and write result chunks to output.
+
+  The transform function can be a pure function or return a computation.
+  If the transform errors on any item in a chunk, the stream is errored.
 
   ## Options
 
-  - `:concurrency` - Number of worker fibers (default: 1)
-  - `:buffer` - Output channel capacity (default: 10)
+  - `:concurrency` - Number of concurrent chunk processors (default: 1)
+  - `:buffer` - Output channel capacity in chunks (default: 10)
 
   ## Example
 
@@ -251,29 +319,27 @@ defmodule Skuld.Effects.Stream do
     comp do
       # Intermediate channel holds fiber handles (controls concurrency)
       intermediate <- Channel.new(concurrency)
-      # Output channel holds final ordered results
+      # Output channel holds final ordered result chunks
       output <- Channel.new(buffer)
 
-      # Producer: reads input in order, spawns transforms via put_async
-      _ <- FiberPool.fiber(map_producer(input, intermediate, transform_fn))
+      # Producer: reads chunks in order, spawns chunk transforms via put_async
+      _ <- FiberPool.fiber(map_producer(input, intermediate, output, transform_fn))
 
-      # Reorderer: awaits transforms in order via take_async, puts to output
+      # Reorderer: awaits chunk transforms in order via take_async, puts to output
       _ <- FiberPool.fiber(map_reorderer(intermediate, output))
 
       Comp.pure(output)
     end
   end
 
-  # Producer reads from input in order and spawns transform fibers
-  defp map_producer(input, intermediate, transform_fn) do
+  # Producer reads chunks from input and spawns transform fibers
+  defp map_producer(input, intermediate, output, transform_fn) do
     comp do
       result <- Channel.take(input)
 
       case result do
-        {:ok, item} ->
-          # Spawn transform fiber and store handle in intermediate channel
-          # put_async blocks when intermediate is full (backpressure)
-          map_producer_put_async(input, intermediate, transform_fn, item)
+        {:ok, chunk} ->
+          map_producer_put_async(input, intermediate, output, transform_fn, chunk)
 
         :closed ->
           close_channel(intermediate, :producer_done)
@@ -284,40 +350,92 @@ defmodule Skuld.Effects.Stream do
     end
   end
 
-  defp map_producer_put_async(input, intermediate, transform_fn, item) do
+  defp map_producer_put_async(input, intermediate, output, transform_fn, chunk) do
     comp do
-      put_result <- Channel.put_async(intermediate, wrap_transform(transform_fn, item))
+      put_result <-
+        Channel.put_async(intermediate, transform_chunk(chunk, output, transform_fn))
 
       case put_result do
-        :ok -> map_producer(input, intermediate, transform_fn)
+        :ok -> map_producer(input, intermediate, output, transform_fn)
         {:error, _} -> Comp.pure(:producer_stopped)
       end
     end
   end
 
-  # Wrap transform to handle both computation and plain value returns
-  defp wrap_transform(transform_fn, item) do
-    comp do
-      result = transform_fn.(item)
+  # Transform all values in a chunk, erroring the output channel if any fails
+  defp transform_chunk(chunk, output, transform_fn) do
+    values = Chunk.values(chunk)
 
-      if is_function(result, 2) do
-        # It's a computation - run it
-        result
-      else
-        # Plain value
-        Comp.pure(result)
+    comp do
+      result <- transform_values(values, transform_fn, [])
+
+      case result do
+        {:ok, transformed} ->
+          Comp.pure(Chunk.new(transformed))
+
+        {:error, reason} ->
+          # Error the output channel and return error
+          comp do
+            _ <- Channel.error(output, reason)
+            Comp.pure({:chunk_error, reason})
+          end
       end
     end
   end
 
-  # Reorderer awaits transform results in order and puts to output
+  # Transform values one by one, stopping on first error
+  defp transform_values([], _transform_fn, acc) do
+    Comp.pure({:ok, Enum.reverse(acc)})
+  end
+
+  defp transform_values([value | rest], transform_fn, acc) do
+    comp do
+      result <- safe_transform(transform_fn, value)
+
+      case result do
+        {:ok, transformed} ->
+          transform_values(rest, transform_fn, [transformed | acc])
+
+        {:error, reason} ->
+          Comp.pure({:error, reason})
+      end
+    end
+  end
+
+  # Safely apply transform, catching errors
+  defp safe_transform(transform_fn, value) do
+    try do
+      result = transform_fn.(value)
+
+      if is_function(result, 2) do
+        # It's a computation - run it and wrap result
+        comp do
+          transformed <- result
+          Comp.pure({:ok, transformed})
+        end
+      else
+        Comp.pure({:ok, result})
+      end
+    rescue
+      e -> Comp.pure({:error, {:transform_error, e, __STACKTRACE__}})
+    catch
+      :throw, reason -> Comp.pure({:error, {:throw, reason}})
+      :exit, reason -> Comp.pure({:error, {:exit, reason}})
+    end
+  end
+
+  # Reorderer awaits chunk transform results in order and puts to output
   defp map_reorderer(intermediate, output) do
     comp do
       result <- Channel.take_async(intermediate)
 
       case result do
-        {:ok, value} ->
-          map_reorderer_put(intermediate, output, value)
+        {:ok, %Chunk{} = chunk} ->
+          map_reorderer_put(intermediate, output, chunk)
+
+        {:ok, {:chunk_error, _reason}} ->
+          # Chunk errored, output channel already errored - just stop
+          Comp.pure(:reorderer_stopped)
 
         :closed ->
           close_channel(output, :reorderer_done)
@@ -328,9 +446,9 @@ defmodule Skuld.Effects.Stream do
     end
   end
 
-  defp map_reorderer_put(intermediate, output, value) do
+  defp map_reorderer_put(intermediate, output, chunk) do
     comp do
-      put_result <- Channel.put(output, value)
+      put_result <- Channel.put(output, chunk)
 
       case put_result do
         :ok -> map_reorderer(intermediate, output)
@@ -343,10 +461,11 @@ defmodule Skuld.Effects.Stream do
   Filter items in the stream.
 
   Only items for which the predicate returns true pass through.
+  Filtering happens within chunks - chunks may shrink but are not rechunked.
 
   ## Options
 
-  - `:buffer` - Output channel capacity (default: 10)
+  - `:buffer` - Output channel capacity in chunks (default: 10)
 
   ## Example
 
@@ -380,8 +499,8 @@ defmodule Skuld.Effects.Stream do
       result <- Channel.take(input)
 
       case result do
-        {:ok, item} ->
-          filter_item(input, output, pred_fn, item)
+        {:ok, chunk} ->
+          filter_chunk(input, output, pred_fn, chunk)
 
         :closed ->
           close_channel(output, :filter_done)
@@ -392,17 +511,20 @@ defmodule Skuld.Effects.Stream do
     end
   end
 
-  defp filter_item(input, output, pred_fn, item) do
-    if pred_fn.(item) do
-      filter_put_item(input, output, pred_fn, item)
-    else
+  defp filter_chunk(input, output, pred_fn, chunk) do
+    filtered_values = Enum.filter(Chunk.values(chunk), pred_fn)
+
+    if filtered_values == [] do
+      # Empty chunk after filtering - skip it
       filter_loop(input, output, pred_fn)
+    else
+      filter_put_chunk(input, output, pred_fn, Chunk.new(filtered_values))
     end
   end
 
-  defp filter_put_item(input, output, pred_fn, item) do
+  defp filter_put_chunk(input, output, pred_fn, chunk) do
     comp do
-      put_result <- Channel.put(output, item)
+      put_result <- Channel.put(output, chunk)
 
       case put_result do
         :ok -> filter_loop(input, output, pred_fn)
@@ -430,7 +552,6 @@ defmodule Skuld.Effects.Stream do
   """
   @spec each(Channel.Handle.t(), (term() -> any())) :: Comp.Types.computation()
   def each(input, consumer_fn) do
-    # Run consumer in a fiber so channel operations work
     comp do
       handle <- FiberPool.fiber(each_loop(input, consumer_fn))
       FiberPool.await!(handle)
@@ -442,8 +563,9 @@ defmodule Skuld.Effects.Stream do
       result <- Channel.take(input)
 
       case result do
-        {:ok, item} ->
-          _ = consumer_fn.(item)
+        {:ok, chunk} ->
+          # Apply consumer to each value in chunk
+          Enum.each(Chunk.values(chunk), consumer_fn)
           each_loop(input, consumer_fn)
 
         :closed ->
@@ -471,7 +593,6 @@ defmodule Skuld.Effects.Stream do
   @spec run(Channel.Handle.t(), (term() -> term() | Comp.Types.computation())) ::
           Comp.Types.computation()
   def run(input, consumer_fn) do
-    # Run consumer in a fiber so channel operations work
     comp do
       handle <- FiberPool.fiber(run_loop(input, consumer_fn))
       FiberPool.await!(handle)
@@ -483,8 +604,8 @@ defmodule Skuld.Effects.Stream do
       result <- Channel.take(input)
 
       case result do
-        {:ok, item} ->
-          run_consume_item(input, consumer_fn, item)
+        {:ok, chunk} ->
+          run_chunk(input, consumer_fn, Chunk.values(chunk))
 
         :closed ->
           Comp.pure(:ok)
@@ -495,13 +616,17 @@ defmodule Skuld.Effects.Stream do
     end
   end
 
-  defp run_consume_item(input, consumer_fn, item) do
+  defp run_chunk(input, consumer_fn, []) do
+    run_loop(input, consumer_fn)
+  end
+
+  defp run_chunk(input, consumer_fn, [value | rest]) do
     comp do
-      consumer_result <- apply_consumer(consumer_fn, item)
+      consumer_result <- apply_consumer(consumer_fn, value)
 
       case consumer_result do
         :ok ->
-          run_loop(input, consumer_fn)
+          run_chunk(input, consumer_fn, rest)
 
         {:error, reason} ->
           Comp.pure({:error, reason})
@@ -513,13 +638,11 @@ defmodule Skuld.Effects.Stream do
     result = consumer_fn.(item)
 
     if is_function(result, 2) do
-      # It's a computation
       comp do
         _consumer_value <- result
         Comp.pure(:ok)
       end
     else
-      # Plain value - just succeed
       Comp.pure(:ok)
     end
   end
@@ -539,7 +662,6 @@ defmodule Skuld.Effects.Stream do
   """
   @spec to_list(Channel.Handle.t()) :: Comp.Types.computation()
   def to_list(input) do
-    # Run consumer in a fiber so channel operations work
     comp do
       handle <- FiberPool.fiber(to_list_acc(input, []))
       FiberPool.await!(handle)
@@ -551,8 +673,9 @@ defmodule Skuld.Effects.Stream do
       result <- Channel.take(input)
 
       case result do
-        {:ok, item} ->
-          to_list_acc(input, [item | acc])
+        {:ok, chunk} ->
+          # Prepend chunk values (will reverse at end)
+          to_list_acc(input, Enum.reverse(Chunk.values(chunk)) ++ acc)
 
         :closed ->
           Comp.pure(Enum.reverse(acc))
@@ -567,7 +690,6 @@ defmodule Skuld.Effects.Stream do
   ## Helpers
   #############################################################################
 
-  # Helper to close a channel and return a result
   defp close_channel(channel, result) do
     comp do
       _close_result <- Channel.close(channel)
@@ -575,7 +697,6 @@ defmodule Skuld.Effects.Stream do
     end
   end
 
-  # Helper to error a channel and return a result
   defp error_channel(channel, reason, result) do
     comp do
       _error_result <- Channel.error(channel, reason)
