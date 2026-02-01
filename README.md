@@ -1753,8 +1753,9 @@ end
 user_ids = [1, 2, 3, 4, 5]
 
 comp do
-  source <- Stream.from_enum(user_ids)
-  users <- Stream.map(source, fn id -> DB.fetch(User, id) end, concurrency: 10)
+  # chunk_size: 1 so each item becomes a concurrent unit for I/O batching
+  source <- Stream.from_enum(user_ids, chunk_size: 1)
+  users <- Stream.map(source, fn id -> DB.fetch(User, id) end, concurrency: 5)
   Stream.to_list(users)
 end
 |> BatchExecutor.with_executor({:db_fetch, User}, mock_executor)
@@ -1764,6 +1765,11 @@ end
 # Prints: Executor called with 5 operations
 #=> [%User{id: 1, ...}, %User{id: 2, ...}, %User{id: 3, ...}, ...]  # order preserved
 ```
+
+**Why `chunk_size: 1`?** Stream.map's `concurrency` controls how many *chunks* process
+concurrently. With the default `chunk_size: 100`, all 5 items would be in one chunk
+and processed sequentially. Using `chunk_size: 1` makes each item its own concurrent
+unit, allowing their I/O operations to batch together.
 
 `Stream.map` preserves input order even with `concurrency > 1` by using `put_async`/`take_async`
 internally (see Channel section above for details on how this works).
