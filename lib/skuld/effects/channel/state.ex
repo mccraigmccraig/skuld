@@ -41,7 +41,8 @@ defmodule Skuld.Effects.Channel.State do
 
   @type channel_id :: reference()
   @type fiber_id :: reference()
-  @type resume_fn :: (term() -> {term(), Skuld.Comp.Types.env()})
+  # resume takes (result, env) -> {result, env} to avoid capturing stale env
+  @type resume_fn :: (term(), Skuld.Comp.Types.env() -> {term(), Skuld.Comp.Types.env()})
   @type status :: :open | :closed | {:error, term()}
 
   @type waiting_put :: {fiber_id(), term(), resume_fn()}
