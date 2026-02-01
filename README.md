@@ -1751,8 +1751,11 @@ end
 |> FiberPool.with_handler()
 |> FiberPool.run!()
 # Prints: Executor called with 5 operations
-#=> [%User{id: 1, ...}, %User{id: 2, ...}, ...]
+#=> [%User{id: 1, ...}, %User{id: 2, ...}, %User{id: 3, ...}, ...]  # order preserved
 ```
+
+`Stream.map` preserves input order even with `concurrency > 1` by using `put_async`/`take_async`
+internally (see Channel section above for details on how this works).
 
 Operations: `from_enum/2`, `from_function/2`, `map/3`, `filter/3`, `each/2`, `run/2`, `to_list/1`
 

@@ -249,93 +249,103 @@ defmodule Skuld.Effects.Stream do
     buffer = Keyword.get(opts, :buffer, 10)
 
     comp do
+      # Intermediate channel holds fiber handles (controls concurrency)
+      intermediate <- Channel.new(concurrency)
+      # Output channel holds final ordered results
       output <- Channel.new(buffer)
 
-      # Use atomic counter to track when all workers are done
-      # When the last worker finishes, it closes the output channel
-      remaining_workers = :atomics.new(1, [])
-      _ = :atomics.put(remaining_workers, 1, concurrency)
+      # Producer: reads input in order, spawns transforms via put_async
+      _producer <-
+        FiberPool.fiber(
+          comp do
+            map_producer(input, intermediate, transform_fn)
+          end
+        )
 
-      # Spawn worker fibers
-      _workers <-
-        spawn_workers(concurrency, fn ->
-          map_worker(input, output, transform_fn, remaining_workers)
-        end)
+      # Reorderer: awaits transforms in order via take_async, puts to output
+      _reorderer <-
+        FiberPool.fiber(
+          comp do
+            map_reorderer(intermediate, output)
+          end
+        )
 
       Comp.pure(output)
     end
   end
 
-  defp map_worker(input, output, transform_fn, remaining_workers) do
+  # Producer reads from input in order and spawns transform fibers
+  defp map_producer(input, intermediate, transform_fn) do
     comp do
       result <- Channel.take(input)
 
       case result do
         {:ok, item} ->
-          map_transform_item(input, output, transform_fn, item, remaining_workers)
+          # Spawn transform fiber and store handle in intermediate channel
+          # put_async blocks when intermediate is full (backpressure)
+          map_producer_put_async(input, intermediate, transform_fn, item)
 
         :closed ->
-          # Input exhausted - decrement counter and maybe close output
-          map_worker_done(output, remaining_workers)
+          close_channel(intermediate, :producer_done)
 
         {:error, reason} ->
-          # Input errored - propagate downstream
-          error_channel(output, reason, :worker_errored)
+          error_channel(intermediate, reason, :producer_errored)
       end
     end
   end
 
-  defp map_worker_done(output, remaining_workers) do
-    # Decrement counter and check if we're the last worker
-    new_count = :atomics.sub_get(remaining_workers, 1, 1)
-
-    if new_count == 0 do
-      # Last worker - close the output channel
-      close_channel(output, :worker_done)
-    else
-      Comp.pure(:worker_done)
-    end
-  end
-
-  defp map_transform_item(input, output, transform_fn, item, remaining_workers) do
+  defp map_producer_put_async(input, intermediate, transform_fn, item) do
     comp do
-      transformed <- try_transform(transform_fn, item)
+      put_result <- Channel.put_async(intermediate, wrap_transform(transform_fn, item))
 
-      case transformed do
-        {:ok, value} ->
-          map_put_result(input, output, transform_fn, value, remaining_workers)
-
-        {:error, reason} ->
-          # Transform failed - propagate error downstream
-          error_channel(output, reason, :worker_errored)
+      case put_result do
+        :ok -> map_producer(input, intermediate, transform_fn)
+        {:error, _} -> Comp.pure(:producer_stopped)
       end
     end
   end
 
-  defp map_put_result(input, output, transform_fn, value, remaining_workers) do
+  # Wrap transform to handle both computation and plain value returns
+  defp wrap_transform(transform_fn, item) do
+    comp do
+      result = transform_fn.(item)
+
+      if is_function(result, 2) do
+        # It's a computation - run it
+        result
+      else
+        # Plain value
+        Comp.pure(result)
+      end
+    end
+  end
+
+  # Reorderer awaits transform results in order and puts to output
+  defp map_reorderer(intermediate, output) do
+    comp do
+      result <- Channel.take_async(intermediate)
+
+      case result do
+        {:ok, value} ->
+          map_reorderer_put(intermediate, output, value)
+
+        :closed ->
+          close_channel(output, :reorderer_done)
+
+        {:error, reason} ->
+          error_channel(output, reason, :reorderer_errored)
+      end
+    end
+  end
+
+  defp map_reorderer_put(intermediate, output, value) do
     comp do
       put_result <- Channel.put(output, value)
 
       case put_result do
-        :ok -> map_worker(input, output, transform_fn, remaining_workers)
-        {:error, _} -> Comp.pure(:worker_stopped)
+        :ok -> map_reorderer(intermediate, output)
+        {:error, _} -> Comp.pure(:reorderer_stopped)
       end
-    end
-  end
-
-  defp try_transform(transform_fn, item) do
-    # Check if the transform returns a computation or a plain value
-    result = transform_fn.(item)
-
-    if is_function(result, 2) do
-      # It's a computation - bind it
-      comp do
-        value <- result
-        Comp.pure({:ok, value})
-      end
-    else
-      # Plain value - wrap it
-      Comp.pure({:ok, result})
     end
   end
 
@@ -566,21 +576,6 @@ defmodule Skuld.Effects.Stream do
   #############################################################################
   ## Helpers
   #############################################################################
-
-  defp spawn_workers(count, worker_fn) do
-    spawn_workers_acc(count, worker_fn, [])
-  end
-
-  defp spawn_workers_acc(0, _worker_fn, acc) do
-    Comp.pure(Enum.reverse(acc))
-  end
-
-  defp spawn_workers_acc(count, worker_fn, acc) do
-    comp do
-      handle <- FiberPool.fiber(worker_fn.())
-      spawn_workers_acc(count - 1, worker_fn, [handle | acc])
-    end
-  end
 
   # Helper to close a channel and return a result
   defp close_channel(channel, result) do

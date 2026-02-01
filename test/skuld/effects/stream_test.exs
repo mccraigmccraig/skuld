@@ -171,8 +171,8 @@ defmodule Skuld.Effects.StreamTest do
         |> FiberPool.with_handler()
         |> FiberPool.run!()
 
-      # With concurrency, order may not be preserved
-      assert Enum.sort(result) == [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+      # Order IS preserved with concurrency thanks to put_async/take_async
+      assert result == [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
     end
 
     test "propagates input errors" do
