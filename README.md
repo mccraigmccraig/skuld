@@ -1759,6 +1759,53 @@ internally (see Channel section above for details on how this works).
 
 Operations: `from_enum/2`, `from_function/2`, `map/3`, `filter/3`, `each/2`, `run/2`, `to_list/1`
 
+**Performance vs GenStage:**
+
+Skuld Streams are optimized for throughput via transparent chunking (processing items
+in batches of 100 by default). Here's how they compare to GenStage:
+
+| Stages | Input Size | Skuld | GenStage | Skuld Speedup |
+|--------|-----------|-------|----------|---------------|
+| 1 | 1k | 0.17ms | 53ms | 312x |
+| 1 | 10k | 1.6ms | 57ms | 36x |
+| 1 | 100k | 15ms | 594ms | 38x |
+| 5 | 1k | 0.79ms | 53ms | 67x |
+| 5 | 10k | 7ms | 57ms | 8x |
+| 5 | 100k | 63ms | 586ms | 9x |
+
+*Run with `mix run bench/stream_vs_genstage.exs`*
+
+**Architecture tradeoffs:**
+
+Skuld Streams run in a **single BEAM process** with cooperative fiber scheduling,
+while GenStage uses **multiple processes** with demand-based flow control. This
+leads to different characteristics:
+
+| Aspect | Skuld Streams | GenStage |
+|--------|---------------|----------|
+| Scheduling | Cooperative (fibers) | Preemptive (processes) |
+| Communication | Direct (shared memory) | Message passing |
+| Parallelism | Single process | Multi-process |
+| Best for | I/O-bound pipelines | CPU-bound pipelines |
+| Memory model | Higher peak, chunked | Lower, item-by-item |
+| Startup cost | Minimal | ~50ms process setup |
+
+**When to use each:**
+
+- **Skuld Streams** excel at I/O-bound workloads where items flow through
+  transformations quickly and automatic I/O batching (via `FiberPool`) can
+  consolidate database queries or API calls. The single-process model eliminates
+  message-passing overhead and enables order-preserving concurrent transforms.
+
+- **GenStage** is better for CPU-bound pipelines where you need true parallelism
+  across CPU cores. Each stage runs in its own process, enabling concurrent
+  computation. The demand-based backpressure also provides finer-grained memory
+  control for very large datasets.
+
+- **Hybrid approach**: For CPU-intensive transforms within Skuld, use
+  `FiberPool.task/1` to offload work to separate BEAM processes while keeping
+  the pipeline coordination in Skuld.
+
 ### Persistence & Data
 
 #### DBTransaction
