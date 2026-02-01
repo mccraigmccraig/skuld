@@ -476,7 +476,7 @@ defmodule Skuld.Effects.FiberPool do
     case main_result do
       %FPSuspend{} = suspend ->
         # Main computation is awaiting - need to run fibers/tasks and handle await
-        run_scheduler_loop(state, env, {:awaiting, suspend})
+        run_scheduler_loop(state, env, suspend)
 
       result ->
         # Main computation completed - just run remaining fibers/tasks
@@ -505,9 +505,6 @@ defmodule Skuld.Effects.FiberPool do
         # Execute batches and continue
         {state, env} = execute_batches(state, env)
         run_fibers_to_completion(state, env, result)
-
-      {:error, reason, _state} ->
-        {{:error, reason}, env}
     end
   end
 
@@ -691,36 +688,29 @@ defmodule Skuld.Effects.FiberPool do
     end
   end
 
-  # Run scheduler loop, handling FiberPool suspensions
-  defp run_scheduler_loop(state, env, status) do
-    case status do
-      {:awaiting, %FPSuspend{handles: handles, mode: mode, resume: resume}} ->
-        # Convert handles to fiber_ids
-        fiber_ids = Enum.map(handles, & &1.id)
+  # Run scheduler loop, handling FiberPool suspensions (main computation awaiting fibers)
+  defp run_scheduler_loop(state, env, %FPSuspend{handles: handles, mode: mode, resume: resume}) do
+    # Convert handles to fiber_ids
+    fiber_ids = Enum.map(handles, & &1.id)
 
-        # Get the fiber that is awaiting (we need to track which fiber this is)
-        # For the main computation, we use a special marker
-        awaiter_id = :main
+    # For the main computation, we use a special marker
+    awaiter_id = :main
 
-        await_mode =
-          case mode do
-            :one -> :all
-            :all -> :all
-            :any -> :any
-          end
+    await_mode =
+      case mode do
+        :one -> :all
+        :all -> :all
+        :any -> :any
+      end
 
-        case State.suspend_awaiting(state, awaiter_id, fiber_ids, await_mode) do
-          {:ready, result, state} ->
-            # Results already available
-            handle_await_result(state, env, result, resume, mode)
+    case State.suspend_awaiting(state, awaiter_id, fiber_ids, await_mode) do
+      {:ready, result, state} ->
+        # Results already available
+        handle_await_result(state, env, result, resume, mode)
 
-          {:suspended, state} ->
-            # Need to run fibers until we can satisfy the await
-            run_until_await_satisfied(state, env, awaiter_id, resume, mode)
-        end
-
-      {:completed, result} ->
-        {result, env}
+      {:suspended, state} ->
+        # Need to run fibers until we can satisfy the await
+        run_until_await_satisfied(state, env, awaiter_id, resume, mode)
     end
   end
 
@@ -825,7 +815,7 @@ defmodule Skuld.Effects.FiberPool do
     # Check if we got another suspension
     case new_result do
       %FPSuspend{} = suspend ->
-        run_scheduler_loop(state, new_env, {:awaiting, suspend})
+        run_scheduler_loop(state, new_env, suspend)
 
       _ ->
         # Main computation completed - run any remaining fibers/tasks

@@ -24,6 +24,8 @@ defmodule Skuld.Fiber.FiberPool.State do
   alias Skuld.Effects.Channel.Suspend, as: ChannelSuspend
 
   @type fiber_id :: reference()
+  # awaiter_id can be a fiber reference or :main for the main computation
+  @type awaiter_id :: fiber_id() | :main
   @type task_ref :: reference()
   @type result :: {:ok, term()} | {:error, term()}
 
@@ -37,8 +39,8 @@ defmodule Skuld.Fiber.FiberPool.State do
           id: reference(),
           fibers: %{fiber_id() => Fiber.t()},
           run_queue: :queue.queue(fiber_id()),
-          suspended: %{fiber_id() => suspension_info()},
-          completed: %{fiber_id() => result()},
+          suspended: %{awaiter_id() => suspension_info()},
+          completed: %{(fiber_id() | {:wake, awaiter_id()}) => result() | term()},
           awaiting: %{fiber_id() => [fiber_id()]},
           tasks: %{task_ref() => fiber_id()},
           task_supervisor: pid() | nil,
@@ -217,9 +219,9 @@ defmodule Skuld.Fiber.FiberPool.State do
   Returns `{:suspended, state}` if the fiber must wait, or
   `{:ready, results, state}` if results are already available.
   """
-  @spec suspend_awaiting(t(), fiber_id(), [fiber_id()], :all | :any) ::
+  @spec suspend_awaiting(t(), awaiter_id(), [fiber_id()], :all | :any) ::
           {:suspended, t()} | {:ready, term(), t()}
-  def suspend_awaiting(state, fiber_id, waiting_for, mode) do
+  def suspend_awaiting(state, awaiter_id, waiting_for, mode) do
     # Check for already-completed fibers
     {already_done, still_waiting} =
       Enum.split_with(waiting_for, &completed?(state, &1))
@@ -240,14 +242,14 @@ defmodule Skuld.Fiber.FiberPool.State do
           collected: collected
         }
 
-        state = put_in(state, [Access.key(:suspended), fiber_id], suspension)
+        state = put_in(state, [Access.key(:suspended), awaiter_id], suspension)
 
         # Add reverse index: for each fiber we're waiting on, record that we're awaiting it
         state =
           Enum.reduce(still_waiting, state, fn target_fid, acc ->
             update_in(acc, [Access.key(:awaiting), target_fid], fn
-              nil -> [fiber_id]
-              list -> [fiber_id | list]
+              nil -> [awaiter_id]
+              list -> [awaiter_id | list]
             end)
           end)
 
@@ -349,9 +351,9 @@ defmodule Skuld.Fiber.FiberPool.State do
   @doc """
   Get and clear the wake result for a fiber.
   """
-  @spec pop_wake_result(t(), fiber_id()) :: {term() | nil, t()}
-  def pop_wake_result(state, fiber_id) do
-    key = {:wake, fiber_id}
+  @spec pop_wake_result(t(), awaiter_id()) :: {term() | nil, t()}
+  def pop_wake_result(state, awaiter_id) do
+    key = {:wake, awaiter_id}
 
     case Map.pop(state.completed, key) do
       {nil, _} -> {nil, state}
