@@ -433,7 +433,7 @@ defmodule Skuld.Effects.Stream do
     # Run consumer in a fiber so channel operations work
     comp do
       handle <- FiberPool.fiber(each_loop(input, consumer_fn))
-      FiberPool.await(handle)
+      FiberPool.await!(handle)
     end
   end
 
@@ -474,7 +474,7 @@ defmodule Skuld.Effects.Stream do
     # Run consumer in a fiber so channel operations work
     comp do
       handle <- FiberPool.fiber(run_loop(input, consumer_fn))
-      FiberPool.await(handle)
+      FiberPool.await!(handle)
     end
   end
 
@@ -542,7 +542,7 @@ defmodule Skuld.Effects.Stream do
     # Run consumer in a fiber so channel operations work
     comp do
       handle <- FiberPool.fiber(to_list_acc(input, []))
-      FiberPool.await(handle)
+      FiberPool.await!(handle)
     end
   end
 

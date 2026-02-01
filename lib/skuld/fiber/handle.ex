@@ -13,7 +13,7 @@ defmodule Skuld.Fiber.Handle do
       comp do
         handle <- FiberPool.fiber(my_computation)
         # ... do other work ...
-        result <- FiberPool.await(handle)
+        result <- FiberPool.await!(handle)
         result
       end
   """

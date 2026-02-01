@@ -329,6 +329,14 @@ defmodule Skuld.Fiber.FiberPool.State do
   end
 
   # Check if wake condition is satisfied
+  defp check_wake_condition(:one, [fid], collected) do
+    # For :one mode, we're waiting for a single fiber
+    case Map.get(collected, fid) do
+      nil -> :waiting
+      result -> {:ready, result}
+    end
+  end
+
   defp check_wake_condition(:any, _waiting_for, collected) when map_size(collected) > 0 do
     [{fid, result}] = Enum.take(collected, 1)
     {:ready, {fid, result}}

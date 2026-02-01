@@ -35,6 +35,7 @@ defmodule Skuld.Fiber do
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
   alias Skuld.Fiber.FiberPool.BatchSuspend
+  alias Skuld.Fiber.FiberPool.Suspend, as: FPSuspend
   alias Skuld.Effects.Channel.Suspend, as: ChannelSuspend
 
   @type status :: :pending | :running | :suspended | :completed | :cancelled | :error
@@ -103,6 +104,7 @@ defmodule Skuld.Fiber do
           | {:suspended, t()}
           | {:batch_suspended, t(), BatchSuspend.t()}
           | {:channel_suspended, t(), ChannelSuspend.t()}
+          | {:fp_suspended, t(), FPSuspend.t()}
           | {:error, term(), Types.env() | nil}
   def run_until_suspend(%__MODULE__{status: :pending, computation: comp, env: env} = fiber) do
     fiber = %{fiber | status: :running, computation: nil}
@@ -140,6 +142,7 @@ defmodule Skuld.Fiber do
           | {:suspended, t()}
           | {:batch_suspended, t(), BatchSuspend.t()}
           | {:channel_suspended, t(), ChannelSuspend.t()}
+          | {:fp_suspended, t(), FPSuspend.t()}
           | {:error, term(), Types.env() | nil}
   def resume(%__MODULE__{status: :suspended, suspended_k: k, env: env} = fiber, value)
       when is_function(k, 2) do
@@ -191,6 +194,9 @@ defmodule Skuld.Fiber do
       {%ChannelSuspend{} = channel_suspend, channel_env} ->
         handle_channel_suspend(fiber, channel_suspend, channel_env)
 
+      {%FPSuspend{} = fp_suspend, fp_env} ->
+        handle_fp_suspend(fiber, fp_suspend, fp_env)
+
       {%Comp.Throw{} = throw, throw_env} ->
         {:error, {:throw, throw.error}, throw_env}
 
@@ -222,6 +228,9 @@ defmodule Skuld.Fiber do
 
       {%ChannelSuspend{} = channel_suspend, channel_env} ->
         handle_channel_suspend(fiber, channel_suspend, channel_env)
+
+      {%FPSuspend{} = fp_suspend, fp_env} ->
+        handle_fp_suspend(fiber, fp_suspend, fp_env)
 
       {%Comp.Throw{} = throw, throw_env} ->
         {:error, {:throw, throw.error}, throw_env}
@@ -299,5 +308,24 @@ defmodule Skuld.Fiber do
 
     # Return the channel_suspend so the scheduler can track it
     {:channel_suspended, suspended_fiber, channel_suspend}
+  end
+
+  # Handle an FPSuspend (FiberPool await) - return the suspend for scheduler to handle
+  defp handle_fp_suspend(fiber, %FPSuspend{resume: resume} = fp_suspend, env) do
+    # Store the resume function in the fiber so it can be resumed when await is satisfied
+    suspended_k = fn value, _env ->
+      # FPSuspend.resume is (val -> {result, env})
+      resume.(value)
+    end
+
+    suspended_fiber = %{
+      fiber
+      | status: :suspended,
+        suspended_k: suspended_k,
+        env: env
+    }
+
+    # Return the fp_suspend so the scheduler can handle the await
+    {:fp_suspended, suspended_fiber, fp_suspend}
   end
 end

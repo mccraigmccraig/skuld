@@ -14,9 +14,9 @@ defmodule Skuld.Effects.FiberPool do
 
         # Do other work while fibers run...
 
-        # Await results
-        r1 <- FiberPool.await(h1)
-        r2 <- FiberPool.await(h2)
+        # Await results (raises on error)
+        r1 <- FiberPool.await!(h1)
+        r2 <- FiberPool.await!(h2)
 
         {r1, r2}
       end
@@ -32,7 +32,7 @@ defmodule Skuld.Effects.FiberPool do
           h1 <- FiberPool.fiber(work1())
           h2 <- FiberPool.fiber(work2())
           # Both h1 and h2 will complete (or be cancelled) before scope exits
-          FiberPool.await_all([h1, h2])
+          FiberPool.await_all!([h1, h2])
         end)
       end
 
@@ -68,17 +68,18 @@ defmodule Skuld.Effects.FiberPool do
 
   defmodule Await do
     @moduledoc false
-    defstruct [:handle]
+    # raising: true for await!, false for await
+    defstruct [:handle, raising: true]
   end
 
   defmodule AwaitAll do
     @moduledoc false
-    defstruct [:handles]
+    defstruct [:handles, raising: true]
   end
 
   defmodule AwaitAny do
     @moduledoc false
-    defstruct [:handles]
+    defstruct [:handles, raising: true]
   end
 
   defmodule Cancel do
@@ -132,8 +133,8 @@ defmodule Skuld.Effects.FiberPool do
         h2 <- FiberPool.task(another_cpu_work())
 
         # Await results
-        r1 <- FiberPool.await(h1)
-        r2 <- FiberPool.await(h2)
+        r1 <- FiberPool.await!(h1)
+        r2 <- FiberPool.await!(h2)
 
         {r1, r2}
       end
@@ -147,33 +148,85 @@ defmodule Skuld.Effects.FiberPool do
   Await a single fiber's result.
 
   Suspends the current fiber until the target fiber completes.
-  Returns the result value directly, or raises if the fiber errored.
+  Returns `{:ok, value}` on success or `{:error, reason}` on failure.
+
+  ## Example
+
+      comp do
+        h <- FiberPool.fiber(some_work())
+        result <- FiberPool.await(h)
+        case result do
+          {:ok, value} -> # use value
+          {:error, reason} -> # handle error
+        end
+      end
   """
   @spec await(Handle.t()) :: Comp.Types.computation()
   def await(handle) do
-    Comp.effect(@sig, %Await{handle: handle})
+    Comp.effect(@sig, %Await{handle: handle, raising: false})
+  end
+
+  @doc """
+  Await a single fiber's result, raising on error.
+
+  Suspends the current fiber until the target fiber completes.
+  Returns the result value directly, or raises if the fiber errored.
+
+  ## Example
+
+      comp do
+        h <- FiberPool.fiber(some_work())
+        value <- FiberPool.await!(h)  # raises on error
+        # use value
+      end
+  """
+  @spec await!(Handle.t()) :: Comp.Types.computation()
+  def await!(handle) do
+    Comp.effect(@sig, %Await{handle: handle, raising: true})
   end
 
   @doc """
   Await all fibers' results.
 
   Suspends until all fibers complete. Returns results in the same order
-  as the input handles.
+  as the input handles, each as `{:ok, value}` or `{:error, reason}`.
   """
   @spec await_all([Handle.t()]) :: Comp.Types.computation()
   def await_all(handles) do
-    Comp.effect(@sig, %AwaitAll{handles: handles})
+    Comp.effect(@sig, %AwaitAll{handles: handles, raising: false})
+  end
+
+  @doc """
+  Await all fibers' results, raising on any error.
+
+  Suspends until all fibers complete. Returns result values in the same order
+  as the input handles. Raises if any fiber errored.
+  """
+  @spec await_all!([Handle.t()]) :: Comp.Types.computation()
+  def await_all!(handles) do
+    Comp.effect(@sig, %AwaitAll{handles: handles, raising: true})
   end
 
   @doc """
   Await any fiber's result.
 
   Suspends until at least one fiber completes. Returns `{handle, result}`
-  for the first fiber to complete.
+  where result is `{:ok, value}` or `{:error, reason}`.
   """
   @spec await_any([Handle.t()]) :: Comp.Types.computation()
   def await_any(handles) do
-    Comp.effect(@sig, %AwaitAny{handles: handles})
+    Comp.effect(@sig, %AwaitAny{handles: handles, raising: false})
+  end
+
+  @doc """
+  Await any fiber's result, raising on error.
+
+  Suspends until at least one fiber completes. Returns `{handle, value}`
+  for the first fiber to complete. Raises if the fiber errored.
+  """
+  @spec await_any!([Handle.t()]) :: Comp.Types.computation()
+  def await_any!(handles) do
+    Comp.effect(@sig, %AwaitAny{handles: handles, raising: true})
   end
 
   @doc """
@@ -207,7 +260,7 @@ defmodule Skuld.Effects.FiberPool do
         h1 <- FiberPool.fiber(work1())
         h2 <- FiberPool.fiber(work2())
         # Both h1 and h2 will complete before scope exits
-        FiberPool.await(h1)
+        FiberPool.await!(h1)
       end)
   """
   @spec scope(Comp.Types.computation(), keyword()) :: Comp.Types.computation()
@@ -313,7 +366,11 @@ defmodule Skuld.Effects.FiberPool do
   defp handle(%FiberOp{comp: comp, opts: _opts}, env, k) do
     # Create a fiber for the computation
     pool_id = Env.get_state(env, {__MODULE__, :pool_id}, make_ref())
-    fiber = Fiber.new(comp, env)
+
+    # Clear pending_fibers from the fiber's env to avoid inheriting parent's pending list
+    # This prevents re-collecting the same fibers when the child runs
+    fiber_env = Env.put_state(env, @state_key, [])
+    fiber = Fiber.new(comp, fiber_env)
     handle = Handle.new(fiber.id, pool_id)
 
     # Add to pending fibers list (scheduler will pick them up)
@@ -324,19 +381,29 @@ defmodule Skuld.Effects.FiberPool do
     k.(handle, env)
   end
 
-  defp handle(%Await{handle: handle}, env, k) do
+  defp handle(%Await{handle: handle, raising: raising}, env, k) do
     # Yield a FiberPool suspension for the scheduler to handle
-    resume = fn result -> k.(unwrap_result(result), env) end
+    resume = fn result ->
+      value = if raising, do: unwrap_result(result), else: result
+      k.(value, env)
+    end
 
     suspend = FPSuspend.await_one(handle, resume)
     {suspend, env}
   end
 
-  defp handle(%AwaitAll{handles: handles}, env, k) do
+  defp handle(%AwaitAll{handles: handles, raising: raising}, env, k) do
     resume = fn results ->
       # Results is a list of {:ok, val} | {:error, reason}
-      # Unwrap all, raising on first error
-      values = Enum.map(results, &unwrap_result/1)
+      values =
+        if raising do
+          # Unwrap all, raising on first error
+          Enum.map(results, &unwrap_result/1)
+        else
+          # Return result tuples as-is
+          results
+        end
+
       k.(values, env)
     end
 
@@ -344,11 +411,19 @@ defmodule Skuld.Effects.FiberPool do
     {suspend, env}
   end
 
-  defp handle(%AwaitAny{handles: handles}, env, k) do
+  defp handle(%AwaitAny{handles: handles, raising: raising}, env, k) do
     resume = fn {fiber_id, result} ->
       # Find the handle that completed
       handle = Enum.find(handles, &(&1.id == fiber_id))
-      k.({handle, unwrap_result(result)}, env)
+
+      value =
+        if raising do
+          {handle, unwrap_result(result)}
+        else
+          {handle, result}
+        end
+
+      k.(value, env)
     end
 
     suspend = FPSuspend.await_any(handles, resume)

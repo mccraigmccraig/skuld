@@ -33,7 +33,7 @@ defmodule Skuld.Effects.Channel do
           consume_loop(ch)
         end)
 
-        FiberPool.await_all([producer, consumer])
+        FiberPool.await_all!([producer, consumer])
       end
       |> Channel.with_handler()
       |> FiberPool.with_handler()
@@ -264,6 +264,114 @@ defmodule Skuld.Effects.Channel do
 
               {suspend, env}
           end
+      end
+    end
+  end
+
+  #############################################################################
+  ## Async Put/Take Operations
+  #############################################################################
+
+  @doc """
+  Put a computation into the channel asynchronously.
+
+  Spawns a fiber to execute the computation and stores the fiber handle
+  in the channel buffer. This enables ordered concurrent processing -
+  computations execute concurrently but results are taken in put-order.
+
+  Returns:
+  - `:ok` - fiber was spawned and handle stored
+  - `{:error, :closed}` - channel is closed
+  - `{:error, reason}` - channel is in error state
+
+  If the buffer is full, suspends until space is available (backpressure).
+  The buffer size naturally limits the number of concurrent computations.
+
+  ## Example
+
+      comp do
+        ch <- Channel.new(10)  # max 10 concurrent transforms
+
+        # Producer puts computations - they start executing immediately
+        _ <- Channel.put_async(ch, expensive_transform(item1))
+        _ <- Channel.put_async(ch, expensive_transform(item2))
+
+        # Consumer takes resolved values in put-order
+        {:ok, result1} <- Channel.take_async(ch)
+        {:ok, result2} <- Channel.take_async(ch)
+      end
+  """
+  @spec put_async(Handle.t(), Comp.Types.computation()) :: Comp.Types.computation()
+  def put_async(%Handle{} = handle, computation) do
+    use Skuld.Syntax
+    alias Skuld.Effects.FiberPool
+
+    comp do
+      # Spawn fiber for the computation
+      fiber_handle <- FiberPool.fiber(computation)
+
+      # Store the fiber handle in the buffer (normal put semantics)
+      put(handle, {:__channel_async_fiber__, fiber_handle})
+    end
+  end
+
+  @doc """
+  Take from a channel with async fibers, awaiting the result.
+
+  Takes a fiber handle from the buffer and awaits its completion.
+  Returns the fiber's result value, preserving put-order even when
+  computations complete out of order.
+
+  Returns:
+  - `{:ok, value}` - fiber completed successfully with value
+  - `:closed` - channel is closed and buffer is empty
+  - `{:error, reason}` - channel errored OR fiber failed
+
+  ## Example
+
+      comp do
+        input <- Stream.from_enum(items)
+        output <- Channel.new(10)
+
+        # Producer: put_async spawns transform fibers
+        _ <- FiberPool.fiber(comp do
+          Stream.each(input, fn item ->
+            Channel.put_async(output, transform(item))
+          end)
+          Channel.close(output)
+        end)
+
+        # Consumer: take_async awaits in order
+        collect_async_results(output, [])
+      end
+
+  ## Mixed Usage
+
+  If a non-async item is taken (one not put via `put_async`), it is
+  returned as `{:ok, item}` without awaiting.
+  """
+  @spec take_async(Handle.t()) :: Comp.Types.computation()
+  def take_async(%Handle{} = handle) do
+    use Skuld.Syntax
+    alias Skuld.Effects.FiberPool
+
+    comp do
+      result <- take(handle)
+
+      case result do
+        {:ok, {:__channel_async_fiber__, fiber_handle}} ->
+          # Await the fiber - returns {:ok, value} | {:error, reason}
+          FiberPool.await(fiber_handle)
+
+        {:ok, other} ->
+          # Not an async fiber - return as-is (allows mixed usage)
+          Comp.pure({:ok, other})
+
+        :closed ->
+          Comp.pure(:closed)
+
+        {:error, reason} ->
+          Comp.pure({:error, reason})
       end
     end
   end

@@ -113,7 +113,7 @@ defmodule Skuld.Effects.ChannelTest do
               end
             )
 
-          FiberPool.await_all([producer, consumer])
+          FiberPool.await_all!([producer, consumer])
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -160,7 +160,7 @@ defmodule Skuld.Effects.ChannelTest do
               end
             )
 
-          FiberPool.await_all([consumer, producer])
+          FiberPool.await_all!([consumer, producer])
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -206,7 +206,7 @@ defmodule Skuld.Effects.ChannelTest do
               end
             )
 
-          results <- FiberPool.await_all([consumer, producer])
+          results <- FiberPool.await_all!([consumer, producer])
           # Check buffer is empty after handoff
           peek_result <- Channel.peek(ch)
           {results, peek_result}
@@ -261,7 +261,7 @@ defmodule Skuld.Effects.ChannelTest do
               end
             )
 
-          FiberPool.await_all([producer, consumer])
+          FiberPool.await_all!([producer, consumer])
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -341,7 +341,7 @@ defmodule Skuld.Effects.ChannelTest do
               end
             )
 
-          FiberPool.await_all([consumer, closer])
+          FiberPool.await_all!([consumer, closer])
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -461,7 +461,7 @@ defmodule Skuld.Effects.ChannelTest do
               end
             )
 
-          FiberPool.await_all([c1, c2, errorer])
+          FiberPool.await_all!([c1, c2, errorer])
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -509,7 +509,7 @@ defmodule Skuld.Effects.ChannelTest do
               end
             )
 
-          FiberPool.await_all([putter, errorer])
+          FiberPool.await_all!([putter, errorer])
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -623,7 +623,7 @@ defmodule Skuld.Effects.ChannelTest do
               end
             )
 
-          FiberPool.await_all([producer, consumer])
+          FiberPool.await_all!([producer, consumer])
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -656,6 +656,194 @@ defmodule Skuld.Effects.ChannelTest do
       case result do
         {:ok, item} ->
           take_items(ch, acc ++ [item])
+
+        :closed ->
+          Comp.pure(acc)
+
+        {:error, reason} ->
+          Comp.pure({:error, reason, acc})
+      end
+    end
+  end
+
+  describe "async put/take" do
+    test "put_async and take_async basic usage" do
+      result =
+        comp do
+          ch <- Channel.new(10)
+
+          # Put async computations
+          _ <- Channel.put_async(ch, Comp.pure(1))
+          _ <- Channel.put_async(ch, Comp.pure(2))
+          _ <- Channel.put_async(ch, Comp.pure(3))
+          _ <- Channel.close(ch)
+
+          # Take async results in order
+          r1 <- Channel.take_async(ch)
+          r2 <- Channel.take_async(ch)
+          r3 <- Channel.take_async(ch)
+          r4 <- Channel.take_async(ch)
+
+          {r1, r2, r3, r4}
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert {{:ok, 1}, {:ok, 2}, {:ok, 3}, :closed} = result
+    end
+
+    test "put_async preserves order even with varying computation times" do
+      # Simulate varying computation times using computations that
+      # complete in different "logical" order
+      result =
+        comp do
+          ch <- Channel.new(10)
+
+          # Put computations - order should be preserved regardless of completion time
+          _ <- Channel.put_async(ch, Comp.pure(:first))
+          _ <- Channel.put_async(ch, Comp.pure(:second))
+          _ <- Channel.put_async(ch, Comp.pure(:third))
+          _ <- Channel.close(ch)
+
+          # Take should return in put order
+          take_async_items(ch, [])
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == [:first, :second, :third]
+    end
+
+    test "put_async with producer/consumer pattern" do
+      result =
+        comp do
+          ch <- Channel.new(5)
+
+          producer <-
+            FiberPool.fiber(
+              comp do
+                # Put async transforms
+                _ <- Channel.put_async(ch, Comp.pure(10))
+                _ <- Channel.put_async(ch, Comp.pure(20))
+                _ <- Channel.put_async(ch, Comp.pure(30))
+                _ <- Channel.close(ch)
+                :producer_done
+              end
+            )
+
+          consumer <-
+            FiberPool.fiber(
+              comp do
+                take_async_items(ch, [])
+              end
+            )
+
+          FiberPool.await_all!([producer, consumer])
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert [:producer_done, [10, 20, 30]] = result
+    end
+
+    test "take_async handles fiber errors" do
+      result =
+        comp do
+          ch <- Channel.new(10)
+
+          # Put a computation that will fail
+          failing_comp = fn _env, _k ->
+            raise "computation failed!"
+          end
+
+          _ <- Channel.put_async(ch, failing_comp)
+          _ <- Channel.close(ch)
+
+          # take_async should return error, not raise
+          Channel.take_async(ch)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert {:error, _reason} = result
+    end
+
+    test "take_async works with mixed async and regular items" do
+      result =
+        comp do
+          ch <- Channel.new(10)
+
+          # Mix regular puts and async puts
+          _ <- Channel.put(ch, :regular1)
+          _ <- Channel.put_async(ch, Comp.pure(:async1))
+          _ <- Channel.put(ch, :regular2)
+          _ <- Channel.put_async(ch, Comp.pure(:async2))
+          _ <- Channel.close(ch)
+
+          # take_async handles both
+          r1 <- Channel.take_async(ch)
+          r2 <- Channel.take_async(ch)
+          r3 <- Channel.take_async(ch)
+          r4 <- Channel.take_async(ch)
+
+          {r1, r2, r3, r4}
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      # Regular items returned as-is, async items awaited
+      assert {{:ok, :regular1}, {:ok, :async1}, {:ok, :regular2}, {:ok, :async2}} = result
+    end
+
+    test "put_async respects backpressure" do
+      # With buffer size 2, only 2 async computations can be in-flight
+      result =
+        comp do
+          ch <- Channel.new(2)
+
+          producer <-
+            FiberPool.fiber(
+              comp do
+                # These should block when buffer is full
+                _ <- Channel.put_async(ch, Comp.pure(1))
+                _ <- Channel.put_async(ch, Comp.pure(2))
+                _ <- Channel.put_async(ch, Comp.pure(3))
+                _ <- Channel.put_async(ch, Comp.pure(4))
+                _ <- Channel.close(ch)
+                :done
+              end
+            )
+
+          consumer <-
+            FiberPool.fiber(
+              comp do
+                take_async_items(ch, [])
+              end
+            )
+
+          FiberPool.await_all!([producer, consumer])
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert [:done, [1, 2, 3, 4]] = result
+    end
+  end
+
+  # Helper for async take tests
+  defp take_async_items(ch, acc) do
+    comp do
+      result <- Channel.take_async(ch)
+
+      case result do
+        {:ok, item} ->
+          take_async_items(ch, acc ++ [item])
 
         :closed ->
           Comp.pure(acc)

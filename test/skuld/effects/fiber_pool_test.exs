@@ -11,7 +11,7 @@ defmodule Skuld.Effects.FiberPoolTest do
       result =
         comp do
           h <- FiberPool.fiber(Comp.pure(42))
-          FiberPool.await(h)
+          FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -23,7 +23,7 @@ defmodule Skuld.Effects.FiberPoolTest do
       result =
         comp do
           h <- FiberPool.fiber(Comp.pure(21) |> Comp.map(&(&1 * 2)))
-          FiberPool.await(h)
+          FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -38,9 +38,9 @@ defmodule Skuld.Effects.FiberPoolTest do
           h2 <- FiberPool.fiber(Comp.pure(20))
           h3 <- FiberPool.fiber(Comp.pure(12))
 
-          r1 <- FiberPool.await(h1)
-          r2 <- FiberPool.await(h2)
-          r3 <- FiberPool.await(h3)
+          r1 <- FiberPool.await!(h1)
+          r2 <- FiberPool.await!(h2)
+          r3 <- FiberPool.await!(h3)
 
           r1 + r2 + r3
         end
@@ -62,7 +62,7 @@ defmodule Skuld.Effects.FiberPoolTest do
       result =
         comp do
           h <- FiberPool.fiber(fiber_comp)
-          FiberPool.await(h)
+          FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -79,7 +79,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           h2 <- FiberPool.fiber(Comp.pure(20))
           h3 <- FiberPool.fiber(Comp.pure(12))
 
-          FiberPool.await_all([h1, h2, h3])
+          FiberPool.await_all!([h1, h2, h3])
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -90,7 +90,7 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "await_all with empty list returns empty list" do
       result =
         comp do
-          FiberPool.await_all([])
+          FiberPool.await_all!([])
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -105,7 +105,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           h2 <- FiberPool.fiber(Comp.pure(:second))
           h3 <- FiberPool.fiber(Comp.pure(:third))
 
-          FiberPool.await_all([h3, h1, h2])
+          FiberPool.await_all!([h3, h1, h2])
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -121,7 +121,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           h1 <- FiberPool.fiber(Comp.pure(:one))
           h2 <- FiberPool.fiber(Comp.pure(:two))
 
-          FiberPool.await_any([h1, h2])
+          FiberPool.await_any!([h1, h2])
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -155,7 +155,7 @@ defmodule Skuld.Effects.FiberPoolTest do
       assert_raise RuntimeError, ~r/Fiber failed/, fn ->
         comp do
           h <- FiberPool.fiber(fiber_comp)
-          FiberPool.await(h)
+          FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -183,7 +183,7 @@ defmodule Skuld.Effects.FiberPoolTest do
       {result, env} =
         comp do
           h <- FiberPool.fiber(Comp.pure(42))
-          FiberPool.await(h)
+          FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
         |> FiberPool.run()
@@ -235,7 +235,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.scope(
             comp do
               h <- FiberPool.fiber(Comp.pure(100))
-              r <- FiberPool.await(h)
+              r <- FiberPool.await!(h)
               r + 5
             end
           )
@@ -257,11 +257,11 @@ defmodule Skuld.Effects.FiberPoolTest do
                 FiberPool.scope(
                   comp do
                     h2 <- FiberPool.fiber(Comp.pure(20))
-                    FiberPool.await(h2)
+                    FiberPool.await!(h2)
                   end
                 )
 
-              outer_result <- FiberPool.await(h1)
+              outer_result <- FiberPool.await!(h1)
               {outer_result, inner_result}
             end
           )
@@ -319,7 +319,7 @@ defmodule Skuld.Effects.FiberPoolTest do
       result =
         comp do
           h <- FiberPool.task(Comp.pure(42))
-          FiberPool.await(h)
+          FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -338,7 +338,7 @@ defmodule Skuld.Effects.FiberPoolTest do
       result =
         comp do
           h <- FiberPool.task(task_comp)
-          FiberPool.await(h)
+          FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -354,7 +354,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           h2 <- FiberPool.task(Comp.pure(20))
           h3 <- FiberPool.task(Comp.pure(12))
 
-          FiberPool.await_all([h1, h2, h3])
+          FiberPool.await_all!([h1, h2, h3])
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -371,7 +371,7 @@ defmodule Skuld.Effects.FiberPoolTest do
       assert_raise RuntimeError, ~r/Fiber failed/, fn ->
         comp do
           h <- FiberPool.task(crash_comp)
-          FiberPool.await(h)
+          FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -386,8 +386,8 @@ defmodule Skuld.Effects.FiberPoolTest do
           task_h <- FiberPool.task(Comp.pure(:task_result))
 
           # Await both
-          fiber_r <- FiberPool.await(fiber_h)
-          task_r <- FiberPool.await(task_h)
+          fiber_r <- FiberPool.await!(fiber_h)
+          task_r <- FiberPool.await!(task_h)
 
           {fiber_r, task_r}
         end
@@ -405,7 +405,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           h1 <- FiberPool.task(Comp.pure(100))
           _ <- FiberPool.task(Comp.pure(:ignored))
           # Only await h1
-          FiberPool.await(h1)
+          FiberPool.await!(h1)
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -419,7 +419,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           h1 <- FiberPool.task(Comp.pure(:first))
           h2 <- FiberPool.task(Comp.pure(:second))
 
-          FiberPool.await_any([h1, h2])
+          FiberPool.await_any!([h1, h2])
         end
         |> FiberPool.with_handler()
         |> FiberPool.run!()

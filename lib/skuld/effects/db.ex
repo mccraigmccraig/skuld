@@ -24,7 +24,7 @@ defmodule Skuld.Effects.DB do
         h3 <- FiberPool.fiber(DB.fetch(User, 3))
 
         # Await all - the DB.fetch calls will be batched into one query
-        FiberPool.await_all([h1, h2, h3])
+        FiberPool.await_all!([h1, h2, h3])
       end
       |> DB.with_executors()
       |> Reader.with_value(:repo, MyApp.Repo)
