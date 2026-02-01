@@ -10,7 +10,9 @@ defmodule Skuld.Fiber.FiberPool.Batching do
 
   alias Skuld.Comp
   alias Skuld.Comp.Throw
-  alias Skuld.Fiber.FiberPool.{IBatchable, BatchSuspend, BatchExecutor}
+  alias Skuld.Fiber.FiberPool.BatchExecutor
+  alias Skuld.Fiber.FiberPool.BatchSuspend
+  alias Skuld.Fiber.FiberPool.IBatchable
 
   @type fiber_id :: reference()
   @type batch_key :: term()

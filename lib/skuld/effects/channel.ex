@@ -57,7 +57,8 @@ defmodule Skuld.Effects.Channel do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
-  alias Skuld.Effects.Channel.{State, Suspend}
+  alias Skuld.Effects.Channel.State
+  alias Skuld.Effects.Channel.Suspend
 
   # Process dictionary keys for shared state across fibers
   @pdict_state_key :__skuld_channel_states__
@@ -566,7 +567,7 @@ defmodule Skuld.Effects.Channel do
 
   @doc false
   # Get all pending channel wakes and clear them
-  def pop_channel_wakes() do
+  def pop_channel_wakes do
     wakes = Process.get(@pdict_wakes_key, [])
     Process.put(@pdict_wakes_key, [])
     wakes
@@ -594,20 +595,20 @@ defmodule Skuld.Effects.Channel do
 
   @doc false
   # Check if channel storage is initialized
-  def handler_installed?() do
+  def handler_installed? do
     Process.get(@pdict_state_key) != nil
   end
 
   @doc false
   # Initialize channel storage (called by FiberPool)
-  def init_storage() do
+  def init_storage do
     Process.put(@pdict_state_key, %{})
     Process.put(@pdict_wakes_key, [])
   end
 
   @doc false
   # Cleanup channel storage (called by FiberPool)
-  def cleanup_storage() do
+  def cleanup_storage do
     Process.delete(@pdict_state_key)
     Process.delete(@pdict_wakes_key)
   end

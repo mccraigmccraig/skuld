@@ -41,7 +41,8 @@ defmodule Skuld.Effects.DB do
   """
 
   alias Skuld.Comp
-  alias Skuld.Fiber.FiberPool.{BatchSuspend, BatchExecutor}
+  alias Skuld.Fiber.FiberPool.BatchExecutor
+  alias Skuld.Fiber.FiberPool.BatchSuspend
 
   #############################################################################
   ## Operation Structs

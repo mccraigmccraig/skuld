@@ -124,9 +124,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
         state = process_channel_wakes(state)
 
         # Check if we now have work to do
-        if not State.queue_empty?(state) do
-          run_loop(state, env)
-        else
+        if State.queue_empty?(state) do
           # Check if there are still running tasks
           if State.has_tasks?(state) do
             {:waiting_for_tasks, state}
@@ -135,6 +133,8 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
             results = collect_results(state)
             {:done, results, state}
           end
+        else
+          run_loop(state, env)
         end
 
       {:suspended, fiber, state} ->

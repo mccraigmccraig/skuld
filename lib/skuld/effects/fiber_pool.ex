@@ -724,6 +724,7 @@ defmodule Skuld.Effects.FiberPool do
     end
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_until_await_satisfied(state, env, awaiter_id, resume, mode) do
     # Process any pending channel wakes first
     state = process_channel_wakes(state)
