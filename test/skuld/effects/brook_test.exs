@@ -453,4 +453,53 @@ defmodule Skuld.Effects.BrookTest do
       assert result == Enum.to_list(1..100)
     end
   end
+
+  describe "Brook with I/O batching" do
+    # Replicates the README.md L1742 example
+    defmodule User do
+      defstruct [:id, :name]
+    end
+
+    alias Skuld.Comp
+    alias Skuld.Effects.DB
+    alias Skuld.Fiber.FiberPool.BatchExecutor
+
+    test "map with DB.fetch batches operations across concurrent fibers" do
+      test_pid = self()
+
+      mock_executor = fn ops ->
+        send(test_pid, {:executor_called, length(ops)})
+
+        Comp.pure(
+          Map.new(ops, fn {ref, %DB.Fetch{id: id}} ->
+            {ref, %User{id: id, name: "User #{id}"}}
+          end)
+        )
+      end
+
+      result =
+        comp do
+          # chunk_size: 1 so each item becomes a concurrent unit (fiber) for I/O batching
+          source <- B.from_enum([1, 2, 3, 4, 5], chunk_size: 1)
+          users <- B.map(source, fn id -> DB.fetch(User, id) end, concurrency: 3)
+          B.to_list(users)
+        end
+        |> BatchExecutor.with_executor({:db_fetch, User}, mock_executor)
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      # Should get all users in order
+      assert [
+               %User{id: 1, name: "User 1"},
+               %User{id: 2, name: "User 2"},
+               %User{id: 3, name: "User 3"},
+               %User{id: 4, name: "User 4"},
+               %User{id: 5, name: "User 5"}
+             ] = result
+
+      # Executor should have been called (batching happened)
+      assert_received {:executor_called, _count}
+    end
+  end
 end
