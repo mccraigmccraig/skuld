@@ -853,4 +853,166 @@ defmodule Skuld.Effects.ChannelTest do
       end
     end
   end
+
+  describe "rendezvous channel (capacity 0)" do
+    test "put blocks until take - put first" do
+      # When put happens before take, put should suspend until take arrives
+      result =
+        comp do
+          ch <- Channel.new(0)
+
+          # Spawn a fiber that puts, it will block
+          putter <- FiberPool.fiber(comp do
+            _ <- Channel.put(ch, :item)
+            :put_done
+          end)
+
+          # Spawn a fiber that takes after a "delay" (just yields control)
+          taker <- FiberPool.fiber(comp do
+            Channel.take(ch)
+          end)
+
+          # Await both
+          put_result <- FiberPool.await(putter)
+          take_result <- FiberPool.await(taker)
+
+          {put_result, take_result}
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert {{:ok, :put_done}, {:ok, {:ok, :item}}} = result
+    end
+
+    test "take blocks until put - take first" do
+      # When take happens before put, take should suspend until put arrives
+      result =
+        comp do
+          ch <- Channel.new(0)
+
+          # Spawn a fiber that takes, it will block
+          taker <- FiberPool.fiber(comp do
+            Channel.take(ch)
+          end)
+
+          # Spawn a fiber that puts
+          putter <- FiberPool.fiber(comp do
+            _ <- Channel.put(ch, :item)
+            :put_done
+          end)
+
+          # Await both
+          take_result <- FiberPool.await(taker)
+          put_result <- FiberPool.await(putter)
+
+          {take_result, put_result}
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert {{:ok, {:ok, :item}}, {:ok, :put_done}} = result
+    end
+
+    test "multiple items through rendezvous channel" do
+      result =
+        comp do
+          ch <- Channel.new(0)
+
+          # Producer puts 3 items
+          producer <- FiberPool.fiber(comp do
+            _ <- Channel.put(ch, 1)
+            _ <- Channel.put(ch, 2)
+            _ <- Channel.put(ch, 3)
+            _ <- Channel.close(ch)
+            :producer_done
+          end)
+
+          # Consumer takes until closed
+          consumer <- FiberPool.fiber(take_until_closed(ch, []))
+
+          prod_result <- FiberPool.await(producer)
+          cons_result <- FiberPool.await(consumer)
+
+          {prod_result, cons_result}
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert {{:ok, :producer_done}, {:ok, [1, 2, 3]}} = result
+    end
+
+    test "rendezvous channel close wakes waiting taker" do
+      result =
+        comp do
+          ch <- Channel.new(0)
+
+          # Taker will block waiting for item
+          taker <- FiberPool.fiber(Channel.take(ch))
+
+          # Close the channel
+          closer <- FiberPool.fiber(Channel.close(ch))
+
+          close_result <- FiberPool.await(closer)
+          take_result <- FiberPool.await(taker)
+
+          {close_result, take_result}
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert {{:ok, :ok}, {:ok, :closed}} = result
+    end
+
+    test "rendezvous channel error wakes waiting putter" do
+      result =
+        comp do
+          ch <- Channel.new(0)
+
+          # Putter will block
+          putter <- FiberPool.fiber(Channel.put(ch, :item))
+
+          # Error the channel
+          errorer <- FiberPool.fiber(Channel.error(ch, :test_error))
+
+          error_result <- FiberPool.await(errorer)
+          put_result <- FiberPool.await(putter)
+
+          {error_result, put_result}
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert {{:ok, :ok}, {:ok, {:error, :test_error}}} = result
+    end
+
+    test "peek on rendezvous channel returns :empty" do
+      result =
+        comp do
+          ch <- Channel.new(0)
+          Channel.peek(ch)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert :empty = result
+    end
+  end
+
+  defp take_until_closed(ch, acc) do
+    comp do
+      result <- Channel.take(ch)
+
+      case result do
+        {:ok, item} -> take_until_closed(ch, acc ++ [item])
+        :closed -> Comp.pure(acc)
+        {:error, reason} -> Comp.pure({:error, reason})
+      end
+    end
+  end
 end

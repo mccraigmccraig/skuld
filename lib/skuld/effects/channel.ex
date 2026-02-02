@@ -106,8 +106,8 @@ defmodule Skuld.Effects.Channel do
         # ch is now a Channel.Handle
       end
   """
-  @spec new(pos_integer()) :: Comp.Types.computation()
-  def new(capacity) when is_integer(capacity) and capacity > 0 do
+  @spec new(non_neg_integer()) :: Comp.Types.computation()
+  def new(capacity) when is_integer(capacity) and capacity >= 0 do
     fn env, k ->
       state = State.new(capacity)
       env = register_channel(env, state)

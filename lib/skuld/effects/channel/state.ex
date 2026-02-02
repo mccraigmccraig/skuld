@@ -50,7 +50,7 @@ defmodule Skuld.Effects.Channel.State do
 
   @type t :: %__MODULE__{
           id: channel_id(),
-          capacity: pos_integer(),
+          capacity: non_neg_integer(),
           buffer: :queue.queue(term()),
           status: status(),
           waiting_puts: [waiting_put()],
@@ -68,9 +68,12 @@ defmodule Skuld.Effects.Channel.State do
 
   @doc """
   Create a new channel state with the given capacity.
+
+  A capacity of 0 creates a rendezvous/synchronous channel where put always
+  blocks until there is a matching take (direct handoff, no buffering).
   """
-  @spec new(pos_integer()) :: t()
-  def new(capacity) when is_integer(capacity) and capacity > 0 do
+  @spec new(non_neg_integer()) :: t()
+  def new(capacity) when is_integer(capacity) and capacity >= 0 do
     %__MODULE__{
       id: make_ref(),
       capacity: capacity,
