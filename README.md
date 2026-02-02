@@ -1755,14 +1755,16 @@ user_ids = [1, 2, 3, 4, 5]
 comp do
   # chunk_size: 1 so each item becomes a concurrent unit for I/O batching
   source <- Stream.from_enum(user_ids, chunk_size: 1)
-  users <- Stream.map(source, fn id -> DB.fetch(User, id) end, concurrency: 5)
+  users <- Stream.map(source, fn id -> DB.fetch(User, id) end, concurrency: 3)
   Stream.to_list(users)
 end
 |> BatchExecutor.with_executor({:db_fetch, User}, mock_executor)
 |> Channel.with_handler()
 |> FiberPool.with_handler()
 |> FiberPool.run!()
-# Prints: Executor called with 5 operations
+# Prints:
+#    Executor called with 3 operations
+#    Executor called with 2 operations
 #=> [%User{id: 1, ...}, %User{id: 2, ...}, %User{id: 3, ...}, ...]  # order preserved
 ```
 
