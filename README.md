@@ -1839,42 +1839,78 @@ end
 
 **I/O Batching in Brook:**
 
+This example shows automatic batching of *nested* I/O - fetching users and their orders.
+Each concurrent fiber fetches a user, then fetches that user's orders. Both operations
+get batched across fibers, solving the N+1 query problem automatically:
+
 ```elixir
 use Skuld.Syntax
 alias Skuld.Comp
 alias Skuld.Effects.{Brook, Channel, FiberPool, DB}
 alias Skuld.Fiber.FiberPool.BatchExecutor
 
-defmodule User do
-  defstruct [:id, :name]
+defmodule Order do
+  defstruct [:id, :user_id, :total]
+end
 
-  # DB.fetch() calls will be batched across all suspended fibers
-  # by the BatchExecutor
-  defcomp fetch_users(user_ids) do
-    # chunk_size: 1 so each item becomes a concurrent unit (fiber) for I/O batching
+defmodule User do
+  defstruct [:id, :name, :orders]
+
+  # Fetch a user and all their orders - composes DB.fetch with DB.fetch_all
+  # Each DB operation can be batched with operations from other concurrent fibers
+  defcomp with_orders(user_id) do
+    user <- DB.fetch(__MODULE__, user_id)
+    orders <- DB.fetch_all(Order, :user_id, user_id)
+    %{user | orders: orders}
+  end
+
+  # Fetch multiple users with their orders using Brook
+  defcomp fetch_users_with_orders(user_ids) do
+    # chunk_size: 1 so each user becomes a concurrent fiber for I/O batching
     source <- Brook.from_enum(user_ids, chunk_size: 1)
-    users <- Brook.map(source, fn id -> DB.fetch(__MODULE__, id) end, concurrency: 3)
+    users <- Brook.map(source, &with_orders/1, concurrency: 3)
     Brook.to_list(users)
   end
 end
 
-mock_executor = fn ops ->
-  IO.puts("Executor called with #{length(ops)} operations")  # proves batching
+# Mock executors simulate batched database queries
+user_executor = fn ops ->
+  IO.puts("User fetch: #{length(ops)} users batched")
   Comp.pure(Map.new(ops, fn {ref, %DB.Fetch{id: id}} ->
-    {ref, %User{id: id, name: "User #{id}"}}
+    {ref, %User{id: id, name: "User #{id}", orders: nil}}
   end))
 end
 
-User.fetch_users([1, 2, 3, 4, 5])
-|> BatchExecutor.with_executor({:db_fetch, User}, mock_executor)
+order_executor = fn ops ->
+  IO.puts("Order fetch_all: #{length(ops)} queries batched")
+  Comp.pure(Map.new(ops, fn {ref, %DB.FetchAll{filter_value: user_id}} ->
+    # Each user has 2 orders
+    {ref, [
+      %Order{id: user_id * 10 + 1, user_id: user_id, total: 100},
+      %Order{id: user_id * 10 + 2, user_id: user_id, total: 200}
+    ]}
+  end))
+end
+
+User.fetch_users_with_orders([1, 2, 3, 4, 5])
+|> BatchExecutor.with_executor({:db_fetch, User}, user_executor)
+|> BatchExecutor.with_executor({:db_fetch_all, Order, :user_id}, order_executor)
 |> Channel.with_handler()
 |> FiberPool.with_handler()
 |> FiberPool.run!()
 # Prints:
-#    Executor called with 3 operations
-#    Executor called with 2 operations
-#=> [%User{id: 1, ...}, %User{id: 2, ...}, %User{id: 3, ...}, ...]  # order preserved
+#    User fetch: 3 users batched
+#    Order fetch_all: 3 queries batched
+#    User fetch: 2 users batched
+#    Order fetch_all: 2 queries batched
+#=> [%User{id: 1, orders: [%Order{...}, ...]}, %User{id: 2, ...}, ...]  # order preserved
 ```
+
+Without automatic batching, fetching 5 users with orders would require 1 + 5 = 6 queries
+(one for all users, one per user for orders) _or_ rearranging the code significantly.
+With batching, fibers running concurrently
+have their DB operations combined: just 2 user fetches (batches of 3 and 2) and 2 order
+fetches (same batches) - as defined by the `concurrency: 3` option.
 
 **Why `chunk_size: 1`?** Brook.map's `concurrency` controls how many *chunks* process
 concurrently. With the default `chunk_size: 100`, all 5 items would be in one chunk

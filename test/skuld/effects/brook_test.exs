@@ -455,51 +455,84 @@ defmodule Skuld.Effects.BrookTest do
   end
 
   describe "Brook with I/O batching" do
-    # Replicates the README.md L1742 example
+    # Replicates the README.md I/O Batching example with nested fetches
+    defmodule Order do
+      defstruct [:id, :user_id, :total]
+    end
+
     defmodule User do
-      defstruct [:id, :name]
+      use Skuld.Syntax
+      alias Skuld.Effects.Brook
+      alias Skuld.Effects.DB
+
+      defstruct [:id, :name, :orders]
+
+      # Fetch a user and all their orders - composes DB.fetch with DB.fetch_all
+      defcomp with_orders(user_id) do
+        user <- DB.fetch(__MODULE__, user_id)
+        orders <- DB.fetch_all(Order, :user_id, user_id)
+        %{user | orders: orders}
+      end
+
+      # Fetch multiple users with their orders using Brook
+      defcomp fetch_users_with_orders(user_ids) do
+        source <- Brook.from_enum(user_ids, chunk_size: 1)
+        users <- Brook.map(source, &with_orders/1, concurrency: 3)
+        Brook.to_list(users)
+      end
     end
 
     alias Skuld.Comp
     alias Skuld.Effects.DB
     alias Skuld.Fiber.FiberPool.BatchExecutor
 
-    test "map with DB.fetch batches operations across concurrent fibers" do
+    test "nested fetches batch across concurrent fibers" do
       test_pid = self()
 
-      mock_executor = fn ops ->
-        send(test_pid, {:executor_called, length(ops)})
+      user_executor = fn ops ->
+        send(test_pid, {:user_fetch, length(ops)})
 
         Comp.pure(
           Map.new(ops, fn {ref, %DB.Fetch{id: id}} ->
-            {ref, %User{id: id, name: "User #{id}"}}
+            {ref, %User{id: id, name: "User #{id}", orders: nil}}
+          end)
+        )
+      end
+
+      order_executor = fn ops ->
+        send(test_pid, {:order_fetch_all, length(ops)})
+
+        Comp.pure(
+          Map.new(ops, fn {ref, %DB.FetchAll{filter_value: user_id}} ->
+            {ref,
+             [
+               %Order{id: user_id * 10 + 1, user_id: user_id, total: 100},
+               %Order{id: user_id * 10 + 2, user_id: user_id, total: 200}
+             ]}
           end)
         )
       end
 
       result =
-        comp do
-          # chunk_size: 1 so each item becomes a concurrent unit (fiber) for I/O batching
-          source <- B.from_enum([1, 2, 3, 4, 5], chunk_size: 1)
-          users <- B.map(source, fn id -> DB.fetch(User, id) end, concurrency: 3)
-          B.to_list(users)
-        end
-        |> BatchExecutor.with_executor({:db_fetch, User}, mock_executor)
+        User.fetch_users_with_orders([1, 2, 3, 4, 5])
+        |> BatchExecutor.with_executor({:db_fetch, User}, user_executor)
+        |> BatchExecutor.with_executor({:db_fetch_all, Order, :user_id}, order_executor)
         |> Channel.with_handler()
         |> FiberPool.with_handler()
         |> FiberPool.run!()
 
-      # Should get all users in order
+      # Should get all users with their orders, in order
       assert [
-               %User{id: 1, name: "User 1"},
-               %User{id: 2, name: "User 2"},
-               %User{id: 3, name: "User 3"},
-               %User{id: 4, name: "User 4"},
-               %User{id: 5, name: "User 5"}
+               %User{id: 1, name: "User 1", orders: [%Order{user_id: 1}, %Order{user_id: 1}]},
+               %User{id: 2, name: "User 2", orders: [%Order{user_id: 2}, %Order{user_id: 2}]},
+               %User{id: 3, name: "User 3", orders: [%Order{user_id: 3}, %Order{user_id: 3}]},
+               %User{id: 4, name: "User 4", orders: [%Order{user_id: 4}, %Order{user_id: 4}]},
+               %User{id: 5, name: "User 5", orders: [%Order{user_id: 5}, %Order{user_id: 5}]}
              ] = result
 
-      # Executor should have been called (batching happened)
-      assert_received {:executor_called, _count}
+      # Both executors should have been called (batching happened)
+      assert_received {:user_fetch, _count}
+      assert_received {:order_fetch_all, _count}
     end
   end
 end
