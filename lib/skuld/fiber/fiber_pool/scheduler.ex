@@ -25,11 +25,12 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   alias Skuld.Fiber.FiberPool.State
   alias Skuld.Comp.Types
   alias Skuld.Comp.Env
-  alias Skuld.Effects.Channel
 
   @fiber_id_key :__current_fiber_id__
   # Key used by FiberPool to store pending fibers in env
   @pending_fibers_key {Skuld.Effects.FiberPool, :pending_fibers}
+  # Key used by Channel to store pending wakes in env.state
+  @channel_wakes_key :__skuld_channel_wakes__
 
   @type step_result ::
           {:continue, State.t()}
@@ -185,67 +186,86 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   end
 
   defp run_pending_fiber(state, fiber, env) do
-    # Update fiber's env if needed (inherit from pool env)
-    # Also set the current fiber ID in the env for Channel operations
-    fiber =
-      if fiber.env == nil do
-        fiber_env = Env.put_state(env, @fiber_id_key, fiber.id)
-        %{fiber | env: fiber_env}
-      else
-        fiber_env = Env.put_state(fiber.env, @fiber_id_key, fiber.id)
-        %{fiber | env: fiber_env}
-      end
+    # Update fiber's env:
+    # - Use fiber's env for per-fiber fields (evidence, leave_scope, transform_suspend)
+    # - Inject shared env_state from pool state
+    # - Set the current fiber ID for Channel operations
+    base_env = fiber.env || env
+    # Ensure env_state is always a map
+    env_state = state.env_state || %{}
+    fiber_env = %{base_env | state: env_state}
+    fiber_env = Env.put_state(fiber_env, @fiber_id_key, fiber.id)
+    fiber = %{fiber | env: fiber_env}
 
     case Fiber.run_until_suspend(fiber) do
       {:completed, result, final_env} ->
+        state = State.put_env_state(state, final_env.state)
         state = collect_pending_fibers(state, final_env)
         handle_completion(state, fiber.id, {:ok, result})
 
       {:suspended, suspended_fiber} ->
+        state = State.put_env_state(state, suspended_fiber.env.state)
         {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
         handle_suspension(state, suspended_fiber)
 
       {:batch_suspended, suspended_fiber, batch_suspend} ->
+        state = State.put_env_state(state, suspended_fiber.env.state)
         {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
         handle_batch_suspension(state, suspended_fiber, batch_suspend)
 
       {:channel_suspended, suspended_fiber, channel_suspend} ->
+        state = State.put_env_state(state, suspended_fiber.env.state)
         {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
         handle_channel_suspension(state, suspended_fiber, channel_suspend)
 
       {:fp_suspended, suspended_fiber, fp_suspend} ->
+        state = State.put_env_state(state, suspended_fiber.env.state)
         {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
         handle_fp_suspension(state, suspended_fiber, fp_suspend)
 
       {:error, reason, error_env} ->
+        state = if error_env, do: State.put_env_state(state, error_env.state), else: state
         state = collect_pending_fibers(state, error_env)
         handle_completion(state, fiber.id, {:error, reason})
     end
   end
 
   defp resume_fiber(state, fiber, result) do
+    # Inject shared env_state before resuming
+    # Also set the current fiber ID (env_state may have the previous fiber's ID)
+    env_state = state.env_state || %{}
+    fiber_env = %{fiber.env | state: env_state}
+    fiber_env = Env.put_state(fiber_env, @fiber_id_key, fiber.id)
+    fiber = %{fiber | env: fiber_env}
+
     case Fiber.resume(fiber, result) do
       {:completed, value, final_env} ->
+        state = State.put_env_state(state, final_env.state)
         state = collect_pending_fibers(state, final_env)
         handle_completion(state, fiber.id, {:ok, value})
 
       {:suspended, suspended_fiber} ->
+        state = State.put_env_state(state, suspended_fiber.env.state)
         {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
         handle_suspension(state, suspended_fiber)
 
       {:batch_suspended, suspended_fiber, batch_suspend} ->
+        state = State.put_env_state(state, suspended_fiber.env.state)
         {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
         handle_batch_suspension(state, suspended_fiber, batch_suspend)
 
       {:channel_suspended, suspended_fiber, channel_suspend} ->
+        state = State.put_env_state(state, suspended_fiber.env.state)
         {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
         handle_channel_suspension(state, suspended_fiber, channel_suspend)
 
       {:fp_suspended, suspended_fiber, fp_suspend} ->
+        state = State.put_env_state(state, suspended_fiber.env.state)
         {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
         handle_fp_suspension(state, suspended_fiber, fp_suspend)
 
       {:error, reason, error_env} ->
+        state = if error_env, do: State.put_env_state(state, error_env.state), else: state
         state = collect_pending_fibers(state, error_env)
         handle_completion(state, fiber.id, {:error, reason})
     end
@@ -267,8 +287,8 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     end
   end
 
-  # Collect pending fibers and clear them from the suspended fiber's env
-  # to avoid collecting them again on resume
+  # Collect pending fibers and clear them from both the suspended fiber's env
+  # AND state.env_state to avoid collecting them again on resume or next fiber run
   defp collect_and_clear_pending_fibers(state, suspended_fiber) do
     env = suspended_fiber.env
 
@@ -290,6 +310,11 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
         # Clear pending fibers from the suspended fiber's env
         cleared_env = Env.put_state(env, @pending_fibers_key, [])
         suspended_fiber = %{suspended_fiber | env: cleared_env}
+
+        # Also clear from state.env_state (which was updated before this call)
+        # to prevent re-collection when next fiber runs
+        env_state = Map.put(state.env_state || %{}, @pending_fibers_key, [])
+        state = State.put_env_state(state, env_state)
 
         {state, suspended_fiber}
       end
@@ -383,13 +408,21 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     |> Map.new()
   end
 
-  # Process pending channel wakes
+  # Process pending channel wakes from env_state
   defp process_channel_wakes(state) do
-    wakes = Channel.pop_channel_wakes()
+    env_state = state.env_state || %{}
+    wakes = Map.get(env_state, @channel_wakes_key, []) || []
 
-    Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
-      resume_channel_fiber(acc_state, fiber_id, result)
-    end)
+    if wakes == [] do
+      state
+    else
+      # Clear wakes from env_state
+      state = State.put_env_state(state, Map.put(env_state, @channel_wakes_key, []))
+
+      Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
+        resume_channel_fiber(acc_state, fiber_id, result)
+      end)
+    end
   end
 
   # Resume a fiber that was waiting on a channel operation

@@ -46,6 +46,7 @@ defmodule Skuld.Fiber.FiberPool.State do
           task_supervisor: pid() | nil,
           batch_suspended: %{fiber_id() => BatchSuspend.t()},
           channel_suspended: %{fiber_id() => ChannelSuspend.t()},
+          env_state: %{term() => term()},
           opts: keyword()
         }
 
@@ -60,6 +61,7 @@ defmodule Skuld.Fiber.FiberPool.State do
     :task_supervisor,
     :batch_suspended,
     :channel_suspended,
+    :env_state,
     :opts
   ]
 
@@ -86,6 +88,7 @@ defmodule Skuld.Fiber.FiberPool.State do
       task_supervisor: Keyword.get(opts, :task_supervisor),
       batch_suspended: %{},
       channel_suspended: %{},
+      env_state: Keyword.get(opts, :env_state, %{}),
       opts: opts
     }
   end
@@ -289,10 +292,11 @@ defmodule Skuld.Fiber.FiberPool.State do
 
   # Wake up fibers that were awaiting a completed fiber
   defp wake_awaiters(state, completed_fid, result) do
-    awaiters = Map.get(state.awaiting, completed_fid, [])
+    awaiting = state.awaiting || %{}
+    awaiters = Map.get(awaiting, completed_fid, []) || []
 
     # Remove from awaiting index
-    state = %{state | awaiting: Map.delete(state.awaiting, completed_fid)}
+    state = %{state | awaiting: Map.delete(awaiting, completed_fid)}
 
     # Process each awaiter
     Enum.reduce(awaiters, state, fn awaiter_fid, acc ->
@@ -558,5 +562,35 @@ defmodule Skuld.Fiber.FiberPool.State do
       batch_suspended: map_size(state.batch_suspended),
       channel_suspended: map_size(state.channel_suspended)
     }
+  end
+
+  #############################################################################
+  ## Shared Env State Management
+  #############################################################################
+
+  @doc """
+  Get the shared env.state map.
+
+  This state is threaded through all fibers in the pool, allowing
+  effects like Channel, Writer, and State to compound across fibers.
+  """
+  @spec get_env_state(t()) :: %{term() => term()}
+  def get_env_state(state) do
+    state.env_state
+  end
+
+  @doc """
+  Update the shared env.state map.
+
+  Called after each fiber completes or suspends to capture its state updates.
+  """
+  @spec put_env_state(t(), %{term() => term()}) :: t()
+  def put_env_state(state, env_state) when is_map(env_state) do
+    %{state | env_state: env_state}
+  end
+
+  def put_env_state(state, nil) do
+    # Guard against nil - keep existing env_state
+    state
   end
 end

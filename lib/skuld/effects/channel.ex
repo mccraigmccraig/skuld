@@ -60,9 +60,9 @@ defmodule Skuld.Effects.Channel do
   alias Skuld.Effects.Channel.State
   alias Skuld.Effects.Channel.Suspend
 
-  # Process dictionary keys for shared state across fibers
-  @pdict_state_key :__skuld_channel_states__
-  @pdict_wakes_key :__skuld_channel_wakes__
+  # Keys for state in env.state (shared across fibers via FiberPool threading)
+  @channel_states_key :__skuld_channel_states__
+  @channel_wakes_key :__skuld_channel_wakes__
   @fiber_id_key :__current_fiber_id__
 
   #############################################################################
@@ -599,14 +599,20 @@ defmodule Skuld.Effects.Channel do
   @spec with_handler(Comp.Types.computation()) :: Comp.Types.computation()
   def with_handler(comp) do
     fn env, k ->
-      # Initialize channel storage in process dictionary if not present
-      if Process.get(@pdict_state_key) == nil do
-        Process.put(@pdict_state_key, %{})
-      end
+      # Initialize channel storage in env.state if not present
+      env =
+        if Env.get_state(env, @channel_states_key) == nil do
+          Env.put_state(env, @channel_states_key, %{})
+        else
+          env
+        end
 
-      if Process.get(@pdict_wakes_key) == nil do
-        Process.put(@pdict_wakes_key, [])
-      end
+      env =
+        if Env.get_state(env, @channel_wakes_key) == nil do
+          Env.put_state(env, @channel_wakes_key, [])
+        else
+          env
+        end
 
       Comp.call(comp, env, k)
     end
@@ -617,13 +623,12 @@ defmodule Skuld.Effects.Channel do
   #############################################################################
 
   defp register_channel(env, state) do
-    channels = Process.get(@pdict_state_key, %{})
-    Process.put(@pdict_state_key, Map.put(channels, state.id, state))
-    env
+    channels = Env.get_state(env, @channel_states_key, %{})
+    Env.put_state(env, @channel_states_key, Map.put(channels, state.id, state))
   end
 
-  defp get_channel(_env, channel_id) do
-    channels = Process.get(@pdict_state_key, %{})
+  defp get_channel(env, channel_id) do
+    channels = Env.get_state(env, @channel_states_key, %{})
 
     case Map.get(channels, channel_id) do
       nil -> raise "Channel not found: #{inspect(channel_id)}"
@@ -632,9 +637,8 @@ defmodule Skuld.Effects.Channel do
   end
 
   defp update_channel(env, channel_id, state) do
-    channels = Process.get(@pdict_state_key, %{})
-    Process.put(@pdict_state_key, Map.put(channels, channel_id, state))
-    env
+    channels = Env.get_state(env, @channel_states_key, %{})
+    Env.put_state(env, @channel_states_key, Map.put(channels, channel_id, state))
   end
 
   #############################################################################
@@ -649,12 +653,11 @@ defmodule Skuld.Effects.Channel do
     end
   end
 
-  # Add a channel wake request (uses process dictionary for sharing)
-  # The FiberPool will process these to wake suspended fibers
+  # Add a channel wake request to env.state
+  # The FiberPool scheduler will process these to wake suspended fibers
   defp add_channel_wake(env, fiber_id, result) do
-    wakes = Process.get(@pdict_wakes_key, [])
-    Process.put(@pdict_wakes_key, [{fiber_id, result} | wakes])
-    env
+    wakes = Env.get_state(env, @channel_wakes_key, [])
+    Env.put_state(env, @channel_wakes_key, [{fiber_id, result} | wakes])
   end
 
   # Wake a putter if one is waiting (after a take frees space)
@@ -676,50 +679,8 @@ defmodule Skuld.Effects.Channel do
   #############################################################################
 
   @doc false
-  # Get all pending channel wakes and clear them
-  def pop_channel_wakes do
-    wakes = Process.get(@pdict_wakes_key, [])
-    Process.put(@pdict_wakes_key, [])
-    wakes
-  end
-
-  @doc false
   # Set the current fiber ID in the environment
   def set_fiber_id(env, fiber_id) do
     Env.put_state(env, @fiber_id_key, fiber_id)
-  end
-
-  @doc false
-  # Get channel state (for FiberPool to update waiting lists)
-  def get_channel_state(channel_id) do
-    channels = Process.get(@pdict_state_key, %{})
-    Map.get(channels, channel_id)
-  end
-
-  @doc false
-  # Update channel state (for FiberPool to add suspended fibers)
-  def update_channel_state(channel_id, state) do
-    channels = Process.get(@pdict_state_key, %{})
-    Process.put(@pdict_state_key, Map.put(channels, channel_id, state))
-  end
-
-  @doc false
-  # Check if channel storage is initialized
-  def handler_installed? do
-    Process.get(@pdict_state_key) != nil
-  end
-
-  @doc false
-  # Initialize channel storage (called by FiberPool)
-  def init_storage do
-    Process.put(@pdict_state_key, %{})
-    Process.put(@pdict_wakes_key, [])
-  end
-
-  @doc false
-  # Cleanup channel storage (called by FiberPool)
-  def cleanup_storage do
-    Process.delete(@pdict_state_key)
-    Process.delete(@pdict_wakes_key)
   end
 end

@@ -53,7 +53,6 @@ defmodule Skuld.Effects.FiberPool do
   alias Skuld.Fiber.FiberPool.Scheduler
   alias Skuld.Fiber.FiberPool.Batching
   alias Skuld.Fiber.FiberPool.Suspend, as: FPSuspend
-  alias Skuld.Effects.Channel
 
   @sig __MODULE__
 
@@ -344,9 +343,6 @@ defmodule Skuld.Effects.FiberPool do
 
     state = State.new(task_supervisor: task_sup)
 
-    # Initialize channel storage for this pool run
-    Channel.init_storage()
-
     try do
       {result, env} = Comp.call(comp, env, &Comp.identity_k/2)
 
@@ -358,13 +354,18 @@ defmodule Skuld.Effects.FiberPool do
         # No fibers or tasks spawned, simple completion
         {result, env}
       else
+        # Seed state.env_state from main computation's env.state
+        # But clear pending_fibers and pending_tasks since we've already extracted them
+        clean_env_state =
+          env.state
+          |> Map.put(@state_key, [])
+          |> Map.put(@pending_tasks_key, [])
+
+        state = State.put_env_state(state, clean_env_state)
         # Run fibers and tasks
         run_with_fibers(state, env, result, pending_fibers, pending_tasks)
       end
     after
-      # Cleanup channel storage
-      Channel.cleanup_storage()
-
       if should_stop_sup do
         Supervisor.stop(task_sup)
       end
@@ -609,13 +610,24 @@ defmodule Skuld.Effects.FiberPool do
     end
   end
 
-  # Process pending channel wakes (from put/take operations that wake waiting fibers)
-  defp process_channel_wakes(state) do
-    wakes = Channel.pop_channel_wakes()
+  # Key used by Channel to store pending wakes in env.state
+  @channel_wakes_key :__skuld_channel_wakes__
 
-    Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
-      resume_channel_fiber(acc_state, fiber_id, result)
-    end)
+  # Process pending channel wakes from env_state
+  defp process_channel_wakes(state) do
+    env_state = state.env_state || %{}
+    wakes = Map.get(env_state, @channel_wakes_key, []) || []
+
+    if wakes == [] do
+      state
+    else
+      # Clear wakes from env_state
+      state = %{state | env_state: Map.put(env_state, @channel_wakes_key, [])}
+
+      Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
+        resume_channel_fiber(acc_state, fiber_id, result)
+      end)
+    end
   end
 
   # Resume a fiber that was waiting on a channel operation
