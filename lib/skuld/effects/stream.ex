@@ -288,7 +288,9 @@ defmodule Skuld.Effects.Stream do
 
   ## Options
 
-  - `:concurrency` - Number of concurrent chunk processors (default: 1)
+  - `:concurrency` - Maximum concurrent transforms (default: 1). Due to cooperative
+    scheduling, values 1-2 have a floor of 3 concurrent transforms. Values >= 3
+    behave as specified.
   - `:buffer` - Output channel capacity in chunks (default: 10)
 
   ## Example
@@ -316,9 +318,14 @@ defmodule Skuld.Effects.Stream do
     concurrency = Keyword.get(opts, :concurrency, 1)
     buffer = Keyword.get(opts, :buffer, 10)
 
+    # Adjust for "hidden" concurrency from spawn-before-put and reorderer consuming.
+    # With channel capacity C, actual concurrency is C+2, so we use max(C-2, 1).
+    # This means concurrency: 1-2 still gives 3 concurrent (floor), but 3+ is accurate.
+    internal_capacity = max(concurrency - 2, 1)
+
     comp do
       # Intermediate channel holds fiber handles (controls concurrency)
-      intermediate <- Channel.new(concurrency)
+      intermediate <- Channel.new(internal_capacity)
       # Output channel holds final ordered result chunks
       output <- Channel.new(buffer)
 
