@@ -411,24 +411,22 @@ defmodule Skuld.Effects.Brook do
 
   # Safely apply transform, catching errors
   defp safe_transform(transform_fn, value) do
-    try do
-      result = transform_fn.(value)
+    result = transform_fn.(value)
 
-      if is_function(result, 2) do
-        # It's a computation - run it and wrap result
-        comp do
-          transformed <- result
-          Comp.pure({:ok, transformed})
-        end
-      else
-        Comp.pure({:ok, result})
+    if is_function(result, 2) do
+      # It's a computation - run it and wrap result
+      comp do
+        transformed <- result
+        Comp.pure({:ok, transformed})
       end
-    rescue
-      e -> Comp.pure({:error, {:transform_error, e, __STACKTRACE__}})
-    catch
-      :throw, reason -> Comp.pure({:error, {:throw, reason}})
-      :exit, reason -> Comp.pure({:error, {:exit, reason}})
+    else
+      Comp.pure({:ok, result})
     end
+  rescue
+    e -> Comp.pure({:error, {:transform_error, e, __STACKTRACE__}})
+  catch
+    :throw, reason -> Comp.pure({:error, {:throw, reason}})
+    :exit, reason -> Comp.pure({:error, {:exit, reason}})
   end
 
   # Reorderer awaits chunk transform results in order and puts to output

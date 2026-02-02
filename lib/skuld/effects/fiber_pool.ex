@@ -615,14 +615,13 @@ defmodule Skuld.Effects.FiberPool do
 
   # Process pending channel wakes from env_state
   defp process_channel_wakes(state) do
-    env_state = state.env_state || %{}
-    wakes = Map.get(env_state, @channel_wakes_key, []) || []
+    wakes = Map.get(state.env_state, @channel_wakes_key, [])
 
     if wakes == [] do
       state
     else
       # Clear wakes from env_state
-      state = %{state | env_state: Map.put(env_state, @channel_wakes_key, [])}
+      state = %{state | env_state: Map.put(state.env_state, @channel_wakes_key, [])}
 
       Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
         resume_channel_fiber(acc_state, fiber_id, result)

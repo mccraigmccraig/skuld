@@ -185,15 +185,14 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     end
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_pending_fiber(state, fiber, env) do
     # Update fiber's env:
     # - Use fiber's env for per-fiber fields (evidence, leave_scope, transform_suspend)
     # - Inject shared env_state from pool state
     # - Set the current fiber ID for Channel operations
     base_env = fiber.env || env
-    # Ensure env_state is always a map
-    env_state = state.env_state || %{}
-    fiber_env = %{base_env | state: env_state}
+    fiber_env = %{base_env | state: state.env_state}
     fiber_env = Env.put_state(fiber_env, @fiber_id_key, fiber.id)
     fiber = %{fiber | env: fiber_env}
 
@@ -233,8 +232,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   defp resume_fiber(state, fiber, result) do
     # Inject shared env_state before resuming
     # Also set the current fiber ID (env_state may have the previous fiber's ID)
-    env_state = state.env_state || %{}
-    fiber_env = %{fiber.env | state: env_state}
+    fiber_env = %{fiber.env | state: state.env_state}
     fiber_env = Env.put_state(fiber_env, @fiber_id_key, fiber.id)
     fiber = %{fiber | env: fiber_env}
 
@@ -313,7 +311,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
         # Also clear from state.env_state (which was updated before this call)
         # to prevent re-collection when next fiber runs
-        env_state = Map.put(state.env_state || %{}, @pending_fibers_key, [])
+        env_state = Map.put(state.env_state, @pending_fibers_key, [])
         state = State.put_env_state(state, env_state)
 
         {state, suspended_fiber}
@@ -410,14 +408,13 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
   # Process pending channel wakes from env_state
   defp process_channel_wakes(state) do
-    env_state = state.env_state || %{}
-    wakes = Map.get(env_state, @channel_wakes_key, []) || []
+    wakes = Map.get(state.env_state, @channel_wakes_key, [])
 
     if wakes == [] do
       state
     else
       # Clear wakes from env_state
-      state = State.put_env_state(state, Map.put(env_state, @channel_wakes_key, []))
+      state = State.put_env_state(state, Map.put(state.env_state, @channel_wakes_key, []))
 
       Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
         resume_channel_fiber(acc_state, fiber_id, result)
