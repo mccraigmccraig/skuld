@@ -463,6 +463,125 @@ defmodule Skuld.AsyncComputationTest do
     end
   end
 
+  describe "transform_suspend" do
+    test "applies transform_suspend on initial yield" do
+      # A computation with a scoped effect that decorates suspends
+      computation =
+        comp do
+          _ <- Yield.yield(:first)
+          return(:done)
+        end
+        |> Skuld.Comp.with_scoped_state(:counter, 1,
+          suspend: fn suspend, env ->
+            counter = Skuld.Comp.Env.get_state(env, :counter)
+            data = suspend.data || %{}
+            {%{suspend | data: Map.put(data, :counter, counter)}, env}
+          end
+        )
+
+      {:ok, runner, %Suspend{value: :first, data: data}} =
+        AsyncComputation.start_sync(computation, tag: :transform_initial)
+
+      # Initial suspend should have the data from transform_suspend
+      assert data[:counter] == 1
+
+      assert :done = AsyncComputation.resume_sync(runner, :ok)
+    end
+
+    test "applies transform_suspend on subsequent yields after resume" do
+      # This is the key test for the fix - transform_suspend must be applied
+      # not just on the initial yield, but also on subsequent yields after resume.
+      # We use a simple counter that increments on each yield.
+      {:ok, agent} = Agent.start_link(fn -> 0 end)
+
+      computation =
+        comp do
+          _ <- Yield.yield(:first)
+          _ <- Yield.yield(:second)
+          _ <- Yield.yield(:third)
+          return(:done)
+        end
+        |> Skuld.Comp.scoped(fn env ->
+          # Set up transform_suspend that captures an incrementing counter
+          old_transform = Skuld.Comp.Env.get_transform_suspend(env)
+
+          new_transform = fn suspend, e ->
+            {suspend1, e1} = old_transform.(suspend, e)
+            # Increment counter and add to data
+            counter = Agent.get_and_update(agent, fn c -> {c + 1, c + 1} end)
+            data = suspend1.data || %{}
+            {%{suspend1 | data: Map.put(data, :yield_count, counter)}, e1}
+          end
+
+          {Skuld.Comp.Env.with_transform_suspend(env, new_transform),
+           fn value, e -> {value, e} end}
+        end)
+
+      {:ok, runner, %Suspend{value: :first, data: data1}} =
+        AsyncComputation.start_sync(computation, tag: :transform_subsequent)
+
+      # First yield - counter should be 1
+      assert data1[:yield_count] == 1
+
+      # Resume and get second yield
+      %Suspend{value: :second, data: data2} = AsyncComputation.resume_sync(runner, :ok)
+
+      # Second yield - counter should be 2 (transform_suspend was applied on resume!)
+      assert data2[:yield_count] == 2
+
+      # Resume and get third yield
+      %Suspend{value: :third, data: data3} = AsyncComputation.resume_sync(runner, :ok)
+
+      # Third yield - counter should be 3
+      assert data3[:yield_count] == 3
+
+      assert :done = AsyncComputation.resume_sync(runner, :ok)
+
+      Agent.stop(agent)
+    end
+
+    test "applies transform_suspend with EffectLogger on all yields" do
+      alias Skuld.Effects.EffectLogger
+
+      computation =
+        comp do
+          _ <- State.modify(fn c -> c + 1 end)
+          _ <- Yield.yield(:first)
+          _ <- State.modify(fn c -> c + 1 end)
+          _ <- Yield.yield(:second)
+          return(:done)
+        end
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+
+      {:ok, runner, %Suspend{value: :first, data: data1}} =
+        AsyncComputation.start_sync(computation, tag: :effectlogger_transform)
+
+      # First yield should have EffectLogger data
+      assert is_map(data1)
+      assert Map.has_key?(data1, EffectLogger)
+      log1 = data1[EffectLogger]
+      assert log1 != nil
+      entries1 = EffectLogger.Log.to_list(log1)
+
+      # Resume and get second yield
+      %Suspend{value: :second, data: data2} = AsyncComputation.resume_sync(runner, :ok)
+
+      # Second yield should ALSO have EffectLogger data (this was the bug!)
+      assert is_map(data2)
+      assert Map.has_key?(data2, EffectLogger)
+      log2 = data2[EffectLogger]
+      assert log2 != nil
+      entries2 = EffectLogger.Log.to_list(log2)
+
+      # Log should have grown (more entries after the second State.modify)
+      assert length(entries2) > length(entries1)
+
+      # Final result is {:done, log} because EffectLogger wraps the result
+      {:done, _final_log} = AsyncComputation.resume_sync(runner, :ok)
+    end
+  end
+
   describe "integration scenarios" do
     test "simulates LiveView-style interaction" do
       # A computation that simulates a multi-step wizard

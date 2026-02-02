@@ -372,8 +372,13 @@ defmodule Skuld.AsyncComputation do
 
     case result do
       %Suspend{} = new_suspend ->
+        # Apply transform_suspend to decorate the new suspend (same as Comp.run does)
+        # This ensures EffectLogger and other scoped effects can add data to Suspend.data
+        {transformed_suspend, transformed_env} =
+          Skuld.Comp.ISentinel.run(new_suspend, new_env)
+
         # Yielded again - continue the loop
-        run_yield_loop(new_suspend, new_env, original_caller, tag, ref, next_reply_to)
+        run_yield_loop(transformed_suspend, transformed_env, original_caller, tag, ref, next_reply_to)
 
       %ThrowStruct{error: error} ->
         # Computation threw
