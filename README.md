@@ -1741,6 +1741,15 @@ end
 ```elixir
 defmodule User do
   defstruct [:id, :name]
+
+  # DB.fetch() calls will be batched across all suspended fibers
+  # by the BatchExecutor
+  defcomp fetch_users(user_ids) do
+    # chunk_size: 1 so each item becomes a concurrent unit (fiber) for I/O batching
+    source <- Stream.from_enum(user_ids, chunk_size: 1)
+    users <- Stream.map(source, fn id -> DB.fetch(User, id) end, concurrency: 3)
+    Stream.to_list(users)
+  end
 end
 
 mock_executor = fn ops ->
@@ -1750,14 +1759,7 @@ mock_executor = fn ops ->
   end))
 end
 
-user_ids = [1, 2, 3, 4, 5]
-
-comp do
-  # chunk_size: 1 so each item becomes a concurrent unit for I/O batching
-  source <- Stream.from_enum(user_ids, chunk_size: 1)
-  users <- Stream.map(source, fn id -> DB.fetch(User, id) end, concurrency: 3)
-  Stream.to_list(users)
-end
+User.fetch_users([1, 2, 3, 4, 5])
 |> BatchExecutor.with_executor({:db_fetch, User}, mock_executor)
 |> Channel.with_handler()
 |> FiberPool.with_handler()
