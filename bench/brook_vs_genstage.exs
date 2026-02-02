@@ -1,11 +1,11 @@
-# Benchmark: Skuld Streams vs GenStage
+# Benchmark: Skuld Brook vs GenStage
 #
 # Compares multi-stage pipelines with backpressure.
 # Each stage just increments the integer it received.
 #
-# Run with: mix run bench/stream_vs_genstage.exs
+# Run with: mix run bench/brook_vs_genstage.exs
 
-alias Skuld.Effects.Stream, as: S
+alias Skuld.Effects.Brook, as: B
 alias Skuld.Effects.Channel
 alias Skuld.Effects.FiberPool
 
@@ -13,7 +13,7 @@ alias Skuld.Effects.FiberPool
 # GenStage Modules
 # =============================================================================
 
-defmodule Bench.GS.Producer do
+defmodule Bench.GB.Producer do
   use GenStage
 
   def start_link(enumerable) do
@@ -34,7 +34,7 @@ defmodule Bench.GS.Producer do
   end
 end
 
-defmodule Bench.GS.Stage do
+defmodule Bench.GB.Stage do
   use GenStage
 
   def start_link(opts) do
@@ -52,7 +52,7 @@ defmodule Bench.GS.Stage do
   end
 end
 
-defmodule Bench.GS.CollectingConsumer do
+defmodule Bench.GB.CollectingConsumer do
   use GenStage
 
   def start_link(opts) do
@@ -83,13 +83,13 @@ defmodule Bench.GenStagePipeline do
   """
   def run(enumerable, num_stages, buffer_size \\ 100) do
     # Start producer
-    {:ok, producer} = Bench.GS.Producer.start_link(enumerable)
+    {:ok, producer} = Bench.GB.Producer.start_link(enumerable)
 
     # Start intermediate stages, building up the chain
     last_stage =
       Enum.reduce(1..num_stages, producer, fn _i, prev ->
         {:ok, stage} =
-          Bench.GS.Stage.start_link(
+          Bench.GB.Stage.start_link(
             subscribe_to: [{prev, max_demand: buffer_size, min_demand: div(buffer_size, 2)}]
           )
 
@@ -98,7 +98,7 @@ defmodule Bench.GenStagePipeline do
 
     # Start collecting consumer
     {:ok, consumer} =
-      Bench.GS.CollectingConsumer.start_link(
+      Bench.GB.CollectingConsumer.start_link(
         subscribe_to: [{last_stage, max_demand: buffer_size, min_demand: div(buffer_size, 2)}]
       )
 
@@ -141,9 +141,9 @@ defmodule Bench.SkuldPipeline do
 
   defp build_pipeline(enumerable, num_stages, buffer_size) do
     comp do
-      source <- S.from_enum(enumerable, buffer: buffer_size)
+      source <- B.from_enum(enumerable, buffer: buffer_size)
       final <- apply_stages(source, num_stages, buffer_size)
-      S.to_list(final)
+      B.to_list(final)
     end
   end
 
@@ -153,7 +153,7 @@ defmodule Bench.SkuldPipeline do
 
   defp apply_stages(source, n, buffer_size) do
     comp do
-      next <- S.map(source, fn x -> x + 1 end, buffer: buffer_size)
+      next <- B.map(source, fn x -> x + 1 end, buffer: buffer_size)
       apply_stages(next, n - 1, buffer_size)
     end
   end
@@ -164,7 +164,7 @@ end
 # =============================================================================
 
 IO.puts("\n" <> String.duplicate("=", 70))
-IO.puts("Skuld Streams vs GenStage Benchmark")
+IO.puts("Skuld Brook vs GenStage Benchmark")
 IO.puts("Each stage increments an integer by 1")
 IO.puts(String.duplicate("=", 70) <> "\n")
 

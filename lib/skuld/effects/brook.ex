@@ -1,4 +1,4 @@
-defmodule Skuld.Effects.Stream do
+defmodule Skuld.Effects.Brook do
   @moduledoc """
   High-level streaming API built on channels with transparent chunking.
 
@@ -22,16 +22,16 @@ defmodule Skuld.Effects.Stream do
 
       comp do
         # Create a stream from an enumerable
-        source <- Stream.from_enum(1..100)
+        source <- Brook.from_enum(1..100)
 
         # Transform with optional concurrency
-        mapped <- Stream.map(source, fn x -> x * 2 end, concurrency: 4)
+        mapped <- Brook.map(source, fn x -> x * 2 end, concurrency: 4)
 
         # Filter
-        filtered <- Stream.filter(mapped, fn x -> rem(x, 4) == 0 end)
+        filtered <- Brook.filter(mapped, fn x -> rem(x, 4) == 0 end)
 
         # Collect results
-        Stream.to_list(filtered)
+        Brook.to_list(filtered)
       end
       |> Channel.with_handler()
       |> FiberPool.with_handler()
@@ -43,7 +43,7 @@ defmodule Skuld.Effects.Stream do
   while processing any value in a chunk, the stream is immediately errored:
 
       comp do
-        source <- Stream.from_function(fn ->
+        source <- Brook.from_function(fn ->
           case fetch_data() do
             {:ok, items} -> {:items, items}
             {:error, reason} -> {:error, reason}
@@ -51,10 +51,10 @@ defmodule Skuld.Effects.Stream do
         end)
 
         # If source errors, map sees {:error, reason} and propagates it
-        mapped <- Stream.map(source, &process/1)
+        mapped <- Brook.map(source, &process/1)
 
         # Final result is :ok or {:error, reason}
-        Stream.run(mapped, &sink/1)
+        Brook.run(mapped, &sink/1)
       end
   """
 
@@ -105,8 +105,8 @@ defmodule Skuld.Effects.Stream do
   ## Example
 
       comp do
-        source <- Stream.from_enum(1..100)
-        Stream.to_list(source)
+        source <- Brook.from_enum(1..100)
+        Brook.to_list(source)
       end
   """
   @spec from_enum(Enumerable.t(), keyword()) :: Comp.Types.computation()
@@ -174,12 +174,12 @@ defmodule Skuld.Effects.Stream do
       comp do
         counter = Agent.start_link(fn -> 0 end)
 
-        source <- Stream.from_function(fn ->
+        source <- Brook.from_function(fn ->
           n = Agent.get_and_update(counter, fn n -> {n, n + 1} end)
           if n < 10, do: {:item, n}, else: :done
         end)
 
-        Stream.to_list(source)
+        Brook.to_list(source)
       end
   """
   @spec from_function(
@@ -296,9 +296,9 @@ defmodule Skuld.Effects.Stream do
   ## Example
 
       comp do
-        source <- Stream.from_enum(1..10)
-        doubled <- Stream.map(source, fn x -> x * 2 end)
-        Stream.to_list(doubled)
+        source <- Brook.from_enum(1..10)
+        doubled <- Brook.map(source, fn x -> x * 2 end)
+        Brook.to_list(doubled)
       end
 
   ## With Effects
@@ -306,9 +306,9 @@ defmodule Skuld.Effects.Stream do
   Transform functions can use effects, enabling batching:
 
       comp do
-        source <- Stream.from_enum(user_ids)
-        users <- Stream.map(source, fn id -> DB.fetch(User, id) end, concurrency: 10)
-        Stream.to_list(users)
+        source <- Brook.from_enum(user_ids)
+        users <- Brook.map(source, fn id -> DB.fetch(User, id) end, concurrency: 10)
+        Brook.to_list(users)
       end
       |> DB.with_executors()
   """
@@ -477,9 +477,9 @@ defmodule Skuld.Effects.Stream do
   ## Example
 
       comp do
-        source <- Stream.from_enum(1..20)
-        evens <- Stream.filter(source, fn x -> rem(x, 2) == 0 end)
-        Stream.to_list(evens)
+        source <- Brook.from_enum(1..20)
+        evens <- Brook.filter(source, fn x -> rem(x, 2) == 0 end)
+        Brook.to_list(evens)
       end
   """
   @spec filter(Channel.Handle.t(), (term() -> boolean()), keyword()) ::
@@ -553,8 +553,8 @@ defmodule Skuld.Effects.Stream do
   ## Example
 
       comp do
-        source <- Stream.from_enum(1..10)
-        Stream.each(source, fn x -> IO.puts("Got: #{x}") end)
+        source <- Brook.from_enum(1..10)
+        Brook.each(source, fn x -> IO.puts("Got: #{x}") end)
       end
   """
   @spec each(Channel.Handle.t(), (term() -> any())) :: Comp.Types.computation()
@@ -593,8 +593,8 @@ defmodule Skuld.Effects.Stream do
   ## Example
 
       comp do
-        source <- Stream.from_enum(records)
-        Stream.run(source, fn record -> DB.insert(record) end)
+        source <- Brook.from_enum(records)
+        Brook.run(source, fn record -> DB.insert(record) end)
       end
   """
   @spec run(Channel.Handle.t(), (term() -> term() | Comp.Types.computation())) ::
@@ -662,9 +662,9 @@ defmodule Skuld.Effects.Stream do
   ## Example
 
       comp do
-        source <- Stream.from_enum(1..10)
-        mapped <- Stream.map(source, fn x -> x * 2 end)
-        Stream.to_list(mapped)
+        source <- Brook.from_enum(1..10)
+        mapped <- Brook.map(source, fn x -> x * 2 end)
+        Brook.to_list(mapped)
       end
   """
   @spec to_list(Channel.Handle.t()) :: Comp.Types.computation()

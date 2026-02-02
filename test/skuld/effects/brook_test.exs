@@ -1,17 +1,17 @@
-defmodule Skuld.Effects.StreamTest do
+defmodule Skuld.Effects.BrookTest do
   use ExUnit.Case, async: true
   use Skuld.Syntax
 
   alias Skuld.Effects.Channel
   alias Skuld.Effects.FiberPool
-  alias Skuld.Effects.Stream, as: S
+  alias Skuld.Effects.Brook, as: B
 
   describe "from_enum/2" do
     test "creates stream from list" do
       result =
         comp do
-          source <- S.from_enum([1, 2, 3])
-          S.to_list(source)
+          source <- B.from_enum([1, 2, 3])
+          B.to_list(source)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -23,8 +23,8 @@ defmodule Skuld.Effects.StreamTest do
     test "creates stream from range" do
       result =
         comp do
-          source <- S.from_enum(1..5)
-          S.to_list(source)
+          source <- B.from_enum(1..5)
+          B.to_list(source)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -36,8 +36,8 @@ defmodule Skuld.Effects.StreamTest do
     test "respects buffer option" do
       result =
         comp do
-          source <- S.from_enum([1, 2, 3], buffer: 1)
-          S.to_list(source)
+          source <- B.from_enum([1, 2, 3], buffer: 1)
+          B.to_list(source)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -49,8 +49,8 @@ defmodule Skuld.Effects.StreamTest do
     test "handles empty enumerable" do
       result =
         comp do
-          source <- S.from_enum([])
-          S.to_list(source)
+          source <- B.from_enum([])
+          B.to_list(source)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -67,7 +67,7 @@ defmodule Skuld.Effects.StreamTest do
       result =
         comp do
           source <-
-            S.from_function(fn ->
+            B.from_function(fn ->
               n = :counters.get(counter, 1)
               :counters.add(counter, 1, 1)
 
@@ -78,7 +78,7 @@ defmodule Skuld.Effects.StreamTest do
               end
             end)
 
-          S.to_list(source)
+          B.to_list(source)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -93,7 +93,7 @@ defmodule Skuld.Effects.StreamTest do
       result =
         comp do
           source <-
-            S.from_function(fn ->
+            B.from_function(fn ->
               n = :counters.get(called, 1)
               :counters.add(called, 1, 1)
 
@@ -104,7 +104,7 @@ defmodule Skuld.Effects.StreamTest do
               end
             end)
 
-          S.to_list(source)
+          B.to_list(source)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -117,11 +117,11 @@ defmodule Skuld.Effects.StreamTest do
       result =
         comp do
           source <-
-            S.from_function(fn ->
+            B.from_function(fn ->
               {:error, :test_error}
             end)
 
-          S.to_list(source)
+          B.to_list(source)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -135,9 +135,9 @@ defmodule Skuld.Effects.StreamTest do
     test "transforms each item" do
       result =
         comp do
-          source <- S.from_enum([1, 2, 3])
-          mapped <- S.map(source, fn x -> x * 2 end)
-          S.to_list(mapped)
+          source <- B.from_enum([1, 2, 3])
+          mapped <- B.map(source, fn x -> x * 2 end)
+          B.to_list(mapped)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -149,9 +149,9 @@ defmodule Skuld.Effects.StreamTest do
     test "handles empty stream" do
       result =
         comp do
-          source <- S.from_enum([])
-          mapped <- S.map(source, fn x -> x * 2 end)
-          S.to_list(mapped)
+          source <- B.from_enum([])
+          mapped <- B.map(source, fn x -> x * 2 end)
+          B.to_list(mapped)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -163,9 +163,9 @@ defmodule Skuld.Effects.StreamTest do
     test "works with multiple workers" do
       result =
         comp do
-          source <- S.from_enum(1..10)
-          mapped <- S.map(source, fn x -> x * 2 end, concurrency: 4)
-          S.to_list(mapped)
+          source <- B.from_enum(1..10)
+          mapped <- B.map(source, fn x -> x * 2 end, concurrency: 4)
+          B.to_list(mapped)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -178,9 +178,9 @@ defmodule Skuld.Effects.StreamTest do
     test "propagates input errors" do
       result =
         comp do
-          source <- S.from_function(fn -> {:error, :source_error} end)
-          mapped <- S.map(source, fn x -> x * 2 end)
-          S.to_list(mapped)
+          source <- B.from_function(fn -> {:error, :source_error} end)
+          mapped <- B.map(source, fn x -> x * 2 end)
+          B.to_list(mapped)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -194,9 +194,9 @@ defmodule Skuld.Effects.StreamTest do
     test "filters items by predicate" do
       result =
         comp do
-          source <- S.from_enum(1..10)
-          filtered <- S.filter(source, fn x -> rem(x, 2) == 0 end)
-          S.to_list(filtered)
+          source <- B.from_enum(1..10)
+          filtered <- B.filter(source, fn x -> rem(x, 2) == 0 end)
+          B.to_list(filtered)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -208,9 +208,9 @@ defmodule Skuld.Effects.StreamTest do
     test "handles all items filtered out" do
       result =
         comp do
-          source <- S.from_enum([1, 3, 5])
-          filtered <- S.filter(source, fn x -> rem(x, 2) == 0 end)
-          S.to_list(filtered)
+          source <- B.from_enum([1, 3, 5])
+          filtered <- B.filter(source, fn x -> rem(x, 2) == 0 end)
+          B.to_list(filtered)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -222,9 +222,9 @@ defmodule Skuld.Effects.StreamTest do
     test "handles empty stream" do
       result =
         comp do
-          source <- S.from_enum([])
-          filtered <- S.filter(source, fn _ -> true end)
-          S.to_list(filtered)
+          source <- B.from_enum([])
+          filtered <- B.filter(source, fn _ -> true end)
+          B.to_list(filtered)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -236,9 +236,9 @@ defmodule Skuld.Effects.StreamTest do
     test "propagates errors" do
       result =
         comp do
-          source <- S.from_function(fn -> {:error, :filter_test_error} end)
-          filtered <- S.filter(source, fn _ -> true end)
-          S.to_list(filtered)
+          source <- B.from_function(fn -> {:error, :filter_test_error} end)
+          filtered <- B.filter(source, fn _ -> true end)
+          B.to_list(filtered)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -254,9 +254,9 @@ defmodule Skuld.Effects.StreamTest do
 
       result =
         comp do
-          source <- S.from_enum([1, 2, 3])
+          source <- B.from_enum([1, 2, 3])
 
-          S.each(source, fn x ->
+          B.each(source, fn x ->
             :ets.insert(collected, {x, true})
           end)
         end
@@ -275,8 +275,8 @@ defmodule Skuld.Effects.StreamTest do
     test "returns :ok on success" do
       result =
         comp do
-          source <- S.from_enum([1, 2, 3])
-          S.each(source, fn _ -> :ok end)
+          source <- B.from_enum([1, 2, 3])
+          B.each(source, fn _ -> :ok end)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -288,8 +288,8 @@ defmodule Skuld.Effects.StreamTest do
     test "returns error if stream errors" do
       result =
         comp do
-          source <- S.from_function(fn -> {:error, :each_error} end)
-          S.each(source, fn _ -> :ok end)
+          source <- B.from_function(fn -> {:error, :each_error} end)
+          B.each(source, fn _ -> :ok end)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -305,9 +305,9 @@ defmodule Skuld.Effects.StreamTest do
 
       result =
         comp do
-          source <- S.from_enum([1, 2, 3])
+          source <- B.from_enum([1, 2, 3])
 
-          S.run(source, fn x ->
+          B.run(source, fn x ->
             :ets.insert(collected, {x, true})
             :ok
           end)
@@ -327,8 +327,8 @@ defmodule Skuld.Effects.StreamTest do
     test "returns error if stream errors" do
       result =
         comp do
-          source <- S.from_function(fn -> {:error, :run_error} end)
-          S.run(source, fn _ -> :ok end)
+          source <- B.from_function(fn -> {:error, :run_error} end)
+          B.run(source, fn _ -> :ok end)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -342,8 +342,8 @@ defmodule Skuld.Effects.StreamTest do
     test "collects all items into list" do
       result =
         comp do
-          source <- S.from_enum([1, 2, 3, 4, 5])
-          S.to_list(source)
+          source <- B.from_enum([1, 2, 3, 4, 5])
+          B.to_list(source)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -355,8 +355,8 @@ defmodule Skuld.Effects.StreamTest do
     test "returns error if stream errors" do
       result =
         comp do
-          source <- S.from_function(fn -> {:error, :to_list_error} end)
-          S.to_list(source)
+          source <- B.from_function(fn -> {:error, :to_list_error} end)
+          B.to_list(source)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -370,10 +370,10 @@ defmodule Skuld.Effects.StreamTest do
     test "map then filter" do
       result =
         comp do
-          source <- S.from_enum(1..10)
-          doubled <- S.map(source, fn x -> x * 2 end)
-          evens_over_10 <- S.filter(doubled, fn x -> x > 10 end)
-          S.to_list(evens_over_10)
+          source <- B.from_enum(1..10)
+          doubled <- B.map(source, fn x -> x * 2 end)
+          evens_over_10 <- B.filter(doubled, fn x -> x > 10 end)
+          B.to_list(evens_over_10)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -385,10 +385,10 @@ defmodule Skuld.Effects.StreamTest do
     test "filter then map" do
       result =
         comp do
-          source <- S.from_enum(1..10)
-          evens <- S.filter(source, fn x -> rem(x, 2) == 0 end)
-          doubled <- S.map(evens, fn x -> x * 2 end)
-          S.to_list(doubled)
+          source <- B.from_enum(1..10)
+          evens <- B.filter(source, fn x -> rem(x, 2) == 0 end)
+          doubled <- B.map(evens, fn x -> x * 2 end)
+          B.to_list(doubled)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -400,11 +400,11 @@ defmodule Skuld.Effects.StreamTest do
     test "multiple maps" do
       result =
         comp do
-          source <- S.from_enum([1, 2, 3])
-          plus_one <- S.map(source, fn x -> x + 1 end)
-          times_two <- S.map(plus_one, fn x -> x * 2 end)
-          squared <- S.map(times_two, fn x -> x * x end)
-          S.to_list(squared)
+          source <- B.from_enum([1, 2, 3])
+          plus_one <- B.map(source, fn x -> x + 1 end)
+          times_two <- B.map(plus_one, fn x -> x * 2 end)
+          squared <- B.map(times_two, fn x -> x * x end)
+          B.to_list(squared)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -419,11 +419,11 @@ defmodule Skuld.Effects.StreamTest do
     test "complex pipeline" do
       result =
         comp do
-          source <- S.from_enum(1..20)
-          evens <- S.filter(source, fn x -> rem(x, 2) == 0 end)
-          doubled <- S.map(evens, fn x -> x * 2 end)
-          over_20 <- S.filter(doubled, fn x -> x > 20 end)
-          S.to_list(over_20)
+          source <- B.from_enum(1..20)
+          evens <- B.filter(source, fn x -> rem(x, 2) == 0 end)
+          doubled <- B.map(evens, fn x -> x * 2 end)
+          over_20 <- B.filter(doubled, fn x -> x > 20 end)
+          B.to_list(over_20)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
@@ -442,9 +442,9 @@ defmodule Skuld.Effects.StreamTest do
       # doesn't run ahead indefinitely
       result =
         comp do
-          source <- S.from_enum(1..100, buffer: 2)
-          mapped <- S.map(source, fn x -> x end, buffer: 2)
-          S.to_list(mapped)
+          source <- B.from_enum(1..100, buffer: 2)
+          mapped <- B.map(source, fn x -> x end, buffer: 2)
+          B.to_list(mapped)
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()

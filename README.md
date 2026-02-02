@@ -27,7 +27,7 @@ some common side-effecting operations and their effectful equivalents:
 | Process dictionary              | State, Writer                |
 | Random values                   | Random                       |
 | Generating IDs (UUIDs)          | Fresh                        |
-| Concurrent fibers / streaming   | FiberPool, Channel, Stream   |
+| Concurrent fibers / streaming   | FiberPool, Channel, Brook   |
 | Run effects from LiveView       | AsyncComputation             |
 | Database transactions           | DBTransaction                |
 | Blocking calls to external code | Port                         |
@@ -82,7 +82,7 @@ some common side-effecting operations and their effectful equivalents:
     - [AtomicState](#atomicstate)
     - [FiberPool](#fiberpool)
     - [Channel](#channel)
-    - [Stream](#stream)
+    - [Brook](#brook)
     - [AsyncComputation](#asynccomputation)
   - [Persistence & Data](#persistence--data)
     - [DBTransaction](#dbtransaction)
@@ -688,7 +688,7 @@ alias Skuld.Effects.{
   Fresh, Random, AtomicState, Parallel, Bracket,
   Port, Command, EventAccumulator, EffectLogger,
   DBTransaction, ChangesetPersist, ChangeEvent,
-  FiberPool, Channel, Stream, DB
+  FiberPool, Channel, Brook, DB
 }
 alias Skuld.Fiber.FiberPool.BatchExecutor
 alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
@@ -1695,7 +1695,7 @@ providing natural backpressure.
 
 Operations: `put_async/2`, `take_async/1`
 
-#### Stream
+#### Brook
 
 High-level streaming API built on channels, with automatic backpressure via
 bounded channel buffers—producers block when downstream consumers can't keep up:
@@ -1703,16 +1703,16 @@ bounded channel buffers—producers block when downstream consumers can't keep u
 ```elixir
 comp do
   # Create stream from enumerable
-  source <- Stream.from_enum(1..100)
+  source <- Brook.from_enum(1..100)
 
   # Transform with optional concurrency
-  mapped <- Stream.map(source, fn x -> x * 2 end, concurrency: 4)
+  mapped <- Brook.map(source, fn x -> x * 2 end, concurrency: 4)
 
   # Filter
-  filtered <- Stream.filter(mapped, fn x -> rem(x, 4) == 0 end)
+  filtered <- Brook.filter(mapped, fn x -> rem(x, 4) == 0 end)
 
   # Collect results
-  Stream.to_list(filtered)
+  Brook.to_list(filtered)
 end
 |> Channel.with_handler()
 |> FiberPool.with_handler()
@@ -1724,7 +1724,7 @@ end
 
 ```elixir
 comp do
-  source <- Stream.from_function(fn ->
+  source <- Brook.from_function(fn ->
     case fetch_next_batch() do
       {:ok, items} -> {:items, items}
       :done -> :done
@@ -1732,11 +1732,11 @@ comp do
     end
   end)
 
-  Stream.each(source, &process/1)
+  Brook.each(source, &process/1)
 end
 ```
 
-**I/O Batching in Streams:**
+**I/O Batching in Brook:**
 
 ```elixir
 defmodule User do
@@ -1746,9 +1746,9 @@ defmodule User do
   # by the BatchExecutor
   defcomp fetch_users(user_ids) do
     # chunk_size: 1 so each item becomes a concurrent unit (fiber) for I/O batching
-    source <- Stream.from_enum(user_ids, chunk_size: 1)
-    users <- Stream.map(source, fn id -> DB.fetch(__MODULE__, id) end, concurrency: 3)
-    Stream.to_list(users)
+    source <- Brook.from_enum(user_ids, chunk_size: 1)
+    users <- Brook.map(source, fn id -> DB.fetch(__MODULE__, id) end, concurrency: 3)
+    Brook.to_list(users)
   end
 end
 
@@ -1770,23 +1770,23 @@ User.fetch_users([1, 2, 3, 4, 5])
 #=> [%User{id: 1, ...}, %User{id: 2, ...}, %User{id: 3, ...}, ...]  # order preserved
 ```
 
-**Why `chunk_size: 1`?** Stream.map's `concurrency` controls how many *chunks* process
+**Why `chunk_size: 1`?** Brook.map's `concurrency` controls how many *chunks* process
 concurrently. With the default `chunk_size: 100`, all 5 items would be in one chunk
 and processed sequentially. Using `chunk_size: 1` makes each item its own concurrent
 unit, allowing their I/O operations to batch together.
 
-`Stream.map` preserves input order even with `concurrency > 1` by using `put_async`/`take_async`
+`Brook.map` preserves input order even with `concurrency > 1` by using `put_async`/`take_async`
 internally (see Channel section above for details on how this works).
 
 Operations: `from_enum/2`, `from_function/2`, `map/3`, `filter/3`, `each/2`, `run/2`, `to_list/1`
 
 **Backpressure:** Each stream stage uses a bounded channel buffer (default: 10).
 When a buffer fills, the upstream producer blocks until the consumer catches up.
-Configure with the `buffer` option: `Stream.map(source, &transform/1, buffer: 20)`.
+Configure with the `buffer` option: `Brook.map(source, &transform/1, buffer: 20)`.
 
 **Performance vs GenStage:**
 
-Skuld Streams are optimized for throughput via transparent chunking (processing items
+Skuld Brook are optimized for throughput via transparent chunking (processing items
 in batches of 100 by default). Here's how they compare to GenStage:
 
 | Stages | Input Size | Skuld  | GenStage | Skuld Speedup |
@@ -1798,7 +1798,7 @@ in batches of 100 by default). Here's how they compare to GenStage:
 | 5      | 10k        | 7ms    | 57ms     | 8x            |
 | 5      | 100k       | 63ms   | 586ms    | 9x            |
 
-*Run with `mix run bench/stream_vs_genstage.exs`*
+*Run with `mix run bench/brook_vs_genstage.exs`*
 
 **Stage count scaling (10k items):**
 
@@ -1839,11 +1839,11 @@ because batching N database calls into 1 query dominates the per-item overhead. 
 
 **Architecture tradeoffs:**
 
-Skuld Streams run in a **single BEAM process** with cooperative fiber scheduling,
+Skuld Brook run in a **single BEAM process** with cooperative fiber scheduling,
 while GenStage uses **multiple processes** with demand-based flow control. This
 leads to different characteristics:
 
-| Aspect        | Skuld Streams          | GenStage               |
+| Aspect        | Skuld Brook          | GenStage               |
 |---------------|------------------------|------------------------|
 | Scheduling    | Cooperative (fibers)   | Preemptive (processes) |
 | Communication | Direct (shared memory) | Message passing        |
@@ -1854,7 +1854,7 @@ leads to different characteristics:
 
 **When to use each:**
 
-- **Skuld Streams** excel at I/O-bound workloads where items flow through
+- **Skuld Brook** excel at I/O-bound workloads where items flow through
   transformations quickly and automatic I/O batching (via `FiberPool`) can
   consolidate database queries or API calls. The single-process model eliminates
   message-passing overhead and enables order-preserving concurrent transforms.
