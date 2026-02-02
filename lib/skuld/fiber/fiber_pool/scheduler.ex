@@ -269,7 +269,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     end
   end
 
-  # Extract any pending fibers from the env and add them to the scheduler state
+  # Extract any pending fibers from the env and add them to the scheduler state.
+  # Also clears pending_fibers from state.env_state to prevent re-collection
+  # when the next fiber runs.
   defp collect_pending_fibers(state, nil), do: state
 
   defp collect_pending_fibers(state, env) do
@@ -278,10 +280,16 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     if pending == [] do
       state
     else
-      Enum.reduce(pending, state, fn {_id, fiber}, acc ->
-        {_id, acc} = State.add_fiber(acc, fiber)
-        acc
-      end)
+      # Add pending fibers to state
+      state =
+        Enum.reduce(pending, state, fn {_id, fiber}, acc ->
+          {_id, acc} = State.add_fiber(acc, fiber)
+          acc
+        end)
+
+      # Clear from state.env_state to prevent re-collection when next fiber runs
+      env_state = Map.put(state.env_state, @pending_fibers_key, [])
+      State.put_env_state(state, env_state)
     end
   end
 
