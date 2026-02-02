@@ -323,58 +323,65 @@ defmodule Skuld.AsyncComputation do
       |> Throw.with_handler()
       |> Yield.with_handler()
 
-    # Track the current reply_to (can be overridden per-resume)
-    # Start with the original caller
-    reply_to_ref = make_ref()
-    Process.put(reply_to_ref, caller)
+    # Run the computation - handle immediate completion or enter yield loop
+    case Skuld.Comp.run(comp) do
+      {%Suspend{} = suspend, env} ->
+        # First yield - enter the yield/resume loop
+        run_yield_loop(suspend, env, caller, tag, ref, caller)
 
-    # Run with a driver that bridges messages to the caller (or reply_to override)
-    result =
-      Yield.run_with_driver(comp, fn yielded_value, data ->
-        current_reply_to = Process.get(reply_to_ref)
+      {%ThrowStruct{error: error}, _env} ->
+        send(caller, {__MODULE__, tag, %ThrowStruct{error: error}})
 
-        # Send Suspend with resume stripped (can't send functions over IPC)
-        suspend = %Suspend{value: yielded_value, data: data, resume: nil}
-        send(current_reply_to, {__MODULE__, tag, suspend})
+      {value, _env} ->
+        send(caller, {__MODULE__, tag, value})
+    end
+  end
 
-        # Reset to original caller after sending - any override only affects ONE yield
-        Process.put(reply_to_ref, caller)
+  # Main yield/resume loop
+  # - reply_to: where to send THIS yield's suspend message
+  # - original_caller: default destination (reset target after override)
+  defp run_yield_loop(suspend, env, original_caller, tag, ref, reply_to) do
+    # Send Suspend with resume stripped (can't send functions over IPC)
+    ipc_suspend = %Suspend{value: suspend.value, data: suspend.data, resume: nil}
+    send(reply_to, {__MODULE__, tag, ipc_suspend})
 
-        receive do
-          {:async_resume, ^ref, value, nil} ->
-            # No override - keep using caller for next yield
-            {:continue, value}
+    receive do
+      {:async_resume, ^ref, value, nil} ->
+        # No override - next yield goes to original_caller
+        handle_resume(suspend, env, value, original_caller, tag, ref, original_caller)
 
-          {:async_resume, ^ref, value, override_reply_to} ->
-            # Override for NEXT yield only (will be reset after that yield)
-            Process.put(reply_to_ref, override_reply_to)
-            {:continue, value}
+      {:async_resume, ^ref, value, override} when not is_nil(override) ->
+        # Override for NEXT yield only, then resets to original_caller
+        handle_resume(suspend, env, value, original_caller, tag, ref, override)
 
-          {:async_cancel, ^ref} ->
-            {:cancel, :cancelled}
+      {:async_cancel, ^ref} ->
+        # Cancel - cleanup and send to current reply_to
+        {cancelled, _final_env} = Skuld.Comp.cancel(suspend, env, :cancelled)
+        send(reply_to, {__MODULE__, tag, cancelled})
 
-          {:async_cancel_sync, ^ref, reply_to} ->
-            # Sync cancel - reply to the requester, not original caller
-            Process.put(reply_to_ref, reply_to)
-            {:cancel, :cancelled}
-        end
-      end)
+      {:async_cancel_sync, ^ref, sync_reply_to} ->
+        # Sync cancel - cleanup and send to the requester
+        {cancelled, _final_env} = Skuld.Comp.cancel(suspend, env, :cancelled)
+        send(sync_reply_to, {__MODULE__, tag, cancelled})
+    end
+  end
 
-    # Send final result to current reply_to
-    final_reply_to = Process.get(reply_to_ref)
+  # Handle resume result - may yield again, throw, or complete
+  defp handle_resume(suspend, _env, value, original_caller, tag, ref, next_reply_to) do
+    {result, new_env} = suspend.resume.(value)
 
     case result do
-      {:done, value, _env} ->
-        # Plain value - send as-is
-        send(final_reply_to, {__MODULE__, tag, value})
+      %Suspend{} = new_suspend ->
+        # Yielded again - continue the loop
+        run_yield_loop(new_suspend, new_env, original_caller, tag, ref, next_reply_to)
 
-      {:cancelled, cancelled, _env} ->
-        # Cancelled with proper cleanup - send Cancelled struct
-        send(final_reply_to, {__MODULE__, tag, cancelled})
+      %ThrowStruct{error: error} ->
+        # Computation threw
+        send(next_reply_to, {__MODULE__, tag, %ThrowStruct{error: error}})
 
-      {:thrown, error, _env} ->
-        # Error - send as Throw struct
-        send(final_reply_to, {__MODULE__, tag, %ThrowStruct{error: error}})
+      other ->
+        # Computation completed
+        send(next_reply_to, {__MODULE__, tag, other})
     end
   end
 end
