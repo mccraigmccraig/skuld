@@ -1747,7 +1747,7 @@ defmodule User do
   defcomp fetch_users(user_ids) do
     # chunk_size: 1 so each item becomes a concurrent unit (fiber) for I/O batching
     source <- Stream.from_enum(user_ids, chunk_size: 1)
-    users <- Stream.map(source, fn id -> DB.fetch(User, id) end, concurrency: 3)
+    users <- Stream.map(source, fn id -> DB.fetch(__MODULE__, id) end, concurrency: 3)
     Stream.to_list(users)
   end
 end
