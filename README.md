@@ -1600,8 +1600,8 @@ For CPU-bound work that benefits from parallel execution:
 
 ```elixir
 comp do
-  # Task runs in separate process
-  h <- FiberPool.task(comp do expensive_calculation() end)
+  # Task runs in separate process (takes a thunk, not a computation)
+  h <- FiberPool.task(fn -> expensive_calculation() end)
   FiberPool.await(h)
 end
 |> FiberPool.with_handler()

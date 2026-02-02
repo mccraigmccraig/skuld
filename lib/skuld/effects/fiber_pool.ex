@@ -90,7 +90,7 @@ defmodule Skuld.Effects.FiberPool do
 
   defmodule TaskOp do
     @moduledoc false
-    defstruct [:comp, :opts]
+    defstruct [:thunk, :opts]
   end
 
   defmodule Scope do
@@ -117,10 +117,15 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   @doc """
-  Run a computation as a BEAM Task (parallel, separate process).
+  Run a thunk as a BEAM Task (parallel, separate process).
 
-  The computation runs in a separate BEAM process, allowing true parallelism.
-  Returns a handle that can be awaited just like fiber handles.
+  The thunk runs in a separate BEAM process, allowing true parallelism
+  for CPU-bound work. Returns a handle that can be awaited just like
+  fiber handles.
+
+  **Important:** The thunk is a zero-arity function, not a computation.
+  Effects do not work inside tasks because they run in a different process.
+  Extract any values you need from Reader/State before constructing the thunk.
 
   ## Options
 
@@ -129,9 +134,12 @@ defmodule Skuld.Effects.FiberPool do
   ## Example
 
       comp do
-        # CPU-bound work runs in parallel
-        h1 <- FiberPool.task(expensive_cpu_work())
-        h2 <- FiberPool.task(another_cpu_work())
+        # Extract any needed values from effects first
+        config <- Reader.ask(:config)
+
+        # CPU-bound work runs in parallel - thunk captures what it needs
+        h1 <- FiberPool.task(fn -> expensive_cpu_work(config) end)
+        h2 <- FiberPool.task(fn -> another_cpu_work(config) end)
 
         # Await results
         r1 <- FiberPool.await!(h1)
@@ -140,9 +148,9 @@ defmodule Skuld.Effects.FiberPool do
         {r1, r2}
       end
   """
-  @spec task(Comp.Types.computation(), keyword()) :: Comp.Types.computation()
-  def task(computation, opts \\ []) do
-    Comp.effect(@sig, %TaskOp{comp: computation, opts: opts})
+  @spec task((() -> term()), keyword()) :: Comp.Types.computation()
+  def task(thunk, opts \\ []) when is_function(thunk, 0) do
+    Comp.effect(@sig, %TaskOp{thunk: thunk, opts: opts})
   end
 
   @doc """
@@ -457,7 +465,7 @@ defmodule Skuld.Effects.FiberPool do
     k.(:ok, env)
   end
 
-  defp handle(%TaskOp{comp: comp, opts: opts}, env, k) do
+  defp handle(%TaskOp{thunk: thunk, opts: opts}, env, k) do
     # Create a unique handle_id for this task (like a fiber_id)
     handle_id = make_ref()
     pool_id = Env.get_state(env, {__MODULE__, :pool_id}, make_ref())
@@ -466,7 +474,7 @@ defmodule Skuld.Effects.FiberPool do
     # Store pending task for the scheduler to spawn
     # We don't spawn here because we need the scheduler's Task.Supervisor
     pending_tasks = Env.get_state(env, @pending_tasks_key, [])
-    task_info = {handle_id, comp, opts}
+    task_info = {handle_id, thunk, opts}
     env = Env.put_state(env, @pending_tasks_key, [task_info | pending_tasks])
 
     # Return handle immediately
@@ -563,7 +571,7 @@ defmodule Skuld.Effects.FiberPool do
       end)
 
     # Spawn pending tasks
-    state = spawn_pending_tasks(state, pending_tasks, env)
+    state = spawn_pending_tasks(state, pending_tasks)
 
     # If main result is a suspension, we need to handle it specially
     case main_result do
@@ -714,19 +722,17 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   # Spawn tasks using the Task.Supervisor
-  defp spawn_pending_tasks(state, pending_tasks, env) do
+  defp spawn_pending_tasks(state, pending_tasks) do
     task_sup = state.task_supervisor
 
-    Enum.reduce(pending_tasks, state, fn {handle_id, comp, opts}, acc ->
+    Enum.reduce(pending_tasks, state, fn {handle_id, thunk, opts}, acc ->
       _timeout = Keyword.get(opts, :timeout, 5000)
 
-      # Spawn the task - it runs the computation and sends result back
+      # Spawn the task - it runs the thunk and sends result back
       task =
         Task.Supervisor.async_nolink(task_sup, fn ->
-          # Run the computation in the task process
-          # Note: effects won't work across process boundaries without serialization
-          {result, _env} = Comp.call(comp, env, &Comp.identity_k/2)
-          result
+          # Call the thunk directly - no env/effects, just pure computation
+          thunk.()
         end)
 
       # Track the task by its ref

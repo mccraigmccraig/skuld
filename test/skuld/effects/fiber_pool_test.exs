@@ -318,7 +318,7 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "runs and awaits a task" do
       result =
         comp do
-          h <- FiberPool.task(Comp.pure(42))
+          h <- FiberPool.task(fn -> 42 end)
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
@@ -331,13 +331,9 @@ defmodule Skuld.Effects.FiberPoolTest do
       # Use self() to verify task runs in different process
       parent = self()
 
-      task_comp = fn _env, k ->
-        k.(self() != parent, %{})
-      end
-
       result =
         comp do
-          h <- FiberPool.task(task_comp)
+          h <- FiberPool.task(fn -> self() != parent end)
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
@@ -350,9 +346,9 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "runs multiple tasks and awaits all" do
       result =
         comp do
-          h1 <- FiberPool.task(Comp.pure(10))
-          h2 <- FiberPool.task(Comp.pure(20))
-          h3 <- FiberPool.task(Comp.pure(12))
+          h1 <- FiberPool.task(fn -> 10 end)
+          h2 <- FiberPool.task(fn -> 20 end)
+          h3 <- FiberPool.task(fn -> 12 end)
 
           FiberPool.await_all!([h1, h2, h3])
         end
@@ -363,19 +359,20 @@ defmodule Skuld.Effects.FiberPoolTest do
     end
 
     test "task that crashes returns error on await" do
-      crash_comp = fn _env, _k ->
-        raise "task crashed!"
-      end
-
       # Task crashes are wrapped as {:task_crashed, reason}
-      assert_raise RuntimeError, ~r/Fiber failed/, fn ->
-        comp do
-          h <- FiberPool.task(crash_comp)
-          FiberPool.await!(h)
+      # Use capture_log to suppress the expected Task error log
+      import ExUnit.CaptureLog
+
+      capture_log(fn ->
+        assert_raise RuntimeError, ~r/Fiber failed/, fn ->
+          comp do
+            h <- FiberPool.task(fn -> raise "task crashed!" end)
+            FiberPool.await!(h)
+          end
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
         end
-        |> FiberPool.with_handler()
-        |> FiberPool.run!()
-      end
+      end)
     end
 
     test "mixed fibers and tasks" do
@@ -383,7 +380,7 @@ defmodule Skuld.Effects.FiberPoolTest do
         comp do
           # Submit both fibers and tasks
           fiber_h <- FiberPool.fiber(Comp.pure(:fiber_result))
-          task_h <- FiberPool.task(Comp.pure(:task_result))
+          task_h <- FiberPool.task(fn -> :task_result end)
 
           # Await both
           fiber_r <- FiberPool.await!(fiber_h)
@@ -402,8 +399,8 @@ defmodule Skuld.Effects.FiberPoolTest do
       # to trigger the scheduler to wait for task completion
       result =
         comp do
-          h1 <- FiberPool.task(Comp.pure(100))
-          _ <- FiberPool.task(Comp.pure(:ignored))
+          h1 <- FiberPool.task(fn -> 100 end)
+          _ <- FiberPool.task(fn -> :ignored end)
           # Only await h1
           FiberPool.await!(h1)
         end
@@ -416,8 +413,8 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "await_any with tasks" do
       {_handle, result} =
         comp do
-          h1 <- FiberPool.task(Comp.pure(:first))
-          h2 <- FiberPool.task(Comp.pure(:second))
+          h1 <- FiberPool.task(fn -> :first end)
+          h2 <- FiberPool.task(fn -> :second end)
 
           FiberPool.await_any!([h1, h2])
         end
