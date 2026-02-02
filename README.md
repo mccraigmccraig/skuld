@@ -1814,6 +1814,25 @@ is around 15-20 stages for trivial transforms. CPU-heavy transforms would favor
 GenStage (parallel execution across cores), while I/O-heavy transforms would favor
 Skuld (automatic batching and non-blocking cooperative scheduling).
 
+**Chunking vs I/O batching tradeoff:**
+
+| Stages | Input | Skuld (chunked) | Skuld (chunk_size: 1) | GenStage |
+|--------|-------|-----------------|----------------------|----------|
+| 1      | 1k    | 0.17ms          | 3ms                  | 23ms     |
+| 1      | 10k   | 1.6ms           | 27ms                 | 27ms     |
+| 1      | 100k  | 15ms            | 276ms                | 414ms    |
+| 5      | 1k    | 0.79ms          | 16ms                 | 23ms     |
+| 5      | 10k   | 7ms             | 155ms                | 25ms     |
+| 5      | 100k  | 63ms            | 1510ms               | 408ms    |
+
+Skuld's default `chunk_size: 100` processes items in batches for ~17x better throughput,
+but items within a chunk transform sequentially. Using `chunk_size: 1` enables true
+concurrent transforms (and thus I/O batching), but loses the chunking speedup.
+
+For **I/O-heavy workloads** (e.g., 10ms database calls), `chunk_size: 1` still wins
+because batching N database calls into 1 query dominates the per-item overhead. For
+**CPU-bound transforms**, the default chunking is clearly better.
+
 **Architecture tradeoffs:**
 
 Skuld Streams run in a **single BEAM process** with cooperative fiber scheduling,
