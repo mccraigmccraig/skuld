@@ -677,24 +677,6 @@ debugging.
 
 ## Effects
 
-All examples below assume the following setup (paste once into IEx):
-
-```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.{
-  State, Reader, Writer, Throw, Yield,
-  FxList, FxFasterList,
-  Fresh, Random, AtomicState, Parallel, Bracket,
-  Port, Command, EventAccumulator, EffectLogger,
-  DBTransaction, ChangesetPersist, ChangeEvent,
-  FiberPool, Channel, Brook, DB
-}
-alias Skuld.Fiber.FiberPool.BatchExecutor
-alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
-alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
-```
-
 ### State & Environment
 
 #### State
@@ -702,6 +684,10 @@ alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
 Mutable state within a computation:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.State
+
 comp do
   n <- State.get()
   _ <- State.put(n + 1)
@@ -717,6 +703,10 @@ end
 Read-only environment:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Reader
+
 comp do
   name <- Reader.ask()
   "Hello, #{name}!"
@@ -731,6 +721,10 @@ end
 Accumulating output (use `output:` to include the log in the result):
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Writer
+
 comp do
   _ <- Writer.tell("step 1")
   _ <- Writer.tell("step 2")
@@ -747,6 +741,10 @@ State, Reader, and Writer all support explicit tags for multiple independent ins
 Use an atom as the first argument to operations, and `tag: :name` in the handler:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{State, Reader, Writer}
+
 # Multiple independent state values
 comp do
   _ <- State.put(:counter, 0)
@@ -797,6 +795,10 @@ state, returning a transformed result. This lets you include effect state in the
 return value:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{State, Writer}
+
 # Include final state in result
 comp do
   _ <- State.put(42)
@@ -862,6 +864,10 @@ access by AsyncComputation callers.
 Error handling with the `catch` clause using tagged patterns `{Throw, pattern}`:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Throw
+
 comp do
   x = -1
   _ <- if x < 0, do: Throw.throw({:error, "negative"})  # nil auto-lifted when false
@@ -877,6 +883,10 @@ end
 The `catch` clause with `{Throw, pattern}` desugars to `Throw.catch_error/2`:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Throw
+
 # The above is equivalent to:
 Throw.catch_error(
   comp do
@@ -896,6 +906,10 @@ when they occur during computation execution. This works even in the first expre
 of a comp block:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Throw
+
 # Helper functions that raise/throw
 defmodule Risky do
   def boom!, do: raise "oops!"
@@ -932,6 +946,10 @@ The `else` clause handles pattern match failures in `<-` bindings. Since `else`
 uses the Throw effect internally, you need a Throw handler:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Throw
+
 comp do
   {:ok, x} <- {:error, "something went wrong"}  # auto-lifted
   x * 2
@@ -948,6 +966,10 @@ end
 Both clauses can be used together. The `else` must come before `catch`:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Throw
+
 # Returns {:ok, x}, {:error, reason}, or throws
 might_fail = fn x ->
   cond do
@@ -993,6 +1015,10 @@ The semantic ordering is `catch(else(body))`, meaning:
 Safe resource acquisition and cleanup (like try/finally):
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{Bracket, State}
+
 # Track resource lifecycle with State
 comp do
   result <- Bracket.bracket(
@@ -1024,6 +1050,10 @@ end
 Use `Bracket.finally/2` for simpler cleanup without resource passing:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{Bracket, State}
+
 Bracket.finally(
   comp do
     _ <- State.put(:working)
@@ -1044,6 +1074,9 @@ Bracket.finally(
 Coroutine-style suspension and resumption:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Effects.Yield
+
 generator = comp do
   _ <- Yield.yield(1)
   _ <- Yield.yield(2)
@@ -1075,6 +1108,10 @@ to how `Throw.catch_error/2` catches throws. This enables handling yield request
 within the computation itself rather than requiring an external driver:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{Yield, State}
+
 # Handle yields internally with a responder function
 comp do
   result <- Yield.respond(
@@ -1145,6 +1182,10 @@ The `catch` clause supports `{Yield, pattern}` for intercepting yields, providin
 cleaner alternative to explicit `Yield.respond/2` calls:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Yield
+
 # Using catch to intercept yields
 comp do
   x <- Yield.yield(:get_x)
@@ -1162,6 +1203,9 @@ end
 You can combine Throw and Yield interception in the same catch clause:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Effects.{Yield, Throw}
+
 comp do
   config <- Yield.yield(:need_config)
   result <- risky_operation(config)
@@ -1183,6 +1227,10 @@ and each module switch creates a new interceptor layer (first group innermost).
 Effectful list operations:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{FxList, State}
+
 comp do
   results <- FxList.fx_map([1, 2, 3], fn item ->
     comp do
@@ -1206,6 +1254,10 @@ end
 High-performance variant of FxList using `Enum.reduce_while`:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{FxFasterList, State}
+
 comp do
   results <- FxFasterList.fx_map([1, 2, 3], fn item ->
     comp do
@@ -1231,6 +1283,10 @@ end
 Generate fresh UUIDs with two handler modes:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Fresh
+
 # Production: v7 UUIDs (time-ordered, good for database primary keys)
 comp do
   uuid1 <- Fresh.fresh_uuid()
@@ -1268,6 +1324,10 @@ end
 Generate random values with three handler modes:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.Random
+
 # Production: uses Erlang :rand module
 comp do
   f <- Random.random()              # float in [0, 1)
@@ -1310,6 +1370,10 @@ stores state in `env.state` (copied when forking to new processes), AtomicState
 uses external storage (Agent) that can be safely accessed from multiple processes:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.AtomicState
+
 # Basic usage - similar to State but with atomic guarantees
 comp do
   _ <- AtomicState.put(0)
@@ -1365,6 +1429,10 @@ Simple fork-join concurrency with built-in boundaries. Each operation is self-co
 with automatic task management:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{Parallel, Throw}
+
 # Run multiple computations in parallel, get all results
 comp do
   Parallel.all([
@@ -1409,6 +1477,10 @@ ignored unless all tasks fail.
 **Testing handler** runs tasks sequentially for deterministic tests:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{Parallel, Throw}
+
 comp do
   Parallel.all([comp do :a end, comp do :b end])
 end
@@ -1530,6 +1602,9 @@ computations that yield cooperatively and can be scheduled together for efficien
 **Basic usage:**
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Effects.FiberPool
+
 comp do
   # Spawn fibers
   h1 <- FiberPool.fiber(comp do :result_1 end)
@@ -1548,6 +1623,9 @@ end
 **Await multiple fibers:**
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Effects.FiberPool
+
 comp do
   h1 <- FiberPool.fiber(comp do :first end)
   h2 <- FiberPool.fiber(comp do :second end)
@@ -1566,6 +1644,11 @@ end
 FiberPool automatically batches I/O operations across suspended fibers:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{FiberPool, DB}
+alias Skuld.Fiber.FiberPool.BatchExecutor
+
 # Define a schema struct and mock executor
 defmodule User do
   defstruct [:id, :name]
@@ -1599,6 +1682,9 @@ end
 For CPU-bound work that benefits from parallel execution:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Effects.FiberPool
+
 comp do
   # Task runs in separate process (takes a thunk, not a computation)
   h <- FiberPool.task(fn -> expensive_calculation() end)
@@ -1615,6 +1701,9 @@ Operations: `fiber/1`, `task/1`, `await/1`, `await_all/1`, `await_any/1`, `cance
 Bounded channels for communication between fibers with backpressure:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Effects.{Channel, FiberPool}
+
 comp do
   ch <- Channel.new(10)  # buffer capacity
 
@@ -1646,6 +1735,9 @@ end
 **Error propagation:**
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Effects.Channel
+
 # Errors flow downstream through channels
 _ <- Channel.error(ch, :something_failed)
 Channel.take(ch)  #=> {:error, :something_failed}
@@ -1659,6 +1751,9 @@ Operations: `new/1`, `put/2`, `take/1`, `peek/1`, `close/1`, `error/2`
 you need to transform items concurrently but preserve their original order:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Effects.{Channel, FiberPool}
+
 comp do
   ch <- Channel.new(10)  # buffer size = max concurrent transforms
 
@@ -1701,6 +1796,9 @@ High-level streaming API built on channels, with automatic backpressure via
 bounded channel buffers—producers block when downstream consumers can't keep up:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Effects.{Brook, Channel, FiberPool}
+
 comp do
   # Create stream from enumerable
   source <- Brook.from_enum(1..100)
@@ -1723,6 +1821,9 @@ end
 **Producer functions:**
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Effects.Brook
+
 comp do
   source <- Brook.from_function(fn ->
     case fetch_next_batch() do
@@ -1739,6 +1840,11 @@ end
 **I/O Batching in Brook:**
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{Brook, Channel, FiberPool, DB}
+alias Skuld.Fiber.FiberPool.BatchExecutor
+
 defmodule User do
   defstruct [:id, :name]
 
@@ -1875,6 +1981,11 @@ leads to different characteristics:
 Database transactions with automatic commit/rollback:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.DBTransaction
+alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
+
 # Normal completion - transaction commits
 comp do
   result <- DBTransaction.transact(comp do
@@ -1902,6 +2013,12 @@ end
 The same domain code works with different handlers - swap `Noop` for `Ecto` in production:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.DBTransaction
+alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
+alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
+
 # Domain logic - unchanged regardless of handler
 create_order = fn user_id, items ->
   comp do
@@ -1933,6 +2050,10 @@ Dispatch parameterizable blocking calls to pluggable backends. Ideal for wrappin
 any existing side-effecting code (database queries, HTTP calls, file I/O, etc.):
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{Port, Throw}
+
 # Define a module with side-effecting functions (accepts keyword list params)
 defmodule MyQueries do
   def find_user(id: id), do: %{id: id, name: "User #{id}"}
@@ -1983,6 +2104,10 @@ known upfront. Use `with_test_handler` for simple exact-match cases and
 Dispatch commands (mutations) through a unified handler:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{Command, Fresh}
+
 # Define command structs
 defmodule CreateTodo do
   defstruct [:title, :priority]
@@ -2030,6 +2155,10 @@ separation between command dispatch and command implementation.
 Accumulate domain events during computation (built on Writer):
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.EventAccumulator
+
 comp do
   _ <- EventAccumulator.emit(%{type: :user_created, id: 1})
   _ <- EventAccumulator.emit(%{type: :email_sent, to: "user@example.com"})
@@ -2045,6 +2174,10 @@ end
 Changeset persistence as effects (requires Ecto):
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.ChangesetPersist
+
 # Production: real database operations via Ecto handler
 comp do
   user <- ChangesetPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
@@ -2058,6 +2191,10 @@ end
 For testing, use the test handler to stub responses and record calls:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.ChangesetPersist
+
 # Define a simple schema for testing
 defmodule User do
   use Ecto.Schema
@@ -2107,6 +2244,10 @@ end)
 Capture effect invocations for replay, resume, and retry:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{State, EffectLogger}
+
 # Capture a log of effects
 {{result, log}, _env} = (
   comp do
@@ -2158,6 +2299,10 @@ grow unboundedly. Use `mark_loop/1` to mark iteration boundaries - pruning is en
 by default and happens eagerly after each mark, keeping memory bounded:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{State, Writer, EffectLogger}
+
 # Define a recursive computation that processes items
 defmodule ProcessLoop do
   use Skuld.Syntax
@@ -2202,6 +2347,10 @@ ProcessLoop.process(["a", "b", "c", "d"])
 To disable pruning and keep all entries (e.g., for debugging), use `prune_loops: false`:
 
 ```elixir
+# (ProcessLoop defined in previous example)
+alias Skuld.Comp
+alias Skuld.Effects.{State, Writer, EffectLogger}
+
 # Keep all entries for debugging
 ProcessLoop.process(["a", "b", "c", "d"])
 |> EffectLogger.with_logging(prune_loops: false)
@@ -2216,6 +2365,10 @@ ProcessLoop.process(["a", "b", "c", "d"])
 When a computation suspends via `Yield`, you can serialize the log and resume later:
 
 ```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.{State, Writer, Yield, EffectLogger}
+
 # Define a computation that yields for user input
 defmodule Conversation do
   use Skuld.Syntax
