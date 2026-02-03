@@ -39,14 +39,14 @@ defmodule Skuld.Effects.Channel.State do
   ```
   """
 
+  alias Skuld.Comp.Types
+
   @type channel_id :: reference()
   @type fiber_id :: reference()
-  # resume takes (result, env) -> {result, env} to avoid capturing stale env
-  @type resume_fn :: (term(), Skuld.Comp.Types.env() -> {term(), Skuld.Comp.Types.env()})
   @type status :: :open | :closed | {:error, term()}
 
-  @type waiting_put :: {fiber_id(), term(), resume_fn()}
-  @type waiting_take :: {fiber_id(), resume_fn()}
+  @type waiting_put :: {fiber_id(), term(), Types.k()}
+  @type waiting_take :: {fiber_id(), Types.k()}
 
   @type t :: %__MODULE__{
           id: channel_id(),
@@ -156,7 +156,7 @@ defmodule Skuld.Effects.Channel.State do
   @doc """
   Add a fiber to the waiting puts list.
   """
-  @spec add_waiting_put(t(), fiber_id(), term(), resume_fn()) :: t()
+  @spec add_waiting_put(t(), fiber_id(), term(), Types.k()) :: t()
   def add_waiting_put(state, fiber_id, item, resume_fn) do
     %{state | waiting_puts: state.waiting_puts ++ [{fiber_id, item, resume_fn}]}
   end
@@ -200,7 +200,7 @@ defmodule Skuld.Effects.Channel.State do
   @doc """
   Add a fiber to the waiting takes list.
   """
-  @spec add_waiting_take(t(), fiber_id(), resume_fn()) :: t()
+  @spec add_waiting_take(t(), fiber_id(), Types.k()) :: t()
   def add_waiting_take(state, fiber_id, resume_fn) do
     %{state | waiting_takes: state.waiting_takes ++ [{fiber_id, resume_fn}]}
   end

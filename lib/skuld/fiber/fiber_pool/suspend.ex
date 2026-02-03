@@ -11,6 +11,7 @@ defmodule Skuld.Fiber.FiberPool.Suspend do
   """
 
   alias Skuld.Comp.ISentinel
+  alias Skuld.Comp.Types
   alias Skuld.Fiber.Handle
 
   @type await_mode :: :one | :all | :any
@@ -19,8 +20,7 @@ defmodule Skuld.Fiber.FiberPool.Suspend do
           op: :await,
           handles: [Handle.t()],
           mode: await_mode(),
-          # resume takes (result, env) -> {result, env} to avoid capturing stale env
-          resume: (term(), Skuld.Comp.Types.env() -> {term(), Skuld.Comp.Types.env()}),
+          resume: Types.k(),
           consume_ids: [reference()]
         }
 
@@ -29,7 +29,7 @@ defmodule Skuld.Fiber.FiberPool.Suspend do
   @doc """
   Create an await suspension for a single handle.
   """
-  @spec await_one(Handle.t(), (term(), Skuld.Comp.Types.env() -> {term(), Skuld.Comp.Types.env()}), keyword()) :: t()
+  @spec await_one(Handle.t(), Types.k(), keyword()) :: t()
   def await_one(handle, resume, opts \\ []) do
     consume = Keyword.get(opts, :consume, false)
 
@@ -45,7 +45,7 @@ defmodule Skuld.Fiber.FiberPool.Suspend do
   @doc """
   Create an await suspension for all handles.
   """
-  @spec await_all([Handle.t()], (term(), Skuld.Comp.Types.env() -> {term(), Skuld.Comp.Types.env()})) :: t()
+  @spec await_all([Handle.t()], Types.k()) :: t()
   def await_all(handles, resume) do
     %__MODULE__{
       op: :await,
@@ -58,7 +58,7 @@ defmodule Skuld.Fiber.FiberPool.Suspend do
   @doc """
   Create an await suspension for any handle.
   """
-  @spec await_any([Handle.t()], (term(), Skuld.Comp.Types.env() -> {term(), Skuld.Comp.Types.env()})) :: t()
+  @spec await_any([Handle.t()], Types.k()) :: t()
   def await_any(handles, resume) do
     %__MODULE__{
       op: :await,

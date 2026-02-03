@@ -13,10 +13,11 @@ defmodule Skuld.Fiber.FiberPool.BatchSuspend do
   - `request_id` - Unique ID for matching results back to this request
   """
 
+  alias Skuld.Comp.Types
+
   @type t :: %__MODULE__{
           op: term(),
-          # resume takes (result, env) -> {result, env} to avoid capturing stale env
-          resume: (term(), Skuld.Comp.Types.env() -> {term(), Skuld.Comp.Types.env()}),
+          resume: Types.k(),
           request_id: reference()
         }
 
@@ -31,7 +32,7 @@ defmodule Skuld.Fiber.FiberPool.BatchSuspend do
   - `resume` - Function called with the result to resume the fiber
   - `request_id` - Optional request ID (generated if not provided)
   """
-  @spec new(term(), (term(), Skuld.Comp.Types.env() -> {term(), Skuld.Comp.Types.env()}), reference() | nil) :: t()
+  @spec new(term(), Types.k(), reference() | nil) :: t()
   def new(op, resume, request_id \\ nil) do
     %__MODULE__{
       op: op,
