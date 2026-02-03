@@ -1876,20 +1876,20 @@ end
 # Mock executors simulate batched database queries
 user_executor = fn ops ->
   IO.puts("User fetch: #{length(ops)} users batched")
-  Comp.pure(Map.new(ops, fn {ref, %DB.Fetch{id: id}} ->
+  Map.new(ops, fn {ref, %DB.Fetch{id: id}} ->
     {ref, %User{id: id, name: "User #{id}", orders: nil}}
-  end))
+  end)
 end
 
 order_executor = fn ops ->
   IO.puts("Order fetch_all: #{length(ops)} queries batched")
-  Comp.pure(Map.new(ops, fn {ref, %DB.FetchAll{filter_value: user_id}} ->
+  Map.new(ops, fn {ref, %DB.FetchAll{filter_value: user_id}} ->
     # Each user has 2 orders
     {ref, [
       %Order{id: user_id * 10 + 1, user_id: user_id, total: 100},
       %Order{id: user_id * 10 + 2, user_id: user_id, total: 200}
     ]}
-  end))
+  end)
 end
 
 User.fetch_users_with_orders([1, 2, 3, 4, 5])
