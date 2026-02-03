@@ -53,6 +53,7 @@ defmodule Skuld.Effects.FiberPool do
   alias Skuld.Fiber.FiberPool.Scheduler
   alias Skuld.Fiber.FiberPool.Batching
   alias Skuld.Fiber.FiberPool.PendingWork
+  alias Skuld.Fiber.FiberPool.Tasks
   alias Skuld.Fiber.FiberPool.Suspend, as: FPSuspend
 
   @sig __MODULE__
@@ -568,7 +569,7 @@ defmodule Skuld.Effects.FiberPool do
       end)
 
     # Spawn pending tasks
-    state = spawn_pending_tasks(state, pending_tasks)
+    state = Tasks.spawn_pending(state, pending_tasks)
 
     # If main result is a suspension, we need to handle it specially
     case main_result do
@@ -595,7 +596,8 @@ defmodule Skuld.Effects.FiberPool do
 
       {:waiting_for_tasks, state} ->
         # Fibers done but tasks still running - wait for them
-        wait_for_tasks(state, env, result)
+        _state = Tasks.wait_for_all(state)
+        {result, env}
 
       {:batch_ready, state} ->
         # Execute batches and continue
@@ -688,77 +690,6 @@ defmodule Skuld.Effects.FiberPool do
     %Throw{error: reason}
   end
 
-  # Spawn tasks using the Task.Supervisor
-  defp spawn_pending_tasks(state, pending_tasks) do
-    task_sup = state.task_supervisor
-
-    Enum.reduce(pending_tasks, state, fn {handle_id, thunk, opts}, acc ->
-      _timeout = Keyword.get(opts, :timeout, 5000)
-
-      # Spawn the task - it runs the thunk and sends result back
-      task =
-        Task.Supervisor.async_nolink(task_sup, fn ->
-          # Call the thunk directly - no env/effects, just pure computation
-          thunk.()
-        end)
-
-      # Track the task by its ref
-      State.add_task(acc, task.ref, handle_id)
-    end)
-  end
-
-  # Wait for all remaining tasks to complete
-  defp wait_for_tasks(state, env, result) do
-    if State.has_tasks?(state) do
-      {:task_completed, state} = receive_task_message(state)
-      wait_for_tasks(state, env, result)
-    else
-      {result, env}
-    end
-  end
-
-  # Receive and handle a single task message
-  defp receive_task_message(state) do
-    receive do
-      {ref, result} when is_reference(ref) ->
-        # Task completed
-        Process.demonitor(ref, [:flush])
-
-        case State.pop_task(state, ref) do
-          {nil, state} ->
-            # Unknown task ref, ignore
-            {:task_completed, state}
-
-          {handle_id, state} ->
-            # Check if result is a Throw sentinel (task computation raised/threw)
-            completion =
-              case result do
-                %Throw{error: error} ->
-                  {:error, {:task_throw, error}}
-
-                _ ->
-                  {:ok, result}
-              end
-
-            state = State.record_completion(state, handle_id, completion)
-            {:task_completed, state}
-        end
-
-      {:DOWN, ref, :process, _pid, reason} ->
-        # Task crashed
-        case State.pop_task(state, ref) do
-          {nil, state} ->
-            # Unknown task, ignore
-            {:task_completed, state}
-
-          {handle_id, state} ->
-            # Record error
-            state = State.record_completion(state, handle_id, {:error, {:task_crashed, reason}})
-            {:task_completed, state}
-        end
-    end
-  end
-
   # Run scheduler loop, handling FiberPool suspensions (main computation awaiting fibers)
   defp run_scheduler_loop(state, env, %FPSuspend{handles: handles, mode: mode, resume: resume}) do
     # Convert handles to fiber_ids
@@ -840,7 +771,7 @@ defmodule Skuld.Effects.FiberPool do
 
   # Wait for a task message, record its result, and retry the await
   defp wait_for_task_and_retry(state, env, awaiter_id, resume, mode) do
-    {:task_completed, state} = receive_task_message(state)
+    {:task_completed, state} = Tasks.receive_message(state)
 
     # Check if this satisfied our await
     {wake_result, state} = State.pop_wake_result(state, awaiter_id)
