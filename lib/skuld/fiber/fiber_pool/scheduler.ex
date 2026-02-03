@@ -120,9 +120,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   def process_channel_wakes(state) do
     env_state = get_env_state(state)
 
-    if not EnvState.has_channel_wakes?(env_state) do
-      state
-    else
+    if EnvState.has_channel_wakes?(env_state) do
       # Pop wakes and update env_state
       {wakes, env_state} = EnvState.pop_channel_wakes(env_state)
       state = put_env_state(state, env_state)
@@ -130,6 +128,8 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
       Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
         resume_channel_fiber(acc_state, fiber_id, result)
       end)
+    else
+      state
     end
   end
 
@@ -300,9 +300,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   defp collect_pending_fibers(state, env) do
     pending_work = get_pending_work(env)
 
-    if not PendingWork.has_fibers?(pending_work) do
-      state
-    else
+    if PendingWork.has_fibers?(pending_work) do
       {fibers, _pending_work} = PendingWork.take_fibers(pending_work)
 
       # Add pending fibers to state
@@ -314,6 +312,8 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
       # Clear from state.env_state to prevent re-collection when next fiber runs
       clear_pending_work_in_env_state(state)
+    else
+      state
     end
   end
 
@@ -327,9 +327,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     else
       pending_work = get_pending_work(env)
 
-      if not PendingWork.has_fibers?(pending_work) do
-        {state, suspended_fiber}
-      else
+      if PendingWork.has_fibers?(pending_work) do
         {fibers, _pending_work} = PendingWork.take_fibers(pending_work)
 
         # Add pending fibers to state
@@ -347,6 +345,8 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
         # to prevent re-collection when next fiber runs
         state = clear_pending_work_in_env_state(state)
 
+        {state, suspended_fiber}
+      else
         {state, suspended_fiber}
       end
     end
