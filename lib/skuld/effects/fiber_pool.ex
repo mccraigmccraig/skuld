@@ -52,6 +52,7 @@ defmodule Skuld.Effects.FiberPool do
   alias Skuld.Fiber.FiberPool.State
   alias Skuld.Fiber.FiberPool.Scheduler
   alias Skuld.Fiber.FiberPool.Batching
+  alias Skuld.Fiber.FiberPool.PendingWork
   alias Skuld.Fiber.FiberPool.Suspend, as: FPSuspend
 
   @sig __MODULE__
@@ -295,9 +296,6 @@ defmodule Skuld.Effects.FiberPool do
   ## Handler Installation
   #############################################################################
 
-  @state_key {__MODULE__, :pending_fibers}
-  @pending_tasks_key {__MODULE__, :pending_tasks}
-
   @doc """
   Install the FiberPool handler for a computation.
 
@@ -308,8 +306,7 @@ defmodule Skuld.Effects.FiberPool do
   @spec with_handler(Comp.Types.computation(), keyword()) :: Comp.Types.computation()
   def with_handler(comp, _opts \\ []) do
     comp
-    |> Comp.with_scoped_state(@state_key, [])
-    |> Comp.with_scoped_state(@pending_tasks_key, [])
+    |> Comp.with_scoped_state(PendingWork.env_key(), PendingWork.new())
     |> Comp.with_handler(@sig, &handle/3)
   end
 
@@ -346,20 +343,17 @@ defmodule Skuld.Effects.FiberPool do
     try do
       {result, env} = Comp.call(comp, env, &Comp.identity_k/2)
 
-      # Extract pending fibers and tasks from env
-      pending_fibers = Env.get_state(env, @state_key, [])
-      pending_tasks = Env.get_state(env, @pending_tasks_key, [])
+      # Extract pending work from env
+      pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())
+      {pending_fibers, pending_tasks, _} = PendingWork.take_all(pending_work)
 
       if pending_fibers == [] and pending_tasks == [] and not is_struct(result, FPSuspend) do
         # No fibers or tasks spawned, simple completion
         {result, env}
       else
         # Seed state.env_state from main computation's env.state
-        # But clear pending_fibers and pending_tasks since we've already extracted them
-        clean_env_state =
-          env.state
-          |> Map.put(@state_key, [])
-          |> Map.put(@pending_tasks_key, [])
+        # But clear pending work since we've already extracted it
+        clean_env_state = Map.put(env.state, PendingWork.env_key(), PendingWork.new())
 
         state = State.put_env_state(state, clean_env_state)
         # Run fibers and tasks
@@ -391,15 +385,16 @@ defmodule Skuld.Effects.FiberPool do
     # Create a fiber for the computation
     pool_id = Env.get_state(env, {__MODULE__, :pool_id}, make_ref())
 
-    # Clear pending_fibers from the fiber's env to avoid inheriting parent's pending list
+    # Clear pending work from the fiber's env to avoid inheriting parent's pending list
     # This prevents re-collecting the same fibers when the child runs
-    fiber_env = Env.put_state(env, @state_key, [])
+    fiber_env = Env.put_state(env, PendingWork.env_key(), PendingWork.new())
     fiber = Fiber.new(comp, fiber_env)
     handle = Handle.new(fiber.id, pool_id)
 
     # Add to pending fibers list (scheduler will pick them up)
-    pending = Env.get_state(env, @state_key, [])
-    env = Env.put_state(env, @state_key, [{fiber.id, fiber} | pending])
+    pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())
+    pending_work = PendingWork.add_fiber(pending_work, fiber.id, fiber)
+    env = Env.put_state(env, PendingWork.env_key(), pending_work)
 
     # Return handle immediately
     k.(handle, env)
@@ -474,9 +469,10 @@ defmodule Skuld.Effects.FiberPool do
 
     # Store pending task for the scheduler to spawn
     # We don't spawn here because we need the scheduler's Task.Supervisor
-    pending_tasks = Env.get_state(env, @pending_tasks_key, [])
+    pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())
     task_info = {handle_id, thunk, opts}
-    env = Env.put_state(env, @pending_tasks_key, [task_info | pending_tasks])
+    pending_work = PendingWork.add_task(pending_work, task_info)
+    env = Env.put_state(env, PendingWork.env_key(), pending_work)
 
     # Return handle immediately
     k.(handle, env)

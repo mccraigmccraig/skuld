@@ -57,13 +57,9 @@ defmodule Skuld.Effects.Channel do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
+  alias Skuld.Fiber.FiberPool.EnvState
   alias Skuld.Effects.Channel.State
   alias Skuld.Effects.Channel.Suspend
-
-  # Keys for state in env.state (shared across fibers via FiberPool threading)
-  @channel_states_key :__skuld_channel_states__
-  @channel_wakes_key :__skuld_channel_wakes__
-  @fiber_id_key :__current_fiber_id__
 
   #############################################################################
   ## Handle Struct
@@ -599,17 +595,10 @@ defmodule Skuld.Effects.Channel do
   @spec with_handler(Comp.Types.computation()) :: Comp.Types.computation()
   def with_handler(comp) do
     fn env, k ->
-      # Initialize channel storage in env.state if not present
+      # Initialize EnvState in env.state if not present
       env =
-        if Env.get_state(env, @channel_states_key) == nil do
-          Env.put_state(env, @channel_states_key, %{})
-        else
-          env
-        end
-
-      env =
-        if Env.get_state(env, @channel_wakes_key) == nil do
-          Env.put_state(env, @channel_wakes_key, [])
+        if Env.get_state(env, EnvState.env_key()) == nil do
+          Env.put_state(env, EnvState.env_key(), EnvState.new())
         else
           env
         end
@@ -619,45 +608,36 @@ defmodule Skuld.Effects.Channel do
   end
 
   #############################################################################
-  ## Internal: Channel State Management (uses process dictionary for sharing)
+  ## Internal: Channel State Management (via EnvState)
   #############################################################################
 
   defp register_channel(env, state) do
-    channels = Env.get_state(env, @channel_states_key, %{})
-    Env.put_state(env, @channel_states_key, Map.put(channels, state.id, state))
+    update_env_state(env, &EnvState.register_channel(&1, state))
   end
 
   defp get_channel(env, channel_id) do
-    channels = Env.get_state(env, @channel_states_key, %{})
-
-    case Map.get(channels, channel_id) do
-      nil -> raise "Channel not found: #{inspect(channel_id)}"
-      state -> state
-    end
+    env_state = get_env_state(env)
+    EnvState.get_channel!(env_state, channel_id)
   end
 
   defp update_channel(env, channel_id, state) do
-    channels = Env.get_state(env, @channel_states_key, %{})
-    Env.put_state(env, @channel_states_key, Map.put(channels, channel_id, state))
+    update_env_state(env, &EnvState.put_channel(&1, channel_id, state))
   end
 
   #############################################################################
-  ## Internal: Fiber ID and Wake Management
+  ## Internal: Fiber ID and Wake Management (via EnvState)
   #############################################################################
 
   # Get the current fiber ID from the environment
   defp get_fiber_id(env) do
-    case Env.get_state(env, @fiber_id_key) do
-      nil -> raise "No fiber ID in environment - Channel operations must run within a FiberPool"
-      fid -> fid
-    end
+    env_state = get_env_state(env)
+    EnvState.get_fiber_id!(env_state)
   end
 
   # Add a channel wake request to env.state
   # The FiberPool scheduler will process these to wake suspended fibers
   defp add_channel_wake(env, fiber_id, result) do
-    wakes = Env.get_state(env, @channel_wakes_key, [])
-    Env.put_state(env, @channel_wakes_key, [{fiber_id, result} | wakes])
+    update_env_state(env, &EnvState.add_channel_wake(&1, fiber_id, result))
   end
 
   # Wake a putter if one is waiting (after a take frees space)
@@ -675,12 +655,16 @@ defmodule Skuld.Effects.Channel do
   end
 
   #############################################################################
-  ## Public: Accessors (for FiberPool integration)
+  ## Internal: EnvState Helpers
   #############################################################################
 
-  @doc false
-  # Set the current fiber ID in the environment
-  def set_fiber_id(env, fiber_id) do
-    Env.put_state(env, @fiber_id_key, fiber_id)
+  defp get_env_state(env) do
+    Env.get_state(env, EnvState.env_key(), EnvState.new())
+  end
+
+  defp update_env_state(env, fun) do
+    env_state = get_env_state(env)
+    env_state = fun.(env_state)
+    Env.put_state(env, EnvState.env_key(), env_state)
   end
 end

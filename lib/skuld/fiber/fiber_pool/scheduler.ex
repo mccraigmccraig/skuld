@@ -23,14 +23,10 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
   alias Skuld.Fiber
   alias Skuld.Fiber.FiberPool.State
+  alias Skuld.Fiber.FiberPool.EnvState
+  alias Skuld.Fiber.FiberPool.PendingWork
   alias Skuld.Comp.Types
   alias Skuld.Comp.Env
-
-  @fiber_id_key :__current_fiber_id__
-  # Key used by FiberPool to store pending fibers in env
-  @pending_fibers_key {Skuld.Effects.FiberPool, :pending_fibers}
-  # Key used by Channel to store pending wakes in env.state
-  @channel_wakes_key :__skuld_channel_wakes__
 
   @type step_result ::
           {:continue, State.t()}
@@ -122,13 +118,14 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   """
   @spec process_channel_wakes(State.t()) :: State.t()
   def process_channel_wakes(state) do
-    wakes = Map.get(state.env_state, @channel_wakes_key, [])
+    env_state = get_env_state(state)
 
-    if wakes == [] do
+    if not EnvState.has_channel_wakes?(env_state) do
       state
     else
-      # Clear wakes from env_state
-      state = State.put_env_state(state, Map.put(state.env_state, @channel_wakes_key, []))
+      # Pop wakes and update env_state
+      {wakes, env_state} = EnvState.pop_channel_wakes(env_state)
+      state = put_env_state(state, env_state)
 
       Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
         resume_channel_fiber(acc_state, fiber_id, result)
@@ -219,7 +216,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     # - Set the current fiber ID for Channel operations
     base_env = fiber.env || env
     fiber_env = %{base_env | state: state.env_state}
-    fiber_env = Env.put_state(fiber_env, @fiber_id_key, fiber.id)
+    fiber_env = update_env_state_in_env(fiber_env, &EnvState.set_fiber_id(&1, fiber.id))
     fiber = %{fiber | env: fiber_env}
 
     case Fiber.run_until_suspend(fiber) do
@@ -259,7 +256,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     # Inject shared env_state before resuming
     # Also set the current fiber ID (env_state may have the previous fiber's ID)
     fiber_env = %{fiber.env | state: state.env_state}
-    fiber_env = Env.put_state(fiber_env, @fiber_id_key, fiber.id)
+    fiber_env = update_env_state_in_env(fiber_env, &EnvState.set_fiber_id(&1, fiber.id))
     fiber = %{fiber | env: fiber_env}
 
     case Fiber.resume(fiber, result) do
@@ -296,26 +293,27 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   end
 
   # Extract any pending fibers from the env and add them to the scheduler state.
-  # Also clears pending_fibers from state.env_state to prevent re-collection
+  # Also clears pending work from state.env_state to prevent re-collection
   # when the next fiber runs.
   defp collect_pending_fibers(state, nil), do: state
 
   defp collect_pending_fibers(state, env) do
-    pending = Env.get_state(env, @pending_fibers_key, [])
+    pending_work = get_pending_work(env)
 
-    if pending == [] do
+    if not PendingWork.has_fibers?(pending_work) do
       state
     else
+      {fibers, _pending_work} = PendingWork.take_fibers(pending_work)
+
       # Add pending fibers to state
       state =
-        Enum.reduce(pending, state, fn {_id, fiber}, acc ->
+        Enum.reduce(fibers, state, fn {_id, fiber}, acc ->
           {_id, acc} = State.add_fiber(acc, fiber)
           acc
         end)
 
       # Clear from state.env_state to prevent re-collection when next fiber runs
-      env_state = Map.put(state.env_state, @pending_fibers_key, [])
-      State.put_env_state(state, env_state)
+      clear_pending_work_in_env_state(state)
     end
   end
 
@@ -327,26 +325,27 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     if env == nil do
       {state, suspended_fiber}
     else
-      pending = Env.get_state(env, @pending_fibers_key, [])
+      pending_work = get_pending_work(env)
 
-      if pending == [] do
+      if not PendingWork.has_fibers?(pending_work) do
         {state, suspended_fiber}
       else
+        {fibers, _pending_work} = PendingWork.take_fibers(pending_work)
+
         # Add pending fibers to state
         state =
-          Enum.reduce(pending, state, fn {_id, fiber}, acc ->
+          Enum.reduce(fibers, state, fn {_id, fiber}, acc ->
             {_id, acc} = State.add_fiber(acc, fiber)
             acc
           end)
 
-        # Clear pending fibers from the suspended fiber's env
-        cleared_env = Env.put_state(env, @pending_fibers_key, [])
+        # Clear pending work from the suspended fiber's env
+        cleared_env = clear_pending_work(env)
         suspended_fiber = %{suspended_fiber | env: cleared_env}
 
         # Also clear from state.env_state (which was updated before this call)
         # to prevent re-collection when next fiber runs
-        env_state = Map.put(state.env_state, @pending_fibers_key, [])
-        state = State.put_env_state(state, env_state)
+        state = clear_pending_work_in_env_state(state)
 
         {state, suspended_fiber}
       end
@@ -461,5 +460,42 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
         State.enqueue(state, fiber_id)
     end
+  end
+
+  #############################################################################
+  ## EnvState and PendingWork Helpers
+  #############################################################################
+
+  # Get the EnvState from state.env_state, defaulting to a new one
+  defp get_env_state(state) do
+    Map.get(state.env_state, EnvState.env_key(), EnvState.new())
+  end
+
+  # Put the EnvState back into state.env_state
+  defp put_env_state(state, env_state) do
+    State.put_env_state(state, Map.put(state.env_state, EnvState.env_key(), env_state))
+  end
+
+  # Get the PendingWork from an env, defaulting to empty
+  defp get_pending_work(env) do
+    Env.get_state(env, PendingWork.env_key(), PendingWork.new())
+  end
+
+  # Clear the PendingWork in an env
+  defp clear_pending_work(env) do
+    Env.put_state(env, PendingWork.env_key(), PendingWork.new())
+  end
+
+  # Clear the PendingWork in state.env_state
+  defp clear_pending_work_in_env_state(state) do
+    env_state = Map.put(state.env_state, PendingWork.env_key(), PendingWork.new())
+    State.put_env_state(state, env_state)
+  end
+
+  # Update the EnvState in an env (for setting fiber_id before running)
+  defp update_env_state_in_env(env, fun) do
+    env_state = Env.get_state(env, EnvState.env_key(), EnvState.new())
+    env_state = fun.(env_state)
+    Env.put_state(env, EnvState.env_key(), env_state)
   end
 end
