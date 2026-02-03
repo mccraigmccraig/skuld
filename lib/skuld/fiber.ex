@@ -184,42 +184,17 @@ defmodule Skuld.Fiber do
 
   # Run a computation, handling the result
   defp do_run(fiber, comp, env) do
-    case Comp.call(comp, env, &Comp.identity_k/2) do
-      {%Comp.Suspend{} = suspend, suspend_env} ->
-        handle_suspend(fiber, suspend, suspend_env)
-
-      {%BatchSuspend{} = batch_suspend, batch_env} ->
-        handle_batch_suspend(fiber, batch_suspend, batch_env)
-
-      {%ChannelSuspend{} = channel_suspend, channel_env} ->
-        handle_channel_suspend(fiber, channel_suspend, channel_env)
-
-      {%FPSuspend{} = fp_suspend, fp_env} ->
-        handle_fp_suspend(fiber, fp_suspend, fp_env)
-
-      {%Comp.Throw{} = throw, throw_env} ->
-        {:error, {:throw, throw.error}, throw_env}
-
-      {%Comp.Cancelled{} = cancelled, cancelled_env} ->
-        {:error, {:cancelled, cancelled.reason}, cancelled_env}
-
-      {value, %Env{} = final_env} ->
-        {:completed, value, final_env}
-    end
-  rescue
-    e ->
-      {:error, {:exception, e, __STACKTRACE__}, env}
-  catch
-    :throw, reason ->
-      {:error, {:throw, reason}, env}
-
-    :exit, reason ->
-      {:error, {:exit, reason}, env}
+    execute_and_handle(fiber, env, fn -> Comp.call(comp, env, &Comp.identity_k/2) end)
   end
 
   # Resume via continuation
   defp do_resume(fiber, k, value, env) do
-    case k.(value, env) do
+    execute_and_handle(fiber, env, fn -> k.(value, env) end)
+  end
+
+  # Execute an invocation and handle all result types
+  defp execute_and_handle(fiber, env, invocation) do
+    case invocation.() do
       {%Comp.Suspend{} = suspend, suspend_env} ->
         handle_suspend(fiber, suspend, suspend_env)
 
