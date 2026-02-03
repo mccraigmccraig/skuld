@@ -1928,7 +1928,7 @@ Configure with the `buffer` option: `Brook.map(source, &transform/1, buffer: 20)
 
 **Performance vs GenStage:**
 
-Skuld Brook are optimized for throughput via transparent chunking (processing items
+Skuld Brooks are optimized for throughput via transparent chunking (processing items
 in batches of 100 by default). Here's how they compare to GenStage:
 
 | Stages | Input Size | Skuld  | GenStage | Skuld Speedup |
@@ -1981,11 +1981,11 @@ because batching N database calls into 1 query dominates the per-item overhead. 
 
 **Architecture tradeoffs:**
 
-Skuld Brook run in a **single BEAM process** with cooperative fiber scheduling,
+Skuld Brooks run in a **single BEAM process** with cooperative fiber scheduling,
 while GenStage uses **multiple processes** with demand-based flow control. This
 leads to different characteristics:
 
-| Aspect        | Skuld Brook          | GenStage               |
+| Aspect        | Skuld Brook            | GenStage               |
 |---------------|------------------------|------------------------|
 | Scheduling    | Cooperative (fibers)   | Preemptive (processes) |
 | Communication | Direct (shared memory) | Message passing        |
@@ -1996,7 +1996,7 @@ leads to different characteristics:
 
 **When to use each:**
 
-- **Skuld Brook** excel at I/O-bound workloads where items flow through
+- **Skuld Brook** excels at I/O-bound workloads where items flow through
   transformations quickly and automatic I/O batching (via `FiberPool`) can
   consolidate database queries or API calls. The single-process model eliminates
   message-passing overhead and enables order-preserving concurrent transforms.
