@@ -147,7 +147,7 @@ defmodule Skuld.Effects.FiberPool do
         {r1, r2}
       end
   """
-  @spec task((() -> term()), keyword()) :: Comp.Types.computation()
+  @spec task((-> term()), keyword()) :: Comp.Types.computation()
   def task(thunk, opts \\ []) when is_function(thunk, 0) do
     Comp.effect(@sig, %TaskOp{thunk: thunk, opts: opts})
   end
@@ -588,9 +588,7 @@ defmodule Skuld.Effects.FiberPool do
 
   # Run all fibers to completion, handling batch and channel suspensions
   defp run_fibers_to_completion(state, env, result) do
-    # Process any pending channel wakes first
-    state = process_channel_wakes(state)
-
+    # Note: Scheduler.run processes channel wakes internally via run_loop
     case Scheduler.run(state, env) do
       {:done, _results, _final_state} ->
         {result, env}
@@ -607,44 +605,6 @@ defmodule Skuld.Effects.FiberPool do
         # Execute batches and continue
         {state, env} = execute_batches(state, env)
         run_fibers_to_completion(state, env, result)
-    end
-  end
-
-  # Key used by Channel to store pending wakes in env.state
-  @channel_wakes_key :__skuld_channel_wakes__
-
-  # Process pending channel wakes from env_state
-  defp process_channel_wakes(state) do
-    wakes = Map.get(state.env_state, @channel_wakes_key, [])
-
-    if wakes == [] do
-      state
-    else
-      # Clear wakes from env_state
-      state = %{state | env_state: Map.put(state.env_state, @channel_wakes_key, [])}
-
-      Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
-        resume_channel_fiber(acc_state, fiber_id, result)
-      end)
-    end
-  end
-
-  # Resume a fiber that was waiting on a channel operation
-  defp resume_channel_fiber(state, fiber_id, result) do
-    case State.get_channel_suspension(state, fiber_id) do
-      nil ->
-        # Fiber not found in channel suspensions - might have been cancelled
-        state
-
-      _channel_suspend ->
-        # Remove from channel_suspended and enqueue with result
-        state = State.remove_channel_suspension(state, fiber_id)
-
-        # Store wake result wrapped in :channel_wake tuple and enqueue
-        state =
-          put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:channel_wake, result})
-
-        State.enqueue(state, fiber_id)
     end
   end
 
@@ -831,8 +791,8 @@ defmodule Skuld.Effects.FiberPool do
 
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_until_await_satisfied(state, env, awaiter_id, resume, mode) do
-    # Process any pending channel wakes first
-    state = process_channel_wakes(state)
+    # Process any pending channel wakes first (Scheduler.step doesn't do this automatically)
+    state = Scheduler.process_channel_wakes(state)
 
     case Scheduler.step(state, env) do
       {:continue, state} ->

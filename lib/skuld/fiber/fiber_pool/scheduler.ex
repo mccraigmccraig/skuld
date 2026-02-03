@@ -110,6 +110,32 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     end
   end
 
+  @doc """
+  Process pending channel wakes from env_state.
+
+  Channel operations (put/take) may wake suspended fibers by adding entries
+  to the channel_wakes list in env_state. This function processes those wakes,
+  enqueueing the fibers to run with their results.
+
+  Called internally by `run/2`, but also available for use when calling
+  `step/2` directly (which does not process wakes automatically).
+  """
+  @spec process_channel_wakes(State.t()) :: State.t()
+  def process_channel_wakes(state) do
+    wakes = Map.get(state.env_state, @channel_wakes_key, [])
+
+    if wakes == [] do
+      state
+    else
+      # Clear wakes from env_state
+      state = State.put_env_state(state, Map.put(state.env_state, @channel_wakes_key, []))
+
+      Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
+        resume_channel_fiber(acc_state, fiber_id, result)
+      end)
+    end
+  end
+
   #############################################################################
   ## Internal
   #############################################################################
@@ -355,7 +381,11 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     {:continue, state}
   end
 
-  defp handle_fp_suspension(state, fiber, %{handles: handles, mode: mode, consume_ids: consume_ids}) do
+  defp handle_fp_suspension(state, fiber, %{
+         handles: handles,
+         mode: mode,
+         consume_ids: consume_ids
+       }) do
     # A fiber is awaiting other fibers - use the State's await tracking
     waiting_for = Enum.map(handles, & &1.id)
 
@@ -414,22 +444,6 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     |> Map.new()
   end
 
-  # Process pending channel wakes from env_state
-  defp process_channel_wakes(state) do
-    wakes = Map.get(state.env_state, @channel_wakes_key, [])
-
-    if wakes == [] do
-      state
-    else
-      # Clear wakes from env_state
-      state = State.put_env_state(state, Map.put(state.env_state, @channel_wakes_key, []))
-
-      Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
-        resume_channel_fiber(acc_state, fiber_id, result)
-      end)
-    end
-  end
-
   # Resume a fiber that was waiting on a channel operation
   defp resume_channel_fiber(state, fiber_id, result) do
     case State.get_channel_suspension(state, fiber_id) do
@@ -442,7 +456,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
         state = State.remove_channel_suspension(state, fiber_id)
 
         # Store wake result wrapped in :channel_wake tuple and enqueue
-        state = put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:channel_wake, result})
+        state =
+          put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:channel_wake, result})
+
         State.enqueue(state, fiber_id)
     end
   end
