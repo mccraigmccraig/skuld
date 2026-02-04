@@ -22,7 +22,7 @@ defmodule Skuld.Effects.Throw do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
-  alias Skuld.Comp.Throwable
+  alias Skuld.Comp.IThrowable
   alias Skuld.Comp.Types
 
   @sig __MODULE__
@@ -120,11 +120,11 @@ defmodule Skuld.Effects.Throw do
   ## Exception Handling
 
   When exceptions are raised inside computations, they are caught and converted
-  to `{:error, unwrapped_value}`. The `Skuld.Comp.Throwable` protocol determines
+  to `{:error, unwrapped_value}`. The `Skuld.Comp.IThrowable` protocol determines
   how exceptions are unwrapped:
 
   - By default, exceptions are returned as-is (e.g., `{:error, %ArgumentError{}}`)
-  - Domain exceptions can implement `Throwable` to return cleaner error values
+  - Domain exceptions can implement `IThrowable` to return cleaner error values
 
   For other exception kinds:
   - `:throw` values become `{:error, {:thrown, value}}`
@@ -139,11 +139,11 @@ defmodule Skuld.Effects.Throw do
         {:error, {:not_found, id}} -> handle_not_found(id)
       end
 
-  ## Throwable Protocol
+  ## IThrowable Protocol
 
-  Implement `Skuld.Comp.Throwable` for domain exceptions to get clean error values:
+  Implement `Skuld.Comp.IThrowable` for domain exceptions to get clean error values:
 
-      defimpl Skuld.Comp.Throwable, for: MyApp.NotFoundError do
+      defimpl Skuld.Comp.IThrowable, for: MyApp.NotFoundError do
         def unwrap(%{entity: entity, id: id}), do: {:not_found, entity, id}
       end
   """
@@ -157,7 +157,7 @@ defmodule Skuld.Effects.Throw do
 
   # Unwrap caught errors for try_catch
   defp unwrap_error(%{kind: :error, payload: exception}) do
-    Throwable.unwrap(exception)
+    IThrowable.unwrap(exception)
   end
 
   defp unwrap_error(%{kind: :throw, payload: value}) do

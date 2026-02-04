@@ -253,11 +253,11 @@ defmodule Skuld.Effects.ThrowTest do
     end
   end
 
-  describe "try_catch with Throwable protocol" do
+  describe "try_catch with IThrowable protocol" do
     # Uses Skuld.Test.NotFoundError from test/support/test_exceptions.ex
-    # which has a Throwable implementation compiled before protocol consolidation
+    # which has an IThrowable implementation compiled before protocol consolidation
 
-    test "applies Throwable.unwrap to domain exceptions" do
+    test "applies IThrowable.unwrap to domain exceptions" do
       comp =
         Throw.try_catch(
           Comp.bind(Comp.pure(nil), fn _ ->

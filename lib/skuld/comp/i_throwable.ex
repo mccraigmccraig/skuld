@@ -1,4 +1,4 @@
-defprotocol Skuld.Comp.Throwable do
+defprotocol Skuld.Comp.IThrowable do
   @moduledoc """
   Protocol for unwrapping exceptions in `Throw.try_catch/1`.
 
@@ -27,7 +27,7 @@ defprotocol Skuld.Comp.Throwable do
         end
       end
 
-      defimpl Skuld.Comp.Throwable, for: MyApp.NotFoundError do
+      defimpl Skuld.Comp.IThrowable, for: MyApp.NotFoundError do
         def unwrap(%{entity: entity, id: id}), do: {:not_found, entity, id}
       end
 
@@ -46,7 +46,7 @@ defprotocol Skuld.Comp.Throwable do
 
   ## When to Implement
 
-  Implement `Throwable` for exceptions that represent **domain errors** -
+  Implement `IThrowable` for exceptions that represent **domain errors** -
   expected failures that are part of your business logic. Examples:
 
   - Validation failures
@@ -74,7 +74,7 @@ defprotocol Skuld.Comp.Throwable do
   def unwrap(exception)
 end
 
-defimpl Skuld.Comp.Throwable, for: Any do
+defimpl Skuld.Comp.IThrowable, for: Any do
   @doc """
   Default implementation - return the exception unchanged.
 

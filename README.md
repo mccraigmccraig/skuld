@@ -637,10 +637,10 @@ end)
 #=> {:error, :my_error}
 ```
 
-### Throwable Protocol for Domain Exceptions
+### IThrowable Protocol for Domain Exceptions
 
 For domain exceptions that represent expected failures (validation errors, not-found,
-permission denied), implement the `Skuld.Comp.Throwable` protocol to get cleaner
+permission denied), implement the `Skuld.Comp.IThrowable` protocol to get cleaner
 error values from `try_catch`:
 
 ```elixir
@@ -651,7 +651,7 @@ defmodule MyApp.NotFoundError do
   def message(%{entity: entity, id: id}), do: "#{entity} not found: #{id}"
 end
 
-defimpl Skuld.Comp.Throwable, for: MyApp.NotFoundError do
+defimpl Skuld.Comp.IThrowable, for: MyApp.NotFoundError do
   def unwrap(%{entity: entity, id: id}), do: {:not_found, entity, id}
 end
 
@@ -671,7 +671,7 @@ case result do
 end
 ```
 
-By default (without a `Throwable` implementation), exceptions are returned as-is,
+By default (without an `IThrowable` implementation), exceptions are returned as-is,
 which is appropriate for unexpected errors where you want the full exception for
 debugging.
 
