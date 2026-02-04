@@ -13,8 +13,8 @@ defmodule Skuld.Effects.Channel.State do
   - `capacity` - Maximum buffer size (positive integer)
   - `buffer` - Queue of buffered items
   - `status` - `:open`, `:closed`, or `{:error, reason}`
-  - `waiting_puts` - List of `{fiber_id, item, resume_fn}` waiting for space
-  - `waiting_takes` - List of `{fiber_id, resume_fn}` waiting for items
+  - `waiting_puts` - List of `{fiber_id, item}` waiting for space
+  - `waiting_takes` - List of `fiber_id` waiting for items
 
   ## Status Transitions
 
@@ -39,14 +39,12 @@ defmodule Skuld.Effects.Channel.State do
   ```
   """
 
-  alias Skuld.Comp.Types
-
   @type channel_id :: reference()
   @type fiber_id :: reference()
   @type status :: :open | :closed | {:error, term()}
 
-  @type waiting_put :: {fiber_id(), term(), Types.k()}
-  @type waiting_take :: {fiber_id(), Types.k()}
+  @type waiting_put :: {fiber_id(), term()}
+  @type waiting_take :: fiber_id()
 
   @type t :: %__MODULE__{
           id: channel_id(),
@@ -156,9 +154,9 @@ defmodule Skuld.Effects.Channel.State do
   @doc """
   Add a fiber to the waiting puts list.
   """
-  @spec add_waiting_put(t(), fiber_id(), term(), Types.k()) :: t()
-  def add_waiting_put(state, fiber_id, item, resume_fn) do
-    %{state | waiting_puts: state.waiting_puts ++ [{fiber_id, item, resume_fn}]}
+  @spec add_waiting_put(t(), fiber_id(), term()) :: t()
+  def add_waiting_put(state, fiber_id, item) do
+    %{state | waiting_puts: state.waiting_puts ++ [{fiber_id, item}]}
   end
 
   @doc """
@@ -172,7 +170,7 @@ defmodule Skuld.Effects.Channel.State do
   @doc """
   Pop the first waiting put.
 
-  Returns `{:ok, {fiber_id, item, resume_fn}, state}` or `:empty`.
+  Returns `{:ok, {fiber_id, item}, state}` or `:empty`.
   """
   @spec pop_waiting_put(t()) :: {:ok, waiting_put(), t()} | :empty
   def pop_waiting_put(state) do
@@ -200,9 +198,9 @@ defmodule Skuld.Effects.Channel.State do
   @doc """
   Add a fiber to the waiting takes list.
   """
-  @spec add_waiting_take(t(), fiber_id(), Types.k()) :: t()
-  def add_waiting_take(state, fiber_id, resume_fn) do
-    %{state | waiting_takes: state.waiting_takes ++ [{fiber_id, resume_fn}]}
+  @spec add_waiting_take(t(), fiber_id()) :: t()
+  def add_waiting_take(state, fiber_id) do
+    %{state | waiting_takes: state.waiting_takes ++ [fiber_id]}
   end
 
   @doc """
@@ -216,7 +214,7 @@ defmodule Skuld.Effects.Channel.State do
   @doc """
   Pop the first waiting take.
 
-  Returns `{:ok, {fiber_id, resume_fn}, state}` or `:empty`.
+  Returns `{:ok, fiber_id, state}` or `:empty`.
   """
   @spec pop_waiting_take(t()) :: {:ok, waiting_take(), t()} | :empty
   def pop_waiting_take(state) do

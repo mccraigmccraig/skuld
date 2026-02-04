@@ -373,10 +373,10 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     {:continue, state}
   end
 
-  defp handle_channel_suspension(state, fiber, channel_suspend) do
+  defp handle_channel_suspension(state, fiber, _channel_suspend) do
     # Store the fiber and add to channel-suspended tracking
     state = State.put_fiber(state, fiber)
-    state = State.add_channel_suspension(state, fiber.id, channel_suspend)
+    state = State.add_channel_suspension(state, fiber.id)
     {:continue, state}
   end
 
@@ -445,20 +445,18 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
   # Resume a fiber that was waiting on a channel operation
   defp resume_channel_fiber(state, fiber_id, result) do
-    case State.get_channel_suspension(state, fiber_id) do
-      nil ->
-        # Fiber not found in channel suspensions - might have been cancelled
-        state
+    if State.channel_suspended?(state, fiber_id) do
+      # Remove from channel_suspended and enqueue with result
+      state = State.remove_channel_suspension(state, fiber_id)
 
-      _channel_suspend ->
-        # Remove from channel_suspended and enqueue with result
-        state = State.remove_channel_suspension(state, fiber_id)
+      # Store wake result wrapped in :channel_wake tuple and enqueue
+      state =
+        put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:channel_wake, result})
 
-        # Store wake result wrapped in :channel_wake tuple and enqueue
-        state =
-          put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:channel_wake, result})
-
-        State.enqueue(state, fiber_id)
+      State.enqueue(state, fiber_id)
+    else
+      # Fiber not found in channel suspensions - might have been cancelled
+      state
     end
   end
 

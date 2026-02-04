@@ -154,7 +154,7 @@ defmodule Skuld.Effects.Channel do
           cond do
             State.has_waiting_takes?(state) ->
               # Direct handoff to waiting taker
-              {:ok, {taker_fid, _taker_resume}, state} = State.pop_waiting_take(state)
+              {:ok, taker_fid, state} = State.pop_waiting_take(state)
               env = update_channel(env, channel_id, state)
 
               # Create a wake request for the taker
@@ -168,11 +168,11 @@ defmodule Skuld.Effects.Channel do
               fiber_id = get_fiber_id(env)
 
               # Add to waiting puts list so take() can find and wake us
-              # Note: resume_fn takes env as parameter to avoid capturing stale env with pending fibers
-              resume_fn = fn result, resume_env -> k.(result, resume_env) end
-              state = State.add_waiting_put(state, fiber_id, item, resume_fn)
+              state = State.add_waiting_put(state, fiber_id, item)
               env = update_channel(env, channel_id, state)
 
+              # Resume fn is stored in fiber.suspended_k, not duplicated here
+              resume_fn = fn result, resume_env -> k.(result, resume_env) end
               suspend = Suspend.new_put(channel_id, fiber_id, item, resume_fn)
 
               {suspend, env}
@@ -236,7 +236,7 @@ defmodule Skuld.Effects.Channel do
 
             State.has_waiting_puts?(state) ->
               # Direct handoff from waiting putter
-              {:ok, {putter_fid, item, _putter_resume}, state} = State.pop_waiting_put(state)
+              {:ok, {putter_fid, item}, state} = State.pop_waiting_put(state)
               env = update_channel(env, channel_id, state)
 
               # Wake the putter with success
@@ -253,11 +253,11 @@ defmodule Skuld.Effects.Channel do
               fiber_id = get_fiber_id(env)
 
               # Add to waiting takes list so put() can find and wake us
-              # Note: resume_fn takes env as parameter to avoid capturing stale env with pending fibers
-              resume_fn = fn result, resume_env -> k.(result, resume_env) end
-              state = State.add_waiting_take(state, fiber_id, resume_fn)
+              state = State.add_waiting_take(state, fiber_id)
               env = update_channel(env, channel_id, state)
 
+              # Resume fn is stored in fiber.suspended_k, not duplicated here
+              resume_fn = fn result, resume_env -> k.(result, resume_env) end
               suspend = Suspend.new_take(channel_id, fiber_id, resume_fn)
 
               {suspend, env}
@@ -461,7 +461,7 @@ defmodule Skuld.Effects.Channel do
               {waiting_takes, state_cleared} = State.pop_all_waiting_takes(state)
               state = state_cleared
 
-              Enum.reduce(waiting_takes, update_channel(env, channel_id, state), fn {fid, _resume},
+              Enum.reduce(waiting_takes, update_channel(env, channel_id, state), fn fid,
                                                                                     acc_env ->
                 add_channel_wake(acc_env, fid, :closed)
               end)
@@ -513,7 +513,7 @@ defmodule Skuld.Effects.Channel do
           {waiting_takes, state} = State.pop_all_waiting_takes(state)
 
           env =
-            Enum.reduce(waiting_takes, env, fn {fid, _resume}, acc_env ->
+            Enum.reduce(waiting_takes, env, fn fid, acc_env ->
               add_channel_wake(acc_env, fid, {:error, reason})
             end)
 
@@ -521,7 +521,7 @@ defmodule Skuld.Effects.Channel do
           {waiting_puts, state} = State.pop_all_waiting_puts(state)
 
           env =
-            Enum.reduce(waiting_puts, env, fn {fid, _item, _resume}, acc_env ->
+            Enum.reduce(waiting_puts, env, fn {fid, _item}, acc_env ->
               add_channel_wake(acc_env, fid, {:error, reason})
             end)
 
@@ -643,7 +643,7 @@ defmodule Skuld.Effects.Channel do
   # Wake a putter if one is waiting (after a take frees space)
   defp maybe_wake_putter(state, _channel_id, env) do
     if State.has_waiting_puts?(state) and not State.buffer_full?(state) do
-      {:ok, {putter_fid, item, _resume}, state} = State.pop_waiting_put(state)
+      {:ok, {putter_fid, item}, state} = State.pop_waiting_put(state)
       # Add the item to the buffer
       state = State.enqueue(state, item)
       # Wake the putter
