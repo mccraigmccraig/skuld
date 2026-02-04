@@ -14,13 +14,13 @@ defmodule Skuld.Fiber.FiberPool.State do
   - `awaiting` - Map of fiber_id => [awaiter_fiber_id] reverse index for wake-up
   - `tasks` - Map of task_ref => handle_id for running BEAM tasks
   - `task_supervisor` - Task.Supervisor pid for spawning tasks
-  - `batch_suspended` - Map of fiber_id => BatchSuspend.t() for batch-waiting fibers
+  - `batch_suspended` - Map of fiber_id => InternalSuspend.t() for batch-waiting fibers
   - `channel_suspended` - Map of fiber_id => true for fibers waiting on channel operations
   - `opts` - Configuration options
   """
 
   alias Skuld.Fiber
-  alias Skuld.Fiber.FiberPool.BatchSuspend
+  alias Skuld.Comp.InternalSuspend
 
   @type fiber_id :: reference()
   # awaiter_id can be a fiber reference or :main for the main computation
@@ -45,7 +45,7 @@ defmodule Skuld.Fiber.FiberPool.State do
           awaiting: %{fiber_id() => [fiber_id()]},
           tasks: %{task_ref() => fiber_id()},
           task_supervisor: pid() | nil,
-          batch_suspended: %{fiber_id() => BatchSuspend.t()},
+          batch_suspended: %{fiber_id() => InternalSuspend.t()},
           channel_suspended: %{fiber_id() => true},
           env_state: %{term() => term()},
           opts: keyword()
@@ -432,15 +432,15 @@ defmodule Skuld.Fiber.FiberPool.State do
 
   The fiber will be resumed when batch results are available.
   """
-  @spec add_batch_suspension(t(), fiber_id(), BatchSuspend.t()) :: t()
+  @spec add_batch_suspension(t(), fiber_id(), InternalSuspend.t()) :: t()
   def add_batch_suspension(state, fiber_id, batch_suspend) do
     %{state | batch_suspended: Map.put(state.batch_suspended, fiber_id, batch_suspend)}
   end
 
   @doc """
-  Get all batch-suspended fibers as a list of {fiber_id, BatchSuspend.t()}.
+  Get all batch-suspended fibers as a list of {fiber_id, InternalSuspend.t()}.
   """
-  @spec get_batch_suspensions(t()) :: [{fiber_id(), BatchSuspend.t()}]
+  @spec get_batch_suspensions(t()) :: [{fiber_id(), InternalSuspend.t()}]
   def get_batch_suspensions(state) do
     Map.to_list(state.batch_suspended)
   end
@@ -459,7 +459,7 @@ defmodule Skuld.Fiber.FiberPool.State do
   Used when executing a batch - all suspended fibers are removed and will be
   resumed with their results.
   """
-  @spec pop_all_batch_suspensions(t()) :: {[{fiber_id(), BatchSuspend.t()}], t()}
+  @spec pop_all_batch_suspensions(t()) :: {[{fiber_id(), InternalSuspend.t()}], t()}
   def pop_all_batch_suspensions(state) do
     suspensions = Map.to_list(state.batch_suspended)
     {suspensions, %{state | batch_suspended: %{}}}

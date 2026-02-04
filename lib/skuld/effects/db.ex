@@ -33,7 +33,7 @@ defmodule Skuld.Effects.DB do
 
   ## How It Works
 
-  1. Each `DB.fetch` call returns a `BatchSuspend` sentinel
+  1. Each `DB.fetch` call returns an `InternalSuspend` with a `Batch` payload
   2. The FiberPool scheduler collects batch-suspended fibers
   3. When the run queue is empty, the scheduler groups suspensions by batch_key
   4. For each group, the registered executor runs a single batched query
@@ -41,8 +41,8 @@ defmodule Skuld.Effects.DB do
   """
 
   alias Skuld.Comp
+  alias Skuld.Comp.InternalSuspend
   alias Skuld.Fiber.FiberPool.BatchExecutor
-  alias Skuld.Fiber.FiberPool.BatchSuspend
 
   #############################################################################
   ## Operation Structs
@@ -107,11 +107,8 @@ defmodule Skuld.Effects.DB do
       op = %Fetch{schema: schema, id: id}
 
       # Note: resume takes env as parameter to avoid capturing stale env with pending fibers
-      suspend =
-        BatchSuspend.new(
-          op,
-          fn result, resume_env -> k.(result, resume_env) end
-        )
+      resume = fn result, resume_env -> k.(result, resume_env) end
+      suspend = InternalSuspend.batch(op, make_ref(), resume)
 
       {suspend, env}
     end
@@ -131,11 +128,8 @@ defmodule Skuld.Effects.DB do
       op = %FetchAll{schema: schema, filter_key: filter_key, filter_value: filter_value}
 
       # Note: resume takes env as parameter to avoid capturing stale env with pending fibers
-      suspend =
-        BatchSuspend.new(
-          op,
-          fn result, resume_env -> k.(result, resume_env) end
-        )
+      resume = fn result, resume_env -> k.(result, resume_env) end
+      suspend = InternalSuspend.batch(op, make_ref(), resume)
 
       {suspend, env}
     end

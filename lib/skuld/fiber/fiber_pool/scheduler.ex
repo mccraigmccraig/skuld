@@ -27,6 +27,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   alias Skuld.Fiber.FiberPool.PendingWork
   alias Skuld.Comp.Types
   alias Skuld.Comp.Env
+  alias Skuld.Comp.InternalSuspend
 
   @type step_result ::
           {:continue, State.t()}
@@ -249,26 +250,15 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     handle_suspension(state, suspended_fiber)
   end
 
-  defp handle_fiber_result({:batch_suspended, suspended_fiber, batch_suspend}, state, _fiber_id) do
-    state = State.put_env_state(state, suspended_fiber.env.state)
-    {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-    handle_batch_suspension(state, suspended_fiber, batch_suspend)
-  end
-
   defp handle_fiber_result(
-         {:channel_suspended, suspended_fiber, channel_suspend},
+         {:internal_suspended, suspended_fiber,
+          %InternalSuspend{payload: payload} = internal_suspend},
          state,
          _fiber_id
        ) do
     state = State.put_env_state(state, suspended_fiber.env.state)
     {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-    handle_channel_suspension(state, suspended_fiber, channel_suspend)
-  end
-
-  defp handle_fiber_result({:fp_suspended, suspended_fiber, fp_suspend}, state, _fiber_id) do
-    state = State.put_env_state(state, suspended_fiber.env.state)
-    {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-    handle_fp_suspension(state, suspended_fiber, fp_suspend)
+    handle_internal_suspension(state, suspended_fiber, internal_suspend, payload)
   end
 
   defp handle_fiber_result({:error, reason, error_env}, state, fiber_id) do
@@ -351,21 +341,22 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     {:suspended, fiber, state}
   end
 
-  defp handle_batch_suspension(state, fiber, batch_suspend) do
+  # Dispatch internal suspensions based on payload type
+  defp handle_internal_suspension(state, fiber, internal_suspend, %InternalSuspend.Batch{}) do
     # Store the fiber and add to batch-suspended tracking
     state = State.put_fiber(state, fiber)
-    state = State.add_batch_suspension(state, fiber.id, batch_suspend)
+    state = State.add_batch_suspension(state, fiber.id, internal_suspend)
     {:continue, state}
   end
 
-  defp handle_channel_suspension(state, fiber, _channel_suspend) do
+  defp handle_internal_suspension(state, fiber, _internal_suspend, %InternalSuspend.Channel{}) do
     # Store the fiber and add to channel-suspended tracking
     state = State.put_fiber(state, fiber)
     state = State.add_channel_suspension(state, fiber.id)
     {:continue, state}
   end
 
-  defp handle_fp_suspension(state, fiber, %{
+  defp handle_internal_suspension(state, fiber, _internal_suspend, %InternalSuspend.Await{
          handles: handles,
          mode: mode,
          consume_ids: consume_ids

@@ -57,9 +57,9 @@ defmodule Skuld.Effects.Channel do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
+  alias Skuld.Comp.InternalSuspend
   alias Skuld.Fiber.FiberPool.EnvState
   alias Skuld.Effects.Channel.State
-  alias Skuld.Effects.Channel.Suspend
 
   #############################################################################
   ## Handle Struct
@@ -173,7 +173,7 @@ defmodule Skuld.Effects.Channel do
 
               # Resume fn is stored in fiber.suspended_k, not duplicated here
               resume_fn = fn result, resume_env -> k.(result, resume_env) end
-              suspend = Suspend.new_put(channel_id, fiber_id, item, resume_fn)
+              suspend = InternalSuspend.channel_put(channel_id, item, resume_fn)
 
               {suspend, env}
 
@@ -258,7 +258,7 @@ defmodule Skuld.Effects.Channel do
 
               # Resume fn is stored in fiber.suspended_k, not duplicated here
               resume_fn = fn result, resume_env -> k.(result, resume_env) end
-              suspend = Suspend.new_take(channel_id, fiber_id, resume_fn)
+              suspend = InternalSuspend.channel_take(channel_id, resume_fn)
 
               {suspend, env}
           end

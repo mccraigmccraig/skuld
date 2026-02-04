@@ -48,13 +48,13 @@ defmodule Skuld.Effects.FiberPool do
   alias Skuld.Comp.Env
   alias Skuld.Comp.Throw
   alias Skuld.Fiber
+  alias Skuld.Comp.InternalSuspend
   alias Skuld.Fiber.Handle
   alias Skuld.Fiber.FiberPool.State
   alias Skuld.Fiber.FiberPool.Scheduler
   alias Skuld.Fiber.FiberPool.Batching
   alias Skuld.Fiber.FiberPool.PendingWork
   alias Skuld.Fiber.FiberPool.Tasks
-  alias Skuld.Fiber.FiberPool.Suspend, as: FPSuspend
 
   @sig __MODULE__
 
@@ -348,7 +348,7 @@ defmodule Skuld.Effects.FiberPool do
       pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())
       {pending_fibers, pending_tasks, _} = PendingWork.take_all(pending_work)
 
-      if pending_fibers == [] and pending_tasks == [] and not is_struct(result, FPSuspend) do
+      if pending_fibers == [] and pending_tasks == [] and not await_suspend?(result) do
         # No fibers or tasks spawned, simple completion
         {result, env}
       else
@@ -409,7 +409,7 @@ defmodule Skuld.Effects.FiberPool do
       k.(value, resume_env)
     end
 
-    suspend = FPSuspend.await_one(handle, resume, consume: consume)
+    suspend = InternalSuspend.await_one(handle, resume, consume: consume)
     {suspend, env}
   end
 
@@ -429,7 +429,7 @@ defmodule Skuld.Effects.FiberPool do
       k.(values, resume_env)
     end
 
-    suspend = FPSuspend.await_all(handles, resume)
+    suspend = InternalSuspend.await_all(handles, resume)
     {suspend, env}
   end
 
@@ -449,7 +449,7 @@ defmodule Skuld.Effects.FiberPool do
       k.(value, resume_env)
     end
 
-    suspend = FPSuspend.await_any(handles, resume)
+    suspend = InternalSuspend.await_any(handles, resume)
     {suspend, env}
   end
 
@@ -573,7 +573,7 @@ defmodule Skuld.Effects.FiberPool do
 
     # If main result is a suspension, we need to handle it specially
     case main_result do
-      %FPSuspend{} = suspend ->
+      %InternalSuspend{payload: %InternalSuspend.Await{}} = suspend ->
         # Main computation is awaiting - need to run fibers/tasks and handle await
         run_scheduler_loop(state, env, suspend)
 
@@ -624,9 +624,13 @@ defmodule Skuld.Effects.FiberPool do
 
       # Handle non-batchable individually (shouldn't happen if IBatchable is implemented correctly)
       state =
-        Enum.reduce(non_batchable, state, fn {fiber_id, batch_suspend}, acc ->
+        Enum.reduce(non_batchable, state, fn {fiber_id, internal_suspend}, acc ->
           # Resume with error - no batch executor available
-          resume_fiber_with_result(acc, fiber_id, {:error, {:not_batchable, batch_suspend.op}})
+          resume_fiber_with_result(
+            acc,
+            fiber_id,
+            {:error, {:not_batchable, internal_suspend.payload.op}}
+          )
         end)
 
       {state, env}
@@ -691,7 +695,14 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   # Run scheduler loop, handling FiberPool suspensions (main computation awaiting fibers)
-  defp run_scheduler_loop(state, env, %FPSuspend{handles: handles, mode: mode, resume: resume}) do
+  defp run_scheduler_loop(
+         state,
+         env,
+         %InternalSuspend{
+           resume: resume,
+           payload: %InternalSuspend.Await{handles: handles, mode: mode}
+         }
+       ) do
     # Convert handles to fiber_ids
     fiber_ids = Enum.map(handles, & &1.id)
 
@@ -816,7 +827,7 @@ defmodule Skuld.Effects.FiberPool do
 
     # Check if we got another suspension
     case new_result do
-      %FPSuspend{} = suspend ->
+      %InternalSuspend{payload: %InternalSuspend.Await{}} = suspend ->
         run_scheduler_loop(state, new_env, suspend)
 
       _ ->
@@ -824,4 +835,8 @@ defmodule Skuld.Effects.FiberPool do
         run_fibers_to_completion(state, new_env, new_result)
     end
   end
+
+  # Check if a result is an await suspension
+  defp await_suspend?(%InternalSuspend{payload: %InternalSuspend.Await{}}), do: true
+  defp await_suspend?(_), do: false
 end
