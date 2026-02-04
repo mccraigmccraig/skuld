@@ -208,7 +208,6 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     end
   end
 
-  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_pending_fiber(state, fiber, env) do
     # Update fiber's env:
     # - Use fiber's env for per-fiber fields (evidence, leave_scope, transform_suspend)
@@ -219,37 +218,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     fiber_env = update_env_state_in_env(fiber_env, &EnvState.set_fiber_id(&1, fiber.id))
     fiber = %{fiber | env: fiber_env}
 
-    case Fiber.run_until_suspend(fiber) do
-      {:completed, result, final_env} ->
-        state = State.put_env_state(state, final_env.state)
-        state = collect_pending_fibers(state, final_env)
-        handle_completion(state, fiber.id, {:ok, result})
-
-      {:suspended, suspended_fiber} ->
-        state = State.put_env_state(state, suspended_fiber.env.state)
-        {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-        handle_suspension(state, suspended_fiber)
-
-      {:batch_suspended, suspended_fiber, batch_suspend} ->
-        state = State.put_env_state(state, suspended_fiber.env.state)
-        {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-        handle_batch_suspension(state, suspended_fiber, batch_suspend)
-
-      {:channel_suspended, suspended_fiber, channel_suspend} ->
-        state = State.put_env_state(state, suspended_fiber.env.state)
-        {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-        handle_channel_suspension(state, suspended_fiber, channel_suspend)
-
-      {:fp_suspended, suspended_fiber, fp_suspend} ->
-        state = State.put_env_state(state, suspended_fiber.env.state)
-        {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-        handle_fp_suspension(state, suspended_fiber, fp_suspend)
-
-      {:error, reason, error_env} ->
-        state = if error_env, do: State.put_env_state(state, error_env.state), else: state
-        state = collect_pending_fibers(state, error_env)
-        handle_completion(state, fiber.id, {:error, reason})
-    end
+    fiber
+    |> Fiber.run_until_suspend()
+    |> handle_fiber_result(state, fiber.id)
   end
 
   defp resume_fiber(state, fiber, result) do
@@ -259,37 +230,51 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     fiber_env = update_env_state_in_env(fiber_env, &EnvState.set_fiber_id(&1, fiber.id))
     fiber = %{fiber | env: fiber_env}
 
-    case Fiber.resume(fiber, result) do
-      {:completed, value, final_env} ->
-        state = State.put_env_state(state, final_env.state)
-        state = collect_pending_fibers(state, final_env)
-        handle_completion(state, fiber.id, {:ok, value})
+    fiber
+    |> Fiber.resume(result)
+    |> handle_fiber_result(state, fiber.id)
+  end
 
-      {:suspended, suspended_fiber} ->
-        state = State.put_env_state(state, suspended_fiber.env.state)
-        {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-        handle_suspension(state, suspended_fiber)
+  # Handle the result of running or resuming a fiber
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
+  defp handle_fiber_result({:completed, value, final_env}, state, fiber_id) do
+    state = State.put_env_state(state, final_env.state)
+    state = collect_pending_fibers(state, final_env)
+    handle_completion(state, fiber_id, {:ok, value})
+  end
 
-      {:batch_suspended, suspended_fiber, batch_suspend} ->
-        state = State.put_env_state(state, suspended_fiber.env.state)
-        {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-        handle_batch_suspension(state, suspended_fiber, batch_suspend)
+  defp handle_fiber_result({:suspended, suspended_fiber}, state, _fiber_id) do
+    state = State.put_env_state(state, suspended_fiber.env.state)
+    {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
+    handle_suspension(state, suspended_fiber)
+  end
 
-      {:channel_suspended, suspended_fiber, channel_suspend} ->
-        state = State.put_env_state(state, suspended_fiber.env.state)
-        {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-        handle_channel_suspension(state, suspended_fiber, channel_suspend)
+  defp handle_fiber_result({:batch_suspended, suspended_fiber, batch_suspend}, state, _fiber_id) do
+    state = State.put_env_state(state, suspended_fiber.env.state)
+    {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
+    handle_batch_suspension(state, suspended_fiber, batch_suspend)
+  end
 
-      {:fp_suspended, suspended_fiber, fp_suspend} ->
-        state = State.put_env_state(state, suspended_fiber.env.state)
-        {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-        handle_fp_suspension(state, suspended_fiber, fp_suspend)
+  defp handle_fiber_result(
+         {:channel_suspended, suspended_fiber, channel_suspend},
+         state,
+         _fiber_id
+       ) do
+    state = State.put_env_state(state, suspended_fiber.env.state)
+    {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
+    handle_channel_suspension(state, suspended_fiber, channel_suspend)
+  end
 
-      {:error, reason, error_env} ->
-        state = if error_env, do: State.put_env_state(state, error_env.state), else: state
-        state = collect_pending_fibers(state, error_env)
-        handle_completion(state, fiber.id, {:error, reason})
-    end
+  defp handle_fiber_result({:fp_suspended, suspended_fiber, fp_suspend}, state, _fiber_id) do
+    state = State.put_env_state(state, suspended_fiber.env.state)
+    {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
+    handle_fp_suspension(state, suspended_fiber, fp_suspend)
+  end
+
+  defp handle_fiber_result({:error, reason, error_env}, state, fiber_id) do
+    state = if error_env, do: State.put_env_state(state, error_env.state), else: state
+    state = collect_pending_fibers(state, error_env)
+    handle_completion(state, fiber_id, {:error, reason})
   end
 
   # Extract any pending fibers from the env and add them to the scheduler state.
