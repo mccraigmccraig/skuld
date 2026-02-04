@@ -15,7 +15,7 @@ defmodule Skuld.Fiber.FiberPool.State do
   - `tasks` - Map of task_ref => handle_id for running BEAM tasks
   - `task_supervisor` - Task.Supervisor pid for spawning tasks
   - `batch_suspended` - Map of fiber_id => BatchSuspend.t() for batch-waiting fibers
-  - `channel_suspended` - Set of fiber_ids waiting on channel operations
+  - `channel_suspended` - Map of fiber_id => true for fibers waiting on channel operations
   - `opts` - Configuration options
   """
 
@@ -34,6 +34,8 @@ defmodule Skuld.Fiber.FiberPool.State do
           collected: %{fiber_id() => result()}
         }
 
+  # Note: channel_suspended uses %{fiber_id => true} instead of MapSet
+  # to avoid dialyzer warnings about MapSet's opaque type
   @type t :: %__MODULE__{
           id: reference(),
           fibers: %{fiber_id() => Fiber.t()},
@@ -44,7 +46,7 @@ defmodule Skuld.Fiber.FiberPool.State do
           tasks: %{task_ref() => fiber_id()},
           task_supervisor: pid() | nil,
           batch_suspended: %{fiber_id() => BatchSuspend.t()},
-          channel_suspended: MapSet.t(fiber_id()),
+          channel_suspended: %{fiber_id() => true},
           env_state: %{term() => term()},
           opts: keyword()
         }
@@ -86,7 +88,7 @@ defmodule Skuld.Fiber.FiberPool.State do
       tasks: %{},
       task_supervisor: Keyword.get(opts, :task_supervisor),
       batch_suspended: %{},
-      channel_suspended: MapSet.new(),
+      channel_suspended: %{},
       env_state: Keyword.get(opts, :env_state, %{}),
       opts: opts
     }
@@ -482,7 +484,7 @@ defmodule Skuld.Fiber.FiberPool.State do
   """
   @spec add_channel_suspension(t(), fiber_id()) :: t()
   def add_channel_suspension(state, fiber_id) do
-    %{state | channel_suspended: MapSet.put(state.channel_suspended, fiber_id)}
+    %{state | channel_suspended: Map.put(state.channel_suspended, fiber_id, true)}
   end
 
   @doc """
@@ -490,7 +492,7 @@ defmodule Skuld.Fiber.FiberPool.State do
   """
   @spec remove_channel_suspension(t(), fiber_id()) :: t()
   def remove_channel_suspension(state, fiber_id) do
-    %{state | channel_suspended: MapSet.delete(state.channel_suspended, fiber_id)}
+    %{state | channel_suspended: Map.delete(state.channel_suspended, fiber_id)}
   end
 
   @doc """
@@ -498,7 +500,7 @@ defmodule Skuld.Fiber.FiberPool.State do
   """
   @spec channel_suspended?(t(), fiber_id()) :: boolean()
   def channel_suspended?(state, fiber_id) do
-    MapSet.member?(state.channel_suspended, fiber_id)
+    Map.has_key?(state.channel_suspended, fiber_id)
   end
 
   @doc """
@@ -506,7 +508,7 @@ defmodule Skuld.Fiber.FiberPool.State do
   """
   @spec has_channel_suspensions?(t()) :: boolean()
   def has_channel_suspensions?(state) do
-    MapSet.size(state.channel_suspended) > 0
+    map_size(state.channel_suspended) > 0
   end
 
   #############################################################################
@@ -523,7 +525,7 @@ defmodule Skuld.Fiber.FiberPool.State do
       map_size(state.fibers) > 0 or
       map_size(state.tasks) > 0 or
       map_size(state.batch_suspended) > 0 or
-      MapSet.size(state.channel_suspended) > 0
+      map_size(state.channel_suspended) > 0
   end
 
   @doc """
@@ -536,7 +538,7 @@ defmodule Skuld.Fiber.FiberPool.State do
       map_size(state.fibers) == 0 and
       map_size(state.tasks) == 0 and
       map_size(state.batch_suspended) == 0 and
-      MapSet.size(state.channel_suspended) == 0
+      map_size(state.channel_suspended) == 0
   end
 
   @doc """
@@ -551,7 +553,7 @@ defmodule Skuld.Fiber.FiberPool.State do
       completed: map_size(state.completed),
       tasks: map_size(state.tasks),
       batch_suspended: map_size(state.batch_suspended),
-      channel_suspended: MapSet.size(state.channel_suspended)
+      channel_suspended: map_size(state.channel_suspended)
     }
   end
 
