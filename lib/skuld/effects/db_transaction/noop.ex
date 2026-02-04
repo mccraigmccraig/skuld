@@ -1,35 +1,34 @@
+# No-op transaction handler for the DBTransaction effect.
+#
+# Does not actually create a transaction - useful for testing or when
+# you want to use code that expects a transaction handler but don't
+# need actual transaction semantics.
+#
+# ## Behavior
+#
+# For `transact(comp)`:
+# - Normal completion → returns result (no actual commit)
+# - Throw/Suspend → propagates normally (no actual rollback)
+# - Explicit `rollback(reason)` → returns `{:rolled_back, reason}` (no actual rollback)
+#
+# ## Example
+#
+#     alias Skuld.Comp
+#     alias Skuld.Effects.DBTransaction
+#     alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
+#
+#     # In tests, use Noop instead of Ecto
+#     comp do
+#       result <- DBTransaction.transact(comp do
+#         _ <- do_something()
+#         return(:ok)
+#       end)
+#       return(result)
+#     end
+#     |> NoopTx.with_handler()
+#     |> Comp.run!()
 defmodule Skuld.Effects.DBTransaction.Noop do
-  @moduledoc """
-  No-op transaction handler for the DBTransaction effect.
-
-  Does not actually create a transaction - useful for testing or when
-  you want to use code that expects a transaction handler but don't
-  need actual transaction semantics.
-
-  ## Behavior
-
-  For `transact(comp)`:
-  - Normal completion → returns result (no actual commit)
-  - Throw/Suspend → propagates normally (no actual rollback)
-  - Explicit `rollback(reason)` → returns `{:rolled_back, reason}` (no actual rollback)
-
-  ## Example
-
-      alias Skuld.Comp
-      alias Skuld.Effects.DBTransaction
-      alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
-
-      # In tests, use Noop instead of Ecto
-      comp do
-        result <- DBTransaction.transact(comp do
-          _ <- do_something()
-          return(:ok)
-        end)
-        return(result)
-      end
-      |> NoopTx.with_handler()
-      |> Comp.run!()
-  """
+  @moduledoc false
 
   @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall

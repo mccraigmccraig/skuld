@@ -1,22 +1,21 @@
+# Deterministic seeded random handler for Random effect.
+#
+# Uses Erlang's `:rand` module with explicit state management, ensuring
+# the same seed always produces the same sequence. Ideal for testing.
+#
+# ## Example
+#
+#     # Same seed = same results
+#     comp do
+#       a <- Random.random()
+#       b <- Random.random_int(1, 10)
+#       {a, b}
+#     end
+#     |> Random.Seed.with_handler(seed: {42, 42, 42})
+#     |> Comp.run!()
+#     #=> {0.123..., 7}  # always the same with this seed
 defmodule Skuld.Effects.Random.Seed do
-  @moduledoc """
-  Deterministic seeded random handler for Random effect.
-
-  Uses Erlang's `:rand` module with explicit state management, ensuring
-  the same seed always produces the same sequence. Ideal for testing.
-
-  ## Example
-
-      # Same seed = same results
-      comp do
-        a <- Random.random()
-        b <- Random.random_int(1, 10)
-        {a, b}
-      end
-      |> Random.Seed.with_handler(seed: {42, 42, 42})
-      |> Comp.run!()
-      #=> {0.123..., 7}  # always the same with this seed
-  """
+  @moduledoc false
 
   @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall

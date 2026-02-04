@@ -1,30 +1,29 @@
+# Agent-backed handler for AtomicState effect.
+#
+# Creates an Agent process that provides true atomic operations accessible
+# from multiple processes. The Agent is stopped when the computation completes.
+#
+# ## Usage
+#
+#     comp do
+#       _ <- AtomicState.modify(&(&1 + 1))
+#       AtomicState.get()
+#     end
+#     |> AtomicState.Agent.with_handler(0)
+#     |> Comp.run!()
+#
+# ## Multiple Tagged States
+#
+#     comp do
+#       _ <- AtomicState.modify(:a, &(&1 + 1))
+#       _ <- AtomicState.modify(:b, &(&1 * 2))
+#       {AtomicState.get(:a), AtomicState.get(:b)}
+#     end
+#     |> AtomicState.Agent.with_handler(0, tag: :a)
+#     |> AtomicState.Agent.with_handler(10, tag: :b)
+#     |> Comp.run!()
 defmodule Skuld.Effects.AtomicState.Agent do
-  @moduledoc """
-  Agent-backed handler for AtomicState effect.
-
-  Creates an Agent process that provides true atomic operations accessible
-  from multiple processes. The Agent is stopped when the computation completes.
-
-  ## Usage
-
-      comp do
-        _ <- AtomicState.modify(&(&1 + 1))
-        AtomicState.get()
-      end
-      |> AtomicState.Agent.with_handler(0)
-      |> Comp.run!()
-
-  ## Multiple Tagged States
-
-      comp do
-        _ <- AtomicState.modify(:a, &(&1 + 1))
-        _ <- AtomicState.modify(:b, &(&1 * 2))
-        {AtomicState.get(:a), AtomicState.get(:b)}
-      end
-      |> AtomicState.Agent.with_handler(0, tag: :a)
-      |> AtomicState.Agent.with_handler(10, tag: :b)
-      |> Comp.run!()
-  """
+  @moduledoc false
 
   @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall

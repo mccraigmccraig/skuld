@@ -1,30 +1,29 @@
+# Fiber-local accumulations of pending fibers and tasks.
+#
+# This struct consolidates the loose keys that were previously stored
+# separately in `env.state` for tracking work to be scheduled:
+#
+# - `fibers` - Fibers spawned by `FiberPool.fiber()` waiting to be scheduled
+# - `tasks` - Tasks spawned by `FiberPool.task()` waiting to be spawned
+#
+# ## Lifecycle
+#
+# Unlike `EnvState` which is shared across all fibers, `PendingWork` is
+# fiber-local. It's accumulated during fiber execution via effect handlers,
+# then extracted and cleared by FiberPool.run and Scheduler:
+#
+# 1. Fiber calls `FiberPool.fiber(comp)` → handler adds to `fibers`
+# 2. Fiber calls `FiberPool.task(thunk)` → handler adds to `tasks`
+# 3. Fiber step completes → Scheduler extracts pending work
+# 4. PendingWork is cleared before seeding env to next fiber
+#
+# This is managed via `Comp.with_scoped_state` for proper scoping.
+#
+# ## Key
+#
+# Use `env_key/0` to get the key under which this struct is stored in env.state.
 defmodule Skuld.Fiber.FiberPool.PendingWork do
-  @moduledoc """
-  Fiber-local accumulations of pending fibers and tasks.
-
-  This struct consolidates the loose keys that were previously stored
-  separately in `env.state` for tracking work to be scheduled:
-
-  - `fibers` - Fibers spawned by `FiberPool.fiber()` waiting to be scheduled
-  - `tasks` - Tasks spawned by `FiberPool.task()` waiting to be spawned
-
-  ## Lifecycle
-
-  Unlike `EnvState` which is shared across all fibers, `PendingWork` is
-  fiber-local. It's accumulated during fiber execution via effect handlers,
-  then extracted and cleared by FiberPool.run and Scheduler:
-
-  1. Fiber calls `FiberPool.fiber(comp)` → handler adds to `fibers`
-  2. Fiber calls `FiberPool.task(thunk)` → handler adds to `tasks`
-  3. Fiber step completes → Scheduler extracts pending work
-  4. PendingWork is cleared before seeding env to next fiber
-
-  This is managed via `Comp.with_scoped_state` for proper scoping.
-
-  ## Key
-
-  Use `env_key/0` to get the key under which this struct is stored in env.state.
-  """
+  @moduledoc false
 
   alias Skuld.Fiber
 

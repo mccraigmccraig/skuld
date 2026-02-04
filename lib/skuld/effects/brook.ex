@@ -70,12 +70,10 @@ defmodule Skuld.Effects.Brook do
   ## Chunk Type
   #############################################################################
 
+  # Internal wrapper for chunked stream values.
+  # Users don't interact with this directly - it's transparent.
   defmodule Chunk do
-    @moduledoc """
-    Internal wrapper for chunked stream values.
-
-    Users don't interact with this directly - it's transparent.
-    """
+    @moduledoc false
     defstruct [:values]
 
     @type t :: %__MODULE__{values: [term()]}

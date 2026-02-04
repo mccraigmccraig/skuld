@@ -42,14 +42,13 @@ defmodule Skuld.Comp.InternalSuspend do
   ## Payload Structs
   #############################################################################
 
+  # Payload for batch operation suspensions.
+  #
+  # When a fiber performs a batchable operation (like DB.fetch), it suspends
+  # with this payload. The scheduler collects these suspensions, groups them
+  # by batch_key, and executes them together.
   defmodule Batch do
-    @moduledoc """
-    Payload for batch operation suspensions.
-
-    When a fiber performs a batchable operation (like DB.fetch), it suspends
-    with this payload. The scheduler collects these suspensions, groups them
-    by batch_key, and executes them together.
-    """
+    @moduledoc false
 
     @type t :: %__MODULE__{
             op: term(),
@@ -59,14 +58,13 @@ defmodule Skuld.Comp.InternalSuspend do
     defstruct [:op, :request_id]
   end
 
+  # Payload for channel operation suspensions.
+  #
+  # When a fiber performs a blocking channel operation (put on full buffer,
+  # take on empty buffer), it suspends with this payload. The scheduler
+  # resumes the fiber when the channel state changes.
   defmodule Channel do
-    @moduledoc """
-    Payload for channel operation suspensions.
-
-    When a fiber performs a blocking channel operation (put on full buffer,
-    take on empty buffer), it suspends with this payload. The scheduler
-    resumes the fiber when the channel state changes.
-    """
+    @moduledoc false
 
     @type operation :: :put | :take
 
@@ -79,13 +77,12 @@ defmodule Skuld.Comp.InternalSuspend do
     defstruct [:channel_id, :operation, :item]
   end
 
+  # Payload for fiber await suspensions.
+  #
+  # When a fiber awaits other fibers, it suspends with this payload.
+  # The scheduler resumes the fiber when the awaited fibers complete.
   defmodule Await do
-    @moduledoc """
-    Payload for fiber await suspensions.
-
-    When a fiber awaits other fibers, it suspends with this payload.
-    The scheduler resumes the fiber when the awaited fibers complete.
-    """
+    @moduledoc false
 
     @type mode :: :one | :all | :any
 

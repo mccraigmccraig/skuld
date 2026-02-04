@@ -1,31 +1,30 @@
+# Ecto Repo handler for ChangesetPersist effect.
+#
+# Uses an Ecto Repo to persist changesets to the database.
+#
+# ## Usage
+#
+#     computation
+#     |> ChangesetPersist.Ecto.with_handler(MyApp.Repo)
+#     |> Comp.run!()
+#
+# ## Error Handling
+#
+# Operations that fail (e.g., invalid changeset) will throw via the
+# Throw effect. Use `Throw.with_handler()` to catch errors:
+#
+#     comp do
+#       user <- ChangesetPersist.insert(changeset)
+#       return(user)
+#     catch
+#       {:invalid_changeset, cs} -> return({:error, cs})
+#     end
+#     |> ChangesetPersist.Ecto.with_handler(Repo)
+#     |> Throw.with_handler()
+#     |> Comp.run!()
 if Code.ensure_loaded?(Ecto) do
   defmodule Skuld.Effects.ChangesetPersist.Ecto do
-    @moduledoc """
-    Ecto Repo handler for ChangesetPersist effect.
-
-    Uses an Ecto Repo to persist changesets to the database.
-
-    ## Usage
-
-        computation
-        |> ChangesetPersist.Ecto.with_handler(MyApp.Repo)
-        |> Comp.run!()
-
-    ## Error Handling
-
-    Operations that fail (e.g., invalid changeset) will throw via the
-    Throw effect. Use `Throw.with_handler()` to catch errors:
-
-        comp do
-          user <- ChangesetPersist.insert(changeset)
-          return(user)
-        catch
-          {:invalid_changeset, cs} -> return({:error, cs})
-        end
-        |> ChangesetPersist.Ecto.with_handler(Repo)
-        |> Throw.with_handler()
-        |> Comp.run!()
-    """
+    @moduledoc false
 
     @behaviour Skuld.Comp.IHandle
 

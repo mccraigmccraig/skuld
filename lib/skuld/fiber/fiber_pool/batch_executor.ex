@@ -1,42 +1,41 @@
+# Batch executor registration and lookup.
+#
+# Executors are stored in env.state under a private key as a map of
+# `{batch_key_pattern => executor}`. Uses `Comp.scoped` for proper
+# scoping with automatic save/restore.
+#
+# Executors are functions that take a list of `{request_id, op}` tuples
+# and return a computation yielding `%{request_id => result}`.
+#
+# ## Pattern Matching
+#
+# Batch keys support wildcard matching with `:_`:
+#
+#     # Exact match
+#     comp
+#     |> BatchExecutor.with_executor({:db_fetch, User}, user_executor)
+#
+#     # Wildcard match - handles any schema
+#     comp
+#     |> BatchExecutor.with_executor({:db_fetch, :_}, generic_db_executor)
+#
+# Exact matches take precedence over wildcard matches.
+#
+# ## Example
+#
+#     # Production - real DB executor
+#     comp
+#     |> BatchExecutor.with_executor({:db_fetch, :_}, &DB.Executors.fetch_executor/1)
+#     |> FiberPool.run()
+#
+#     # Test - mock executor
+#     comp
+#     |> BatchExecutor.with_executor({:db_fetch, User}, fn ops ->
+#       Comp.pure(Map.new(ops, fn {ref, _op} -> {ref, %User{id: 1}} end))
+#     end)
+#     |> FiberPool.run()
 defmodule Skuld.Fiber.FiberPool.BatchExecutor do
-  @moduledoc """
-  Batch executor registration and lookup.
-
-  Executors are stored in env.state under a private key as a map of
-  `{batch_key_pattern => executor}`. Uses `Comp.scoped` for proper
-  scoping with automatic save/restore.
-
-  Executors are functions that take a list of `{request_id, op}` tuples
-  and return a computation yielding `%{request_id => result}`.
-
-  ## Pattern Matching
-
-  Batch keys support wildcard matching with `:_`:
-
-      # Exact match
-      comp
-      |> BatchExecutor.with_executor({:db_fetch, User}, user_executor)
-
-      # Wildcard match - handles any schema
-      comp
-      |> BatchExecutor.with_executor({:db_fetch, :_}, generic_db_executor)
-
-  Exact matches take precedence over wildcard matches.
-
-  ## Example
-
-      # Production - real DB executor
-      comp
-      |> BatchExecutor.with_executor({:db_fetch, :_}, &DB.Executors.fetch_executor/1)
-      |> FiberPool.run()
-
-      # Test - mock executor
-      comp
-      |> BatchExecutor.with_executor({:db_fetch, User}, fn ops ->
-        Comp.pure(Map.new(ops, fn {ref, _op} -> {ref, %User{id: 1}} end))
-      end)
-      |> FiberPool.run()
-  """
+  @moduledoc false
 
   alias Skuld.Comp
   alias Skuld.Comp.Env

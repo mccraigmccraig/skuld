@@ -1,23 +1,22 @@
+# State management for the FiberPool scheduler.
+#
+# Tracks fibers, their status, a FIFO run queue, and completion results.
+#
+# ## State Fields
+#
+# - `id` - Unique identifier for this pool instance
+# - `fibers` - Map of fiber_id => Fiber.t() for all managed fibers
+# - `run_queue` - FIFO queue of fiber_ids ready to run
+# - `suspended` - Map of fiber_id => suspension_info for awaiting fibers
+# - `completed` - Map of fiber_id => result for completed fibers
+# - `awaiting` - Map of fiber_id => [awaiter_fiber_id] reverse index for wake-up
+# - `tasks` - Map of task_ref => handle_id for running BEAM tasks
+# - `task_supervisor` - Task.Supervisor pid for spawning tasks
+# - `batch_suspended` - Map of fiber_id => InternalSuspend.t() for batch-waiting fibers
+# - `channel_suspended` - Map of fiber_id => true for fibers waiting on channel operations
+# - `opts` - Configuration options
 defmodule Skuld.Fiber.FiberPool.State do
-  @moduledoc """
-  State management for the FiberPool scheduler.
-
-  Tracks fibers, their status, a FIFO run queue, and completion results.
-
-  ## State Fields
-
-  - `id` - Unique identifier for this pool instance
-  - `fibers` - Map of fiber_id => Fiber.t() for all managed fibers
-  - `run_queue` - FIFO queue of fiber_ids ready to run
-  - `suspended` - Map of fiber_id => suspension_info for awaiting fibers
-  - `completed` - Map of fiber_id => result for completed fibers
-  - `awaiting` - Map of fiber_id => [awaiter_fiber_id] reverse index for wake-up
-  - `tasks` - Map of task_ref => handle_id for running BEAM tasks
-  - `task_supervisor` - Task.Supervisor pid for spawning tasks
-  - `batch_suspended` - Map of fiber_id => InternalSuspend.t() for batch-waiting fibers
-  - `channel_suspended` - Map of fiber_id => true for fibers waiting on channel operations
-  - `opts` - Configuration options
-  """
+  @moduledoc false
 
   alias Skuld.Fiber
   alias Skuld.Comp.InternalSuspend

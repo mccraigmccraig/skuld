@@ -1,54 +1,53 @@
+# Ecto-based transaction handler for the DBTransaction effect.
+#
+# Handles `transact` operations by wrapping computations in `Repo.transaction/2`.
+# On normal completion, the transaction commits. On throw, suspend, or explicit
+# rollback, the transaction rolls back.
+#
+# ## Example
+#
+#     alias Skuld.Comp
+#     alias Skuld.Effects.DBTransaction
+#     alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
+#
+#     comp do
+#       result <- DBTransaction.transact(comp do
+#         user <- insert_user(attrs)
+#         order <- insert_order(user, order_attrs)
+#         return({user, order})
+#       end)
+#       return(result)
+#     end
+#     |> EctoTx.with_handler(MyApp.Repo)
+#     |> Comp.run!()
+#
+# ## With Explicit Rollback
+#
+#     comp do
+#       result <- DBTransaction.transact(comp do
+#         user <- insert_user(attrs)
+#
+#         if invalid?(user) do
+#           _ <- DBTransaction.rollback({:invalid, user})
+#         end
+#
+#         return(user)
+#       end)
+#       return(result)
+#     end
+#     |> EctoTx.with_handler(MyApp.Repo)
+#     |> Comp.run!()
+#     #=> {:rolled_back, {:invalid, user}}
+#
+# ## Options
+#
+# Accepts the same options as `Repo.transaction/2`:
+#
+# - `:timeout` - The time in milliseconds to wait for the transaction
+# - `:isolation` - The transaction isolation level (if supported)
 if Code.ensure_loaded?(Ecto) do
   defmodule Skuld.Effects.DBTransaction.Ecto do
-    @moduledoc """
-    Ecto-based transaction handler for the DBTransaction effect.
-
-    Handles `transact` operations by wrapping computations in `Repo.transaction/2`.
-    On normal completion, the transaction commits. On throw, suspend, or explicit
-    rollback, the transaction rolls back.
-
-    ## Example
-
-        alias Skuld.Comp
-        alias Skuld.Effects.DBTransaction
-        alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
-
-        comp do
-          result <- DBTransaction.transact(comp do
-            user <- insert_user(attrs)
-            order <- insert_order(user, order_attrs)
-            return({user, order})
-          end)
-          return(result)
-        end
-        |> EctoTx.with_handler(MyApp.Repo)
-        |> Comp.run!()
-
-    ## With Explicit Rollback
-
-        comp do
-          result <- DBTransaction.transact(comp do
-            user <- insert_user(attrs)
-
-            if invalid?(user) do
-              _ <- DBTransaction.rollback({:invalid, user})
-            end
-
-            return(user)
-          end)
-          return(result)
-        end
-        |> EctoTx.with_handler(MyApp.Repo)
-        |> Comp.run!()
-        #=> {:rolled_back, {:invalid, user}}
-
-    ## Options
-
-    Accepts the same options as `Repo.transaction/2`:
-
-    - `:timeout` - The time in milliseconds to wait for the transaction
-    - `:isolation` - The transaction isolation level (if supported)
-    """
+    @moduledoc false
 
     @behaviour Skuld.Comp.IHandle
     @behaviour Skuld.Comp.IInstall

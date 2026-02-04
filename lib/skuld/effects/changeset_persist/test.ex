@@ -1,53 +1,52 @@
+# Test handler for ChangesetPersist effect that records calls and returns stubbed results.
+#
+# Uses Writer effect internally to accumulate all ChangesetPersist operations,
+# allowing tests to verify what persistence calls were made.
+#
+# ## Usage
+#
+#     use Skuld.Syntax
+#     alias Skuld.Comp
+#     alias Skuld.Effects.ChangesetPersist
+#
+#     # Basic usage - returns {result, calls}
+#     {result, calls} =
+#       my_comp
+#       |> ChangesetPersist.Test.with_handler(fn
+#         %ChangesetPersist.Insert{input: cs} -> Ecto.Changeset.apply_changes(cs)
+#         %ChangesetPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
+#         %ChangesetPersist.Delete{input: s} -> {:ok, s}
+#       end)
+#       |> Comp.run!()
+#
+#     assert [{:insert, changeset}] = calls
+#
+#     # Custom output transform
+#     result =
+#       my_comp
+#       |> ChangesetPersist.Test.with_handler(
+#         handler: fn op -> handle_op(op) end,
+#         output: fn result, _calls -> result end  # discard calls
+#       )
+#       |> Comp.run!()
+#
+# ## Call Recording
+#
+# Each operation is recorded as a tuple `{operation_type, input_or_details}`:
+#
+# - `{:insert, changeset}` - single insert
+# - `{:update, changeset}` - single update
+# - `{:upsert, changeset}` - single upsert
+# - `{:delete, struct_or_changeset}` - single delete
+# - `{:insert_all, {schema, entries, opts}}` - bulk insert
+# - `{:update_all, {schema, entries, opts}}` - bulk update
+# - `{:upsert_all, {schema, entries, opts}}` - bulk upsert
+# - `{:delete_all, {schema, entries, opts}}` - bulk delete
+#
+# Calls are returned in chronological order (first call first).
 if Code.ensure_loaded?(Ecto) do
   defmodule Skuld.Effects.ChangesetPersist.Test do
-    @moduledoc """
-    Test handler for ChangesetPersist effect that records calls and returns stubbed results.
-
-    Uses Writer effect internally to accumulate all ChangesetPersist operations,
-    allowing tests to verify what persistence calls were made.
-
-    ## Usage
-
-        use Skuld.Syntax
-        alias Skuld.Comp
-        alias Skuld.Effects.ChangesetPersist
-
-        # Basic usage - returns {result, calls}
-        {result, calls} =
-          my_comp
-          |> ChangesetPersist.Test.with_handler(fn
-            %ChangesetPersist.Insert{input: cs} -> Ecto.Changeset.apply_changes(cs)
-            %ChangesetPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
-            %ChangesetPersist.Delete{input: s} -> {:ok, s}
-          end)
-          |> Comp.run!()
-
-        assert [{:insert, changeset}] = calls
-
-        # Custom output transform
-        result =
-          my_comp
-          |> ChangesetPersist.Test.with_handler(
-            handler: fn op -> handle_op(op) end,
-            output: fn result, _calls -> result end  # discard calls
-          )
-          |> Comp.run!()
-
-    ## Call Recording
-
-    Each operation is recorded as a tuple `{operation_type, input_or_details}`:
-
-    - `{:insert, changeset}` - single insert
-    - `{:update, changeset}` - single update
-    - `{:upsert, changeset}` - single upsert
-    - `{:delete, struct_or_changeset}` - single delete
-    - `{:insert_all, {schema, entries, opts}}` - bulk insert
-    - `{:update_all, {schema, entries, opts}}` - bulk update
-    - `{:upsert_all, {schema, entries, opts}}` - bulk upsert
-    - `{:delete_all, {schema, entries, opts}}` - bulk delete
-
-    Calls are returned in chronological order (first call first).
-    """
+    @moduledoc false
 
     @behaviour Skuld.Comp.IHandle
 

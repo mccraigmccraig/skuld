@@ -1,35 +1,34 @@
+# A serializable snapshot of `env.state` for cold resume.
+#
+# The `env.state` map uses tuple keys like `{Module, key}` which aren't
+# JSON-serializable. This struct captures a snapshot with string keys
+# for serialization, and can restore the original format on deserialization.
+#
+# ## Key Format
+#
+# Tuple keys `{Elixir.Module, :key}` are encoded as `"Elixir.Module::key"`.
+#
+# ## Filtering
+#
+# EffectLogger's internal state keys are filtered out when capturing:
+# - Log state key: would create circular reference (log contains snapshot)
+# - Resume value key: only needed during active resume, not for persistence
+# - State keys filter: internal config that doesn't survive JSON round-trip
+#
+# ## Example
+#
+#     env_state = %{
+#       {Skuld.Effects.State, Skuld.Effects.State} => 42,
+#       {Skuld.Effects.EffectLogger, :log} => %Log{...}
+#     }
+#
+#     snapshot = EnvStateSnapshot.capture(env_state)
+#     # => %EnvStateSnapshot{entries: %{"Elixir.Skuld.Effects.State::Elixir.Skuld.Effects.State" => 42}}
+#
+#     restored = EnvStateSnapshot.restore(snapshot)
+#     # => %{{Skuld.Effects.State, Skuld.Effects.State} => 42}
 defmodule Skuld.Effects.EffectLogger.EnvStateSnapshot do
-  @moduledoc """
-  A serializable snapshot of `env.state` for cold resume.
-
-  The `env.state` map uses tuple keys like `{Module, key}` which aren't
-  JSON-serializable. This struct captures a snapshot with string keys
-  for serialization, and can restore the original format on deserialization.
-
-  ## Key Format
-
-  Tuple keys `{Elixir.Module, :key}` are encoded as `"Elixir.Module::key"`.
-
-  ## Filtering
-
-  EffectLogger's internal state keys are filtered out when capturing:
-  - Log state key: would create circular reference (log contains snapshot)
-  - Resume value key: only needed during active resume, not for persistence
-  - State keys filter: internal config that doesn't survive JSON round-trip
-
-  ## Example
-
-      env_state = %{
-        {Skuld.Effects.State, Skuld.Effects.State} => 42,
-        {Skuld.Effects.EffectLogger, :log} => %Log{...}
-      }
-
-      snapshot = EnvStateSnapshot.capture(env_state)
-      # => %EnvStateSnapshot{entries: %{"Elixir.Skuld.Effects.State::Elixir.Skuld.Effects.State" => 42}}
-
-      restored = EnvStateSnapshot.restore(snapshot)
-      # => %{{Skuld.Effects.State, Skuld.Effects.State} => 42}
-  """
+  @moduledoc false
 
   alias Skuld.Comp.SerializableStruct
 

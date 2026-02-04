@@ -57,6 +57,7 @@ defmodule Skuld.Comp.DefOp do
 
     quote do
       defmodule unquote(mod) do
+        @moduledoc false
         defstruct unquote(fields)
         unquote(from_json_fn)
       end

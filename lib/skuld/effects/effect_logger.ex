@@ -179,12 +179,11 @@ defmodule Skuld.Effects.EffectLogger do
   ## Operation Structs
   #############################################################################
 
+  # Operation struct for loop iteration marks.
+  #
+  # Contains the loop_id and a snapshot of env.state for cold resume.
   defmodule MarkLoop do
-    @moduledoc """
-    Operation struct for loop iteration marks.
-
-    Contains the loop_id and a snapshot of env.state for cold resume.
-    """
+    @moduledoc false
 
     alias Skuld.Effects.EffectLogger.EnvStateSnapshot
 

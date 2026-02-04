@@ -1,31 +1,30 @@
+# BEAM Task integration for FiberPool.
+#
+# This module handles spawning and receiving results from BEAM Tasks
+# that run in parallel processes. Tasks are used when you need true
+# parallelism (multiple CPU cores) rather than cooperative concurrency
+# (fibers in a single process).
+#
+# ## Usage
+#
+# Tasks are spawned via `FiberPool.task/2` and awaited like fibers:
+#
+#     comp do
+#       # Spawn a task (runs in separate process)
+#       h <- FiberPool.task(fn -> expensive_cpu_work() end)
+#
+#       # Await result (suspends until task completes)
+#       result <- FiberPool.await!(h)
+#     end
+#
+# ## Integration
+#
+# The FiberPool scheduler calls these functions to:
+# 1. Spawn pending tasks after the main computation runs
+# 2. Wait for task completion messages
+# 3. Record task results for await satisfaction
 defmodule Skuld.Fiber.FiberPool.Tasks do
-  @moduledoc """
-  BEAM Task integration for FiberPool.
-
-  This module handles spawning and receiving results from BEAM Tasks
-  that run in parallel processes. Tasks are used when you need true
-  parallelism (multiple CPU cores) rather than cooperative concurrency
-  (fibers in a single process).
-
-  ## Usage
-
-  Tasks are spawned via `FiberPool.task/2` and awaited like fibers:
-
-      comp do
-        # Spawn a task (runs in separate process)
-        h <- FiberPool.task(fn -> expensive_cpu_work() end)
-
-        # Await result (suspends until task completes)
-        result <- FiberPool.await!(h)
-      end
-
-  ## Integration
-
-  The FiberPool scheduler calls these functions to:
-  1. Spawn pending tasks after the main computation runs
-  2. Wait for task completion messages
-  3. Record task results for await satisfaction
-  """
+  @moduledoc false
 
   alias Skuld.Fiber.FiberPool.State
   alias Skuld.Comp.Throw

@@ -1,12 +1,11 @@
+# Batch grouping and execution for the FiberPool scheduler.
+#
+# This module provides functions to:
+# - Group suspended fibers by their batch_key
+# - Execute batch groups using registered executors
+# - Match results back to the requesting fibers
 defmodule Skuld.Fiber.FiberPool.Batching do
-  @moduledoc """
-  Batch grouping and execution for the FiberPool scheduler.
-
-  This module provides functions to:
-  - Group suspended fibers by their batch_key
-  - Execute batch groups using registered executors
-  - Match results back to the requesting fibers
-  """
+  @moduledoc false
 
   alias Skuld.Comp
   alias Skuld.Comp.Throw

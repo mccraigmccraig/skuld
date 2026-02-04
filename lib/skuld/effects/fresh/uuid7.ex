@@ -1,22 +1,21 @@
+# Production v7 UUID handler for Fresh effect.
+#
+# Generates time-ordered UUIDs using UUID v7 (RFC 9562). These UUIDs:
+# - Are time-ordered (lexically sortable by creation time)
+# - Have excellent database index locality
+# - Are suitable for distributed systems
+#
+# ## Example
+#
+#     comp do
+#       id <- Fresh.fresh_uuid()
+#       return(id)
+#     end
+#     |> Fresh.UUID7.with_handler()
+#     |> Comp.run!()
+#     #=> "01945a3b-7c9d-7000-8000-..."  # v7 UUID
 defmodule Skuld.Effects.Fresh.UUID7 do
-  @moduledoc """
-  Production v7 UUID handler for Fresh effect.
-
-  Generates time-ordered UUIDs using UUID v7 (RFC 9562). These UUIDs:
-  - Are time-ordered (lexically sortable by creation time)
-  - Have excellent database index locality
-  - Are suitable for distributed systems
-
-  ## Example
-
-      comp do
-        id <- Fresh.fresh_uuid()
-        return(id)
-      end
-      |> Fresh.UUID7.with_handler()
-      |> Comp.run!()
-      #=> "01945a3b-7c9d-7000-8000-..."  # v7 UUID
-  """
+  @moduledoc false
 
   @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall

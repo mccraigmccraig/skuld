@@ -1,35 +1,34 @@
+# Fixed value random handler for Random effect - for testing specific scenarios.
+#
+# Returns values from a fixed sequence, cycling when exhausted.
+# Useful for testing specific scenarios where you need exact control
+# over random values.
+#
+# ## Example
+#
+#     comp do
+#       a <- Random.random()
+#       b <- Random.random()
+#       c <- Random.random()
+#       {a, b, c}
+#     end
+#     |> Random.Fixed.with_handler(values: [0.1, 0.5, 0.9])
+#     |> Comp.run!()
+#     #=> {0.1, 0.5, 0.9}
+#
+#     # Cycles when exhausted
+#     comp do
+#       a <- Random.random()
+#       b <- Random.random()
+#       c <- Random.random()
+#       d <- Random.random()
+#       {a, b, c, d}
+#     end
+#     |> Random.Fixed.with_handler(values: [0.0, 1.0])
+#     |> Comp.run!()
+#     #=> {0.0, 1.0, 0.0, 1.0}
 defmodule Skuld.Effects.Random.Fixed do
-  @moduledoc """
-  Fixed value random handler for Random effect - for testing specific scenarios.
-
-  Returns values from a fixed sequence, cycling when exhausted.
-  Useful for testing specific scenarios where you need exact control
-  over random values.
-
-  ## Example
-
-      comp do
-        a <- Random.random()
-        b <- Random.random()
-        c <- Random.random()
-        {a, b, c}
-      end
-      |> Random.Fixed.with_handler(values: [0.1, 0.5, 0.9])
-      |> Comp.run!()
-      #=> {0.1, 0.5, 0.9}
-
-      # Cycles when exhausted
-      comp do
-        a <- Random.random()
-        b <- Random.random()
-        c <- Random.random()
-        d <- Random.random()
-        {a, b, c, d}
-      end
-      |> Random.Fixed.with_handler(values: [0.0, 1.0])
-      |> Comp.run!()
-      #=> {0.0, 1.0, 0.0, 1.0}
-  """
+  @moduledoc false
 
   @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall

@@ -1,22 +1,21 @@
+# Opaque handle for referencing a fiber submitted to a FiberPool.
+#
+# Users receive a Handle when they submit a computation to the FiberPool.
+# The handle can be used to await the fiber's result or cancel it.
+#
+# Handles are opaque - users cannot access the underlying fiber state directly.
+# All operations go through the FiberPool.
+#
+# ## Example
+#
+#     comp do
+#       handle <- FiberPool.fiber(my_computation)
+#       # ... do other work ...
+#       result <- FiberPool.await!(handle)
+#       result
+#     end
 defmodule Skuld.Fiber.Handle do
-  @moduledoc """
-  Opaque handle for referencing a fiber submitted to a FiberPool.
-
-  Users receive a Handle when they submit a computation to the FiberPool.
-  The handle can be used to await the fiber's result or cancel it.
-
-  Handles are opaque - users cannot access the underlying fiber state directly.
-  All operations go through the FiberPool.
-
-  ## Example
-
-      comp do
-        handle <- FiberPool.fiber(my_computation)
-        # ... do other work ...
-        result <- FiberPool.await!(handle)
-        result
-      end
-  """
+  @moduledoc false
 
   @type t :: %__MODULE__{
           id: reference(),

@@ -1,9 +1,8 @@
+# Shared utilities for effects that use Task.Supervisor for concurrency.
+#
+# Used by `Async` and `Parallel` effects.
 defmodule Skuld.Effects.Helpers.TaskHelpers do
-  @moduledoc """
-  Shared utilities for effects that use Task.Supervisor for concurrency.
-
-  Used by `Async` and `Parallel` effects.
-  """
+  @moduledoc false
 
   @doc """
   Stop a supervisor gracefully, ignoring exit signals if it's already stopped.

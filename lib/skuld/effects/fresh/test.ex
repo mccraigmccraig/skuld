@@ -1,33 +1,32 @@
+# Deterministic v5 UUID handler for Fresh effect - for testing.
+#
+# Generates reproducible UUIDs using UUID v5 (name-based, SHA-1) with a
+# configured namespace and sequential counter. The same namespace always
+# produces the same UUID sequence - ideal for testing.
+#
+# ## Example
+#
+#     namespace = Uniq.UUID.uuid4()
+#
+#     # First run
+#     uuid1 = comp do
+#       uuid <- Fresh.fresh_uuid()
+#       return(uuid)
+#     end
+#     |> Fresh.Test.with_handler(namespace: namespace)
+#     |> Comp.run!()
+#
+#     # Second run - same result!
+#     uuid2 = comp do
+#       uuid <- Fresh.fresh_uuid()
+#       return(uuid)
+#     end
+#     |> Fresh.Test.with_handler(namespace: namespace)
+#     |> Comp.run!()
+#
+#     uuid1 == uuid2  #=> true
 defmodule Skuld.Effects.Fresh.Test do
-  @moduledoc """
-  Deterministic v5 UUID handler for Fresh effect - for testing.
-
-  Generates reproducible UUIDs using UUID v5 (name-based, SHA-1) with a
-  configured namespace and sequential counter. The same namespace always
-  produces the same UUID sequence - ideal for testing.
-
-  ## Example
-
-      namespace = Uniq.UUID.uuid4()
-
-      # First run
-      uuid1 = comp do
-        uuid <- Fresh.fresh_uuid()
-        return(uuid)
-      end
-      |> Fresh.Test.with_handler(namespace: namespace)
-      |> Comp.run!()
-
-      # Second run - same result!
-      uuid2 = comp do
-        uuid <- Fresh.fresh_uuid()
-        return(uuid)
-      end
-      |> Fresh.Test.with_handler(namespace: namespace)
-      |> Comp.run!()
-
-      uuid1 == uuid2  #=> true
-  """
+  @moduledoc false
 
   @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall

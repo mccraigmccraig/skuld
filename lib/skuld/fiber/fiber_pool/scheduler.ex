@@ -1,25 +1,24 @@
+# Core scheduling loop for the FiberPool.
+#
+# The scheduler runs fibers cooperatively, managing the run queue and handling
+# suspensions and completions.
+#
+# ## Scheduling Strategy
+#
+# - FIFO: Fibers are run in the order they become ready
+# - Cooperative: Fibers run until they complete, suspend, or error
+# - Fair: Each step runs one fiber, allowing interleaving
+#
+# ## Usage
+#
+# The scheduler is typically used through the FiberPool effect, not directly.
+# For testing or advanced use:
+#
+#     state = State.new()
+#     {fiber_id, state} = State.add_fiber(state, fiber)
+#     {:done, results, state} = Scheduler.run(state, env)
 defmodule Skuld.Fiber.FiberPool.Scheduler do
-  @moduledoc """
-  Core scheduling loop for the FiberPool.
-
-  The scheduler runs fibers cooperatively, managing the run queue and handling
-  suspensions and completions.
-
-  ## Scheduling Strategy
-
-  - FIFO: Fibers are run in the order they become ready
-  - Cooperative: Fibers run until they complete, suspend, or error
-  - Fair: Each step runs one fiber, allowing interleaving
-
-  ## Usage
-
-  The scheduler is typically used through the FiberPool effect, not directly.
-  For testing or advanced use:
-
-      state = State.new()
-      {fiber_id, state} = State.add_fiber(state, fiber)
-      {:done, results, state} = Scheduler.run(state, env)
-  """
+  @moduledoc false
 
   alias Skuld.Fiber
   alias Skuld.Fiber.FiberPool.State

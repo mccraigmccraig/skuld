@@ -65,13 +65,12 @@ defmodule Skuld.Effects.Channel do
   ## Handle Struct
   #############################################################################
 
+  # Opaque handle to a channel.
+  #
+  # The handle contains only the channel ID - the actual channel state
+  # is stored in the computation environment.
   defmodule Handle do
-    @moduledoc """
-    Opaque handle to a channel.
-
-    The handle contains only the channel ID - the actual channel state
-    is stored in the computation environment.
-    """
+    @moduledoc false
 
     @type t :: %__MODULE__{
             id: reference()

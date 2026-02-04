@@ -1,43 +1,42 @@
+# Internal state for a Channel.
+#
+# Channels are bounded buffers with suspend semantics:
+# - `put` suspends when buffer is full (backpressure)
+# - `take` suspends when buffer is empty (flow control)
+# - Error state propagates to all consumers (sticky error)
+#
+# ## Fields
+#
+# - `id` - Unique channel identifier (reference)
+# - `capacity` - Maximum buffer size (positive integer)
+# - `buffer` - Queue of buffered items
+# - `status` - `:open`, `:closed`, or `{:error, reason}`
+# - `waiting_puts` - List of `{fiber_id, item}` waiting for space
+# - `waiting_takes` - List of `fiber_id` waiting for items
+#
+# ## Status Transitions
+#
+# ```
+#     ┌─────────┐
+#     │  :open  │ ───── put/take work normally
+#     └────┬────┘
+#          │
+#     close() or error()
+#          │
+#     ┌────┴─────────────────┐
+#     │                      │
+#     ▼                      ▼
+# ┌─────────┐        ┌──────────────────┐
+# │ :closed │        │ {:error, reason} │
+# └─────────┘        └──────────────────┘
+#     │                      │
+#     ▼                      ▼
+# take returns           take ALWAYS returns
+# :closed when           {:error, reason}
+# buffer empty           (error is sticky!)
+# ```
 defmodule Skuld.Effects.Channel.State do
-  @moduledoc """
-  Internal state for a Channel.
-
-  Channels are bounded buffers with suspend semantics:
-  - `put` suspends when buffer is full (backpressure)
-  - `take` suspends when buffer is empty (flow control)
-  - Error state propagates to all consumers (sticky error)
-
-  ## Fields
-
-  - `id` - Unique channel identifier (reference)
-  - `capacity` - Maximum buffer size (positive integer)
-  - `buffer` - Queue of buffered items
-  - `status` - `:open`, `:closed`, or `{:error, reason}`
-  - `waiting_puts` - List of `{fiber_id, item}` waiting for space
-  - `waiting_takes` - List of `fiber_id` waiting for items
-
-  ## Status Transitions
-
-  ```
-      ┌─────────┐
-      │  :open  │ ───── put/take work normally
-      └────┬────┘
-           │
-      close() or error()
-           │
-      ┌────┴─────────────────┐
-      │                      │
-      ▼                      ▼
-  ┌─────────┐        ┌──────────────────┐
-  │ :closed │        │ {:error, reason} │
-  └─────────┘        └──────────────────┘
-      │                      │
-      ▼                      ▼
-  take returns           take ALWAYS returns
-  :closed when           {:error, reason}
-  buffer empty           (error is sticky!)
-  ```
-  """
+  @moduledoc false
 
   @type channel_id :: reference()
   @type fiber_id :: reference()

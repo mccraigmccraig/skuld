@@ -1,31 +1,30 @@
+# Synchronous (State-backed) handler for AtomicState effect.
+#
+# Maps AtomicState operations to env.state storage, providing a simpler
+# implementation for testing without spinning up Agent processes. Operations
+# are "atomic" trivially since there's no concurrency in single-process tests.
+#
+# ## Usage
+#
+#     comp do
+#       _ <- AtomicState.modify(&(&1 + 1))
+#       AtomicState.get()
+#     end
+#     |> AtomicState.Sync.with_handler(0)
+#     |> Comp.run!()
+#
+# ## Multiple Tagged States
+#
+#     comp do
+#       _ <- AtomicState.modify(:a, &(&1 + 1))
+#       _ <- AtomicState.modify(:b, &(&1 * 2))
+#       {AtomicState.get(:a), AtomicState.get(:b)}
+#     end
+#     |> AtomicState.Sync.with_handler(0, tag: :a)
+#     |> AtomicState.Sync.with_handler(10, tag: :b)
+#     |> Comp.run!()
 defmodule Skuld.Effects.AtomicState.Sync do
-  @moduledoc """
-  Synchronous (State-backed) handler for AtomicState effect.
-
-  Maps AtomicState operations to env.state storage, providing a simpler
-  implementation for testing without spinning up Agent processes. Operations
-  are "atomic" trivially since there's no concurrency in single-process tests.
-
-  ## Usage
-
-      comp do
-        _ <- AtomicState.modify(&(&1 + 1))
-        AtomicState.get()
-      end
-      |> AtomicState.Sync.with_handler(0)
-      |> Comp.run!()
-
-  ## Multiple Tagged States
-
-      comp do
-        _ <- AtomicState.modify(:a, &(&1 + 1))
-        _ <- AtomicState.modify(:b, &(&1 * 2))
-        {AtomicState.get(:a), AtomicState.get(:b)}
-      end
-      |> AtomicState.Sync.with_handler(0, tag: :a)
-      |> AtomicState.Sync.with_handler(10, tag: :b)
-      |> Comp.run!()
-  """
+  @moduledoc false
 
   @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall

@@ -1,26 +1,25 @@
+# Shared state threaded through all fibers in a FiberPool.
+#
+# This struct consolidates the loose keys that were previously stored
+# separately in `env.state` for coordination between Scheduler and Channel:
+#
+# - `current_fiber_id` - Set by Scheduler before running each fiber,
+#   read by Channel to know which fiber is executing
+# - `channel_wakes` - Wake requests accumulated by Channel operations,
+#   consumed by Scheduler to resume suspended fibers
+# - `channel_states` - Map of channel_id to Channel.State for all channels
+#
+# ## Lifecycle
+#
+# This state is stored under a single key in `state.env_state` and threaded
+# to all fibers. Unlike `PendingWork` which is fiber-local and cleared,
+# this state persists and is shared across all fiber executions.
+#
+# ## Key
+#
+# Use `env_key/0` to get the key under which this struct is stored in env.state.
 defmodule Skuld.Fiber.FiberPool.EnvState do
-  @moduledoc """
-  Shared state threaded through all fibers in a FiberPool.
-
-  This struct consolidates the loose keys that were previously stored
-  separately in `env.state` for coordination between Scheduler and Channel:
-
-  - `current_fiber_id` - Set by Scheduler before running each fiber,
-    read by Channel to know which fiber is executing
-  - `channel_wakes` - Wake requests accumulated by Channel operations,
-    consumed by Scheduler to resume suspended fibers
-  - `channel_states` - Map of channel_id to Channel.State for all channels
-
-  ## Lifecycle
-
-  This state is stored under a single key in `state.env_state` and threaded
-  to all fibers. Unlike `PendingWork` which is fiber-local and cleared,
-  this state persists and is shared across all fiber executions.
-
-  ## Key
-
-  Use `env_key/0` to get the key under which this struct is stored in env.state.
-  """
+  @moduledoc false
 
   alias Skuld.Effects.Channel
 

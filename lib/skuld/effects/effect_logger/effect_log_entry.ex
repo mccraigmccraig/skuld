@@ -1,49 +1,48 @@
+# A flat log entry for an effect invocation.
+#
+# Each entry represents a single effect handler invocation and captures:
+#
+# - `id` - Unique identifier so wrapped_k can verify it's closing the correct entry
+# - `sig` - Effect signature (module)
+# - `data` - Effect arguments (the input to the effect)
+# - `value` - Result value (if handler called wrapped_k)
+# - `state` - Current state in the effect lifecycle
+#
+# ## Flat Log Structure
+#
+# Entries are stored in a flat list, ordered by when they started. The tree
+# structure of the computation is NOT captured - instead, we use `leave_scope`
+# handlers to mark entries as `:discarded` when their continuations are
+# abandoned (e.g., by a Throw effect).
+#
+# ## State Machine
+#
+# The `state` field tracks where the effect is in its lifecycle:
+#
+# - `:started` - Entry created, handler invoked, continuation not yet completed.
+#   This includes effects that have suspended (e.g., Yield) - they remain
+#   `:started` until their continuation is eventually called.
+#
+# - `:executed` - Handler called wrapped_k with a value. The `value` field
+#   contains the result passed to the continuation. Can be short-circuited
+#   during replay.
+#
+# - `:discarded` - Handler discarded the continuation (never called wrapped_k).
+#   This is the effect that caused the discard (e.g., Throw effect itself).
+#   Cannot be short-circuited during replay, must re-execute the handler.
+#
+# ## State Transitions
+#
+#     :started → :executed   (wrapped_k called)
+#     :started → :discarded  (leave_scope triggered before wrapped_k called)
+#
+# ## Replay Semantics
+#
+# - `:executed` entries can be short-circuited with their logged value
+# - `:discarded` entries must re-execute the handler (they caused the discard)
+# - `:started` entries indicate suspension points (for cold resume)
 defmodule Skuld.Effects.EffectLogger.EffectLogEntry do
-  @moduledoc """
-  A flat log entry for an effect invocation.
-
-  Each entry represents a single effect handler invocation and captures:
-
-  - `id` - Unique identifier so wrapped_k can verify it's closing the correct entry
-  - `sig` - Effect signature (module)
-  - `data` - Effect arguments (the input to the effect)
-  - `value` - Result value (if handler called wrapped_k)
-  - `state` - Current state in the effect lifecycle
-
-  ## Flat Log Structure
-
-  Entries are stored in a flat list, ordered by when they started. The tree
-  structure of the computation is NOT captured - instead, we use `leave_scope`
-  handlers to mark entries as `:discarded` when their continuations are
-  abandoned (e.g., by a Throw effect).
-
-  ## State Machine
-
-  The `state` field tracks where the effect is in its lifecycle:
-
-  - `:started` - Entry created, handler invoked, continuation not yet completed.
-    This includes effects that have suspended (e.g., Yield) - they remain
-    `:started` until their continuation is eventually called.
-
-  - `:executed` - Handler called wrapped_k with a value. The `value` field
-    contains the result passed to the continuation. Can be short-circuited
-    during replay.
-
-  - `:discarded` - Handler discarded the continuation (never called wrapped_k).
-    This is the effect that caused the discard (e.g., Throw effect itself).
-    Cannot be short-circuited during replay, must re-execute the handler.
-
-  ## State Transitions
-
-      :started → :executed   (wrapped_k called)
-      :started → :discarded  (leave_scope triggered before wrapped_k called)
-
-  ## Replay Semantics
-
-  - `:executed` entries can be short-circuited with their logged value
-  - `:discarded` entries must re-execute the handler (they caused the discard)
-  - `:started` entries indicate suspension points (for cold resume)
-  """
+  @moduledoc false
 
   alias Skuld.Comp.SerializableStruct
 

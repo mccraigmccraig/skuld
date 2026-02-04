@@ -48,12 +48,10 @@ defmodule Skuld.Effects.DB do
   ## Operation Structs
   #############################################################################
 
+  # Operation for fetching a single record by ID.
+  # Batch key: `{:db_fetch, schema}`
   defmodule Fetch do
-    @moduledoc """
-    Operation for fetching a single record by ID.
-
-    Batch key: `{:db_fetch, schema}`
-    """
+    @moduledoc false
     defstruct [:schema, :id]
 
     @type t :: %__MODULE__{
@@ -62,12 +60,10 @@ defmodule Skuld.Effects.DB do
           }
   end
 
+  # Operation for fetching all records matching a filter.
+  # Batch key: `{:db_fetch_all, schema, filter_key}`
   defmodule FetchAll do
-    @moduledoc """
-    Operation for fetching all records matching a filter.
-
-    Batch key: `{:db_fetch_all, schema, filter_key}`
-    """
+    @moduledoc false
     defstruct [:schema, :filter_key, :filter_value]
 
     @type t :: %__MODULE__{
@@ -191,13 +187,12 @@ defmodule Skuld.Effects.DB do
   end
 end
 
+# Default batch executors for DB operations.
+#
+# These executors use Ecto to perform batched queries. They expect
+# `:repo` to be available via the Reader effect.
 defmodule Skuld.Effects.DB.Executors do
-  @moduledoc """
-  Default batch executors for DB operations.
-
-  These executors use Ecto to perform batched queries. They expect
-  `:repo` to be available via the Reader effect.
-  """
+  @moduledoc false
 
   alias Skuld.Comp
   alias Skuld.Effects.Reader
