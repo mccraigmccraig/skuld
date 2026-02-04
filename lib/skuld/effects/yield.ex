@@ -20,6 +20,7 @@ defmodule Skuld.Effects.Yield do
   import Skuld.Comp.DefOp
 
   alias Skuld.Comp
+  alias Skuld.Comp.ISentinel
   alias Skuld.Comp.Types
 
   @sig __MODULE__
@@ -171,16 +172,17 @@ defmodule Skuld.Effects.Yield do
 
             {%Comp.ExternalSuspend{value: suspend.value, resume: wrapped_resume}, resp_env}
 
-          %Comp.Throw{} = thrown ->
-            # Responder threw - propagate directly
-            {thrown, resp_env}
-
-          resp_value ->
-            # Responder returned a value - resume the inner computation
-            # Re-install a wrapped handler for the continuation
-            wrapped_handler = make_wrapped_handler(responder, outer_yield_handler)
-            resumed_env = Env.with_handler(resp_env, @sig, wrapped_handler)
-            yield_k.(resp_value, resumed_env)
+          other ->
+            if ISentinel.error?(other) do
+              # Responder threw or was cancelled - propagate directly
+              {other, resp_env}
+            else
+              # Responder returned a value - resume the inner computation
+              # Re-install a wrapped handler for the continuation
+              wrapped_handler = make_wrapped_handler(responder, outer_yield_handler)
+              resumed_env = Env.with_handler(resp_env, @sig, wrapped_handler)
+              yield_k.(other, resumed_env)
+            end
         end
       end
 
@@ -209,16 +211,17 @@ defmodule Skuld.Effects.Yield do
 
           {%Comp.ExternalSuspend{value: suspend.value, resume: wrapped_resume}, result_env}
 
-        %Comp.Throw{} = thrown ->
-          # Responder threw during resume
-          {thrown, result_env}
-
-        resp_value ->
-          # Responder completed - resume the inner computation
-          # Re-install a wrapped handler for inner_k
-          wrapped_handler = make_wrapped_handler(responder, outer_yield_handler)
-          resumed_env = Env.with_handler(result_env, @sig, wrapped_handler)
-          inner_k.(resp_value, resumed_env)
+        other ->
+          if ISentinel.error?(other) do
+            # Responder threw or was cancelled during resume
+            {other, result_env}
+          else
+            # Responder completed - resume the inner computation
+            # Re-install a wrapped handler for inner_k
+            wrapped_handler = make_wrapped_handler(responder, outer_yield_handler)
+            resumed_env = Env.with_handler(result_env, @sig, wrapped_handler)
+            inner_k.(other, resumed_env)
+          end
       end
     end
   end

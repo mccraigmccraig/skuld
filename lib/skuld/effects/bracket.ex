@@ -92,6 +92,7 @@ defmodule Skuld.Effects.Bracket do
   """
 
   alias Skuld.Comp
+  alias Skuld.Comp.ISentinel
   alias Skuld.Comp.Types
 
   @doc """
@@ -191,18 +192,12 @@ defmodule Skuld.Effects.Bracket do
     case Comp.call(release_fn.(resource), env, &Comp.identity_k/2) do
       {%Comp.Throw{} = release_error, released_env} ->
         # Release threw an error
-        case original_result do
-          %Comp.Throw{} ->
-            # Original also threw - preserve original error, suppress release error
-            {original_result, released_env}
-
-          %Comp.ExternalSuspend{} ->
-            # Original suspended - preserve suspension, suppress release error
-            {original_result, released_env}
-
-          _ ->
-            # Original succeeded - propagate release error
-            {release_error, released_env}
+        if ISentinel.sentinel?(original_result) do
+          # Original was a sentinel (error or suspend) - preserve it, suppress release error
+          {original_result, released_env}
+        else
+          # Original succeeded - propagate release error
+          {release_error, released_env}
         end
 
       {_release_result, released_env} ->
@@ -271,10 +266,12 @@ defmodule Skuld.Effects.Bracket do
       run_cleanup = fn original_result, inner_env ->
         case Comp.call(cleanup, inner_env, &Comp.identity_k/2) do
           {%Comp.Throw{} = cleanup_error, cleaned_env} ->
-            case original_result do
-              %Comp.Throw{} -> {original_result, cleaned_env}
-              %Comp.ExternalSuspend{} -> {original_result, cleaned_env}
-              _ -> {cleanup_error, cleaned_env}
+            if ISentinel.sentinel?(original_result) do
+              # Original was a sentinel - preserve it, suppress cleanup error
+              {original_result, cleaned_env}
+            else
+              # Original succeeded - propagate cleanup error
+              {cleanup_error, cleaned_env}
             end
 
           {_cleanup_result, cleaned_env} ->

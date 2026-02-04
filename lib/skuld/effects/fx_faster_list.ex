@@ -56,12 +56,13 @@ defmodule Skuld.Effects.FxFasterList do
   computation to completion before moving to the next. This avoids
   building continuation chains, providing ~0.1 µs/op constant cost.
 
-  Control effects (Throw, Suspend) are detected via pattern matching
-  and handled explicitly - Throw propagates correctly, but Suspend
-  loses the iteration context.
+  Control effects (Throw, Cancelled, Suspend) are detected via ISentinel
+  predicates (`error?/1` and `suspend?/1`) and handled explicitly - errors
+  propagate correctly, but Suspend loses the iteration context.
   """
 
   alias Skuld.Comp
+  alias Skuld.Comp.ISentinel
   alias Skuld.Comp.Types
 
   @doc """
@@ -87,15 +88,17 @@ defmodule Skuld.Effects.FxFasterList do
     fn env, outer_k ->
       result =
         Enum.reduce_while(enumerable, {:ok, [], env}, fn elem, {:ok, acc, current_env} ->
-          case Comp.call(f.(elem), current_env, &Comp.identity_k/2) do
-            {%Comp.Throw{} = throw, err_env} ->
-              {:halt, {:error, throw, err_env}}
+          {result, result_env} = Comp.call(f.(elem), current_env, &Comp.identity_k/2)
 
-            {%Comp.ExternalSuspend{} = suspend, suspend_env} ->
-              {:halt, {:suspended, suspend, suspend_env}}
+          cond do
+            ISentinel.error?(result) ->
+              {:halt, {:error, result, result_env}}
 
-            {value, new_env} ->
-              {:cont, {:ok, [value | acc], new_env}}
+            ISentinel.suspend?(result) ->
+              {:halt, {:suspended, result, result_env}}
+
+            true ->
+              {:cont, {:ok, [result | acc], result_env}}
           end
         end)
 
@@ -103,8 +106,8 @@ defmodule Skuld.Effects.FxFasterList do
         {:ok, acc, final_env} ->
           outer_k.(Enum.reverse(acc), final_env)
 
-        {:error, throw, err_env} ->
-          err_env.leave_scope.(throw, err_env)
+        {:error, error, err_env} ->
+          err_env.leave_scope.(error, err_env)
 
         {:suspended, suspend, suspend_env} ->
           {suspend, suspend_env}
@@ -133,15 +136,17 @@ defmodule Skuld.Effects.FxFasterList do
     fn env, outer_k ->
       result =
         Enum.reduce_while(enumerable, {:ok, init, env}, fn elem, {:ok, acc, current_env} ->
-          case Comp.call(f.(elem, acc), current_env, &Comp.identity_k/2) do
-            {%Comp.Throw{} = throw, err_env} ->
-              {:halt, {:error, throw, err_env}}
+          {result, result_env} = Comp.call(f.(elem, acc), current_env, &Comp.identity_k/2)
 
-            {%Comp.ExternalSuspend{} = suspend, suspend_env} ->
-              {:halt, {:suspended, suspend, suspend_env}}
+          cond do
+            ISentinel.error?(result) ->
+              {:halt, {:error, result, result_env}}
 
-            {new_acc, new_env} ->
-              {:cont, {:ok, new_acc, new_env}}
+            ISentinel.suspend?(result) ->
+              {:halt, {:suspended, result, result_env}}
+
+            true ->
+              {:cont, {:ok, result, result_env}}
           end
         end)
 
@@ -149,8 +154,8 @@ defmodule Skuld.Effects.FxFasterList do
         {:ok, final_acc, final_env} ->
           outer_k.(final_acc, final_env)
 
-        {:error, throw, err_env} ->
-          err_env.leave_scope.(throw, err_env)
+        {:error, error, err_env} ->
+          err_env.leave_scope.(error, err_env)
 
         {:suspended, suspend, suspend_env} ->
           {suspend, suspend_env}
@@ -180,15 +185,17 @@ defmodule Skuld.Effects.FxFasterList do
     fn env, outer_k ->
       result =
         Enum.reduce_while(enumerable, {:ok, env}, fn elem, {:ok, current_env} ->
-          case Comp.call(f.(elem), current_env, &Comp.identity_k/2) do
-            {%Comp.Throw{} = throw, err_env} ->
-              {:halt, {:error, throw, err_env}}
+          {result, result_env} = Comp.call(f.(elem), current_env, &Comp.identity_k/2)
 
-            {%Comp.ExternalSuspend{} = suspend, suspend_env} ->
-              {:halt, {:suspended, suspend, suspend_env}}
+          cond do
+            ISentinel.error?(result) ->
+              {:halt, {:error, result, result_env}}
 
-            {_value, new_env} ->
-              {:cont, {:ok, new_env}}
+            ISentinel.suspend?(result) ->
+              {:halt, {:suspended, result, result_env}}
+
+            true ->
+              {:cont, {:ok, result_env}}
           end
         end)
 
@@ -196,8 +203,8 @@ defmodule Skuld.Effects.FxFasterList do
         {:ok, final_env} ->
           outer_k.(:ok, final_env)
 
-        {:error, throw, err_env} ->
-          err_env.leave_scope.(throw, err_env)
+        {:error, error, err_env} ->
+          err_env.leave_scope.(error, err_env)
 
         {:suspended, suspend, suspend_env} ->
           {suspend, suspend_env}
@@ -225,16 +232,18 @@ defmodule Skuld.Effects.FxFasterList do
     fn env, outer_k ->
       result =
         Enum.reduce_while(enumerable, {:ok, [], env}, fn elem, {:ok, acc, current_env} ->
-          case Comp.call(pred.(elem), current_env, &Comp.identity_k/2) do
-            {%Comp.Throw{} = throw, err_env} ->
-              {:halt, {:error, throw, err_env}}
+          {result, result_env} = Comp.call(pred.(elem), current_env, &Comp.identity_k/2)
 
-            {%Comp.ExternalSuspend{} = suspend, suspend_env} ->
-              {:halt, {:suspended, suspend, suspend_env}}
+          cond do
+            ISentinel.error?(result) ->
+              {:halt, {:error, result, result_env}}
 
-            {keep?, new_env} ->
-              new_acc = if keep?, do: [elem | acc], else: acc
-              {:cont, {:ok, new_acc, new_env}}
+            ISentinel.suspend?(result) ->
+              {:halt, {:suspended, result, result_env}}
+
+            true ->
+              new_acc = if result, do: [elem | acc], else: acc
+              {:cont, {:ok, new_acc, result_env}}
           end
         end)
 
@@ -242,8 +251,8 @@ defmodule Skuld.Effects.FxFasterList do
         {:ok, acc, final_env} ->
           outer_k.(Enum.reverse(acc), final_env)
 
-        {:error, throw, err_env} ->
-          err_env.leave_scope.(throw, err_env)
+        {:error, error, err_env} ->
+          err_env.leave_scope.(error, err_env)
 
         {:suspended, suspend, suspend_env} ->
           {suspend, suspend_env}

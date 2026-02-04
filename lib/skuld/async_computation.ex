@@ -87,6 +87,7 @@ defmodule Skuld.AsyncComputation do
 
   alias Skuld.Comp.Cancelled
   alias Skuld.Comp.ExternalSuspend
+  alias Skuld.Comp.ISentinel
   alias Skuld.Comp.Throw, as: ThrowStruct
   alias Skuld.Effects.Throw
   alias Skuld.Effects.Yield
@@ -329,11 +330,9 @@ defmodule Skuld.AsyncComputation do
         # First yield - enter the yield/resume loop
         run_yield_loop(suspend, env, caller, tag, ref, caller)
 
-      {%ThrowStruct{error: error}, _env} ->
-        send(caller, {__MODULE__, tag, %ThrowStruct{error: error}})
-
-      {value, _env} ->
-        send(caller, {__MODULE__, tag, value})
+      {result, _env} ->
+        # Send error sentinels (Throw, Cancelled) or completed values
+        send(caller, {__MODULE__, tag, result})
     end
   end
 
@@ -375,7 +374,7 @@ defmodule Skuld.AsyncComputation do
         # Apply transform_suspend to decorate the new suspend (same as Comp.run does)
         # This ensures EffectLogger and other scoped effects can add data to ExternalSuspend.data
         {transformed_suspend, transformed_env} =
-          Skuld.Comp.ISentinel.run(new_suspend, new_env)
+          ISentinel.run(new_suspend, new_env)
 
         # Yielded again - continue the loop
         run_yield_loop(
@@ -387,12 +386,8 @@ defmodule Skuld.AsyncComputation do
           next_reply_to
         )
 
-      %ThrowStruct{error: error} ->
-        # Computation threw
-        send(next_reply_to, {__MODULE__, tag, %ThrowStruct{error: error}})
-
       other ->
-        # Computation completed
+        # Computation threw, was cancelled, or completed - send result
         send(next_reply_to, {__MODULE__, tag, other})
     end
   end
