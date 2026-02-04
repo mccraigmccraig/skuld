@@ -1,11 +1,10 @@
+# Utilities for converting structs to/from JSON-friendly maps.
+#
+# Encoded structs include a `__struct__` field so they can be faithfully
+# reconstructed after decoding (e.g., from `Jason.decode/1`). Keys are expected
+# to already exist as atoms in the system to avoid dynamic atom creation.
 defmodule Skuld.Comp.SerializableStruct do
-  @moduledoc """
-  Utilities for converting structs to/from JSON-friendly maps.
-
-  Encoded structs include a `__struct__` field so they can be faithfully
-  reconstructed after decoding (e.g., from `Jason.decode/1`). Keys are expected
-  to already exist as atoms in the system to avoid dynamic atom creation.
-  """
+  @moduledoc false
 
   @doc """
   Convert a struct into a map representation suitable for JSON encoding.

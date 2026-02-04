@@ -1,10 +1,9 @@
+# Utilities for converting Elixir exceptions to Throw effects.
+#
+# Provides a macro and helper function for wrapping code in try/catch
+# that converts exceptions (raise/throw/exit) to Skuld Throw effects.
 defmodule Skuld.Comp.ConvertThrow do
-  @moduledoc """
-  Utilities for converting Elixir exceptions to Throw effects.
-
-  Provides a macro and helper function for wrapping code in try/catch
-  that converts exceptions (raise/throw/exit) to Skuld Throw effects.
-  """
+  @moduledoc false
 
   @doc """
   Wrap an expression in a computation that catches exceptions and converts

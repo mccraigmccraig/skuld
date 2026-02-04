@@ -1,10 +1,9 @@
+# Base operations automatically imported into `comp` blocks.
+#
+# Currently provides:
+# - `return/1` - lift a pure value into a computation (delegates to `Skuld.Comp.return/1`)
 defmodule Skuld.Comp.BaseOps do
-  @moduledoc """
-  Base operations automatically imported into `comp` blocks.
-
-  Currently provides:
-  - `return/1` - lift a pure value into a computation (delegates to `Skuld.Comp.return/1`)
-  """
+  @moduledoc false
 
   @doc """
   Lift a pure value into a computation.

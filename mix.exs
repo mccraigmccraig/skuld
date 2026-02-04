@@ -20,43 +20,77 @@ defmodule Skuld.MixProject do
         extras: ["README.md"],
         groups_for_modules: [
           Core: [
+            Skuld,
             Skuld.Comp,
-            Skuld.Syntax
+            Skuld.Syntax,
+            Skuld.AsyncComputation
           ],
-          "Standard Effects": [
-            Skuld.Effects.Reader,
+          "State & Environment": [
             Skuld.Effects.State,
-            Skuld.Effects.Writer,
+            Skuld.Effects.Reader,
+            Skuld.Effects.Writer
+          ],
+          "Control Flow": [
             Skuld.Effects.Throw,
-            Skuld.Effects.Fresh
+            Skuld.Effects.Bracket,
+            Skuld.Effects.Yield
           ],
-          "Control Effects": [
-            Skuld.Effects.Yield,
-            Skuld.Effects.Bracket
-          ],
-          "Collection Effects": [
+          "Collection Iteration": [
             Skuld.Effects.FxList,
             Skuld.Effects.FxFasterList
           ],
-          "Database Effects": [
+          "Value Generation": [
+            Skuld.Effects.Fresh,
+            Skuld.Effects.Random
+          ],
+          Concurrency: [
+            Skuld.Effects.AtomicState,
+            Skuld.Effects.FiberPool,
+            Skuld.Effects.Channel,
+            Skuld.Effects.Brook,
+            Skuld.Effects.Parallel,
+            Skuld.Fiber
+          ],
+          "Persistence & Data": [
+            Skuld.Effects.DB,
             Skuld.Effects.DBTransaction,
-            Skuld.Effects.DBTransaction.Ecto,
-            Skuld.Effects.DBTransaction.Noop,
-            Skuld.Effects.EctoPersist,
-            Skuld.Effects.Port
-          ],
-          "Event & Logging Effects": [
+            Skuld.Effects.ChangesetPersist,
+            Skuld.Effects.Port,
+            Skuld.Effects.Command,
+            Skuld.Effects.ChangeEvent,
             Skuld.Effects.EventAccumulator,
-            Skuld.Effects.EffectLogger
+            Skuld.Data.Change
           ],
-          Internals: [
-            ~r/^Skuld\.Comp\..*/
+          "Replay & Logging": [
+            Skuld.Effects.EffectLogger,
+            Skuld.Effects.EffectLogger.Log
+          ],
+          "Core Types": [
+            Skuld.Comp.Env,
+            Skuld.Comp.Types,
+            Skuld.Comp.ExternalSuspend,
+            Skuld.Comp.InternalSuspend,
+            Skuld.Comp.Throw,
+            Skuld.Comp.Cancelled
+          ],
+          Protocols: [
+            Skuld.Comp.ISentinel,
+            Skuld.Comp.IHandle,
+            Skuld.Comp.IInstall,
+            Skuld.Comp.IIntercept,
+            Skuld.Comp.IThrowable,
+            Skuld.Effects.EventAccumulator.IEvent
+          ],
+          Exceptions: [
+            Skuld.Comp.ThrowError,
+            Skuld.Comp.UncaughtThrow,
+            Skuld.Comp.UncaughtExit,
+            Skuld.Comp.InvalidComputation,
+            Skuld.Comp.MatchFailed
           ]
         ],
         nest_modules_by_prefix: [
-          Skuld.Effects.DBTransaction,
           Skuld.Effects.EffectLogger,
-          Skuld.Effects.EctoPersist,
           Skuld.Effects.EventAccumulator
         ]
       ]

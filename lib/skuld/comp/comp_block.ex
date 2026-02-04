@@ -1,217 +1,216 @@
+# The `comp` macro for monadic do-notation style effect composition.
+#
+# Provides `comp`, `defcomp`, and `defcompp` macros that transform
+# arrow notation (`<-`) into `Skuld.Comp.bind` chains.
+#
+# ## Usage
+#
+#     import Skuld.Comp.CompBlock
+#
+#     comp do
+#       x <- State.get()
+#       y = x + 1
+#       _ <- State.put(y)
+#       return(y)
+#     end
+#
+# ## Syntax
+#
+# - `x <- effect()` - bind the result of an effectful computation
+# - `x = expr` - pure variable binding (unchanged)
+# - `return(value)` - lift a pure value (optional - values are auto-lifted)
+# - Last expression is auto-lifted if not already a computation
+#
+# ## Auto-Lifting
+#
+# Non-computation values are automatically wrapped in `pure()`:
+#
+#     comp do
+#       x <- State.get()
+#       _ <- if x > 5, do: Writer.tell(:big)  # nil auto-lifted when false
+#       x * 2  # final expression auto-lifted (no return needed)
+#     end
+#
+# ## Else Clause
+#
+# You can add an else clause to handle pattern match failures in `<-` bindings:
+#
+#     comp do
+#       {:ok, x} <- maybe_returns_error()
+#       return(x)
+#     else
+#       {:error, reason} -> return({:failed, reason})
+#       other -> return({:unexpected, other})
+#     end
+#
+# When a pattern in `<-` fails to match, the else clause handles the unmatched value.
+#
+# ## Catch Clause - Local Effect Interception
+#
+# The `catch` clause enables local interception of effects using tagged patterns
+# `{Module, pattern}`. This provides a unified syntax for handling any effect
+# that supports interception.
+#
+# ### Catching Throw (Error Handling)
+#
+#     comp do
+#       x <- State.get()
+#       _ <- if x < 0, do: Throw.throw(:negative), else: Comp.pure(:ok)
+#       return(x * 2)
+#     catch
+#       {Throw, :negative} -> return(0)
+#       {Throw, other} -> return({:error, other})
+#     end
+#
+# When an error is thrown, it's matched against the `{Throw, pattern}` clauses.
+# If no pattern matches, the error is re-thrown by default.
+#
+# ### Catching Yield (Local Yield Interception)
+#
+#     comp do
+#       config <- Yield.yield(:need_config)
+#       return({:got, config})
+#     catch
+#       {Yield, :need_config} -> return(%{timeout: 5000})
+#       {Yield, other} -> Yield.yield(other)  # re-yield unhandled
+#     end
+#
+# When a yield occurs, it's matched against `{Yield, pattern}` clauses.
+# The handler returns a computation that produces the resume input.
+# If no pattern matches, the value is re-yielded by default.
+#
+# ### Mixed Effect Interception
+#
+# Multiple effects can be caught in the same block:
+#
+#     comp do
+#       config <- Yield.yield(:get_config)
+#       result <- risky_operation(config)
+#       result
+#     catch
+#       {Yield, :get_config} -> return(%{default: true})
+#       {Throw, :timeout} -> return(:retry_later)
+#       {Throw, err} -> Throw.throw({:wrapped, err})
+#     end
+#
+# ### Handler Installation (Bare Module Patterns)
+#
+# In addition to interception with `{Module, pattern}`, the `catch` clause supports
+# **handler installation** using bare module patterns:
+#
+#     comp do
+#       x <- State.get()
+#       config <- Reader.ask()
+#       {x, config}
+#     catch
+#       State -> 0                    # Install State handler with initial value 0
+#       Reader -> %{timeout: 5000}    # Install Reader handler with config value
+#     end
+#
+# Syntax distinction:
+# - `{Module, pattern} -> body` = **interception** (calls `Module.intercept/2`)
+# - `Module -> config` = **installation** (calls `Module.__handle__/2`)
+#
+# Mixed interception and installation work together:
+#
+#     comp do
+#       result <- risky_operation()
+#       result
+#     catch
+#       {Throw, :recoverable} -> {:ok, :fallback}  # Interception
+#       State -> 0                                   # Installation
+#       Throw -> nil                                 # Installation (no config needed)
+#     end
+#
+# Supported effects: All built-in effects implement `__handle__/2`. See each
+# effect's module documentation for the config format it accepts.
+#
+# ### Composition Order
+#
+# Consecutive same-module clauses are grouped into one handler. Each time the
+# module changes, a new interceptor layer is added. First group is innermost:
+#
+#     catch
+#       {Throw, :a} -> ...   # ─┐ group 1 (inner)
+#       {Throw, :b} -> ...   # ─┘
+#       {Yield, :x} -> ...   # ─── group 2 (middle)
+#       {Throw, :c} -> ...   # ─── group 3 (outer)
+#
+# This gives you full control - a throw from the Yield handler (group 2)
+# would be caught by group 3, not group 1.
+#
+# ## Combined Else and Catch
+#
+# Both clauses can be used together. The `else` must come before `catch`:
+#
+#     comp do
+#       {:ok, x} <- might_fail_match()
+#       _ <- might_throw_error(x)
+#       return(x)
+#     else
+#       {:error, reason} -> return({:match_failed, reason})
+#     catch
+#       {Throw, :some_error} -> return(:caught_throw)
+#     end
+#
+# Semantic ordering: `catch(else(body))`. This means:
+# - `else` handles pattern match failures from the main computation
+# - `catch` handles throws from both the main computation AND the else handler
+#
+# ## Extending Catch to Custom Effects
+#
+# Effects can support `catch` interception by implementing `Skuld.Comp.IIntercept`:
+#
+#     @behaviour Skuld.Comp.IIntercept
+#
+#     @impl Skuld.Comp.IIntercept
+#     def intercept(comp, handler_fn) do
+#       # Wrap comp, intercepting effect operations
+#       # handler_fn receives intercepted value, returns computation
+#     end
+#
+# See `Skuld.Effects.Throw.catch_error/2` and `Skuld.Effects.Yield.respond/2`
+# for implementation examples.
+#
+# ## Installing Handlers
+#
+# Use the pipe operator with `Module.with_handler/2` to install scoped handlers:
+#
+#     comp do
+#       x <- State.get()
+#       y <- Reader.ask()
+#       return(x + y)
+#     end
+#     |> State.with_handler(0)
+#     |> Reader.with_handler(:config)
+#
+# Handlers are applied in order (first in pipe = innermost).
+#
+# ## Function Definitions
+#
+#     defcomp increment() do
+#       x <- State.get()
+#       _ <- State.put(x + 1)
+#       return(x + 1)
+#     end
+#
+#     defcompp private_helper() do
+#       ctx <- Reader.ask()
+#       return(ctx.value)
+#     end
+#
+# Function definitions also support else and catch:
+#
+#     defcomp safe_get() do
+#       {:ok, x} <- fetch_value()
+#       return(x)
+#     else
+#       {:error, _} -> return(:default)
+#     catch
+#       {Throw, :serious_error} -> return(:fallback)
+#     end
 defmodule Skuld.Comp.CompBlock do
-  @moduledoc """
-  The `comp` macro for monadic do-notation style effect composition.
-
-  Provides `comp`, `defcomp`, and `defcompp` macros that transform
-  arrow notation (`<-`) into `Skuld.Comp.bind` chains.
-
-  ## Usage
-
-      import Skuld.Comp.CompBlock
-
-      comp do
-        x <- State.get()
-        y = x + 1
-        _ <- State.put(y)
-        return(y)
-      end
-
-  ## Syntax
-
-  - `x <- effect()` - bind the result of an effectful computation
-  - `x = expr` - pure variable binding (unchanged)
-  - `return(value)` - lift a pure value (optional - values are auto-lifted)
-  - Last expression is auto-lifted if not already a computation
-
-  ## Auto-Lifting
-
-  Non-computation values are automatically wrapped in `pure()`:
-
-      comp do
-        x <- State.get()
-        _ <- if x > 5, do: Writer.tell(:big)  # nil auto-lifted when false
-        x * 2  # final expression auto-lifted (no return needed)
-      end
-
-  ## Else Clause
-
-  You can add an else clause to handle pattern match failures in `<-` bindings:
-
-      comp do
-        {:ok, x} <- maybe_returns_error()
-        return(x)
-      else
-        {:error, reason} -> return({:failed, reason})
-        other -> return({:unexpected, other})
-      end
-
-  When a pattern in `<-` fails to match, the else clause handles the unmatched value.
-
-  ## Catch Clause - Local Effect Interception
-
-  The `catch` clause enables local interception of effects using tagged patterns
-  `{Module, pattern}`. This provides a unified syntax for handling any effect
-  that supports interception.
-
-  ### Catching Throw (Error Handling)
-
-      comp do
-        x <- State.get()
-        _ <- if x < 0, do: Throw.throw(:negative), else: Comp.pure(:ok)
-        return(x * 2)
-      catch
-        {Throw, :negative} -> return(0)
-        {Throw, other} -> return({:error, other})
-      end
-
-  When an error is thrown, it's matched against the `{Throw, pattern}` clauses.
-  If no pattern matches, the error is re-thrown by default.
-
-  ### Catching Yield (Local Yield Interception)
-
-      comp do
-        config <- Yield.yield(:need_config)
-        return({:got, config})
-      catch
-        {Yield, :need_config} -> return(%{timeout: 5000})
-        {Yield, other} -> Yield.yield(other)  # re-yield unhandled
-      end
-
-  When a yield occurs, it's matched against `{Yield, pattern}` clauses.
-  The handler returns a computation that produces the resume input.
-  If no pattern matches, the value is re-yielded by default.
-
-  ### Mixed Effect Interception
-
-  Multiple effects can be caught in the same block:
-
-      comp do
-        config <- Yield.yield(:get_config)
-        result <- risky_operation(config)
-        result
-      catch
-        {Yield, :get_config} -> return(%{default: true})
-        {Throw, :timeout} -> return(:retry_later)
-        {Throw, err} -> Throw.throw({:wrapped, err})
-      end
-
-  ### Handler Installation (Bare Module Patterns)
-
-  In addition to interception with `{Module, pattern}`, the `catch` clause supports
-  **handler installation** using bare module patterns:
-
-      comp do
-        x <- State.get()
-        config <- Reader.ask()
-        {x, config}
-      catch
-        State -> 0                    # Install State handler with initial value 0
-        Reader -> %{timeout: 5000}    # Install Reader handler with config value
-      end
-
-  Syntax distinction:
-  - `{Module, pattern} -> body` = **interception** (calls `Module.intercept/2`)
-  - `Module -> config` = **installation** (calls `Module.__handle__/2`)
-
-  Mixed interception and installation work together:
-
-      comp do
-        result <- risky_operation()
-        result
-      catch
-        {Throw, :recoverable} -> {:ok, :fallback}  # Interception
-        State -> 0                                   # Installation
-        Throw -> nil                                 # Installation (no config needed)
-      end
-
-  Supported effects: All built-in effects implement `__handle__/2`. See each
-  effect's module documentation for the config format it accepts.
-
-  ### Composition Order
-
-  Consecutive same-module clauses are grouped into one handler. Each time the
-  module changes, a new interceptor layer is added. First group is innermost:
-
-      catch
-        {Throw, :a} -> ...   # ─┐ group 1 (inner)
-        {Throw, :b} -> ...   # ─┘
-        {Yield, :x} -> ...   # ─── group 2 (middle)
-        {Throw, :c} -> ...   # ─── group 3 (outer)
-
-  This gives you full control - a throw from the Yield handler (group 2)
-  would be caught by group 3, not group 1.
-
-  ## Combined Else and Catch
-
-  Both clauses can be used together. The `else` must come before `catch`:
-
-      comp do
-        {:ok, x} <- might_fail_match()
-        _ <- might_throw_error(x)
-        return(x)
-      else
-        {:error, reason} -> return({:match_failed, reason})
-      catch
-        {Throw, :some_error} -> return(:caught_throw)
-      end
-
-  Semantic ordering: `catch(else(body))`. This means:
-  - `else` handles pattern match failures from the main computation
-  - `catch` handles throws from both the main computation AND the else handler
-
-  ## Extending Catch to Custom Effects
-
-  Effects can support `catch` interception by implementing `Skuld.Comp.IIntercept`:
-
-      @behaviour Skuld.Comp.IIntercept
-
-      @impl Skuld.Comp.IIntercept
-      def intercept(comp, handler_fn) do
-        # Wrap comp, intercepting effect operations
-        # handler_fn receives intercepted value, returns computation
-      end
-
-  See `Skuld.Effects.Throw.catch_error/2` and `Skuld.Effects.Yield.respond/2`
-  for implementation examples.
-
-  ## Installing Handlers
-
-  Use the pipe operator with `Module.with_handler/2` to install scoped handlers:
-
-      comp do
-        x <- State.get()
-        y <- Reader.ask()
-        return(x + y)
-      end
-      |> State.with_handler(0)
-      |> Reader.with_handler(:config)
-
-  Handlers are applied in order (first in pipe = innermost).
-
-  ## Function Definitions
-
-      defcomp increment() do
-        x <- State.get()
-        _ <- State.put(x + 1)
-        return(x + 1)
-      end
-
-      defcompp private_helper() do
-        ctx <- Reader.ask()
-        return(ctx.value)
-      end
-
-  Function definitions also support else and catch:
-
-      defcomp safe_get() do
-        {:ok, x} <- fetch_value()
-        return(x)
-      else
-        {:error, _} -> return(:default)
-      catch
-        {Throw, :serious_error} -> return(:fallback)
-      end
-  """
+  @moduledoc false
 
   @doc """
   Define a public function whose body is a `comp` block.
