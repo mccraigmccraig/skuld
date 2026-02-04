@@ -5,6 +5,18 @@ defprotocol Skuld.Comp.ISentinel do
   Sentinels are control flow values (Suspend, Throw, etc.) that bypass normal
   computation flow. This protocol allows generic handling without coupling to
   specific sentinel types.
+
+  ## Sentinel Categories
+
+  Sentinels fall into two categories:
+
+  - **Suspend sentinels** (`suspend?/1` returns true): ExternalSuspend, InternalSuspend
+    These represent suspended computations that can be resumed.
+
+  - **Error sentinels** (`error?/1` returns true): Throw, Cancelled
+    These represent error conditions that propagate up the call stack.
+
+  Plain values have `sentinel?/1`, `suspend?/1`, and `error?/1` all return false.
   """
   @fallback_to_any true
 
@@ -19,6 +31,14 @@ defprotocol Skuld.Comp.ISentinel do
   @doc "Is this a sentinel value? Returns false for plain values."
   @spec sentinel?(t) :: boolean()
   def sentinel?(value)
+
+  @doc "Is this a suspend sentinel (ExternalSuspend, InternalSuspend)?"
+  @spec suspend?(t) :: boolean()
+  def suspend?(value)
+
+  @doc "Is this an error sentinel (Throw, Cancelled)?"
+  @spec error?(t) :: boolean()
+  def error?(value)
 
   @doc "Get the resume function if this sentinel is resumable, nil otherwise."
   @spec get_resume(t) :: (term() -> {term(), Skuld.Comp.Types.env()}) | nil
@@ -37,6 +57,8 @@ defimpl Skuld.Comp.ISentinel, for: Any do
   def run(result, env), do: env.leave_scope.(result, env)
   def run!(value), do: value
   def sentinel?(_value), do: false
+  def suspend?(_value), do: false
+  def error?(_value), do: false
   def get_resume(_value), do: nil
   def with_resume(value, _new_resume), do: value
   def serializable_payload(_value), do: %{}

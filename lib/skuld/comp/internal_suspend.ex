@@ -189,6 +189,8 @@ defimpl Skuld.Comp.ISentinel, for: Skuld.Comp.InternalSuspend do
   end
 
   def sentinel?(_), do: true
+  def suspend?(_), do: true
+  def error?(_), do: false
 
   def get_resume(%{resume: resume}), do: resume
 

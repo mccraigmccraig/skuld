@@ -36,6 +36,8 @@ defmodule Skuld.Comp.Throw do
     end
 
     def sentinel?(_), do: true
+    def suspend?(_), do: false
+    def error?(_), do: true
 
     def get_resume(_), do: nil
 

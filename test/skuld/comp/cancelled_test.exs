@@ -20,6 +20,12 @@ defmodule Skuld.Comp.CancelledTest do
       assert ISentinel.sentinel?(cancelled) == true
     end
 
+    test "is categorized as error sentinel" do
+      cancelled = %Cancelled{reason: :test}
+      assert ISentinel.error?(cancelled) == true
+      assert ISentinel.suspend?(cancelled) == false
+    end
+
     test "is not resumable" do
       cancelled = %Cancelled{reason: :test}
       assert ISentinel.get_resume(cancelled) == nil

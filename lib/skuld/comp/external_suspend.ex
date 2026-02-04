@@ -38,6 +38,8 @@ defmodule Skuld.Comp.ExternalSuspend do
     end
 
     def sentinel?(_), do: true
+    def suspend?(_), do: true
+    def error?(_), do: false
 
     def get_resume(%Skuld.Comp.ExternalSuspend{resume: resume}), do: resume
 
