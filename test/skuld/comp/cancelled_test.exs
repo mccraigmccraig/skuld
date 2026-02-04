@@ -5,7 +5,7 @@ defmodule Skuld.Comp.CancelledTest do
   alias Skuld.Comp.Cancelled
   alias Skuld.Comp.Env
   alias Skuld.Comp.ISentinel
-  alias Skuld.Comp.Suspend
+  alias Skuld.Comp.ExternalSuspend
   alias Skuld.Effects.State
   alias Skuld.Effects.Yield
 
@@ -96,7 +96,7 @@ defmodule Skuld.Comp.CancelledTest do
         Yield.yield(:waiting)
         |> Yield.with_handler()
 
-      {%Suspend{} = suspend, env} = Comp.run(comp)
+      {%ExternalSuspend{} = suspend, env} = Comp.run(comp)
       assert suspend.value == :waiting
 
       # The env has leave_scope set up from the Yield handler scope
@@ -128,7 +128,7 @@ defmodule Skuld.Comp.CancelledTest do
         end)
         |> Yield.with_handler()
 
-      {%Suspend{} = suspend, env} = Comp.run(comp)
+      {%ExternalSuspend{} = suspend, env} = Comp.run(comp)
 
       # Cancel - should trigger cleanup
       {result, _final_env} = Comp.cancel(suspend, env, :abort)
@@ -165,7 +165,7 @@ defmodule Skuld.Comp.CancelledTest do
         end)
         |> Yield.with_handler()
 
-      {%Suspend{} = suspend, env} = Comp.run(comp)
+      {%ExternalSuspend{} = suspend, env} = Comp.run(comp)
 
       # Cancel - both scopes should clean up
       {result, _final_env} = Comp.cancel(suspend, env, :shutdown)
@@ -186,7 +186,7 @@ defmodule Skuld.Comp.CancelledTest do
         |> State.with_handler(0)
         |> Yield.with_handler()
 
-      {%Suspend{} = suspend, env} = Comp.run(comp)
+      {%ExternalSuspend{} = suspend, env} = Comp.run(comp)
 
       # State was modified to 42 before yielding
       # When we cancel, State's scoped cleanup should run

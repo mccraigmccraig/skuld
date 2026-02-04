@@ -189,7 +189,7 @@ defmodule Skuld.Fiber do
   # Execute an invocation and handle all result types
   defp execute_and_handle(fiber, env, invocation) do
     case invocation.() do
-      {%Comp.Suspend{} = suspend, suspend_env} ->
+      {%Comp.ExternalSuspend{} = suspend, suspend_env} ->
         handle_external_suspend(fiber, suspend, suspend_env)
 
       {%InternalSuspend{} = internal_suspend, internal_env} ->
@@ -217,7 +217,7 @@ defmodule Skuld.Fiber do
 
   # Handle an external Suspend sentinel (closes over env)
   # Used for callbacks to non-Skuld code
-  defp handle_external_suspend(fiber, %Comp.Suspend{resume: resume}, env) do
+  defp handle_external_suspend(fiber, %Comp.ExternalSuspend{resume: resume}, env) do
     # The Suspend.resume is (val -> {result, env}), closes over env at suspension
     # We wrap it to match our (val, env) -> {result, env} signature
     suspended_k = fn value, _env ->

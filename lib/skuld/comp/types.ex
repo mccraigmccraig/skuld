@@ -26,6 +26,7 @@ defmodule Skuld.Comp.Types do
   @typedoc "Leave-scope handler - cleans up or redirects"
   @type leave_scope :: (result(), env() -> {result(), env()})
 
-  @typedoc "Transform-suspend handler - decorates Suspend values when yielding"
-  @type transform_suspend :: (Skuld.Comp.Suspend.t(), env() -> {Skuld.Comp.Suspend.t(), env()})
+  @typedoc "Transform-suspend handler - decorates ExternalSuspend values when yielding"
+  @type transform_suspend :: (Skuld.Comp.ExternalSuspend.t(), env() ->
+                                {Skuld.Comp.ExternalSuspend.t(), env()})
 end

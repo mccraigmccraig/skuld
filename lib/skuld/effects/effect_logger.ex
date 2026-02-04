@@ -51,12 +51,12 @@ defmodule Skuld.Effects.EffectLogger do
 
   ### Hot Resume (In-Memory)
 
-  If you have the live `%Comp.Suspend{}` struct, call the resume function directly:
+  If you have the live `%Comp.ExternalSuspend{}` struct, call the resume function directly:
 
       alias Skuld.Effects.{EffectLogger, State, Yield}
 
       # Run until suspension
-      {%Comp.Suspend{value: yielded, resume: resume}, env} =
+      {%Comp.ExternalSuspend{value: yielded, resume: resume}, env} =
         my_comp
         |> EffectLogger.with_logging()
         |> Yield.with_handler()
@@ -165,7 +165,7 @@ defmodule Skuld.Effects.EffectLogger do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
-  alias Skuld.Comp.Suspend
+  alias Skuld.Comp.ExternalSuspend
   alias Skuld.Comp.Types
   alias Skuld.Effects.EffectLogger.EffectLogEntry
   alias Skuld.Effects.EffectLogger.EnvStateSnapshot
@@ -331,8 +331,8 @@ defmodule Skuld.Effects.EffectLogger do
     EnvStateSnapshot.capture(env.state, state_keys: state_keys)
   end
 
-  # Decorate a Suspend with the current log in Suspend.data
-  defp decorate_suspend_with_log(%Suspend{} = suspend, env) do
+  # Decorate an ExternalSuspend with the current log in ExternalSuspend.data
+  defp decorate_suspend_with_log(%ExternalSuspend{} = suspend, env) do
     log = get_log(env)
     finalized_log = if log, do: Log.finalize(log), else: nil
 
@@ -490,7 +490,7 @@ defmodule Skuld.Effects.EffectLogger do
 
     This only captures the specified State keys, excluding Reader/other constant state.
   - `:decorate_suspend` - If true (default), attach the current finalized log to
-    `Suspend.data[EffectLogger]` when yielding. This allows AsyncComputation callers to
+    `ExternalSuspend.data[EffectLogger]` when yielding. This allows AsyncComputation callers to
     access the log without needing the full env. Set to `false` to disable.
 
   ## Example - Fresh Logging
@@ -785,7 +785,7 @@ defmodule Skuld.Effects.EffectLogger do
       alias Skuld.Effects.EffectLogger.Log
 
       # Original run - suspended
-      {{%Comp.Suspend{value: yielded}, log}, _} =
+      {{%Comp.ExternalSuspend{value: yielded}, log}, _} =
         my_comp
         |> EffectLogger.with_logging()
         |> Yield.with_handler()

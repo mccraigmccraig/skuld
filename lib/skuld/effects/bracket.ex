@@ -196,7 +196,7 @@ defmodule Skuld.Effects.Bracket do
             # Original also threw - preserve original error, suppress release error
             {original_result, released_env}
 
-          %Comp.Suspend{} ->
+          %Comp.ExternalSuspend{} ->
             # Original suspended - preserve suspension, suppress release error
             {original_result, released_env}
 
@@ -273,7 +273,7 @@ defmodule Skuld.Effects.Bracket do
           {%Comp.Throw{} = cleanup_error, cleaned_env} ->
             case original_result do
               %Comp.Throw{} -> {original_result, cleaned_env}
-              %Comp.Suspend{} -> {original_result, cleaned_env}
+              %Comp.ExternalSuspend{} -> {original_result, cleaned_env}
               _ -> {cleanup_error, cleaned_env}
             end
 

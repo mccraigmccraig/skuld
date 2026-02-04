@@ -440,7 +440,7 @@ defmodule Skuld.CompTest do
   end
 
   describe "with_scoped_state :suspend option" do
-    alias Skuld.Comp.Suspend
+    alias Skuld.Comp.ExternalSuspend
     alias Skuld.Effects.State
     alias Skuld.Effects.Yield
 
@@ -459,7 +459,7 @@ defmodule Skuld.CompTest do
         |> State.with_handler(0)
         |> Yield.with_handler()
 
-      {%Suspend{value: :hello, data: data}, _env} = Comp.run(comp)
+      {%ExternalSuspend{value: :hello, data: data}, _env} = Comp.run(comp)
 
       assert data == %{my_state: 42}
     end
@@ -483,7 +483,7 @@ defmodule Skuld.CompTest do
         )
         |> Yield.with_handler()
 
-      {%Suspend{value: :hello, data: data}, _env} = Comp.run(comp)
+      {%ExternalSuspend{value: :hello, data: data}, _env} = Comp.run(comp)
 
       # Both decorations should be present
       assert data == %{inner: :inner_value, outer: :outer_value}
@@ -510,11 +510,11 @@ defmodule Skuld.CompTest do
         |> Yield.with_handler()
 
       # First run - get inner yield
-      {%Suspend{value: :inner_yield, data: inner_data, resume: resume}, _env} = Comp.run(comp)
+      {%ExternalSuspend{value: :inner_yield, data: inner_data, resume: resume}, _env} = Comp.run(comp)
       assert inner_data == %{from_inner: true}
 
       # Resume - inner scope exits, then outer yield happens
-      {%Suspend{value: {:outer_yield, :resumed}, data: outer_data}, _env} = resume.(:resumed)
+      {%ExternalSuspend{value: {:outer_yield, :resumed}, data: outer_data}, _env} = resume.(:resumed)
 
       # Outer yield should NOT have the inner decoration
       assert outer_data == nil
@@ -527,7 +527,7 @@ defmodule Skuld.CompTest do
         |> State.with_handler(0)
         |> Yield.with_handler()
 
-      {%Suspend{value: :hello, data: data}, _env} = Comp.run(comp)
+      {%ExternalSuspend{value: :hello, data: data}, _env} = Comp.run(comp)
 
       assert data == nil
     end

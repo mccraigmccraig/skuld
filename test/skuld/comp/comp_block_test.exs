@@ -1055,7 +1055,7 @@ defmodule Skuld.Comp.CompBlockTest do
 
       # :not_handled is re-yielded, so we get a Suspend
       {result, _env} = Comp.run(computation)
-      assert %Comp.Suspend{value: :not_handled} = result
+      assert %Comp.ExternalSuspend{value: :not_handled} = result
     end
 
     test "Yield handler can use effects" do
@@ -1156,7 +1156,7 @@ defmodule Skuld.Comp.CompBlockTest do
         |> Yield.with_handler()
 
       {result, _env} = Comp.run(computation)
-      assert %Comp.Suspend{value: {:forwarded, :inner_question}} = result
+      assert %Comp.ExternalSuspend{value: {:forwarded, :inner_question}} = result
     end
   end
 

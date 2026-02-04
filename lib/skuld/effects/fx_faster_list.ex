@@ -91,7 +91,7 @@ defmodule Skuld.Effects.FxFasterList do
             {%Comp.Throw{} = throw, err_env} ->
               {:halt, {:error, throw, err_env}}
 
-            {%Comp.Suspend{} = suspend, suspend_env} ->
+            {%Comp.ExternalSuspend{} = suspend, suspend_env} ->
               {:halt, {:suspended, suspend, suspend_env}}
 
             {value, new_env} ->
@@ -137,7 +137,7 @@ defmodule Skuld.Effects.FxFasterList do
             {%Comp.Throw{} = throw, err_env} ->
               {:halt, {:error, throw, err_env}}
 
-            {%Comp.Suspend{} = suspend, suspend_env} ->
+            {%Comp.ExternalSuspend{} = suspend, suspend_env} ->
               {:halt, {:suspended, suspend, suspend_env}}
 
             {new_acc, new_env} ->
@@ -184,7 +184,7 @@ defmodule Skuld.Effects.FxFasterList do
             {%Comp.Throw{} = throw, err_env} ->
               {:halt, {:error, throw, err_env}}
 
-            {%Comp.Suspend{} = suspend, suspend_env} ->
+            {%Comp.ExternalSuspend{} = suspend, suspend_env} ->
               {:halt, {:suspended, suspend, suspend_env}}
 
             {_value, new_env} ->
@@ -229,7 +229,7 @@ defmodule Skuld.Effects.FxFasterList do
             {%Comp.Throw{} = throw, err_env} ->
               {:halt, {:error, throw, err_env}}
 
-            {%Comp.Suspend{} = suspend, suspend_env} ->
+            {%Comp.ExternalSuspend{} = suspend, suspend_env} ->
               {:halt, {:suspended, suspend, suspend_env}}
 
             {keep?, new_env} ->

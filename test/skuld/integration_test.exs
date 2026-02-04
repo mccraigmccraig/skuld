@@ -79,7 +79,7 @@ defmodule Skuld.IntegrationTest do
           end)
         end)
 
-      {%Comp.Suspend{value: :suspended, resume: resume}, _suspended_env} =
+      {%Comp.ExternalSuspend{value: :suspended, resume: resume}, _suspended_env} =
         comp
         |> Yield.with_handler()
         |> State.with_handler(0)
@@ -108,7 +108,7 @@ defmodule Skuld.IntegrationTest do
           fn error -> Comp.pure({:caught, error}) end
         )
 
-      {%Comp.Suspend{value: :waiting, resume: resume}, _suspended_env} =
+      {%Comp.ExternalSuspend{value: :waiting, resume: resume}, _suspended_env} =
         comp
         |> Yield.with_handler()
         |> Throw.with_handler()
@@ -166,7 +166,7 @@ defmodule Skuld.IntegrationTest do
           end)
         )
 
-      {%Comp.Suspend{resume: resume}, _} =
+      {%Comp.ExternalSuspend{resume: resume}, _} =
         comp
         |> Reader.with_handler(1)
         |> Yield.with_handler()

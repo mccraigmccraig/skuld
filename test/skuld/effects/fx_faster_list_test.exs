@@ -290,7 +290,7 @@ defmodule Skuld.Effects.FxFasterListTest do
         |> Yield.with_handler()
 
       # First run should yield with first element
-      {%Comp.Suspend{value: {:processing, 1}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.ExternalSuspend{value: {:processing, 1}, resume: r1}, _e1} = Comp.run(comp)
 
       # Resume - but FxFasterList doesn't preserve the list iteration context!
       # It just returns the single element's result, not the full list
@@ -308,7 +308,7 @@ defmodule Skuld.Effects.FxFasterListTest do
         end)
         |> Yield.with_handler()
 
-      {%Comp.Suspend{value: {:visiting, 1}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.ExternalSuspend{value: {:visiting, 1}, resume: r1}, _e1} = Comp.run(comp)
       # Resume returns just the yield's resume value, not :ok from full iteration
       {result, _env} = r1.(:ok)
       # The result is just what the yield returned, not the full fx_each result

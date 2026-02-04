@@ -10,12 +10,12 @@ defmodule Skuld.AsyncComputation do
 
   The runner sends messages to the caller in the form `{AsyncComputation, tag, result}`:
 
-  - `%Suspend{value: v, data: d, resume: nil}` - computation yielded, waiting for resume
+  - `%ExternalSuspend{value: v, data: d, resume: nil}` - computation yielded, waiting for resume
   - `%Throw{error: e}` - computation threw an error
   - `%Cancelled{reason: r}` - computation was cancelled
   - Any other value - computation completed successfully
 
-  The `Suspend.data` field contains any decorations added by scoped effects
+  The `ExternalSuspend.data` field contains any decorations added by scoped effects
   (e.g., EffectLogger attaches its log here). The `resume` field is always `nil`
   in IPC messages since resume functions can't be sent between processes.
 
@@ -35,13 +35,13 @@ defmodule Skuld.AsyncComputation do
       {:ok, runner} = AsyncComputation.start(computation, tag: :create_todo)
 
       # Or start sync for fast-yielding computations
-      {:ok, runner, %Suspend{value: :ready}} =
+      {:ok, runner, %ExternalSuspend{value: :ready}} =
         AsyncComputation.start_sync(computation, tag: :create_todo)
 
       # In handle_info - single clause handles all messages for a tag:
       def handle_info({AsyncComputation, :create_todo, result}, socket) do
         case result do
-          %Suspend{value: value, data: data} ->
+          %ExternalSuspend{value: value, data: data} ->
             handle_yield(value, data, socket)
 
           %Throw{error: error} ->
@@ -69,13 +69,13 @@ defmodule Skuld.AsyncComputation do
       {:ok, runner} = AsyncComputation.start(computation, tag: :create_user)
 
       # Handle yields
-      def handle_info({AsyncComputation, :create_user, %Suspend{value: :get_name}}, socket) do
+      def handle_info({AsyncComputation, :create_user, %ExternalSuspend{value: :get_name}}, socket) do
         # Maybe wait for user input, then:
         AsyncComputation.resume(runner, "Alice")
         {:noreply, socket}
       end
 
-      def handle_info({AsyncComputation, :create_user, %Suspend{value: :get_email}}, socket) do
+      def handle_info({AsyncComputation, :create_user, %ExternalSuspend{value: :get_email}}, socket) do
         AsyncComputation.resume(runner, "alice@example.com")
         {:noreply, socket}
       end
@@ -86,7 +86,7 @@ defmodule Skuld.AsyncComputation do
   """
 
   alias Skuld.Comp.Cancelled
-  alias Skuld.Comp.Suspend
+  alias Skuld.Comp.ExternalSuspend
   alias Skuld.Comp.Throw, as: ThrowStruct
   alias Skuld.Effects.Throw
   alias Skuld.Effects.Yield
@@ -152,7 +152,7 @@ defmodule Skuld.AsyncComputation do
   ## Returns
 
   - `{:ok, runner, result}` where result is one of:
-    - `%Suspend{value: v, data: d}` - computation yielded
+    - `%ExternalSuspend{value: v, data: d}` - computation yielded
     - `%Throw{error: e}` - computation threw
     - `%Cancelled{reason: r}` - computation cancelled
     - Any other value - computation completed
@@ -161,13 +161,13 @@ defmodule Skuld.AsyncComputation do
   ## Example
 
       # Command processor that yields immediately for commands
-      {:ok, runner, %Suspend{value: :ready}} =
+      {:ok, runner, %ExternalSuspend{value: :ready}} =
         command_processor
         |> Reader.with_handler(context)
         |> AsyncComputation.start_sync(tag: :processor)
 
       # Now resume synchronously for quick commands
-      %Suspend{value: :ready} = AsyncComputation.resume_sync(runner, %QuickCommand{})
+      %ExternalSuspend{value: :ready} = AsyncComputation.resume_sync(runner, %QuickCommand{})
   """
   @spec start_sync(Skuld.Comp.Types.computation(), keyword()) ::
           {:ok, t(), term()}
@@ -188,7 +188,7 @@ defmodule Skuld.AsyncComputation do
   @doc """
   Resume a yielded computation with a value (async).
 
-  Call this after receiving a `{AsyncComputation, tag, %Suspend{}}` message.
+  Call this after receiving a `{AsyncComputation, tag, %ExternalSuspend{}}` message.
   The next response will arrive via message to the caller (or `:reply_to` if specified).
 
   ## Options
@@ -216,7 +216,7 @@ defmodule Skuld.AsyncComputation do
 
   ## Returns
 
-  - `%Suspend{value: v, data: d}` - computation yielded again
+  - `%ExternalSuspend{value: v, data: d}` - computation yielded again
   - `%Throw{error: e}` - computation threw
   - `%Cancelled{reason: r}` - computation cancelled
   - Any other value - computation completed
@@ -228,19 +228,19 @@ defmodule Skuld.AsyncComputation do
 
       # First yield arrives via message
       receive do
-        {AsyncComputation, :cmd, %Suspend{value: :ready}} -> :ok
+        {AsyncComputation, :cmd, %ExternalSuspend{value: :ready}} -> :ok
       end
 
       # Now resume and wait synchronously
       case AsyncComputation.resume_sync(runner, %SomeCommand{}) do
-        %Suspend{value: :ready} -> # ready for next command
+        %ExternalSuspend{value: :ready} -> # ready for next command
         %Throw{error: e} -> # something went wrong
         %Cancelled{reason: r} -> # was cancelled
         value -> # computation finished with value
       end
   """
   @spec resume_sync(t(), term(), keyword()) ::
-          Suspend.t()
+          ExternalSuspend.t()
           | ThrowStruct.t()
           | Cancelled.t()
           | term()
@@ -293,7 +293,7 @@ defmodule Skuld.AsyncComputation do
 
   ## Example
 
-      {:ok, runner, %Suspend{value: :ready}} =
+      {:ok, runner, %ExternalSuspend{value: :ready}} =
         AsyncComputation.start_sync(computation, tag: :worker)
 
       # Cancel and wait for cleanup to finish
@@ -325,7 +325,7 @@ defmodule Skuld.AsyncComputation do
 
     # Run the computation - handle immediate completion or enter yield loop
     case Skuld.Comp.run(comp) do
-      {%Suspend{} = suspend, env} ->
+      {%ExternalSuspend{} = suspend, env} ->
         # First yield - enter the yield/resume loop
         run_yield_loop(suspend, env, caller, tag, ref, caller)
 
@@ -341,8 +341,8 @@ defmodule Skuld.AsyncComputation do
   # - reply_to: where to send THIS yield's suspend message
   # - original_caller: default destination (reset target after override)
   defp run_yield_loop(suspend, env, original_caller, tag, ref, reply_to) do
-    # Send Suspend with resume stripped (can't send functions over IPC)
-    ipc_suspend = %Suspend{value: suspend.value, data: suspend.data, resume: nil}
+    # Send ExternalSuspend with resume stripped (can't send functions over IPC)
+    ipc_suspend = %ExternalSuspend{value: suspend.value, data: suspend.data, resume: nil}
     send(reply_to, {__MODULE__, tag, ipc_suspend})
 
     receive do
@@ -371,14 +371,21 @@ defmodule Skuld.AsyncComputation do
     {result, new_env} = suspend.resume.(value)
 
     case result do
-      %Suspend{} = new_suspend ->
+      %ExternalSuspend{} = new_suspend ->
         # Apply transform_suspend to decorate the new suspend (same as Comp.run does)
-        # This ensures EffectLogger and other scoped effects can add data to Suspend.data
+        # This ensures EffectLogger and other scoped effects can add data to ExternalSuspend.data
         {transformed_suspend, transformed_env} =
           Skuld.Comp.ISentinel.run(new_suspend, new_env)
 
         # Yielded again - continue the loop
-        run_yield_loop(transformed_suspend, transformed_env, original_caller, tag, ref, next_reply_to)
+        run_yield_loop(
+          transformed_suspend,
+          transformed_env,
+          original_caller,
+          tag,
+          ref,
+          next_reply_to
+        )
 
       %ThrowStruct{error: error} ->
         # Computation threw

@@ -4,7 +4,7 @@ defmodule Skuld.AsyncComputationTest do
 
   alias Skuld.AsyncComputation
   alias Skuld.Comp.Cancelled
-  alias Skuld.Comp.Suspend
+  alias Skuld.Comp.ExternalSuspend
   alias Skuld.Comp.Throw, as: ThrowStruct
   alias Skuld.Effects.Reader
   alias Skuld.Effects.State
@@ -61,11 +61,11 @@ defmodule Skuld.AsyncComputationTest do
       {:ok, runner} = AsyncComputation.start(computation, tag: :yielding)
 
       # First yield (data is nil since no scoped effects with suspend decoration)
-      assert_receive {AsyncComputation, :yielding, %Suspend{value: :first}}
+      assert_receive {AsyncComputation, :yielding, %ExternalSuspend{value: :first}}
       AsyncComputation.resume(runner, 10)
 
       # Second yield
-      assert_receive {AsyncComputation, :yielding, %Suspend{value: :second}}
+      assert_receive {AsyncComputation, :yielding, %ExternalSuspend{value: :second}}
       AsyncComputation.resume(runner, 32)
 
       # Final result
@@ -99,7 +99,7 @@ defmodule Skuld.AsyncComputationTest do
           return(x * 2)
         end
 
-      {:ok, runner, %Suspend{value: :ready}} =
+      {:ok, runner, %ExternalSuspend{value: :ready}} =
         AsyncComputation.start_sync(computation, tag: :sync_start)
 
       # Can continue with resume_sync
@@ -133,7 +133,7 @@ defmodule Skuld.AsyncComputationTest do
         end
         |> Reader.with_handler(21)
 
-      {:ok, runner, %Suspend{value: :get_multiplier}} =
+      {:ok, runner, %ExternalSuspend{value: :get_multiplier}} =
         AsyncComputation.start_sync(computation, tag: :with_effects)
 
       assert 42 = AsyncComputation.resume_sync(runner, 2)
@@ -147,7 +147,7 @@ defmodule Skuld.AsyncComputationTest do
         end
 
       # Should succeed quickly with reasonable timeout
-      {:ok, runner, %Suspend{value: :first}} =
+      {:ok, runner, %ExternalSuspend{value: :first}} =
         AsyncComputation.start_sync(computation, tag: :custom_timeout, timeout: 1000)
 
       assert :done = AsyncComputation.resume_sync(runner, :done)
@@ -165,11 +165,11 @@ defmodule Skuld.AsyncComputationTest do
         end
 
       # Start sync - get first :ready yield
-      {:ok, runner, %Suspend{value: :ready}} =
+      {:ok, runner, %ExternalSuspend{value: :ready}} =
         AsyncComputation.start_sync(processor, tag: :processor)
 
       # Send first command, get back ready with result
-      %Suspend{value: {:ready, {:processed, :cmd_a}}} =
+      %ExternalSuspend{value: {:ready, {:processed, :cmd_a}}} =
         AsyncComputation.resume_sync(runner, :cmd_a)
 
       # Send second command, get final result
@@ -190,10 +190,10 @@ defmodule Skuld.AsyncComputationTest do
       {:ok, runner} = AsyncComputation.start(computation, tag: :sync_yield)
 
       # First yield comes via message
-      assert_receive {AsyncComputation, :sync_yield, %Suspend{value: :first}}
+      assert_receive {AsyncComputation, :sync_yield, %ExternalSuspend{value: :first}}
 
       # Resume sync and wait for second yield
-      assert %Suspend{value: :second} = AsyncComputation.resume_sync(runner, 10)
+      assert %ExternalSuspend{value: :second} = AsyncComputation.resume_sync(runner, 10)
 
       # Resume sync and wait for result
       assert 42 = AsyncComputation.resume_sync(runner, 32)
@@ -208,7 +208,7 @@ defmodule Skuld.AsyncComputationTest do
 
       {:ok, runner} = AsyncComputation.start(computation, tag: :sync_result)
 
-      assert_receive {AsyncComputation, :sync_result, %Suspend{value: :get_value}}
+      assert_receive {AsyncComputation, :sync_result, %ExternalSuspend{value: :get_value}}
       assert {:ok, 42} = AsyncComputation.resume_sync(runner, 21)
     end
 
@@ -222,7 +222,7 @@ defmodule Skuld.AsyncComputationTest do
 
       {:ok, runner} = AsyncComputation.start(computation, tag: :sync_throw)
 
-      assert_receive {AsyncComputation, :sync_throw, %Suspend{value: :get_value}}
+      assert_receive {AsyncComputation, :sync_throw, %ExternalSuspend{value: :get_value}}
       assert %ThrowStruct{error: :negative} = AsyncComputation.resume_sync(runner, -5)
     end
 
@@ -236,7 +236,7 @@ defmodule Skuld.AsyncComputationTest do
 
       {:ok, runner} = AsyncComputation.start(computation, tag: :custom_timeout)
 
-      assert_receive {AsyncComputation, :custom_timeout, %Suspend{value: :ready}}
+      assert_receive {AsyncComputation, :custom_timeout, %ExternalSuspend{value: :ready}}
 
       # This should succeed quickly
       assert :done = AsyncComputation.resume_sync(runner, :go, timeout: 1000)
@@ -254,14 +254,14 @@ defmodule Skuld.AsyncComputationTest do
       {:ok, runner} = AsyncComputation.start(computation, tag: :mixed)
 
       # First yield via message
-      assert_receive {AsyncComputation, :mixed, %Suspend{value: :a}}
+      assert_receive {AsyncComputation, :mixed, %ExternalSuspend{value: :a}}
 
       # Async resume
       AsyncComputation.resume(runner, 1)
-      assert_receive {AsyncComputation, :mixed, %Suspend{value: :b}}
+      assert_receive {AsyncComputation, :mixed, %ExternalSuspend{value: :b}}
 
       # Sync resume
-      assert %Suspend{value: :c} = AsyncComputation.resume_sync(runner, 2)
+      assert %ExternalSuspend{value: :c} = AsyncComputation.resume_sync(runner, 2)
 
       # Sync resume to completion
       assert 6 = AsyncComputation.resume_sync(runner, 3)
@@ -278,7 +278,7 @@ defmodule Skuld.AsyncComputationTest do
 
       {:ok, runner} = AsyncComputation.start(computation, tag: :cancellable)
 
-      assert_receive {AsyncComputation, :cancellable, %Suspend{value: :waiting}}
+      assert_receive {AsyncComputation, :cancellable, %ExternalSuspend{value: :waiting}}
 
       AsyncComputation.cancel(runner)
 
@@ -308,7 +308,7 @@ defmodule Skuld.AsyncComputationTest do
 
       {:ok, runner} = AsyncComputation.start(computation, tag: :cleanup_test)
 
-      assert_receive {AsyncComputation, :cleanup_test, %Suspend{value: :waiting}}
+      assert_receive {AsyncComputation, :cleanup_test, %ExternalSuspend{value: :waiting}}
 
       # Verify we entered the scope
       assert Agent.get(agent, & &1) == [:entered]
@@ -334,7 +334,7 @@ defmodule Skuld.AsyncComputationTest do
           return(:completed)
         end
 
-      {:ok, runner, %Suspend{value: :waiting}} =
+      {:ok, runner, %ExternalSuspend{value: :waiting}} =
         AsyncComputation.start_sync(computation, tag: :cancel_sync_test)
 
       # Cancel synchronously
@@ -361,7 +361,7 @@ defmodule Skuld.AsyncComputationTest do
         end)
         |> Yield.with_handler()
 
-      {:ok, runner, %Suspend{value: :waiting}} =
+      {:ok, runner, %ExternalSuspend{value: :waiting}} =
         AsyncComputation.start_sync(computation, tag: :cleanup_sync)
 
       # Verify we entered the scope
@@ -385,7 +385,7 @@ defmodule Skuld.AsyncComputationTest do
         end
 
       # Start with self() as caller
-      {:ok, runner, %Suspend{value: :waiting}} =
+      {:ok, runner, %ExternalSuspend{value: :waiting}} =
         AsyncComputation.start_sync(computation, tag: :cross_process)
 
       # Cancel from a different process
@@ -410,7 +410,7 @@ defmodule Skuld.AsyncComputationTest do
           return(:completed)
         end
 
-      {:ok, runner, %Suspend{value: :waiting}} =
+      {:ok, runner, %ExternalSuspend{value: :waiting}} =
         AsyncComputation.start_sync(computation, tag: :timeout_test)
 
       # This should complete quickly, well within timeout
@@ -479,7 +479,7 @@ defmodule Skuld.AsyncComputationTest do
           end
         )
 
-      {:ok, runner, %Suspend{value: :first, data: data}} =
+      {:ok, runner, %ExternalSuspend{value: :first, data: data}} =
         AsyncComputation.start_sync(computation, tag: :transform_initial)
 
       # Initial suspend should have the data from transform_suspend
@@ -517,20 +517,20 @@ defmodule Skuld.AsyncComputationTest do
            fn value, e -> {value, e} end}
         end)
 
-      {:ok, runner, %Suspend{value: :first, data: data1}} =
+      {:ok, runner, %ExternalSuspend{value: :first, data: data1}} =
         AsyncComputation.start_sync(computation, tag: :transform_subsequent)
 
       # First yield - counter should be 1
       assert data1[:yield_count] == 1
 
       # Resume and get second yield
-      %Suspend{value: :second, data: data2} = AsyncComputation.resume_sync(runner, :ok)
+      %ExternalSuspend{value: :second, data: data2} = AsyncComputation.resume_sync(runner, :ok)
 
       # Second yield - counter should be 2 (transform_suspend was applied on resume!)
       assert data2[:yield_count] == 2
 
       # Resume and get third yield
-      %Suspend{value: :third, data: data3} = AsyncComputation.resume_sync(runner, :ok)
+      %ExternalSuspend{value: :third, data: data3} = AsyncComputation.resume_sync(runner, :ok)
 
       # Third yield - counter should be 3
       assert data3[:yield_count] == 3
@@ -554,7 +554,7 @@ defmodule Skuld.AsyncComputationTest do
         |> EffectLogger.with_logging()
         |> State.with_handler(0)
 
-      {:ok, runner, %Suspend{value: :first, data: data1}} =
+      {:ok, runner, %ExternalSuspend{value: :first, data: data1}} =
         AsyncComputation.start_sync(computation, tag: :effectlogger_transform)
 
       # First yield should have EffectLogger data
@@ -565,7 +565,7 @@ defmodule Skuld.AsyncComputationTest do
       entries1 = EffectLogger.Log.to_list(log1)
 
       # Resume and get second yield
-      %Suspend{value: :second, data: data2} = AsyncComputation.resume_sync(runner, :ok)
+      %ExternalSuspend{value: :second, data: data2} = AsyncComputation.resume_sync(runner, :ok)
 
       # Second yield should ALSO have EffectLogger data (this was the bug!)
       assert is_map(data2)
@@ -596,13 +596,13 @@ defmodule Skuld.AsyncComputationTest do
 
       # Step 1
       assert_receive {AsyncComputation, :wizard,
-                      %Suspend{value: %{step: 1, prompt: "Enter name"}}}
+                      %ExternalSuspend{value: %{step: 1, prompt: "Enter name"}}}
 
       AsyncComputation.resume(runner, "Alice")
 
       # Step 2
       assert_receive {AsyncComputation, :wizard,
-                      %Suspend{value: %{step: 2, prompt: "Enter email"}}}
+                      %ExternalSuspend{value: %{step: 2, prompt: "Enter email"}}}
 
       AsyncComputation.resume(runner, "alice@example.com")
 
@@ -621,7 +621,7 @@ defmodule Skuld.AsyncComputationTest do
 
       {:ok, runner} = AsyncComputation.start(computation, tag: :mixed)
 
-      assert_receive {AsyncComputation, :mixed, %Suspend{value: :get_multiplier}}
+      assert_receive {AsyncComputation, :mixed, %ExternalSuspend{value: :get_multiplier}}
       AsyncComputation.resume(runner, 2)
 
       assert_receive {AsyncComputation, :mixed, 42}

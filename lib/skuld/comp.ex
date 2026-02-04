@@ -7,7 +7,7 @@ defmodule Skuld.Comp do
   - **Computation**: `(env, k -> {result, env})` - a suspended computation
   - **Result**: Opaque value - framework doesn't impose shape
   - **Leave-scope**: Continuation chain for scope cleanup/control
-  - **Suspend**: Sentinel struct that bypasses leave-scope
+  - **ExternalSuspend**: Sentinel struct that bypasses leave-scope
 
   ## Auto-Lifting
 
@@ -24,7 +24,7 @@ defmodule Skuld.Comp do
 
   Unlike Freyja's centralised interpreter, Skuld uses decentralised
   evidence-passing. Run acts as a **control authority** - it recognizes
-  the Suspend sentinel and invokes the leave-scope chain - but treats
+  the ExternalSuspend sentinel and invokes the leave-scope chain - but treats
   results as opaque.
 
   Scoped effects (Reader.local, Catch) install leave-scope handlers
@@ -45,12 +45,12 @@ defmodule Skuld.Comp do
   # Sentinel protocol and types are in their own files:
   # - Skuld.Comp.Types (type definitions)
   # - Skuld.Comp.ISentinel (protocol)
-  # - Skuld.Comp.Suspend (bypasses leave-scope)
+  # - Skuld.Comp.ExternalSuspend (bypasses leave-scope)
   # - Skuld.Comp.Throw (error sentinel)
   alias Skuld.Comp.Cancelled
   alias Skuld.Comp.Env
   alias Skuld.Comp.ISentinel
-  alias Skuld.Comp.Suspend
+  alias Skuld.Comp.ExternalSuspend
   alias Skuld.Comp.Types
   alias Skuld.Comp.ConvertThrow
 
@@ -159,7 +159,7 @@ defmodule Skuld.Comp do
   be done via `with_handler` on the computation.
 
   Uses ISentinel protocol to determine completion behavior:
-  - Suspend: bypasses leave-scope chain
+  - ExternalSuspend: bypasses leave-scope chain
   - Other values: invoke leave-scope chain
 
   ## Example
@@ -182,7 +182,7 @@ defmodule Skuld.Comp do
     ISentinel.run(result, final_env)
   end
 
-  @doc "Run a computation, extracting just the value (raises on Suspend/Throw)"
+  @doc "Run a computation, extracting just the value (raises on ExternalSuspend/Throw)"
   @spec run!(Types.computation()) :: term()
   def run!(comp) do
     {result, _env} = run(comp)
@@ -196,7 +196,7 @@ defmodule Skuld.Comp do
   @doc """
   Cancel a suspended computation, invoking the leave_scope chain for cleanup.
 
-  When a computation yields (returns `%Suspend{}`), the caller can either:
+  When a computation yields (returns `%ExternalSuspend{}`), the caller can either:
   - Resume it with `suspend.resume.(input)`
   - Cancel it with `Comp.cancel(suspend, env, reason)`
 
@@ -206,7 +206,7 @@ defmodule Skuld.Comp do
   ## Example
 
       # Run until suspension
-      {%Suspend{} = suspend, env} = Comp.run(my_yielding_comp)
+      {%ExternalSuspend{} = suspend, env} = Comp.run(my_yielding_comp)
 
       # Decide to cancel instead of resume
       {%Cancelled{reason: :timeout}, final_env} =
@@ -224,8 +224,8 @@ defmodule Skuld.Comp do
         {result, env}
       end
   """
-  @spec cancel(Suspend.t(), Types.env(), term()) :: {Cancelled.t(), Types.env()}
-  def cancel(%Suspend{}, env, reason) do
+  @spec cancel(ExternalSuspend.t(), Types.env(), term()) :: {Cancelled.t(), Types.env()}
+  def cancel(%ExternalSuspend{}, env, reason) do
     cancelled = %Cancelled{reason: reason}
     env.leave_scope.(cancelled, env)
   end
@@ -483,8 +483,8 @@ defmodule Skuld.Comp do
 
   - `:output` - optional function `(result, final_state) -> new_result` to
     transform the result using the final state value before returning.
-  - `:suspend` - optional function `(Suspend.t(), env) -> {Suspend.t(), env}` to
-    decorate Suspend values when yielding. Allows attaching scoped state to suspends.
+  - `:suspend` - optional function `(ExternalSuspend.t(), env) -> {ExternalSuspend.t(), env}` to
+    decorate ExternalSuspend values when yielding. Allows attaching scoped state to suspends.
   - `:default` - default value when reading final state (default: nil)
 
   ## Example
@@ -499,7 +499,7 @@ defmodule Skuld.Comp do
       |> Comp.with_scoped_state(state_key, initial, output: fn result, final -> {result, final} end)
       |> Comp.with_handler(sig, handler)
 
-      # With suspend decoration - attach state to Suspend.data when yielding
+      # With suspend decoration - attach state to ExternalSuspend.data when yielding
       comp
       |> Comp.with_scoped_state(state_key, initial,
         suspend: fn s, env ->

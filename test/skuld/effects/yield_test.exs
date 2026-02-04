@@ -17,7 +17,7 @@ defmodule Skuld.Effects.YieldTest do
         |> Yield.with_handler()
         |> Comp.run()
 
-      assert %Comp.Suspend{value: :hello, resume: resume} = result
+      assert %Comp.ExternalSuspend{value: :hello, resume: resume} = result
       assert is_function(resume, 1)
     end
 
@@ -27,7 +27,7 @@ defmodule Skuld.Effects.YieldTest do
           Comp.pure({:got, x})
         end)
 
-      {%Comp.Suspend{value: :first, resume: resume}, _suspended_env} =
+      {%Comp.ExternalSuspend{value: :first, resume: resume}, _suspended_env} =
         comp
         |> Yield.with_handler()
         |> Comp.run()
@@ -45,13 +45,13 @@ defmodule Skuld.Effects.YieldTest do
           end)
         end)
 
-      {%Comp.Suspend{value: 1, resume: r1}, _e1} =
+      {%Comp.ExternalSuspend{value: 1, resume: r1}, _e1} =
         comp
         |> Yield.with_handler()
         |> Comp.run()
 
-      {%Comp.Suspend{value: 2, resume: r2}, _e2} = r1.(10)
-      {%Comp.Suspend{value: 3, resume: r3}, _e3} = r2.(20)
+      {%Comp.ExternalSuspend{value: 2, resume: r2}, _e2} = r1.(10)
+      {%Comp.ExternalSuspend{value: 3, resume: r3}, _e3} = r2.(20)
       # 10 + 20 + 30
       {60, _} = r3.(30)
     end
@@ -200,7 +200,7 @@ defmodule Skuld.Effects.YieldTest do
         |> Comp.run()
 
       # Should suspend on :not_handled
-      assert %Comp.Suspend{value: :not_handled, resume: resume} = result
+      assert %Comp.ExternalSuspend{value: :not_handled, resume: resume} = result
 
       # Resume should complete the computation
       {final, _} = resume.(20)

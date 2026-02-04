@@ -2,14 +2,14 @@ defmodule Skuld.Effects.Yield do
   @moduledoc """
   Yield effect - coroutine-style suspension and resumption.
 
-  Uses `%Skuld.Comp.Suspend{}` struct as the suspension result, which
+  Uses `%Skuld.Comp.ExternalSuspend{}` struct as the suspension result, which
   bypasses leave_scope in Run.
 
   ## Architecture
 
-  - `yield(value)` suspends computation, returning `%Suspend{value, resume}`
+  - `yield(value)` suspends computation, returning `%ExternalSuspend{value, resume}`
   - The resume function captures the env, so caller just provides input
-  - Run recognizes `%Suspend{}` and bypasses leave_scope
+  - Run recognizes `%ExternalSuspend{}` and bypasses leave_scope
   - When resumed, the result goes through the leave_scope chain
   """
 
@@ -158,7 +158,7 @@ defmodule Skuld.Effects.Yield do
       # The responder's continuation: when responder completes, resume the inner computation
       responder_k = fn resp_result, resp_env ->
         case resp_result do
-          %Comp.Suspend{} = suspend ->
+          %Comp.ExternalSuspend{} = suspend ->
             # Responder re-yielded - we need to wrap the resume to continue
             # responding when eventually resumed
             wrapped_resume =
@@ -169,7 +169,7 @@ defmodule Skuld.Effects.Yield do
                 outer_yield_handler
               )
 
-            {%Comp.Suspend{value: suspend.value, resume: wrapped_resume}, resp_env}
+            {%Comp.ExternalSuspend{value: suspend.value, resume: wrapped_resume}, resp_env}
 
           %Comp.Throw{} = thrown ->
             # Responder threw - propagate directly
@@ -197,7 +197,7 @@ defmodule Skuld.Effects.Yield do
       {result, result_env} = original_resume.(input)
 
       case result do
-        %Comp.Suspend{} = suspend ->
+        %Comp.ExternalSuspend{} = suspend ->
           # Still suspended - wrap again
           wrapped_resume =
             wrap_respond_resume(
@@ -207,7 +207,7 @@ defmodule Skuld.Effects.Yield do
               outer_yield_handler
             )
 
-          {%Comp.Suspend{value: suspend.value, resume: wrapped_resume}, result_env}
+          {%Comp.ExternalSuspend{value: suspend.value, resume: wrapped_resume}, result_env}
 
         %Comp.Throw{} = thrown ->
           # Responder threw during resume
@@ -292,10 +292,10 @@ defmodule Skuld.Effects.Yield do
     captured_resume = fn input ->
       {result, final_env} = k.(input, env)
 
-      # If the result is another Suspend, don't invoke leave_scope yet
+      # If the result is another ExternalSuspend, don't invoke leave_scope yet
       # (it will be invoked when that suspend is eventually resolved)
       case result do
-        %Comp.Suspend{} ->
+        %Comp.ExternalSuspend{} ->
           {result, final_env}
 
         _ ->
@@ -304,7 +304,7 @@ defmodule Skuld.Effects.Yield do
       end
     end
 
-    {%Comp.Suspend{value: value, resume: captured_resume}, env}
+    {%Comp.ExternalSuspend{value: value, resume: captured_resume}, env}
   end
 
   #############################################################################
@@ -335,7 +335,7 @@ defmodule Skuld.Effects.Yield do
           | {:thrown, term(), Types.env()}
   def run_with_driver(comp, driver) do
     case Comp.run(comp) do
-      {%Comp.Suspend{value: yielded, data: data} = suspend, suspended_env} ->
+      {%Comp.ExternalSuspend{value: yielded, data: data} = suspend, suspended_env} ->
         case driver.(yielded, data) do
           {:continue, input} ->
             # Resume returns {result, env} with leave_scope already applied
@@ -358,7 +358,7 @@ defmodule Skuld.Effects.Yield do
 
   # Continue processing after a resume
   defp continue_with_driver(
-         %Comp.Suspend{value: yielded, data: data} = suspend,
+         %Comp.ExternalSuspend{value: yielded, data: data} = suspend,
          env,
          driver
        ) do
@@ -394,7 +394,7 @@ defmodule Skuld.Effects.Yield do
           | {:thrown, term(), [term()], Types.env()}
   def collect(comp, resume_input \\ nil) do
     case Comp.run(comp) do
-      {%Comp.Suspend{} = suspend, suspended_env} ->
+      {%Comp.ExternalSuspend{} = suspend, suspended_env} ->
         do_collect(suspend, suspended_env, [], resume_input)
 
       {%Comp.Throw{error: error}, err_env} ->
@@ -405,11 +405,11 @@ defmodule Skuld.Effects.Yield do
     end
   end
 
-  defp do_collect(%Comp.Suspend{value: yielded, resume: resume}, _env, acc, input) do
+  defp do_collect(%Comp.ExternalSuspend{value: yielded, resume: resume}, _env, acc, input) do
     {result, new_env} = resume.(input)
 
     case result do
-      %Comp.Suspend{} = suspend ->
+      %Comp.ExternalSuspend{} = suspend ->
         do_collect(suspend, new_env, [yielded | acc], input)
 
       %Comp.Throw{error: error} ->
@@ -433,7 +433,7 @@ defmodule Skuld.Effects.Yield do
           | {:thrown, term(), [term()], Types.env()}
   def feed(comp, inputs) do
     case Comp.run(comp) do
-      {%Comp.Suspend{} = suspend, suspended_env} ->
+      {%Comp.ExternalSuspend{} = suspend, suspended_env} ->
         do_feed(suspend, suspended_env, [], inputs)
 
       {%Comp.Throw{error: error}, err_env} ->
@@ -444,15 +444,17 @@ defmodule Skuld.Effects.Yield do
     end
   end
 
-  defp do_feed(%Comp.Suspend{value: yielded, resume: resume}, env, yielded_acc, []) do
+  defp do_feed(%Comp.ExternalSuspend{value: yielded, resume: resume}, env, yielded_acc, []) do
     {:suspended, yielded, resume, Enum.reverse(yielded_acc), env}
   end
 
-  defp do_feed(%Comp.Suspend{value: yielded, resume: resume}, _env, yielded_acc, [input | rest]) do
+  defp do_feed(%Comp.ExternalSuspend{value: yielded, resume: resume}, _env, yielded_acc, [
+         input | rest
+       ]) do
     {result, new_env} = resume.(input)
 
     case result do
-      %Comp.Suspend{} = suspend ->
+      %Comp.ExternalSuspend{} = suspend ->
         do_feed(suspend, new_env, [yielded | yielded_acc], rest)
 
       %Comp.Throw{error: error} ->

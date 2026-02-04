@@ -2,13 +2,13 @@ defmodule Skuld.Comp.InternalSuspend do
   @moduledoc """
   Internal suspension for Env-aware code.
 
-  Unlike `Comp.Suspend` (which closes over env for external callbacks),
+  Unlike `Comp.ExternalSuspend` (which closes over env for external callbacks),
   this suspension receives env at resume time, allowing callers to
   supply an updated env when resuming.
 
   ## Two Kinds of Suspension
 
-  **External suspension (`Comp.Suspend`)**:
+  **External suspension (`Comp.ExternalSuspend`)**:
   - `resume :: (val) -> {result, env}`
   - Closes over env at suspension point
   - For passing to external code that doesn't understand Skuld's env threading

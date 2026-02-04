@@ -439,7 +439,7 @@ defmodule Skuld.Effects.WriterTest do
         |> Yield.with_handler()
 
       # First run - should suspend
-      {%Comp.Suspend{value: :pause, resume: resume}, _env} = Comp.run(comp)
+      {%Comp.ExternalSuspend{value: :pause, resume: resume}, _env} = Comp.run(comp)
 
       # Resume - should complete and capture all logs
       {result, _env} = resume.(:resumed)
@@ -469,8 +469,8 @@ defmodule Skuld.Effects.WriterTest do
         |> Writer.with_handler([], output: fn result, _log -> result end)
         |> Yield.with_handler()
 
-      {%Comp.Suspend{resume: r1}, _} = Comp.run(comp)
-      {%Comp.Suspend{resume: r2}, _} = r1.("b")
+      {%Comp.ExternalSuspend{resume: r1}, _} = Comp.run(comp)
+      {%Comp.ExternalSuspend{resume: r2}, _} = r1.("b")
       {result, _} = r2.("c")
 
       assert {:done, ["c", "b", "a"]} = result
@@ -490,7 +490,7 @@ defmodule Skuld.Effects.WriterTest do
         |> Writer.with_handler([], output: fn result, log -> {result, log} end)
         |> Yield.with_handler()
 
-      {%Comp.Suspend{resume: resume}, _} = Comp.run(comp)
+      {%Comp.ExternalSuspend{resume: resume}, _} = Comp.run(comp)
       {result, _} = resume.(:ok)
 
       # listen only captures "inner", full log has both
@@ -562,7 +562,7 @@ defmodule Skuld.Effects.WriterTest do
         |> Writer.with_handler([], output: fn result, log -> {result, log} end)
         |> Yield.with_handler()
 
-      {%Comp.Suspend{resume: resume}, _} = Comp.run(comp)
+      {%Comp.ExternalSuspend{resume: resume}, _} = Comp.run(comp)
       {result, _} = resume.(:ok)
 
       # Transform should uppercase the captured logs
@@ -609,7 +609,7 @@ defmodule Skuld.Effects.WriterTest do
         |> Writer.with_handler([], output: fn result, log -> {result, log} end)
         |> Yield.with_handler()
 
-      {%Comp.Suspend{resume: resume}, _} = Comp.run(comp)
+      {%Comp.ExternalSuspend{resume: resume}, _} = Comp.run(comp)
       {result, _} = resume.(:ok)
 
       # All logs from censored scope should be redacted
@@ -635,8 +635,8 @@ defmodule Skuld.Effects.WriterTest do
         |> Writer.with_handler([], output: fn result, log -> {result, log} end)
         |> Yield.with_handler()
 
-      {%Comp.Suspend{resume: r1}, _} = Comp.run(comp)
-      {%Comp.Suspend{resume: r2}, _} = r1.(:ok)
+      {%Comp.ExternalSuspend{resume: r1}, _} = Comp.run(comp)
+      {%Comp.ExternalSuspend{resume: r2}, _} = r1.(:ok)
       {result, _} = r2.(:ok)
 
       assert {:done, ["C", "B", "A"]} = result

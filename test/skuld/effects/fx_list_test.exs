@@ -305,13 +305,13 @@ defmodule Skuld.Effects.FxListTest do
         |> Yield.with_handler()
 
       # First run should yield with first element
-      {%Comp.Suspend{value: {:processing, 1}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.ExternalSuspend{value: {:processing, 1}, resume: r1}, _e1} = Comp.run(comp)
 
       # Resume and get next yield
-      {%Comp.Suspend{value: {:processing, 2}, resume: r2}, _e2} = r1.(:resumed_1)
-      {%Comp.Suspend{value: {:processing, 3}, resume: r3}, _e3} = r2.(:resumed_2)
-      {%Comp.Suspend{value: {:processing, 4}, resume: r4}, _e4} = r3.(:resumed_3)
-      {%Comp.Suspend{value: {:processing, 5}, resume: r5}, _e5} = r4.(:resumed_4)
+      {%Comp.ExternalSuspend{value: {:processing, 2}, resume: r2}, _e2} = r1.(:resumed_1)
+      {%Comp.ExternalSuspend{value: {:processing, 3}, resume: r3}, _e3} = r2.(:resumed_2)
+      {%Comp.ExternalSuspend{value: {:processing, 4}, resume: r4}, _e4} = r3.(:resumed_3)
+      {%Comp.ExternalSuspend{value: {:processing, 5}, resume: r5}, _e5} = r4.(:resumed_4)
 
       # Final resume returns completed result
       {final, _env} = r5.(:resumed_5)
@@ -333,9 +333,9 @@ defmodule Skuld.Effects.FxListTest do
         |> Yield.with_handler()
 
       # Process through all yields
-      {%Comp.Suspend{value: {:at_count, 0}, resume: r1}, _e1} = Comp.run(comp)
-      {%Comp.Suspend{value: {:at_count, 1}, resume: r2}, _e2} = r1.(:ok)
-      {%Comp.Suspend{value: {:at_count, 2}, resume: r3}, _e3} = r2.(:ok)
+      {%Comp.ExternalSuspend{value: {:at_count, 0}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.ExternalSuspend{value: {:at_count, 1}, resume: r2}, _e2} = r1.(:ok)
+      {%Comp.ExternalSuspend{value: {:at_count, 2}, resume: r3}, _e3} = r2.(:ok)
       {result, _env} = r3.(:ok)
 
       assert result == [{1, 0}, {2, 1}, {3, 2}]
@@ -352,9 +352,9 @@ defmodule Skuld.Effects.FxListTest do
         end)
         |> Yield.with_handler()
 
-      {%Comp.Suspend{value: {:reducing, 1, 0}, resume: r1}, _e1} = Comp.run(comp)
-      {%Comp.Suspend{value: {:reducing, 2, 1}, resume: r2}, _e2} = r1.(:ok)
-      {%Comp.Suspend{value: {:reducing, 3, 3}, resume: r3}, _e3} = r2.(:ok)
+      {%Comp.ExternalSuspend{value: {:reducing, 1, 0}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.ExternalSuspend{value: {:reducing, 2, 1}, resume: r2}, _e2} = r1.(:ok)
+      {%Comp.ExternalSuspend{value: {:reducing, 3, 3}, resume: r3}, _e3} = r2.(:ok)
       {result, _env} = r3.(:ok)
       assert result == 6
     end
@@ -368,9 +368,9 @@ defmodule Skuld.Effects.FxListTest do
         end)
         |> Yield.with_handler()
 
-      {%Comp.Suspend{value: {:visiting, 1}, resume: r1}, _e1} = Comp.run(comp)
-      {%Comp.Suspend{value: {:visiting, 2}, resume: r2}, _e2} = r1.(:ok)
-      {%Comp.Suspend{value: {:visiting, 3}, resume: r3}, _e3} = r2.(:ok)
+      {%Comp.ExternalSuspend{value: {:visiting, 1}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.ExternalSuspend{value: {:visiting, 2}, resume: r2}, _e2} = r1.(:ok)
+      {%Comp.ExternalSuspend{value: {:visiting, 3}, resume: r3}, _e3} = r2.(:ok)
       {result, _env} = r3.(:ok)
       assert result == :ok
     end
@@ -386,10 +386,10 @@ defmodule Skuld.Effects.FxListTest do
         end)
         |> Yield.with_handler()
 
-      {%Comp.Suspend{value: {:checking, 1}, resume: r1}, _e1} = Comp.run(comp)
-      {%Comp.Suspend{value: {:checking, 2}, resume: r2}, _e2} = r1.(:ok)
-      {%Comp.Suspend{value: {:checking, 3}, resume: r3}, _e3} = r2.(:ok)
-      {%Comp.Suspend{value: {:checking, 4}, resume: r4}, _e4} = r3.(:ok)
+      {%Comp.ExternalSuspend{value: {:checking, 1}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.ExternalSuspend{value: {:checking, 2}, resume: r2}, _e2} = r1.(:ok)
+      {%Comp.ExternalSuspend{value: {:checking, 3}, resume: r3}, _e3} = r2.(:ok)
+      {%Comp.ExternalSuspend{value: {:checking, 4}, resume: r4}, _e4} = r3.(:ok)
       {result, _env} = r4.(:ok)
       assert result == [2, 4]
     end
@@ -415,9 +415,9 @@ defmodule Skuld.Effects.FxListTest do
         |> Yield.with_handler()
 
       # First yield
-      {%Comp.Suspend{value: {:before, 1}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.ExternalSuspend{value: {:before, 1}, resume: r1}, _e1} = Comp.run(comp)
       # Resume, get second yield
-      {%Comp.Suspend{value: {:before, 2}, resume: r2}, _e2} = r1.(:ok)
+      {%Comp.ExternalSuspend{value: {:before, 2}, resume: r2}, _e2} = r1.(:ok)
       # Resume, throw happens - should be wrapped in Throw struct
       {result, _env} = r2.(:ok)
       assert %Comp.Throw{error: :error_at_2} = result
@@ -446,11 +446,11 @@ defmodule Skuld.Effects.FxListTest do
         |> Yield.with_handler()
 
       # First yield
-      {%Comp.Suspend{value: {:after, 1, 2}, resume: r1}, _e1} = Comp.run(comp)
+      {%Comp.ExternalSuspend{value: {:after, 1, 2}, resume: r1}, _e1} = Comp.run(comp)
       # Second yield (with recovered value)
-      {%Comp.Suspend{value: {:after, 2, :recovered}, resume: r2}, _e2} = r1.(:ok)
+      {%Comp.ExternalSuspend{value: {:after, 2, :recovered}, resume: r2}, _e2} = r1.(:ok)
       # Third yield
-      {%Comp.Suspend{value: {:after, 3, 6}, resume: r3}, _e3} = r2.(:ok)
+      {%Comp.ExternalSuspend{value: {:after, 3, 6}, resume: r3}, _e3} = r2.(:ok)
       # Final result
       {result, _env} = r3.(:ok)
       assert result == [2, :recovered, 6]

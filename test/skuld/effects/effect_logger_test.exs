@@ -535,7 +535,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
       # First run - suspends at yield
       # Note: when computation suspends, with_logging's finally_k is never called,
-      # so result is {%Suspend{}, env} not {{%Suspend{}, log}, env}
+      # so result is {%ExternalSuspend{}, env} not {{%ExternalSuspend{}, log}, env}
       {suspended, env} =
         computation
         |> EffectLogger.with_logging()
@@ -543,7 +543,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         |> State.with_handler(10)
         |> Comp.run()
 
-      assert %Comp.Suspend{value: :question} = suspended
+      assert %Comp.ExternalSuspend{value: :question} = suspended
 
       # Extract log from env (finalize it for replay)
       log = extract_log(env)
@@ -642,7 +642,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         |> State.with_handler(100)
         |> Comp.run()
 
-      assert %Comp.Suspend{value: 42} = suspended
+      assert %Comp.ExternalSuspend{value: 42} = suspended
 
       log = extract_log(env)
 
@@ -756,7 +756,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         |> Yield.with_handler()
         |> Comp.run()
 
-      assert %Comp.Suspend{value: :first} = suspended1
+      assert %Comp.ExternalSuspend{value: :first} = suspended1
       log1 = extract_log(env1)
 
       # Cold resume from first suspension - continues to second yield
@@ -766,7 +766,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         |> Yield.with_handler()
         |> Comp.run()
 
-      assert %Comp.Suspend{value: :second} = suspended2
+      assert %Comp.ExternalSuspend{value: :second} = suspended2
       log2 = extract_log(env2)
 
       # Cold resume from second suspension
@@ -781,7 +781,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
   end
 
   describe "decorate_suspend option" do
-    alias Skuld.Comp.Suspend
+    alias Skuld.Comp.ExternalSuspend
 
     test "by default, suspends are decorated with effect log" do
       computation =
@@ -791,7 +791,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           return({:got, input})
         end
 
-      {%Suspend{value: :waiting, data: data}, _env} =
+      {%ExternalSuspend{value: :waiting, data: data}, _env} =
         computation
         |> EffectLogger.with_logging()
         |> State.with_handler(0)
@@ -812,7 +812,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
     test "decorate_suspend: false disables decoration" do
       computation = Yield.yield(:waiting)
 
-      {%Suspend{value: :waiting, data: data}, _env} =
+      {%ExternalSuspend{value: :waiting, data: data}, _env} =
         computation
         |> EffectLogger.with_logging(decorate_suspend: false)
         |> Yield.with_handler()
@@ -830,7 +830,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         end
 
       # First run - get the log
-      {%Suspend{data: data1}, _env} =
+      {%ExternalSuspend{data: data1}, _env} =
         computation
         |> EffectLogger.with_logging()
         |> State.with_handler(0)
@@ -840,7 +840,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
       log1 = data1[EffectLogger]
 
       # Replay with existing log
-      {%Suspend{value: :waiting, data: data}, _env} =
+      {%ExternalSuspend{value: :waiting, data: data}, _env} =
         computation
         |> EffectLogger.with_logging(log1)
         |> State.with_handler(0)
@@ -872,11 +872,11 @@ defmodule Skuld.Effects.EffectLoggerTest do
         |> Yield.with_handler()
 
       # First yield is from inner scope - should have decoration
-      {%Suspend{value: :inner, data: inner_data, resume: resume}, _env} = Comp.run(outer)
+      {%ExternalSuspend{value: :inner, data: inner_data, resume: resume}, _env} = Comp.run(outer)
       assert Map.has_key?(inner_data, EffectLogger)
 
       # Resume inner, then outer yields - should NOT have decoration
-      {%Suspend{value: :outer, data: outer_data}, _env} = resume.(:resumed)
+      {%ExternalSuspend{value: :outer, data: outer_data}, _env} = resume.(:resumed)
       assert outer_data == nil
     end
   end
