@@ -192,10 +192,6 @@ defimpl Skuld.Comp.ISentinel, for: Skuld.Comp.InternalSuspend do
   def suspend?(_), do: true
   def error?(_), do: false
 
-  def get_resume(%{resume: resume}), do: resume
-
-  def with_resume(suspend, new_resume), do: %{suspend | resume: new_resume}
-
   def serializable_payload(%{payload: %Batch{op: op, request_id: id}}) do
     %{type: :batch, op: op, request_id: id}
   end

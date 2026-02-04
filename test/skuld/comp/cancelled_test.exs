@@ -26,17 +26,6 @@ defmodule Skuld.Comp.CancelledTest do
       assert ISentinel.suspend?(cancelled) == false
     end
 
-    test "is not resumable" do
-      cancelled = %Cancelled{reason: :test}
-      assert ISentinel.get_resume(cancelled) == nil
-    end
-
-    test "with_resume returns unchanged" do
-      cancelled = %Cancelled{reason: :test}
-      resume_fn = fn _input -> {:result, Env.new()} end
-      assert ISentinel.with_resume(cancelled, resume_fn) == cancelled
-    end
-
     test "serializable_payload returns reason" do
       cancelled = %Cancelled{reason: {:complex, :reason}}
       assert ISentinel.serializable_payload(cancelled) == %{reason: {:complex, :reason}}

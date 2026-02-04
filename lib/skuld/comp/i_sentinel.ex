@@ -40,14 +40,6 @@ defprotocol Skuld.Comp.ISentinel do
   @spec error?(t) :: boolean()
   def error?(value)
 
-  @doc "Get the resume function if this sentinel is resumable, nil otherwise."
-  @spec get_resume(t) :: (term() -> {term(), Skuld.Comp.Types.env()}) | nil
-  def get_resume(sentinel)
-
-  @doc "Return a new sentinel with the resume function replaced. Returns unchanged if not resumable."
-  @spec with_resume(t, (term() -> {term(), Skuld.Comp.Types.env()})) :: t
-  def with_resume(sentinel, new_resume)
-
   @doc "Get the serializable payload (struct fields minus :resume). Used for logging/serialization."
   @spec serializable_payload(t) :: map()
   def serializable_payload(sentinel)
@@ -59,7 +51,5 @@ defimpl Skuld.Comp.ISentinel, for: Any do
   def sentinel?(_value), do: false
   def suspend?(_value), do: false
   def error?(_value), do: false
-  def get_resume(_value), do: nil
-  def with_resume(value, _new_resume), do: value
   def serializable_payload(_value), do: %{}
 end

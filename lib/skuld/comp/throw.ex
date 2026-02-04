@@ -39,10 +39,6 @@ defmodule Skuld.Comp.Throw do
     def suspend?(_), do: false
     def error?(_), do: true
 
-    def get_resume(_), do: nil
-
-    def with_resume(throw, _new_resume), do: throw
-
     def serializable_payload(%Skuld.Comp.Throw{error: error}) do
       %{error: error}
     end

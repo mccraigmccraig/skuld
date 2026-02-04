@@ -41,12 +41,6 @@ defmodule Skuld.Comp.ExternalSuspend do
     def suspend?(_), do: true
     def error?(_), do: false
 
-    def get_resume(%Skuld.Comp.ExternalSuspend{resume: resume}), do: resume
-
-    def with_resume(suspend, new_resume) do
-      %Skuld.Comp.ExternalSuspend{suspend | resume: new_resume}
-    end
-
     def serializable_payload(%Skuld.Comp.ExternalSuspend{value: value, data: nil}) do
       %{yielded: value}
     end

@@ -49,11 +49,6 @@ defmodule Skuld.Comp.Cancelled do
     def suspend?(_), do: false
     def error?(_), do: true
 
-    # Cancelled is not resumable
-    def get_resume(_), do: nil
-
-    def with_resume(cancelled, _new_resume), do: cancelled
-
     def serializable_payload(%Skuld.Comp.Cancelled{reason: reason}) do
       %{reason: reason}
     end
