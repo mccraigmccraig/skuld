@@ -63,8 +63,7 @@ some common side-effecting operations and their effectful equivalents:
   - [State & Environment](#state--environment)
     - [State](#state)
     - [Reader](#reader)
-    - [Writer](#writer)
-    - [Multiple Independent Contexts (Tagged Usage)](#multiple-independent-contexts-tagged-usage)
+    - [Writer](#writer)    - [Multiple Independent Contexts (Tagged Usage)](#multiple-independent-contexts-tagged-usage)
     - [Scoped State Transformation](#scoped-state-transformation)
   - [Control Flow](#control-flow)
     - [Throw](#throw)
@@ -1866,8 +1865,9 @@ defmodule User do
 
   # Fetch multiple users with their orders using Brook
   defcomp fetch_users_with_orders(user_ids) do
-    # chunk_size: 1 so each user becomes a concurrent fiber for I/O batching
-    source <- Brook.from_enum(user_ids, chunk_size: 1)
+    # chunk_size: 2 - small enough that there is still 
+    # concurrency... 
+    source <- Brook.from_enum(user_ids, chunk_size: 2)
     users <- Brook.map(source, &with_orders/1, concurrency: 3)
     Brook.to_list(users)
   end
@@ -1912,10 +1912,10 @@ With batching, fibers running concurrently
 have their DB operations combined: just 2 user fetches (batches of 3 and 2) and 2 order
 fetches (same batches) - as defined by the `concurrency: 3` option.
 
-**Why `chunk_size: 1`?** Brook.map's `concurrency` controls how many *chunks* process
+**Why `chunk_size: 2`?** Brook.map's `concurrency` controls how many *chunks* process
 concurrently. With the default `chunk_size: 100`, all 5 items would be in one chunk
-and processed sequentially. Using `chunk_size: 1` makes each item its own concurrent
-unit, allowing their I/O operations to batch together.
+and processed sequentially. Using `chunk_size: 2` means that the data is divided
+into multiple chunks, and each chunk is its own concurrent unit, allowing their I/O operations to batch together.
 
 `Brook.map` preserves input order even with `concurrency > 1` by using `put_async`/`take_async`
 internally (see Channel section above for details on how this works).
