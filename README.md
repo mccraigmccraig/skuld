@@ -1865,8 +1865,8 @@ defmodule User do
 
   # Fetch multiple users with their orders using Brook
   defcomp fetch_users_with_orders(user_ids) do
-    # chunk_size: 2 - small enough that there is still 
-    # concurrency... 
+    # chunk_size: 2 - small enough that there is still
+    # concurrency...
     source <- Brook.from_enum(user_ids, chunk_size: 2)
     users <- Brook.map(source, &with_orders/1, concurrency: 3)
     Brook.to_list(users)
