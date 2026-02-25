@@ -476,7 +476,7 @@ defmodule Skuld.Effects.BrookTest do
 
       # Fetch multiple users with their orders using Brook
       defcomp fetch_users_with_orders(user_ids) do
-        source <- Brook.from_enum(user_ids, chunk_size: 1)
+        source <- Brook.from_enum(user_ids, chunk_size: 2)
         users <- Brook.map(source, &with_orders/1, concurrency: 3)
         Brook.to_list(users)
       end
