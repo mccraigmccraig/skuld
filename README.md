@@ -15,7 +15,7 @@ instead of just pure functions and side-effecting functions, you have pure funct
 effectful functions, and side-effecting handlers. Domain code is written with effects
 but remains pure - the same code runs with test handlers (pure, in-memory) or
 production handlers (real I/O). This enables clean separation of concerns,
-property-based testing, and effect logging for resume and replay.
+property-based testing, and serializable coroutines for durable computation.
 
 Skuld's library of effects aims to provide primitives broad enough that most domain
 computations can use effectful operations instead of side-effecting ones. Here are
@@ -33,7 +33,7 @@ some common side-effecting operations and their effectful equivalents:
 | Blocking calls to external code | Port                         |
 | Ecto Repo operations            | ChangesetPersist             |
 | Decider pattern                 | Command, EventAccumulator    |
-| Tracing, replay & resume        | EffectLogger                 |
+| Serializable coroutines         | EffectLogger                 |
 | Raising exceptions              | Throw                        |
 | Resource cleanup (try/finally)  | Bracket                      |
 | Control flow                    | Yield                        |
@@ -89,7 +89,7 @@ some common side-effecting operations and their effectful equivalents:
     - [Command](#command)
     - [EventAccumulator](#eventaccumulator)
     - [ChangesetPersist](#changesetpersist)
-  - [Replay & Logging](#replay--logging)
+  - [Serializable Coroutines](#serializable-coroutines)
     - [EffectLogger](#effectlogger)
 - [Property-Based Testing](#property-based-testing)
 - [Architecture](#architecture)
@@ -2273,11 +2273,39 @@ end)
 > **Note**: ChangesetPersist wraps Ecto Repo operations. See the module docs for
 > `insert`, `update`, `delete`, `insert_all`, `update_all`, `delete_all`, and `upsert`.
 
-### Replay & Logging
+### Serializable Coroutines
 
 #### EffectLogger
 
-Capture effect invocations for replay, resume, and retry:
+EffectLogger enables **serializable coroutines** - computations that can suspend,
+have their entire state serialized to JSON, be persisted to a database or sent over
+the network, and later be cold-resumed from the serialized state on a completely
+different machine or process. This is event sourcing for algebraic effects: every
+effect invocation is logged with its result, and the log can replay a computation
+to any prior point, inject new values, and continue.
+
+This capability appears to be unique among algebraic effect libraries. Haskell
+libraries like polysemy, freer-simple, Heftia, and fused-effects all offer coroutines
+with live (in-memory) continuations, but continuations are closures and **cannot be
+serialized**. The only comparable system is [Temporal.io](https://temporal.io), which
+achieves similar replay/resume semantics for workflows - but as heavyweight
+infrastructure (a server cluster and RPC-based activity dispatch), not as a composable
+library primitive.
+
+Skuld can do this because its effects are pure computations handled by explicit handler
+functions, producing JSON-serializable operation structs and return values. EffectLogger
+intercepts the handler layer to record a serializable log. On resume, it re-executes
+the same computation source code, fast-forwarding through completed effects using
+logged values, restoring state from checkpoints, and injecting the resume value at
+the suspension point.
+
+**Capabilities:**
+- **Logging** - Capture a serializable record of every effect invocation and its result
+- **Replay** - Re-run a computation, short-circuiting completed effects with logged values
+- **Rerun** - Re-execute after code changes; completed effects replay, failed effects re-execute
+- **Cold resume** - Deserialize a log, re-execute the computation, fast-forward to the suspension point, inject a new value, and continue
+
+#### Effect Logging
 
 ```elixir
 use Skuld.Syntax
@@ -2328,11 +2356,19 @@ replayed
 #=> {0, 10}  # Same result - values came from log, not from State handler
 ```
 
+The log is fully JSON-serializable. Each `EffectLogEntry` records the effect module
+(`sig`), operation struct (`data`), return value (`value`), and state
+(`:executed`, `:discarded`, or `:started`). During replay, `:executed` entries
+short-circuit with logged values, `:discarded` entries re-execute (they represent
+effects abandoned by control flow like Throw), and `:started` entries mark
+suspension points.
+
 #### Loop Marking and Pruning
 
 For long-running loop-based computations (like LLM conversation loops), the log can
 grow unboundedly. Use `mark_loop/1` to mark iteration boundaries - pruning is enabled
-by default and happens eagerly after each mark, keeping memory bounded:
+by default and happens eagerly after each mark, keeping memory bounded. Each mark
+also captures a state checkpoint (`EnvStateSnapshot`) for cold resume:
 
 ```elixir
 use Skuld.Syntax
@@ -2398,7 +2434,9 @@ ProcessLoop.process(["a", "b", "c", "d"])
 
 #### Cold Resume with Yield
 
-When a computation suspends via `Yield`, you can serialize the log and resume later:
+When a computation suspends via `Yield`, you can serialize the log and resume later -
+even in a different process, on a different machine, or after a restart. This is what
+makes EffectLogger a **serializable coroutine** mechanism:
 
 ```elixir
 use Skuld.Syntax
@@ -2449,6 +2487,20 @@ The `with_resume/3` function:
 2. Replays completed effects by short-circuiting with logged values
 3. Injects the resume value at the Yield suspension point
 4. Continues fresh execution after that point
+
+#### Why This Matters
+
+Serializable coroutines turn computations into **durable, portable values**. A
+suspended computation can be:
+
+- **Persisted to a database** and resumed hours or days later (e.g., multi-step wizards, approval workflows)
+- **Sent over the network** and resumed on a different node (e.g., load balancing long-running conversations)
+- **Survived across deployments** - resume after deploying new code, with `allow_divergence` handling code changes gracefully
+- **Retried after failures** - rerun mode re-executes failed effects while replaying successful ones
+- **Inspected and debugged** - the log is a complete, readable trace of what the computation did
+
+This is Temporal-style durable execution as a composable library primitive, without
+requiring infrastructure services, RPC, or giving up algebraic effect composition
 
 ## Property-Based Testing
 
