@@ -2305,56 +2305,64 @@ the suspension point.
 - **Rerun** - Re-execute after code changes; completed effects replay, failed effects re-execute
 - **Cold resume** - Deserialize a log, re-execute the computation, fast-forward to the suspension point, inject a new value, and continue
 
-#### Effect Logging
+#### Suspend, Serialize, Resume
+
+A computation suspends at a Yield point. The effect log - a complete record of every
+effect invocation and its result - is serialized to JSON, persisted (to a database,
+file, message queue, etc.), and later deserialized on a potentially different process
+or machine. The computation resumes from where it left off, with all prior state
+restored from the log:
 
 ```elixir
 use Skuld.Syntax
 alias Skuld.Comp
-alias Skuld.Effects.{State, EffectLogger}
+alias Skuld.Effects.{State, Yield, EffectLogger}
+alias Skuld.Effects.EffectLogger.Log
 
-# Capture a log of effects
-{{result, log}, _env} = (
-  comp do
-    x <- State.get()
-    _ <- State.put(x + 10)
-    y <- State.get()
-    {x, y}
-  end
+computation = comp do
+  x <- State.get()
+  input <- Yield.yield(x)       # suspend here, yielding current state
+  _ <- State.put(x + input)
+  y <- State.get()
+  {x, input, y}
+end
+
+# --- Run until suspension ---
+{suspended, env} = (
+  computation
   |> EffectLogger.with_logging()
-  |> State.with_handler(0)
+  |> Yield.with_handler()
+  |> State.with_handler(100)
+  |> Comp.run()
+)
+
+suspended.value
+#=> 100  # the yielded value (current state)
+
+# --- Serialize the log (e.g., persist to database) ---
+log = EffectLogger.get_log(env) |> Log.finalize()
+json = Jason.encode!(log)
+
+# --- Later: deserialize and cold resume ---
+cold_log = json |> Jason.decode!() |> Log.from_json()
+
+{{result, _new_log}, _env2} = (
+  computation                              # same source code
+  |> EffectLogger.with_resume(cold_log, 50)  # inject resume value (50)
+  |> Yield.with_handler()
+  |> State.with_handler(999)               # ignored - state restored from checkpoint
   |> Comp.run()
 )
 
 result
-#=> {0, 10}
-
-# The log captures each effect invocation with its result
-log
-#=> %Skuld.Effects.EffectLogger.Log{
-#=>   effect_queue: [
-#=>     %EffectLogEntry{sig: State, data: %State.Get{}, value: 0, state: :executed},
-#=>     %EffectLogEntry{sig: State, data: %State.Put{value: 10}, value: %Change{old: 0, new: 10}, state: :executed},
-#=>     %EffectLogEntry{sig: State, data: %State.Get{}, value: 10, state: :executed}
-#=>   ],
-#=>   ...
-#=> }
-
-# Replay with different initial state - uses logged values instead of executing
-{{replayed, _log2}, _env2} = (
-  comp do
-    x <- State.get()
-    _ <- State.put(x + 10)
-    y <- State.get()
-    {x, y}
-  end
-  |> EffectLogger.with_logging(log, allow_divergence: true)
-  |> State.with_handler(999)  # Different initial state - allowed with divergence
-  |> Comp.run()
-)
-
-replayed
-#=> {0, 10}  # Same result - values came from log, not from State handler
+#=> {100, 50, 150}
+# x=100 (from log, not from the 999 handler), input=50 (resume value), y=150 (fresh)
 ```
+
+What happened during cold resume:
+1. `State.get()` returned `100` - **replayed from the log**, not from the handler's initial value of `999`
+2. `Yield.yield(x)` - the log shows this was where the computation suspended; the resume value `50` was **injected** here instead of suspending again
+3. `State.put(150)` and `State.get()` - **executed fresh**, producing the final result
 
 The log is fully JSON-serializable. Each `EffectLogEntry` records the effect module
 (`sig`), operation struct (`data`), return value (`value`), and state
@@ -2432,18 +2440,20 @@ ProcessLoop.process(["a", "b", "c", "d"])
 #=> {{4, %EffectLogger.Log{...}}, _env}
 ```
 
-#### Cold Resume with Yield
+#### Looping Conversations with Cold Resume
 
-When a computation suspends via `Yield`, you can serialize the log and resume later -
-even in a different process, on a different machine, or after a restart. This is what
-makes EffectLogger a **serializable coroutine** mechanism:
+The first example showed a single suspend/resume cycle. For long-running computations
+like LLM conversation loops, `mark_loop` combined with cold resume enables
+**repeated suspend/serialize/resume cycles** where each resume produces a new log
+that can be serialized for the next iteration:
 
 ```elixir
 use Skuld.Syntax
 alias Skuld.Comp
 alias Skuld.Effects.{State, Writer, Yield, EffectLogger}
+alias Skuld.Effects.EffectLogger.Log
 
-# Define a computation that yields for user input
+# A conversation loop that yields for user input each iteration
 defmodule Conversation do
   use Skuld.Syntax
   alias Skuld.Effects.{State, Writer, Yield, EffectLogger}
@@ -2461,32 +2471,42 @@ defmodule Conversation do
   end
 end
 
-# First run - suspends at first yield (pruning is enabled by default)
-Conversation.run()
-|> EffectLogger.with_logging()
-|> Yield.with_handler()
-|> State.with_handler(0)
-|> Writer.with_handler([])
-|> Comp.run()
-#=> {%Comp.Suspend{value: {:prompt, "Message 0:"}, ...}, env}
+# First run - suspends at first yield
+{suspended, env} =
+  Conversation.run()
+  |> EffectLogger.with_logging()
+  |> Yield.with_handler()
+  |> State.with_handler(0)
+  |> Writer.with_handler([])
+  |> Comp.run()
+#=> suspended.value is {:prompt, "Message 0:"}
 
-# To continue: extract and serialize the log, then cold resume with user's response
-# log = EffectLogger.get_log(env) |> EffectLogger.Log.finalize()
-# json = Jason.encode!(log)
-# cold_log = json |> Jason.decode!() |> EffectLogger.Log.from_json()
-# Conversation.run()
-# |> EffectLogger.with_resume(cold_log, "Hello!")
-# |> Yield.with_handler()
-# |> State.with_handler(999)  # State restored from checkpoint, not this value
-# |> Writer.with_handler([])
-# |> Comp.run()
+# Serialize the log
+log = EffectLogger.get_log(env) |> Log.finalize()
+json = Jason.encode!(log)
+
+# Later: cold resume with user's response - suspends at next yield
+cold_log = json |> Jason.decode!() |> Log.from_json()
+{suspended2, env2} =
+  Conversation.run()                            # same source code
+  |> EffectLogger.with_resume(cold_log, "Hello!")  # inject "Hello!" at suspension point
+  |> Yield.with_handler()
+  |> State.with_handler(999)                    # ignored - state restored from checkpoint
+  |> Writer.with_handler([])
+  |> Comp.run()
+#=> suspended2.value is {:prompt, "Message 1:"}
+
+# Serialize again for the next resume cycle...
+log2 = EffectLogger.get_log(env2) |> Log.finalize()
+json2 = Jason.encode!(log2)
+# The log stays bounded thanks to mark_loop pruning
 ```
 
-The `with_resume/3` function:
-1. Restores `env.state` from the most recent checkpoint in the log
-2. Replays completed effects by short-circuiting with logged values
-3. Injects the resume value at the Yield suspension point
-4. Continues fresh execution after that point
+Each cold resume re-executes the computation source code, fast-forwards through
+completed effects using logged values, injects the resume value at the suspension
+point, and continues fresh execution until the next yield - producing a new log
+for the next cycle. Loop pruning keeps the log O(current iteration) regardless
+of how many cycles have occurred.
 
 #### Why This Matters
 
