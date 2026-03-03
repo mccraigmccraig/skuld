@@ -53,8 +53,7 @@ defmodule Skuld.MixProject do
           ],
           "Persistence & Data": [
             Skuld.Effects.DB,
-            Skuld.Effects.DBTransaction,
-            Skuld.Effects.ChangesetPersist,
+            Skuld.Effects.DB.Batch,
             Skuld.Effects.Port,
             Skuld.Effects.Command,
             Skuld.Effects.ChangeEvent,

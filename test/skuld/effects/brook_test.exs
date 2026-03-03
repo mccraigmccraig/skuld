@@ -467,10 +467,10 @@ defmodule Skuld.Effects.BrookTest do
 
       defstruct [:id, :name, :orders]
 
-      # Fetch a user and all their orders - composes DB.fetch with DB.fetch_all
+      # Fetch a user and all their orders - composes DB.Batch.fetch with DB.Batch.fetch_all
       defcomp with_orders(user_id) do
-        user <- DB.fetch(__MODULE__, user_id)
-        orders <- DB.fetch_all(Order, :user_id, user_id)
+        user <- DB.Batch.fetch(__MODULE__, user_id)
+        orders <- DB.Batch.fetch_all(Order, :user_id, user_id)
         %{user | orders: orders}
       end
 
@@ -493,7 +493,7 @@ defmodule Skuld.Effects.BrookTest do
         send(test_pid, {:user_fetch, length(ops)})
 
         Comp.pure(
-          Map.new(ops, fn {ref, %DB.Fetch{id: id}} ->
+          Map.new(ops, fn {ref, %DB.Batch.Fetch{id: id}} ->
             {ref, %User{id: id, name: "User #{id}", orders: nil}}
           end)
         )
@@ -503,7 +503,7 @@ defmodule Skuld.Effects.BrookTest do
         send(test_pid, {:order_fetch_all, length(ops)})
 
         Comp.pure(
-          Map.new(ops, fn {ref, %DB.FetchAll{filter_value: user_id}} ->
+          Map.new(ops, fn {ref, %DB.Batch.FetchAll{filter_value: user_id}} ->
             {ref,
              [
                %Order{id: user_id * 10 + 1, user_id: user_id, total: 100},
