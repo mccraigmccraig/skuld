@@ -2012,6 +2012,27 @@ leads to different characteristics:
 
 ### Persistence & Data
 
+Skuld splits database interaction across several effects, each handling a distinct
+concern:
+
+- **DB** — write operations (insert, update, upsert, delete, bulk variants) and
+  transaction management through a single effect with swappable handlers (Ecto for
+  production, Test for stubbing and call recording, Noop for transaction-only tests).
+- **Port** — abstracts read queries (and any other blocking call to external code)
+  behind a dispatch layer with pluggable backends. Ecto's query language is too rich
+  to wrap in an effect, so reads are parameterised function calls routed through Port,
+  making them easy to stub in tests.
+- **DB.Batch** — a somewhat unusual (in Elixir) solution to the N+1 query problem.
+  Batch-reads suspend the current FiberPool fiber; when the run queue empties, the
+  scheduler groups pending reads by schema and executes a single batched query per
+  group, distributing results back to the waiting fibers. The programmer writes
+  simple per-record fetch calls and gets automatic batching for free.
+- **Command** and **EventAccumulator** — building blocks for the
+  [Decider pattern](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider).
+  Command dispatches mutation structs through a handler that returns a computation;
+  EventAccumulator accumulates domain events via Writer. Together they let you
+  express decide → evolve → persist pipelines as pure effectful code.
+
 #### DB
 
 Unified database writes and transactions as effects (requires Ecto). The `DB` effect
