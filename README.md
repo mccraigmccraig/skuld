@@ -29,9 +29,9 @@ some common side-effecting operations and their effectful equivalents:
 | Generating IDs (UUIDs)          | Fresh                        |
 | Concurrent fibers / streaming   | FiberPool, Channel, Brook   |
 | Run effects from LiveView       | AsyncComputation             |
-| Database transactions           | DBTransaction                |
+| DB writes & transactions        | DB                           |
+| Batched DB reads (FiberPool)    | DB.Batch                     |
 | Blocking calls to external code | Port                         |
-| Ecto Repo operations            | ChangesetPersist             |
 | Decider pattern                 | Command, EventAccumulator    |
 | Serializable coroutines         | EffectLogger                 |
 | Raising exceptions              | Throw                        |
@@ -84,11 +84,11 @@ some common side-effecting operations and their effectful equivalents:
     - [Brook](#brook)
     - [AsyncComputation](#asynccomputation)
   - [Persistence & Data](#persistence--data)
-    - [DBTransaction](#dbtransaction)
+    - [DB](#db)
+    - [DB.Batch](#dbbatch)
     - [Port](#port)
     - [Command](#command)
     - [EventAccumulator](#eventaccumulator)
-    - [ChangesetPersist](#changesetpersist)
   - [Serializable Coroutines](#serializable-coroutines)
     - [EffectLogger](#effectlogger)
 - [Property-Based Testing](#property-based-testing)
@@ -1655,16 +1655,16 @@ end
 
 mock_executor = fn ops ->
   IO.puts("Executor called with #{length(ops)} operations")  # proves batching
-  Comp.pure(Map.new(ops, fn {ref, %DB.Fetch{id: id}} ->
+  Comp.pure(Map.new(ops, fn {ref, %DB.Batch.Fetch{id: id}} ->
     {ref, %User{id: id, name: "User #{id}"}}
   end))
 end
 
 # Multiple fibers fetching from DB - batched into single query
 comp do
-  h1 <- FiberPool.fiber(DB.fetch(User, 1))
-  h2 <- FiberPool.fiber(DB.fetch(User, 2))
-  h3 <- FiberPool.fiber(DB.fetch(User, 3))
+  h1 <- FiberPool.fiber(DB.Batch.fetch(User, 1))
+  h2 <- FiberPool.fiber(DB.Batch.fetch(User, 2))
+  h3 <- FiberPool.fiber(DB.Batch.fetch(User, 3))
 
   results <- FiberPool.await_all([h1, h2, h3])
   results
@@ -1855,11 +1855,11 @@ end
 defmodule User do
   defstruct [:id, :name, :orders]
 
-  # Fetch a user and all their orders - composes DB.fetch with DB.fetch_all
-  # Each DB operation can be batched with operations from other concurrent fibers
+  # Fetch a user and all their orders - composes DB.Batch.fetch with DB.Batch.fetch_all
+  # Each DB.Batch operation can be batched with operations from other concurrent fibers
   defcomp with_orders(user_id) do
-    user <- DB.fetch(__MODULE__, user_id)
-    orders <- DB.fetch_all(Order, :user_id, user_id)
+    user <- DB.Batch.fetch(__MODULE__, user_id)
+    orders <- DB.Batch.fetch_all(Order, :user_id, user_id)
     %{user | orders: orders}
   end
 
@@ -1876,14 +1876,14 @@ end
 # Mock executors simulate batched database queries
 user_executor = fn ops ->
   IO.puts("User fetch: #{length(ops)} users batched")
-  Map.new(ops, fn {ref, %DB.Fetch{id: id}} ->
+  Map.new(ops, fn {ref, %DB.Batch.Fetch{id: id}} ->
     {ref, %User{id: id, name: "User #{id}", orders: nil}}
   end)
 end
 
 order_executor = fn ops ->
   IO.puts("Order fetch_all: #{length(ops)} queries batched")
-  Map.new(ops, fn {ref, %DB.FetchAll{filter_value: user_id}} ->
+  Map.new(ops, fn {ref, %DB.Batch.FetchAll{filter_value: user_id}} ->
     # Each user has 2 orders
     {ref, [
       %Order{id: user_id * 10 + 1, user_id: user_id, total: 100},
@@ -2012,54 +2012,126 @@ leads to different characteristics:
 
 ### Persistence & Data
 
-#### DBTransaction
+#### DB
 
-Database transactions with automatic commit/rollback:
+Unified database writes and transactions as effects (requires Ecto). The `DB` effect
+provides single operations (insert, update, upsert, delete), bulk operations
+(insert_all, update_all, upsert_all, delete_all), and transaction management through
+a single effect signature with swappable handlers.
+
+**Single write operations:**
 
 ```elixir
 use Skuld.Syntax
 alias Skuld.Comp
-alias Skuld.Effects.DBTransaction
-alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
+alias Skuld.Effects.DB
+
+# Production: real Ecto operations
+comp do
+  user <- DB.insert(User.changeset(%User{}, %{name: "Alice"}))
+  order <- DB.insert(Order.changeset(%Order{}, %{user_id: user.id}))
+  {user, order}
+end
+|> DB.Ecto.with_handler(MyApp.Repo)
+|> Comp.run!()
+```
+
+Operations accept changesets or `ChangeEvent` structs:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Effects.{DB, ChangeEvent}
+
+comp do
+  user <- DB.insert(changeset)                         # from changeset
+  user <- DB.insert(ChangeEvent.insert(changeset))     # from ChangeEvent
+  user <- DB.update(User.changeset(user, %{name: "Bob"}))
+  user <- DB.upsert(changeset, conflict_target: :email)
+  {:ok, _} <- DB.delete(user)
+  user
+end
+```
+
+**Bulk operations:**
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Effects.DB
+
+comp do
+  {count, users} <- DB.insert_all(User, changesets, returning: true)
+  {count, nil}   <- DB.update_all(User, changesets)
+  {count, nil}   <- DB.delete_all(User, structs)
+  {count, users}
+end
+|> DB.Ecto.with_handler(MyApp.Repo)
+|> Comp.run!()
+```
+
+**Transactions with automatic commit/rollback:**
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.DB
 
 # Normal completion - transaction commits
 comp do
-  result <- DBTransaction.transact(comp do
-    {:user_created, 123}
+  result <- DB.transact(comp do
+    user <- DB.insert(user_changeset)
+    order <- DB.insert(order_changeset)
+    {user, order}
   end)
   result
 end
-|> NoopTx.with_handler()
+|> DB.Ecto.with_handler(MyApp.Repo)
 |> Comp.run!()
-#=> {:user_created, 123}
 
 # Explicit rollback
 comp do
-  result <- DBTransaction.transact(comp do
-    _ <- DBTransaction.rollback(:validation_failed)
+  result <- DB.transact(comp do
+    _ <- DB.rollback(:validation_failed)
     :never_reached
   end)
   result
 end
-|> NoopTx.with_handler()
+|> DB.Noop.with_handler()
 |> Comp.run!()
 #=> {:rolled_back, :validation_failed}
 ```
 
-The same domain code works with different handlers - swap `Noop` for `Ecto` in production:
+Throws inside a transaction automatically trigger rollback:
 
 ```elixir
 use Skuld.Syntax
 alias Skuld.Comp
-alias Skuld.Effects.DBTransaction
-alias Skuld.Effects.DBTransaction.Noop, as: NoopTx
-alias Skuld.Effects.DBTransaction.Ecto, as: EctoTx
+alias Skuld.Effects.{DB, Throw}
 
-# Domain logic - unchanged regardless of handler
+comp do
+  result <- DB.transact(comp do
+    _ <- Throw.throw(:something_went_wrong)
+    :never_reached
+  end)
+  result
+end
+|> DB.Ecto.with_handler(MyApp.Repo)
+|> Throw.with_handler()
+|> Comp.run!()
+# Transaction is rolled back, throw propagates
+```
+
+**Handlers:**
+
+The same domain code works with different handlers:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.DB
+
 create_order = fn user_id, items ->
   comp do
-    result <- DBTransaction.transact(comp do
-      # Imagine these are real Ecto operations
+    result <- DB.transact(comp do
       order = %{id: 1, user_id: user_id, items: items}
       order
     end)
@@ -2067,18 +2139,75 @@ create_order = fn user_id, items ->
   end
 end
 
-# Production: real Ecto transactions (won't work in IEX!)
+# Production: real Ecto transactions
 create_order.(123, [:item_a, :item_b])
-|> EctoTx.with_handler(MyApp.Repo)
+|> DB.Ecto.with_handler(MyApp.Repo)
 |> Comp.run!()
-#=> %{id: 1, user_id: 123, items: [:item_a, :item_b]}
 
-# Testing: no database, same domain code
+# Testing: no-op transactions (raises on writes)
 create_order.(123, [:item_a, :item_b])
-|> NoopTx.with_handler()
+|> DB.Noop.with_handler()
 |> Comp.run!()
-#=> %{id: 1, user_id: 123, items: [:item_a, :item_b]}
+
+# Testing: stub writes and record calls
+{result, calls} =
+  comp do
+    user <- DB.insert(User.changeset(%User{}, %{name: "Alice"}))
+    user
+  end
+  |> DB.Test.with_handler(&DB.Test.default_handler/1)
+  |> Comp.run!()
+#=> {%User{name: "Alice"}, [{:insert, %Ecto.Changeset{...}}]}
 ```
+
+The test handler records all operations via Writer and returns stubbed results:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Comp
+alias Skuld.Effects.DB
+
+# Custom handler for specific test scenarios
+{result, calls} =
+  comp do
+    user <- DB.insert(changeset)
+    user
+  end
+  |> DB.Test.with_handler(fn
+    %DB.Insert{input: _cs} -> %User{id: "test-id", name: "Stubbed"}
+    %DB.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
+  end)
+  |> Comp.run!()
+#=> {%User{id: "test-id", name: "Stubbed"}, [{:insert, %Ecto.Changeset{...}}]}
+```
+
+#### DB.Batch
+
+Batched database reads using FiberPool. Multiple concurrent fetch operations for the
+same schema are automatically batched into a single query, solving the N+1 problem:
+
+```elixir
+use Skuld.Syntax
+alias Skuld.Effects.{DB, FiberPool}
+
+comp do
+  h1 <- FiberPool.fiber(DB.Batch.fetch(User, 1))
+  h2 <- FiberPool.fiber(DB.Batch.fetch(User, 2))
+  h3 <- FiberPool.fiber(DB.Batch.fetch(User, 3))
+
+  FiberPool.await_all([h1, h2, h3])
+end
+|> DB.Batch.with_executors()
+|> Reader.with_handler(MyApp.Repo, tag: :repo)
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+# All 3 fetches batched into a single WHERE id IN (...) query
+```
+
+Operations: `fetch/2` (single record by ID), `fetch_all/3` (records matching a filter)
+
+See the [Brook I/O Batching](#brook) section for a full example of automatic batching
+with nested reads across concurrent fibers.
 
 #### Port
 
@@ -2183,7 +2312,7 @@ end
 ```
 
 The handler function returns a computation, so commands can use other effects
-(Fresh, ChangesetPersist, EventAccumulator, etc.) internally. This enables a clean
+(Fresh, DB, EventAccumulator, etc.) internally. This enables a clean
 separation between command dispatch and command implementation.
 
 #### EventAccumulator
@@ -2204,74 +2333,6 @@ end
 |> Comp.run!()
 #=> {:ok, [%{type: :user_created, id: 1}, %{type: :email_sent, to: "user@example.com"}]}
 ```
-
-#### ChangesetPersist
-
-Changeset persistence as effects (requires Ecto):
-
-```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.ChangesetPersist
-
-# Production: real database operations via Ecto handler
-comp do
-  user <- ChangesetPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
-  order <- ChangesetPersist.insert(Order.changeset(%Order{}, %{user_id: user.id}))
-  {user, order}
-end
-|> ChangesetPersist.Ecto.with_handler(MyApp.Repo)
-|> Comp.run!()
-```
-
-For testing, use the test handler to stub responses and record calls:
-
-```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.ChangesetPersist
-
-# Define a simple schema for testing
-defmodule User do
-  use Ecto.Schema
-  import Ecto.Changeset
-
-  embedded_schema do
-    field :name, :string
-  end
-
-  def changeset(user, attrs) do
-    user |> cast(attrs, [:name]) |> validate_required([:name])
-  end
-end
-
-# Test handler applies changeset changes and records all operations
-comp do
-  user <- ChangesetPersist.insert(User.changeset(%User{}, %{name: "Alice"}))
-  _ <- ChangesetPersist.update(User.changeset(user, %{name: "Bob"}))
-  user
-end
-|> ChangesetPersist.Test.with_handler(&ChangesetPersist.Test.default_handler/1)
-|> Comp.run!()
-#=> {%User{name: "Alice"}, [{:insert, %Ecto.Changeset{...}}, {:update, %Ecto.Changeset{...}}]}
-
-# Custom handler for specific test scenarios
-changeset = User.changeset(%User{}, %{name: "Test"})
-
-comp do
-  user <- ChangesetPersist.insert(changeset)
-  user
-end
-|> ChangesetPersist.Test.with_handler(fn
-  %ChangesetPersist.Insert{input: _cs} -> %User{id: "test-id", name: "Stubbed"}
-  %ChangesetPersist.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
-end)
-|> Comp.run!()
-#=> {%User{id: "test-id", name: "Stubbed"}, [{:insert, %Ecto.Changeset{...}}]}
-```
-
-> **Note**: ChangesetPersist wraps Ecto Repo operations. See the module docs for
-> `insert`, `update`, `delete`, `insert_all`, `update_all`, `delete_all`, and `upsert`.
 
 ### Serializable Coroutines
 
@@ -2540,7 +2601,7 @@ defcomp handle(%ToggleTodo{id: id}) do
   ctx <- Reader.ask(CommandContext)
   todo <- Repository.get_todo!(ctx.tenant_id, id)  # Port effect
   changeset = Todo.changeset(todo, %{completed: not todo.completed})
-  updated <- ChangesetPersist.update(changeset)    # Persist effect
+  updated <- DB.update(changeset)                   # DB effect
   {:ok, updated}
 end
 ```
@@ -2551,7 +2612,7 @@ The `Run.execute/2` function composes different handler stacks based on mode:
 # Production: real database
 Run.execute(operation, mode: :database, tenant_id: tenant_id)
 # -> Port.with_handler(%{Repository.Ecto => :direct})
-# -> ChangesetPersist.Ecto.with_handler(Repo)
+# -> DB.Ecto.with_handler(Repo)
 
 # Testing: pure in-memory
 Run.execute(operation, mode: :in_memory, tenant_id: tenant_id)
@@ -2592,13 +2653,13 @@ end
 
 To enable property-based testing in your project:
 
-1. **Structure domain logic with effects** - Use `Port`, `ChangesetPersist`, `Reader`, etc.
+1. **Structure domain logic with effects** - Use `Port`, `DB`, `Reader`, etc.
    instead of direct Repo calls or process dictionary access.
 
 2. **Create in-memory implementations** - For each effect that touches external state,
    provide a pure alternative. Skuld includes test handlers for common effects:
    - `Port.with_test_handler/2` - Stub responses for external calls
-   - `ChangesetPersist.Test.with_handler/2` - Stub persist operations
+   - `DB.Test.with_handler/2` - Stub persist operations
    - `Fresh.with_test_handler/2` - Deterministic UUID generation
 
 3. **Write domain-specific generators** - Create StreamData generators for your
