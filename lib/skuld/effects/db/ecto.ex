@@ -52,6 +52,18 @@ if Code.ensure_loaded?(Ecto) do
 
     Handles all DB operations (writes and transactions) using the given Ecto Repo.
 
+    ## Options
+
+    All options except `:preserve_state_on_rollback` are passed through to
+    `Repo.transaction/2` (e.g. `:timeout`, `:isolation`).
+
+      * `:preserve_state_on_rollback` - list of `env.state` keys whose values
+        should be kept from the post-transaction env even when the transaction
+        rolls back. By default, **all** env state accumulated inside a rolled-back
+        transaction is discarded (restored to pre-transaction values). Use this
+        to opt specific effects out of rollback — e.g. error counters or metrics
+        that should survive.
+
     ## Example
 
         computation
@@ -62,13 +74,28 @@ if Code.ensure_loaded?(Ecto) do
         computation
         |> DB.Ecto.with_handler(MyApp.Repo, timeout: 15_000)
         |> Comp.run!()
+
+        # Preserve specific state keys on rollback
+        computation
+        |> DB.Ecto.with_handler(MyApp.Repo,
+          preserve_state_on_rollback: [Writer.state_key(:metrics)]
+        )
+        |> Comp.run!()
     """
     @spec with_handler(Types.computation(), module(), keyword()) :: Types.computation()
     def with_handler(comp, repo, opts \\ []) do
+      {preserve_keys, ecto_opts} = Keyword.pop(opts, :preserve_state_on_rollback, [])
+
+      config = %{
+        repo: repo,
+        ecto_opts: ecto_opts,
+        preserve_state_on_rollback: preserve_keys
+      }
+
       comp
       |> Comp.scoped(fn env ->
         previous = Env.get_state(env, @state_key)
-        modified = Env.put_state(env, @state_key, {repo, opts})
+        modified = Env.put_state(env, @state_key, config)
 
         finally_k = fn v, e ->
           restored_env =
@@ -91,6 +118,7 @@ if Code.ensure_loaded?(Ecto) do
         catch
           DB.Ecto -> MyApp.Repo
           DB.Ecto -> {MyApp.Repo, timeout: 5000}
+          DB.Ecto -> {MyApp.Repo, preserve_state_on_rollback: [key]}
     """
     @impl Skuld.Comp.IInstall
     def __handle__(comp, {repo, opts}) when is_atom(repo) and is_list(opts) do
@@ -256,8 +284,8 @@ if Code.ensure_loaded?(Ecto) do
 
     @impl Skuld.Comp.IHandle
     def handle(%DB.Transact{comp: inner_comp}, env, k) do
-      {repo, opts} = get_config!(env)
-      handle_transact(inner_comp, repo, opts, env, k)
+      config = get_config!(env)
+      handle_transact(inner_comp, config, env, k)
     end
 
     @impl Skuld.Comp.IHandle
@@ -286,7 +314,7 @@ if Code.ensure_loaded?(Ecto) do
         nil ->
           raise "DB.Ecto handler not installed. Use DB.Ecto.with_handler/2"
 
-        {repo, _opts} ->
+        %{repo: repo} ->
           repo
       end
     end
@@ -296,7 +324,7 @@ if Code.ensure_loaded?(Ecto) do
         nil ->
           raise "DB.Ecto handler not installed. Use DB.Ecto.with_handler/2"
 
-        config ->
+        %{} = config ->
           config
       end
     end
@@ -367,14 +395,16 @@ if Code.ensure_loaded?(Ecto) do
     #############################################################################
 
     # Handle the transact operation - run inner comp in Ecto transaction
-    defp handle_transact(inner_comp, repo, opts, env, k) do
+    defp handle_transact(inner_comp, config, env, k) do
+      %{repo: repo, ecto_opts: ecto_opts} = config
+
       result =
         repo.transaction(
-          fn -> execute_in_transaction(inner_comp, repo, env) end,
-          opts
+          fn -> execute_in_transaction(inner_comp, config, env) end,
+          ecto_opts
         )
 
-      handle_result(result, env, k)
+      handle_result(result, config, env, k)
     end
 
     # Marker struct for explicit rollback (not a sentinel - just a result value
@@ -385,7 +415,9 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     # Run the computation inside the Ecto transaction
-    defp execute_in_transaction(comp, repo, env) do
+    defp execute_in_transaction(comp, config, env) do
+      %{repo: repo} = config
+
       # Install a handler that overrides rollback and nested transact,
       # while delegating all other operations (writes) to the main handler.
       wrapped =
@@ -398,8 +430,9 @@ if Code.ensure_loaded?(Ecto) do
             {%RollbackMarker{reason: reason}, e}
 
           %DB.Transact{comp: nested_comp}, e, nested_k ->
-            # Nested transact creates a savepoint via Ecto
-            handle_transact(nested_comp, repo, [], e, nested_k)
+            # Nested transact creates a savepoint via Ecto.
+            # Nested transactions inherit the parent's config.
+            handle_transact(nested_comp, config, e, nested_k)
 
           op, e, inner_k ->
             # All other operations (writes) - delegate to main handler
@@ -425,20 +458,51 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
+    # Restore env state to pre-transaction values on rollback, keeping only
+    # the preserve_state_on_rollback keys from the post-transaction env.
+    defp restore_state_on_rollback(pre_tx_env, final_env, preserve_keys) do
+      preserved_state =
+        Enum.reduce(preserve_keys, %{}, fn key, acc ->
+          case Map.fetch(final_env.state, key) do
+            {:ok, val} -> Map.put(acc, key, val)
+            :error -> acc
+          end
+        end)
+
+      %{pre_tx_env | state: Map.merge(pre_tx_env.state, preserved_state)}
+    end
+
     # Handle the transaction result
-    defp handle_result({:ok, {:ok, value, final_env}}, _env, k) do
-      # Transaction committed successfully
+    defp handle_result({:ok, {:ok, value, final_env}}, _config, _env, k) do
+      # Transaction committed successfully — use post-transaction env as-is
       k.(value, final_env)
     end
 
-    defp handle_result({:error, {:sentinel, sentinel, final_env}}, _env, _k) do
-      # Sentinel (Throw, Suspend, etc.) - transaction rolled back, propagate
-      {sentinel, final_env}
+    defp handle_result(
+           {:error, {:sentinel, sentinel, final_env}},
+           config,
+           env,
+           _k
+         ) do
+      # Sentinel (Throw, Suspend, etc.) - transaction rolled back.
+      # Restore pre-transaction env state (except preserved keys).
+      restored_env =
+        restore_state_on_rollback(env, final_env, config.preserve_state_on_rollback)
+
+      {sentinel, restored_env}
     end
 
-    defp handle_result({:error, {:rollback, reason, final_env}}, _env, k) do
-      # Explicit rollback - return {:rolled_back, reason}
-      k.({:rolled_back, reason}, final_env)
+    defp handle_result(
+           {:error, {:rollback, reason, final_env}},
+           config,
+           env,
+           k
+         ) do
+      # Explicit rollback - restore pre-transaction env state (except preserved keys).
+      restored_env =
+        restore_state_on_rollback(env, final_env, config.preserve_state_on_rollback)
+
+      k.({:rolled_back, reason}, restored_env)
     end
   end
 end

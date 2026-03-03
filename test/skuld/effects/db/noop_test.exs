@@ -262,6 +262,163 @@ defmodule Skuld.Effects.DB.NoopTest do
     end
   end
 
+  describe "transactional state rollback" do
+    alias Skuld.Effects.EventAccumulator
+    alias Skuld.Effects.Writer
+
+    test "explicit rollback restores env state to pre-transaction values" do
+      computation =
+        comp do
+          _ <- EventAccumulator.emit(:before_tx)
+
+          result <-
+            DB.transact(
+              comp do
+                _ <- EventAccumulator.emit(:inside_tx_1)
+                _ <- EventAccumulator.emit(:inside_tx_2)
+                _ <- DB.rollback(:test_reason)
+                return(:never_reached)
+              end
+            )
+
+          _ <- EventAccumulator.emit(:after_rollback)
+          return(result)
+        end
+        |> DB.Noop.with_handler()
+        |> EventAccumulator.with_handler(output: &{&1, &2})
+
+      {result, events} = Comp.run!(computation)
+      assert {:rolled_back, :test_reason} = result
+      # Events from inside the rolled-back transaction should be discarded
+      assert events == [:before_tx, :after_rollback]
+    end
+
+    test "throw rollback restores env state to pre-transaction values" do
+      computation =
+        comp do
+          _ <- EventAccumulator.emit(:before_tx)
+
+          result <-
+            DB.transact(
+              comp do
+                _ <- EventAccumulator.emit(:inside_tx)
+                _ <- Throw.throw(:something_failed)
+                return(:never_reached)
+              end
+            )
+
+          return(result)
+        end
+        |> DB.Noop.with_handler()
+        |> EventAccumulator.with_handler(output: &{&1, &2})
+        |> Throw.with_handler()
+
+      # The throw propagates through EventAccumulator's with_handler scope,
+      # which runs the output function via leave_scope, producing {throw, events}.
+      # Events from inside the rolled-back transaction should be discarded.
+      {result, _env} = Comp.run(computation)
+      assert {%Comp.Throw{error: :something_failed}, events} = result
+      assert events == [:before_tx]
+    end
+
+    test "successful commit preserves env state from transaction" do
+      computation =
+        comp do
+          _ <- EventAccumulator.emit(:before_tx)
+
+          result <-
+            DB.transact(
+              comp do
+                _ <- EventAccumulator.emit(:inside_tx)
+                return(:ok)
+              end
+            )
+
+          _ <- EventAccumulator.emit(:after_tx)
+          return(result)
+        end
+        |> DB.Noop.with_handler()
+        |> EventAccumulator.with_handler(output: &{&1, &2})
+
+      {result, events} = Comp.run!(computation)
+      assert :ok = result
+      # Events from committed transaction should be preserved
+      assert events == [:before_tx, :inside_tx, :after_tx]
+    end
+
+    test "preserve_state_on_rollback keeps specified keys on rollback" do
+      metrics_key = Writer.state_key(:metrics)
+
+      computation =
+        comp do
+          _ <- EventAccumulator.emit(:before_tx)
+          _ <- Writer.tell(:metrics, :metric_before)
+
+          result <-
+            DB.transact(
+              comp do
+                _ <- EventAccumulator.emit(:inside_tx)
+                _ <- Writer.tell(:metrics, :metric_inside)
+                _ <- DB.rollback(:test_reason)
+                return(:never_reached)
+              end
+            )
+
+          return(result)
+        end
+        |> DB.Noop.with_handler(preserve_state_on_rollback: [metrics_key])
+        |> EventAccumulator.with_handler(output: &{&1, &2})
+        |> Writer.with_handler([],
+          tag: :metrics,
+          output: fn {r, events}, metrics ->
+            {r, events, Enum.reverse(metrics)}
+          end
+        )
+
+      {result, events, metrics} = Comp.run!(computation)
+      assert {:rolled_back, :test_reason} = result
+      # EventAccumulator events rolled back (not in preserve list)
+      assert events == [:before_tx]
+      # Metrics preserved (in preserve list)
+      assert metrics == [:metric_before, :metric_inside]
+    end
+
+    test "nested transaction rollback restores inner state only" do
+      computation =
+        comp do
+          _ <- EventAccumulator.emit(:outer_before)
+
+          result <-
+            DB.transact(
+              comp do
+                _ <- EventAccumulator.emit(:outer_inside)
+
+                inner_result <-
+                  DB.transact(
+                    comp do
+                      _ <- EventAccumulator.emit(:inner_tx)
+                      _ <- DB.rollback(:inner_reason)
+                      return(:never_reached)
+                    end
+                  )
+
+                _ <- EventAccumulator.emit(:outer_after_inner)
+                return({:outer_ok, inner_result})
+              end
+            )
+
+          return(result)
+        end
+        |> DB.Noop.with_handler()
+        |> EventAccumulator.with_handler(output: &{&1, &2})
+
+      {result, events} = Comp.run!(computation)
+      assert {:outer_ok, {:rolled_back, :inner_reason}} = result
+      # Inner transaction events discarded, outer preserved
+      assert events == [:outer_before, :outer_inside, :outer_after_inner]
+    end
+  end
+
   describe "IInstall" do
     test "installs via catch clause syntax" do
       computation =
