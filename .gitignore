@@ -33,3 +33,7 @@ skuld-*.tar
 /priv/plts/
 
 /freyja
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
