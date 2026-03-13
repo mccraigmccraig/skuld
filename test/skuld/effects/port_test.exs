@@ -7,45 +7,48 @@ defmodule Skuld.Effects.PortTest do
   alias Skuld.Effects.Throw
 
   # Test module - returns {:ok, _} | {:error, _} result tuples
-  # Accepts map params with pattern matching
+  # Accepts positional args
   defmodule TestQueries do
-    def find_user(%{id: id}) do
+    def find_user(id) do
       {:ok, %{id: id, name: "User #{id}"}}
     end
 
-    def find_user_or_error(%{id: id}) when id < 0 do
+    def find_user_or_error(id) when id < 0 do
       {:error, {:not_found, :user, id}}
     end
 
-    def find_user_or_error(%{id: id}) do
+    def find_user_or_error(id) do
       {:ok, %{id: id, name: "User #{id}"}}
     end
 
-    def list_users(%{limit: limit}) do
+    def list_users(limit) do
       {:ok, Enum.map(1..limit, &%{id: &1, name: "User #{&1}"})}
     end
 
-    def failing_request(_params) do
+    def failing_request(_arg) do
       raise "Request failed!"
     end
 
-    def multi_param(%{id: id, name: name}) do
+    def multi_param(id, name) do
       {:ok, %{id: id, name: name}}
+    end
+
+    def no_args do
+      {:ok, :healthy}
     end
   end
 
-  # Test handler module - wraps result in {:handled, _}
-  defmodule TestPortHandler do
-    def handle_port(mod, name, params) do
-      result = apply(mod, name, [params])
-      {:ok, {:handled, result}}
+  # Test implementation module - dispatches to same-named functions
+  defmodule TestImplModule do
+    def find_user(id) do
+      {:ok, %{id: id, name: "Impl #{id}"}}
     end
   end
 
   describe "request/3" do
     test "creates a request computation returning result tuple" do
       comp =
-        Port.request(TestQueries, :find_user, %{id: 123})
+        Port.request(TestQueries, :find_user, [123])
         |> Port.with_handler(%{TestQueries => :direct})
 
       {result, _env} = Comp.run(comp)
@@ -54,25 +57,25 @@ defmodule Skuld.Effects.PortTest do
 
     test "returns error tuple as-is" do
       comp =
-        Port.request(TestQueries, :find_user_or_error, %{id: -1})
+        Port.request(TestQueries, :find_user_or_error, [-1])
         |> Port.with_handler(%{TestQueries => :direct})
 
       {result, _env} = Comp.run(comp)
       assert {:error, {:not_found, :user, -1}} = result
     end
 
-    test "default params is empty map" do
+    test "default args is empty list" do
       comp =
-        Port.request(TestQueries, :list_users, %{limit: 2})
+        Port.request(TestQueries, :no_args)
         |> Port.with_handler(%{TestQueries => :direct})
 
       {result, _env} = Comp.run(comp)
-      assert {:ok, [%{id: 1}, %{id: 2}]} = result
+      assert {:ok, :healthy} = result
     end
 
-    test "handles multiple map params" do
+    test "handles multiple positional args" do
       comp =
-        Port.request(TestQueries, :multi_param, %{id: 42, name: "Alice"})
+        Port.request(TestQueries, :multi_param, [42, "Alice"])
         |> Port.with_handler(%{TestQueries => :direct})
 
       {result, _env} = Comp.run(comp)
@@ -83,7 +86,7 @@ defmodule Skuld.Effects.PortTest do
   describe "with_handler/2 - :direct resolver" do
     test "dispatches directly to module function" do
       comp =
-        Port.request(TestQueries, :find_user, %{id: 42})
+        Port.request(TestQueries, :find_user, [42])
         |> Port.with_handler(%{TestQueries => :direct})
 
       {result, _env} = Comp.run(comp)
@@ -94,7 +97,7 @@ defmodule Skuld.Effects.PortTest do
   describe "request!/3" do
     test "unwraps {:ok, value} and returns value" do
       comp =
-        Port.request!(TestQueries, :find_user, %{id: 42})
+        Port.request!(TestQueries, :find_user, [42])
         |> Port.with_handler(%{TestQueries => :direct})
         |> Throw.with_handler()
 
@@ -104,7 +107,7 @@ defmodule Skuld.Effects.PortTest do
 
     test "dispatches Throw on {:error, reason}" do
       comp =
-        Port.request!(TestQueries, :find_user_or_error, %{id: -1})
+        Port.request!(TestQueries, :find_user_or_error, [-1])
         |> Port.with_handler(%{TestQueries => :direct})
         |> Throw.with_handler()
 
@@ -114,7 +117,7 @@ defmodule Skuld.Effects.PortTest do
 
     test "unwraps list results" do
       comp =
-        Port.request!(TestQueries, :list_users, %{limit: 3})
+        Port.request!(TestQueries, :list_users, [3])
         |> Port.with_handler(%{TestQueries => :direct})
         |> Throw.with_handler()
 
@@ -124,11 +127,11 @@ defmodule Skuld.Effects.PortTest do
 
     test "works with test handler stubs" do
       responses = %{
-        Port.key(TestQueries, :find_user, %{id: 999}) => {:ok, %{id: 999, name: "Stubbed"}}
+        Port.key(TestQueries, :find_user, [999]) => {:ok, %{id: 999, name: "Stubbed"}}
       }
 
       comp =
-        Port.request!(TestQueries, :find_user, %{id: 999})
+        Port.request!(TestQueries, :find_user, [999])
         |> Port.with_test_handler(responses)
         |> Throw.with_handler()
 
@@ -138,11 +141,11 @@ defmodule Skuld.Effects.PortTest do
 
     test "throws on stubbed error response" do
       responses = %{
-        Port.key(TestQueries, :find_user, %{id: 404}) => {:error, :user_not_found}
+        Port.key(TestQueries, :find_user, [404]) => {:error, :user_not_found}
       }
 
       comp =
-        Port.request!(TestQueries, :find_user, %{id: 404})
+        Port.request!(TestQueries, :find_user, [404])
         |> Port.with_test_handler(responses)
         |> Throw.with_handler()
 
@@ -153,12 +156,12 @@ defmodule Skuld.Effects.PortTest do
 
   describe "with_handler/2 - function resolver" do
     test "dispatches to anonymous function" do
-      resolver = fn _mod, _name, %{id: id} ->
+      resolver = fn _mod, _name, [id] ->
         {:ok, %{id: id, name: "Custom #{id}"}}
       end
 
       comp =
-        Port.request(TestQueries, :find_user, %{id: 99})
+        Port.request(TestQueries, :find_user, [99])
         |> Port.with_handler(%{TestQueries => resolver})
 
       {result, _env} = Comp.run(comp)
@@ -168,14 +171,14 @@ defmodule Skuld.Effects.PortTest do
 
   describe "with_handler/2 - {module, function} resolver" do
     defmodule MFResolver do
-      def resolve(_mod, _name, %{id: id}) do
+      def resolve(_mod, _name, [id]) do
         {:ok, %{id: id, name: "MF #{id}"}}
       end
     end
 
     test "dispatches to module/function tuple" do
       comp =
-        Port.request(TestQueries, :find_user, %{id: 77})
+        Port.request(TestQueries, :find_user, [77])
         |> Port.with_handler(%{TestQueries => {MFResolver, :resolve}})
 
       {result, _env} = Comp.run(comp)
@@ -184,20 +187,20 @@ defmodule Skuld.Effects.PortTest do
   end
 
   describe "with_handler/2 - module resolver" do
-    test "dispatches to module with handle_port/3" do
+    test "dispatches to implementation module functions directly" do
       comp =
-        Port.request(TestQueries, :find_user, %{id: 55})
-        |> Port.with_handler(%{TestQueries => TestPortHandler})
+        Port.request(TestQueries, :find_user, [55])
+        |> Port.with_handler(%{TestQueries => TestImplModule})
 
       {result, _env} = Comp.run(comp)
-      assert {:ok, {:handled, {:ok, %{id: 55, name: "User 55"}}}} = result
+      assert {:ok, %{id: 55, name: "Impl 55"}} = result
     end
   end
 
   describe "with_handler/2 - error handling" do
     test "throws on unknown module" do
       comp =
-        Port.request(UnknownModule, :some_request, %{})
+        Port.request(UnknownModule, :some_request, [])
         |> Port.with_handler(%{TestQueries => :direct})
         |> Throw.with_handler()
 
@@ -207,7 +210,7 @@ defmodule Skuld.Effects.PortTest do
 
     test "throws on request exception" do
       comp =
-        Port.request(TestQueries, :failing_request, %{})
+        Port.request(TestQueries, :failing_request, [:anything])
         |> Port.with_handler(%{TestQueries => :direct})
         |> Throw.with_handler()
 
@@ -221,11 +224,11 @@ defmodule Skuld.Effects.PortTest do
   describe "with_test_handler/2" do
     test "returns stubbed response for matching key" do
       responses = %{
-        Port.key(TestQueries, :find_user, %{id: 123}) => {:ok, %{id: 123, name: "Stubbed Alice"}}
+        Port.key(TestQueries, :find_user, [123]) => {:ok, %{id: 123, name: "Stubbed Alice"}}
       }
 
       comp =
-        Port.request(TestQueries, :find_user, %{id: 123})
+        Port.request(TestQueries, :find_user, [123])
         |> Port.with_test_handler(responses)
 
       {result, _env} = Comp.run(comp)
@@ -234,11 +237,11 @@ defmodule Skuld.Effects.PortTest do
 
     test "throws on missing stub" do
       responses = %{
-        Port.key(TestQueries, :find_user, %{id: 123}) => {:ok, %{id: 123, name: "Alice"}}
+        Port.key(TestQueries, :find_user, [123]) => {:ok, %{id: 123, name: "Alice"}}
       }
 
       comp =
-        Port.request(TestQueries, :find_user, %{id: 999})
+        Port.request(TestQueries, :find_user, [999])
         |> Port.with_test_handler(responses)
         |> Throw.with_handler()
 
@@ -248,26 +251,24 @@ defmodule Skuld.Effects.PortTest do
 
     test "can stub error responses" do
       responses = %{
-        Port.key(TestQueries, :find_user, %{id: 404}) => {:error, :not_found}
+        Port.key(TestQueries, :find_user, [404]) => {:error, :not_found}
       }
 
       comp =
-        Port.request(TestQueries, :find_user, %{id: 404})
+        Port.request(TestQueries, :find_user, [404])
         |> Port.with_test_handler(responses)
 
       {result, _env} = Comp.run(comp)
       assert {:error, :not_found} = result
     end
 
-    test "matches multi-param keys regardless of internal map ordering" do
-      # Maps are order-independent by nature
+    test "matches multi-arg keys by position" do
       responses = %{
-        Port.key(TestQueries, :multi_param, %{name: "Bob", id: 99}) =>
-          {:ok, %{id: 99, name: "Stubbed Bob"}}
+        Port.key(TestQueries, :multi_param, [99, "Bob"]) => {:ok, %{id: 99, name: "Stubbed Bob"}}
       }
 
       comp =
-        Port.request(TestQueries, :multi_param, %{id: 99, name: "Bob"})
+        Port.request(TestQueries, :multi_param, [99, "Bob"])
         |> Port.with_test_handler(responses)
 
       {result, _env} = Comp.run(comp)
@@ -278,15 +279,15 @@ defmodule Skuld.Effects.PortTest do
   describe "with_test_handler/2 - fallback option" do
     test "uses fallback function when key not found" do
       responses = %{
-        Port.key(TestQueries, :find_user, %{id: 1}) => {:ok, %{id: 1, name: "Stubbed"}}
+        Port.key(TestQueries, :find_user, [1]) => {:ok, %{id: 1, name: "Stubbed"}}
       }
 
       fallback = fn
-        TestQueries, :find_user, %{id: id} -> {:ok, %{id: id, name: "Fallback #{id}"}}
+        TestQueries, :find_user, [id] -> {:ok, %{id: id, name: "Fallback #{id}"}}
       end
 
       comp =
-        Port.request(TestQueries, :find_user, %{id: 999})
+        Port.request(TestQueries, :find_user, [999])
         |> Port.with_test_handler(responses, fallback: fallback)
 
       {result, _env} = Comp.run(comp)
@@ -295,15 +296,15 @@ defmodule Skuld.Effects.PortTest do
 
     test "prefers exact match over fallback" do
       responses = %{
-        Port.key(TestQueries, :find_user, %{id: 123}) => {:ok, %{id: 123, name: "Exact"}}
+        Port.key(TestQueries, :find_user, [123]) => {:ok, %{id: 123, name: "Exact"}}
       }
 
       fallback = fn
-        TestQueries, :find_user, %{id: _id} -> {:ok, %{name: "Fallback"}}
+        TestQueries, :find_user, [_id] -> {:ok, %{name: "Fallback"}}
       end
 
       comp =
-        Port.request(TestQueries, :find_user, %{id: 123})
+        Port.request(TestQueries, :find_user, [123])
         |> Port.with_test_handler(responses, fallback: fallback)
 
       {result, _env} = Comp.run(comp)
@@ -314,16 +315,16 @@ defmodule Skuld.Effects.PortTest do
       responses = %{}
 
       fallback = fn
-        TestQueries, :find_user, %{id: id} -> {:ok, %{id: id, name: "User"}}
-        TestQueries, :list_users, %{limit: n} -> {:ok, Enum.map(1..n, &%{id: &1})}
+        TestQueries, :find_user, [id] -> {:ok, %{id: id, name: "User"}}
+        TestQueries, :list_users, [n] -> {:ok, Enum.map(1..n, &%{id: &1})}
       end
 
       comp1 =
-        Port.request(TestQueries, :find_user, %{id: 42})
+        Port.request(TestQueries, :find_user, [42])
         |> Port.with_test_handler(responses, fallback: fallback)
 
       comp2 =
-        Port.request(TestQueries, :list_users, %{limit: 2})
+        Port.request(TestQueries, :list_users, [2])
         |> Port.with_test_handler(responses, fallback: fallback)
 
       {result1, _} = Comp.run(comp1)
@@ -337,19 +338,19 @@ defmodule Skuld.Effects.PortTest do
       responses = %{}
 
       fallback = fn
-        TestQueries, :find_user, %{id: _id} ->
+        TestQueries, :find_user, [_id] ->
           {:ok, %{name: "Found"}}
           # No clause for :other_query
       end
 
       comp =
-        Port.request(TestQueries, :other_query, %{foo: :bar})
+        Port.request(TestQueries, :other_query, [:bar])
         |> Port.with_test_handler(responses, fallback: fallback)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
 
-      assert %ThrowResult{error: {:port_not_handled, TestQueries, :other_query, %{foo: :bar}, _}} =
+      assert %ThrowResult{error: {:port_not_handled, TestQueries, :other_query, [:bar], _}} =
                result
     end
   end
@@ -357,11 +358,11 @@ defmodule Skuld.Effects.PortTest do
   describe "with_fn_handler/2" do
     test "dispatches to handler function" do
       handler = fn
-        TestQueries, :find_user, %{id: id} -> {:ok, %{id: id, name: "FnHandler"}}
+        TestQueries, :find_user, [id] -> {:ok, %{id: id, name: "FnHandler"}}
       end
 
       comp =
-        Port.request(TestQueries, :find_user, %{id: 42})
+        Port.request(TestQueries, :find_user, [42])
         |> Port.with_fn_handler(handler)
 
       {result, _env} = Comp.run(comp)
@@ -372,16 +373,16 @@ defmodule Skuld.Effects.PortTest do
       expected_id = 123
 
       handler = fn
-        TestQueries, :find_user, %{id: ^expected_id} -> {:ok, %{name: "Expected"}}
-        TestQueries, :find_user, %{id: _other} -> {:ok, %{name: "Other"}}
+        TestQueries, :find_user, [^expected_id] -> {:ok, %{name: "Expected"}}
+        TestQueries, :find_user, [_other] -> {:ok, %{name: "Other"}}
       end
 
       comp1 =
-        Port.request(TestQueries, :find_user, %{id: 123})
+        Port.request(TestQueries, :find_user, [123])
         |> Port.with_fn_handler(handler)
 
       comp2 =
-        Port.request(TestQueries, :find_user, %{id: 456})
+        Port.request(TestQueries, :find_user, [456])
         |> Port.with_fn_handler(handler)
 
       {result1, _} = Comp.run(comp1)
@@ -393,16 +394,16 @@ defmodule Skuld.Effects.PortTest do
 
     test "supports pattern matching with guards" do
       handler = fn
-        TestQueries, :list_users, %{limit: n} when n > 100 -> {:error, :limit_too_high}
-        TestQueries, :list_users, %{limit: n} -> {:ok, Enum.to_list(1..n)}
+        TestQueries, :list_users, [n] when n > 100 -> {:error, :limit_too_high}
+        TestQueries, :list_users, [n] -> {:ok, Enum.to_list(1..n)}
       end
 
       comp1 =
-        Port.request(TestQueries, :list_users, %{limit: 50})
+        Port.request(TestQueries, :list_users, [50])
         |> Port.with_fn_handler(handler)
 
       comp2 =
-        Port.request(TestQueries, :list_users, %{limit: 200})
+        Port.request(TestQueries, :list_users, [200])
         |> Port.with_fn_handler(handler)
 
       {result1, _} = Comp.run(comp1)
@@ -415,11 +416,11 @@ defmodule Skuld.Effects.PortTest do
 
     test "supports wildcard matching" do
       handler = fn
-        TestQueries, _any_function, _any_params -> :wildcard_matched
+        TestQueries, _any_function, _any_args -> :wildcard_matched
       end
 
       comp =
-        Port.request(TestQueries, :anything, %{foo: :bar, baz: 123})
+        Port.request(TestQueries, :anything, [:foo, :bar, 123])
         |> Port.with_fn_handler(handler)
 
       {result, _env} = Comp.run(comp)
@@ -428,27 +429,27 @@ defmodule Skuld.Effects.PortTest do
 
     test "returns error for unhandled request" do
       handler = fn
-        TestQueries, :known_query, _params -> :ok
+        TestQueries, :known_query, _args -> :ok
       end
 
       comp =
-        Port.request(TestQueries, :unknown_query, %{id: 1})
+        Port.request(TestQueries, :unknown_query, [1])
         |> Port.with_fn_handler(handler)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
 
-      assert %ThrowResult{error: {:port_not_handled, TestQueries, :unknown_query, %{id: 1}, _}} =
+      assert %ThrowResult{error: {:port_not_handled, TestQueries, :unknown_query, [1], _}} =
                result
     end
 
     test "returns error for handler exception" do
       handler = fn
-        TestQueries, :find_user, _params -> raise "Handler exploded!"
+        TestQueries, :find_user, _args -> raise "Handler exploded!"
       end
 
       comp =
-        Port.request(TestQueries, :find_user, %{id: 1})
+        Port.request(TestQueries, :find_user, [1])
         |> Port.with_fn_handler(handler)
         |> Throw.with_handler()
 
@@ -463,16 +464,16 @@ defmodule Skuld.Effects.PortTest do
       end
 
       handler = fn
-        TestQueries, :find_user, %{id: id} -> {:ok, %{source: :test, id: id}}
-        OtherQueries, :find_user, %{id: id} -> {:ok, %{source: :other, id: id}}
+        TestQueries, :find_user, [id] -> {:ok, %{source: :test, id: id}}
+        OtherQueries, :find_user, [id] -> {:ok, %{source: :other, id: id}}
       end
 
       comp1 =
-        Port.request(TestQueries, :find_user, %{id: 1})
+        Port.request(TestQueries, :find_user, [1])
         |> Port.with_fn_handler(handler)
 
       comp2 =
-        Port.request(OtherQueries, :find_user, %{id: 2})
+        Port.request(OtherQueries, :find_user, [2])
         |> Port.with_fn_handler(handler)
 
       {result1, _} = Comp.run(comp1)
@@ -484,48 +485,53 @@ defmodule Skuld.Effects.PortTest do
   end
 
   describe "key/3" do
-    test "produces same key for maps regardless of construction order" do
-      key1 = Port.key(TestQueries, :find, %{a: 1, b: 2})
-      key2 = Port.key(TestQueries, :find, %{b: 2, a: 1})
+    test "same args produce same key" do
+      key1 = Port.key(TestQueries, :find_user, [1, 2])
+      key2 = Port.key(TestQueries, :find_user, [1, 2])
       assert key1 == key2
     end
 
-    test "different params produce different keys" do
-      key1 = Port.key(TestQueries, :find, %{id: 1})
-      key2 = Port.key(TestQueries, :find, %{id: 2})
+    test "different args produce different keys" do
+      key1 = Port.key(TestQueries, :find_user, [1])
+      key2 = Port.key(TestQueries, :find_user, [2])
       assert key1 != key2
     end
 
-    test "handles nested maps" do
-      key1 = Port.key(TestQueries, :find, %{filter: %{a: 1, b: 2}})
-      key2 = Port.key(TestQueries, :find, %{filter: %{b: 2, a: 1}})
+    test "arg order matters" do
+      key1 = Port.key(TestQueries, :multi_param, [1, "a"])
+      key2 = Port.key(TestQueries, :multi_param, ["a", 1])
+      assert key1 != key2
+    end
+
+    test "handles nested maps in args" do
+      key1 = Port.key(TestQueries, :find_user, [%{a: 1, b: 2}])
+      key2 = Port.key(TestQueries, :find_user, [%{b: 2, a: 1}])
       assert key1 == key2
     end
 
-    test "handles structs in params" do
-      # Use URI struct as a test case
-      key1 = Port.key(TestQueries, :find, %{uri: %URI{host: "example.com", port: 80}})
-      key2 = Port.key(TestQueries, :find, %{uri: %URI{host: "example.com", port: 80}})
+    test "handles structs in args" do
+      key1 = Port.key(TestQueries, :find_user, [%URI{host: "example.com", port: 80}])
+      key2 = Port.key(TestQueries, :find_user, [%URI{host: "example.com", port: 80}])
       assert key1 == key2
     end
 
-    test "handles regular lists in params (preserves order)" do
-      key1 = Port.key(TestQueries, :find, %{ids: [1, 2, 3]})
-      key2 = Port.key(TestQueries, :find, %{ids: [1, 2, 3]})
-      key3 = Port.key(TestQueries, :find, %{ids: [3, 2, 1]})
+    test "handles lists in args (preserves order)" do
+      key1 = Port.key(TestQueries, :find_user, [[1, 2, 3]])
+      key2 = Port.key(TestQueries, :find_user, [[1, 2, 3]])
+      key3 = Port.key(TestQueries, :find_user, [[3, 2, 1]])
       assert key1 == key2
       assert key1 != key3
     end
 
-    test "handles tuples in params" do
-      key1 = Port.key(TestQueries, :find, %{range: {1, 10}})
-      key2 = Port.key(TestQueries, :find, %{range: {1, 10}})
+    test "handles tuples in args" do
+      key1 = Port.key(TestQueries, :find_user, [{1, 10}])
+      key2 = Port.key(TestQueries, :find_user, [{1, 10}])
       assert key1 == key2
     end
 
-    test "handles nested maps in values" do
-      key1 = Port.key(TestQueries, :find, %{filter: %{a: 1, b: 2}})
-      key2 = Port.key(TestQueries, :find, %{filter: %{b: 2, a: 1}})
+    test "empty args list produces consistent key" do
+      key1 = Port.key(TestQueries, :no_args, [])
+      key2 = Port.key(TestQueries, :no_args, [])
       assert key1 == key2
     end
   end
@@ -533,13 +539,13 @@ defmodule Skuld.Effects.PortTest do
   describe "composition" do
     test "multiple requests in sequence using request!" do
       responses = %{
-        Port.key(TestQueries, :find_user, %{id: 1}) => {:ok, %{id: 1, name: "Alice"}},
-        Port.key(TestQueries, :find_user, %{id: 2}) => {:ok, %{id: 2, name: "Bob"}}
+        Port.key(TestQueries, :find_user, [1]) => {:ok, %{id: 1, name: "Alice"}},
+        Port.key(TestQueries, :find_user, [2]) => {:ok, %{id: 2, name: "Bob"}}
       }
 
       comp =
-        Comp.bind(Port.request!(TestQueries, :find_user, %{id: 1}), fn user1 ->
-          Comp.bind(Port.request!(TestQueries, :find_user, %{id: 2}), fn user2 ->
+        Comp.bind(Port.request!(TestQueries, :find_user, [1]), fn user1 ->
+          Comp.bind(Port.request!(TestQueries, :find_user, [2]), fn user2 ->
             Comp.pure([user1, user2])
           end)
         end)
@@ -552,13 +558,13 @@ defmodule Skuld.Effects.PortTest do
 
     test "multiple requests with request returning result tuples" do
       responses = %{
-        Port.key(TestQueries, :find_user, %{id: 1}) => {:ok, %{id: 1, name: "Alice"}},
-        Port.key(TestQueries, :find_user, %{id: 2}) => {:error, :not_found}
+        Port.key(TestQueries, :find_user, [1]) => {:ok, %{id: 1, name: "Alice"}},
+        Port.key(TestQueries, :find_user, [2]) => {:error, :not_found}
       }
 
       comp =
-        Comp.bind(Port.request(TestQueries, :find_user, %{id: 1}), fn result1 ->
-          Comp.bind(Port.request(TestQueries, :find_user, %{id: 2}), fn result2 ->
+        Comp.bind(Port.request(TestQueries, :find_user, [1]), fn result1 ->
+          Comp.bind(Port.request(TestQueries, :find_user, [2]), fn result2 ->
             Comp.pure([result1, result2])
           end)
         end)
@@ -572,11 +578,11 @@ defmodule Skuld.Effects.PortTest do
       alias Skuld.Effects.State
 
       responses = %{
-        Port.key(TestQueries, :find_user, %{id: 1}) => {:ok, %{id: 1, name: "Alice"}}
+        Port.key(TestQueries, :find_user, [1]) => {:ok, %{id: 1, name: "Alice"}}
       }
 
       comp =
-        Comp.bind(Port.request!(TestQueries, :find_user, %{id: 1}), fn user ->
+        Comp.bind(Port.request!(TestQueries, :find_user, [1]), fn user ->
           Comp.bind(State.get(), fn count ->
             Comp.bind(State.put(count + 1), fn _ ->
               Comp.pure({user, count})
@@ -595,18 +601,18 @@ defmodule Skuld.Effects.PortTest do
   describe "try_catch integration" do
     test "fn_handler works with Throw.try_catch" do
       handler = fn
-        TestQueries, :find_user, %{id: id} when id > 0 -> {:ok, %{id: id}}
-        TestQueries, :find_user, %{id: _id} -> {:error, :invalid_id}
+        TestQueries, :find_user, [id] when id > 0 -> {:ok, %{id: id}}
+        TestQueries, :find_user, [_id] -> {:error, :invalid_id}
       end
 
       comp1 =
-        Port.request(TestQueries, :find_user, %{id: 1})
+        Port.request(TestQueries, :find_user, [1])
         |> Port.with_fn_handler(handler)
         |> Throw.try_catch()
         |> Throw.with_handler()
 
       comp2 =
-        Port.request(TestQueries, :find_user, %{id: -1})
+        Port.request(TestQueries, :find_user, [-1])
         |> Port.with_fn_handler(handler)
         |> Throw.try_catch()
         |> Throw.with_handler()

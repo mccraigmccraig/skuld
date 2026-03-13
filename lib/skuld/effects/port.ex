@@ -5,9 +5,9 @@ defmodule Skuld.Effects.Port do
   This effect lets domain code express "call this function" without binding to a
   particular implementation. Each request specifies:
 
-    * `mod` – module implementing the function
-    * `name` – function name inside `mod`
-    * `params` – map of parameters
+    * `mod` – module identity (contract or implementation module)
+    * `name` – function name
+    * `args` – list of positional arguments
 
   ## Use Cases
 
@@ -31,9 +31,9 @@ defmodule Skuld.Effects.Port do
 
       alias Skuld.Effects.Port
 
-      # Implementation returns result tuples - use Map pattern matching
+      # Implementation returns result tuples
       defmodule MyApp.UserQueries do
-        def find_by_id(%{id: id}) do
+        def find_by_id(id) do
           case Repo.get(User, id) do
             nil -> {:error, {:not_found, User, id}}
             user -> {:ok, user}
@@ -43,7 +43,7 @@ defmodule Skuld.Effects.Port do
 
       # Using request/3 - returns result tuple
       defcomp find_user(id) do
-        result <- Port.request(MyApp.UserQueries, :find_by_id, %{id: id})
+        result <- Port.request(MyApp.UserQueries, :find_by_id, [id])
         case result do
           {:ok, user} -> return(user)
           {:error, _} -> return(nil)
@@ -52,7 +52,7 @@ defmodule Skuld.Effects.Port do
 
       # Using request!/3 - unwraps or throws
       defcomp find_user!(id) do
-        user <- Port.request!(MyApp.UserQueries, :find_by_id, %{id: id})
+        user <- Port.request!(MyApp.UserQueries, :find_by_id, [id])
         return(user)
       end
 
@@ -65,7 +65,7 @@ defmodule Skuld.Effects.Port do
       # Test: stub responses with exact key matching
       find_user!(123)
       |> Port.with_test_handler(%{
-        Port.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => {:ok, %{id: 123, name: "Alice"}}
+        Port.key(MyApp.UserQueries, :find_by_id, [123]) => {:ok, %{id: 123, name: "Alice"}}
       })
       |> Throw.with_handler()
       |> Comp.run!()
@@ -73,7 +73,7 @@ defmodule Skuld.Effects.Port do
       # Test: function-based handler with pattern matching
       find_user!(123)
       |> Port.with_fn_handler(fn
-        MyApp.UserQueries, :find_by_id, %{id: id} -> {:ok, %{id: id, name: "User \#{id}"}}
+        MyApp.UserQueries, :find_by_id, [id] -> {:ok, %{id: id, name: "User \#{id}"}}
       end)
       |> Throw.with_handler()
       |> Comp.run!()
@@ -97,40 +97,40 @@ defmodule Skuld.Effects.Port do
   ## Operation Structs
   #############################################################################
 
-  def_op(Request, [:mod, :name, :params])
+  def_op(Request, [:mod, :name, :args])
 
   #############################################################################
   ## Types
   #############################################################################
 
-  @typedoc "Module implementing `name/1`"
+  @typedoc "Module identity (contract or implementation module)"
   @type port_module :: module()
 
   @typedoc "Function exported by `port_module`"
   @type port_name :: atom()
 
-  @typedoc "Map of parameters"
-  @type params :: map()
+  @typedoc "List of positional arguments"
+  @type args :: list()
 
   @typedoc """
   Registry entry for dispatching requests.
 
-    * `:direct` – call `apply(mod, name, [params])`
-    * `function` (arity 3) – `fun.(mod, name, params)`
-    * `{module, function}` – invokes `apply(module, function, [mod, name, params])`
-    * `module` – invokes `module.handle_port(mod, name, params)`
+    * `:direct` – call `apply(mod, name, args)`
+    * `function` (arity 3) – `fun.(mod, name, args)`
+    * `{module, function}` – invokes `apply(module, function, [mod, name, args])`
+    * `module` – invokes `apply(module, name, args)` (implementation module)
   """
   @type resolver ::
           :direct
-          | (port_module(), port_name(), params() -> term())
+          | (port_module(), port_name(), args() -> term())
           | {module(), atom()}
           | module()
 
   @typedoc "Registry mapping port modules to resolvers"
   @type registry :: %{port_module() => resolver()}
 
-  @typedoc "Function handler for test scenarios - receives (mod, name, params)"
-  @type fn_handler :: (port_module(), port_name(), params() -> term())
+  @typedoc "Function handler for test scenarios - receives (mod, name, args)"
+  @type fn_handler :: (port_module(), port_name(), args() -> term())
 
   #############################################################################
   ## Operations
@@ -144,12 +144,12 @@ defmodule Skuld.Effects.Port do
 
   ## Example
 
-      Port.request(MyApp.UserQueries, :find_by_id, %{id: 123})
+      Port.request(MyApp.UserQueries, :find_by_id, [123])
       # => {:ok, %User{...}} or {:error, {:not_found, User, 123}}
   """
-  @spec request(port_module(), port_name(), params()) :: Types.computation()
-  def request(mod, name, params \\ %{}) do
-    Comp.effect(@sig, %Request{mod: mod, name: name, params: params})
+  @spec request(port_module(), port_name(), args()) :: Types.computation()
+  def request(mod, name, args \\ []) do
+    Comp.effect(@sig, %Request{mod: mod, name: name, args: args})
   end
 
   @doc """
@@ -163,12 +163,12 @@ defmodule Skuld.Effects.Port do
 
   ## Example
 
-      Port.request!(MyApp.UserQueries, :find_by_id, %{id: 123})
+      Port.request!(MyApp.UserQueries, :find_by_id, [123])
       # => %User{...} or throws {:not_found, User, 123}
   """
-  @spec request!(port_module(), port_name(), params()) :: Types.computation()
-  def request!(mod, name, params \\ %{}) do
-    Comp.bind(request(mod, name, params), fn
+  @spec request!(port_module(), port_name(), args()) :: Types.computation()
+  def request!(mod, name, args \\ []) do
+    Comp.bind(request(mod, name, args), fn
       {:ok, value} -> Comp.pure(value)
       {:error, reason} -> Throw.throw(reason)
     end)
@@ -181,23 +181,22 @@ defmodule Skuld.Effects.Port do
   @doc """
   Build a canonical key usable with `with_test_handler/2`.
 
-  Parameters are normalized to produce consistent keys regardless of
-  internal map ordering.
+  Arguments are normalized to produce consistent keys.
 
   ## Example
 
-      Port.key(MyApp.UserQueries, :find_by_id, %{id: 123})
+      Port.key(MyApp.UserQueries, :find_by_id, [123])
   """
-  @spec key(port_module(), port_name(), params()) ::
+  @spec key(port_module(), port_name(), args()) ::
           {port_module(), port_name(), binary()}
-  def key(mod, name, params) do
-    {mod, name, normalize_params(params)}
+  def key(mod, name, args) do
+    {mod, name, normalize_args(args)}
   end
 
   @doc false
-  @spec normalize_params(term()) :: binary()
-  def normalize_params(params) do
-    params
+  @spec normalize_args(term()) :: binary()
+  def normalize_args(args) do
+    args
     |> canonical_term()
     |> :erlang.term_to_binary()
   end
@@ -247,10 +246,10 @@ defmodule Skuld.Effects.Port do
   Pass a registry map keyed by module to control how requests are
   dispatched. Each entry can be one of:
 
-    * `:direct` – call `apply(mod, name, [params])`
-    * `function` (arity 3) – `fun.(mod, name, params)`
-    * `{module, function}` – invokes `apply(module, function, [mod, name, params])`
-    * `module` – invokes `module.handle_port(mod, name, params)`
+    * `:direct` – call `apply(mod, name, args)`
+    * `function` (arity 3) – `fun.(mod, name, args)`
+    * `{module, function}` – invokes `apply(module, function, [mod, name, args])`
+    * `module` – invokes `apply(module, name, args)` (implementation module)
 
   Handlers may return any value. To signal errors, raise or use
   `Skuld.Effects.Throw.throw/1`.
@@ -260,7 +259,7 @@ defmodule Skuld.Effects.Port do
       my_comp
       |> Port.with_handler(%{
         MyApp.UserQueries => :direct,
-        MyApp.OrderQueries => MyApp.CachedHandler
+        MyApp.Repository => MyApp.Repository.Ecto
       })
       |> Comp.run!()
   """
@@ -306,8 +305,8 @@ defmodule Skuld.Effects.Port do
 
   ## Options
 
-    * `:fallback` - A function `(mod, name, params) -> result` to call when
-      no exact key match is found. Useful for handling dynamic parameters
+    * `:fallback` - A function `(mod, name, args) -> result` to call when
+      no exact key match is found. Useful for handling dynamic arguments
       while still using exact matching for known cases.
     * `:output` - Transform result when leaving scope
     * `:suspend` - Decorate Suspend values when yielding
@@ -315,8 +314,8 @@ defmodule Skuld.Effects.Port do
   ## Example
 
       responses = %{
-        Port.key(MyApp.UserQueries, :find_by_id, %{id: 123}) => {:ok, %{name: "Alice"}},
-        Port.key(MyApp.UserQueries, :find_by_id, %{id: 456}) => {:error, :not_found}
+        Port.key(MyApp.UserQueries, :find_by_id, [123]) => {:ok, %{name: "Alice"}},
+        Port.key(MyApp.UserQueries, :find_by_id, [456]) => {:error, :not_found}
       }
 
       my_comp
@@ -327,8 +326,8 @@ defmodule Skuld.Effects.Port do
       # With fallback for dynamic cases
       my_comp
       |> Port.with_test_handler(responses, fallback: fn
-        MyApp.AuditQueries, _name, _params -> :ok
-        mod, name, params -> raise "Unhandled: \#{inspect(mod)}.\#{name}"
+        MyApp.AuditQueries, _name, _args -> :ok
+        mod, name, args -> raise "Unhandled: \#{inspect(mod)}.\#{name}(\#{inspect(args)})"
       end)
       |> Throw.with_handler()
       |> Comp.run!()
@@ -363,33 +362,33 @@ defmodule Skuld.Effects.Port do
   @doc """
   Install a function-based test handler.
 
-  The handler function receives `(mod, name, params)` and can use Elixir's
+  The handler function receives `(mod, name, args)` and can use Elixir's
   full pattern matching power including guards, pins, and wildcards.
 
-  If no function clause matches, throws `{:port_not_handled, mod, name, params}`.
+  If no function clause matches, throws `{:port_not_handled, mod, name, args}`.
 
   ## Example
 
       handler = fn
         # Pin specific values
-        MyApp.UserQueries, :find_by_id, %{id: ^expected_id} ->
+        MyApp.UserQueries, :find_by_id, [^expected_id] ->
           {:ok, %{id: expected_id, name: "Expected"}}
 
         # Match any value with wildcard
-        MyApp.UserQueries, :find_by_id, %{id: _any_id} ->
+        MyApp.UserQueries, :find_by_id, [_any_id] ->
           {:ok, %{id: "default", name: "Default"}}
 
         # Match with guards
-        MyApp.Queries, :paginate, %{limit: l} when l > 100 ->
+        MyApp.Queries, :paginate, [_query, limit] when limit > 100 ->
           {:error, :limit_too_high}
 
         # Match specific module, any function
-        MyApp.AuditQueries, _function, _params ->
+        MyApp.AuditQueries, _function, _args ->
           :ok
 
         # Catch-all (optional)
-        mod, fun, params ->
-          raise "Unhandled: \#{inspect(mod)}.\#{fun}(\#{inspect(params)})"
+        mod, fun, args ->
+          raise "Unhandled: \#{inspect(mod)}.\#{fun}(\#{inspect(args)})"
       end
 
       my_comp
@@ -405,7 +404,7 @@ defmodule Skuld.Effects.Port do
       property "user lookup succeeds" do
         check all user_id <- uuid_generator() do
           handler = fn
-            UserQueries, :find_by_id, %{id: ^user_id} ->
+            UserQueries, :find_by_id, [^user_id] ->
               {:ok, %{id: user_id, name: "Test User"}}
           end
 
@@ -439,19 +438,19 @@ defmodule Skuld.Effects.Port do
   #############################################################################
 
   @impl Skuld.Comp.IHandle
-  def handle(%Request{mod: mod, name: name, params: params}, env, k) do
+  def handle(%Request{mod: mod, name: name, args: args}, env, k) do
     case Env.get_state(env, @state_key) do
       {:runtime, registry} ->
-        handle_runtime(registry, mod, name, params, env, k)
+        handle_runtime(registry, mod, name, args, env, k)
 
       {:test, responses} ->
-        handle_test(responses, nil, mod, name, params, env, k)
+        handle_test(responses, nil, mod, name, args, env, k)
 
       {:test, responses, fallback} ->
-        handle_test(responses, fallback, mod, name, params, env, k)
+        handle_test(responses, fallback, mod, name, args, env, k)
 
       {:fn_handler, handler_fn} ->
-        handle_fn(handler_fn, mod, name, params, env, k)
+        handle_fn(handler_fn, mod, name, args, env, k)
 
       nil ->
         # No handler state - this shouldn't happen if with_handler was called
@@ -459,8 +458,8 @@ defmodule Skuld.Effects.Port do
     end
   end
 
-  defp handle_runtime(registry, mod, name, params, env, k) do
-    case dispatch(registry, mod, name, params) do
+  defp handle_runtime(registry, mod, name, args, env, k) do
+    case dispatch(registry, mod, name, args) do
       {:ok, result} ->
         k.(result, env)
 
@@ -470,8 +469,8 @@ defmodule Skuld.Effects.Port do
     end
   end
 
-  defp handle_test(responses, fallback, mod, name, params, env, k) do
-    request_key = key(mod, name, params)
+  defp handle_test(responses, fallback, mod, name, args, env, k) do
+    request_key = key(mod, name, args)
 
     case Map.fetch(responses, request_key) do
       {:ok, result} ->
@@ -479,7 +478,7 @@ defmodule Skuld.Effects.Port do
 
       :error when is_function(fallback, 3) ->
         # Try fallback function
-        handle_fn(fallback, mod, name, params, env, k)
+        handle_fn(fallback, mod, name, args, env, k)
 
       :error ->
         # No match and no fallback
@@ -487,13 +486,13 @@ defmodule Skuld.Effects.Port do
     end
   end
 
-  defp handle_fn(handler_fn, mod, name, params, env, k) do
-    result = handler_fn.(mod, name, params)
+  defp handle_fn(handler_fn, mod, name, args, env, k) do
+    result = handler_fn.(mod, name, args)
     k.(result, env)
   rescue
     e in FunctionClauseError ->
       # No matching clause - report what we received
-      {%ThrowResult{error: {:port_not_handled, mod, name, params, e}}, env}
+      {%ThrowResult{error: {:port_not_handled, mod, name, args, e}}, env}
 
     e ->
       # Other error in handler
@@ -504,11 +503,11 @@ defmodule Skuld.Effects.Port do
   ## Dispatch Logic
   #############################################################################
 
-  defp dispatch(registry, mod, name, params) when is_map(registry) do
+  defp dispatch(registry, mod, name, args) when is_map(registry) do
     case Map.fetch(registry, mod) do
       {:ok, resolver} ->
         try do
-          {:ok, invoke(resolver, mod, name, params)}
+          {:ok, invoke(resolver, mod, name, args)}
         rescue
           exception ->
             {:error, {:port_failed, mod, name, exception}}
@@ -519,24 +518,19 @@ defmodule Skuld.Effects.Port do
     end
   end
 
-  defp invoke(:direct, mod, name, params) do
-    apply(mod, name, [params])
+  defp invoke(:direct, mod, name, args) do
+    apply(mod, name, args)
   end
 
-  defp invoke(fun, mod, name, params) when is_function(fun, 3) do
-    fun.(mod, name, params)
+  defp invoke(fun, mod, name, args) when is_function(fun, 3) do
+    fun.(mod, name, args)
   end
 
-  defp invoke({module, function}, mod, name, params) do
-    apply(module, function, [mod, name, params])
+  defp invoke({module, function}, mod, name, args) do
+    apply(module, function, [mod, name, args])
   end
 
-  defp invoke(module, mod, name, params) when is_atom(module) do
-    if function_exported?(module, :handle_port, 3) do
-      module.handle_port(mod, name, params)
-    else
-      raise ArgumentError,
-            "#{inspect(module)} must export handle_port/3 to be used as a Port handler entry"
-    end
+  defp invoke(module, _mod, name, args) when is_atom(module) do
+    apply(module, name, args)
   end
 end
