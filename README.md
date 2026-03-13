@@ -87,6 +87,7 @@ some common side-effecting operations and their effectful equivalents:
     - [DB](#db)
     - [DB.Batch](#dbbatch)
     - [Port](#port)
+    - [Port.Contract](#portcontract)
     - [Command](#command)
     - [EventAccumulator](#eventaccumulator)
   - [Serializable Coroutines](#serializable-coroutines)
@@ -507,8 +508,8 @@ defmodule MyDomain do
   use Skuld.Syntax
 
   defcomp fetch_user_data(user_id) do
-    user <- Port.request(Users, :find, id: user_id)
-    profile <- Port.request(Profiles, :find, user_id: user_id)
+    user <- Port.request!(Users, :find, [user_id])
+    profile <- Port.request!(Profiles, :find, [user_id])
     {user, profile}
   end
 end
@@ -2021,7 +2022,9 @@ concern:
 - **Port** — abstracts read queries (and any other blocking call to external code)
   behind a dispatch layer with pluggable backends. Ecto's query language is too rich
   to wrap in an effect, so reads are parameterised function calls routed through Port,
-  making them easy to stub in tests.
+  making them easy to stub in tests. **Port.Contract** adds typed contracts via
+  `defport` declarations, generating Dialyzer-checked caller functions, behaviour
+  callbacks, and test key helpers.
 - **DB.Batch** — a somewhat unusual (in Elixir) solution to the N+1 query problem.
   Batch-reads suspend the current FiberPool fiber; when the run queue empties, the
   scheduler groups pending reads by schema and executes a single batched query per
@@ -2233,34 +2236,37 @@ with nested reads across concurrent fibers.
 #### Port
 
 Dispatch parameterizable blocking calls to pluggable backends. Ideal for wrapping
-any existing side-effecting code (database queries, HTTP calls, file I/O, etc.):
+any existing side-effecting code (database queries, HTTP calls, file I/O, etc.).
+Port uses positional arguments — the third argument to `Port.request/3` is a list
+of args, and dispatch uses `apply(module, name, args)`:
 
 ```elixir
 use Skuld.Syntax
 alias Skuld.Comp
 alias Skuld.Effects.{Port, Throw}
 
-# Define a module with side-effecting functions (accepts keyword list params)
+# Define a module with side-effecting functions (positional args)
 defmodule MyQueries do
-  def find_user(id: id), do: %{id: id, name: "User #{id}"}
+  def find_user(id), do: {:ok, %{id: id, name: "User #{id}"}}
 end
 
 # Runtime: dispatch to actual modules
 comp do
-  user <- Port.request(MyQueries, :find_user, id: 123)
+  user <- Port.request!(MyQueries, :find_user, [123])
   user
 end
 |> Port.with_handler(%{MyQueries => :direct})
+|> Throw.with_handler()
 |> Comp.run!()
 #=> %{id: 123, name: "User 123"}
 
 # Test: exact key matching with stub responses
 comp do
-  user <- Port.request(MyQueries, :find_user, id: 456)
+  user <- Port.request!(MyQueries, :find_user, [456])
   user
 end
 |> Port.with_test_handler(%{
-  Port.key(MyQueries, :find_user, id: 456) => %{id: 456, name: "Stubbed"}
+  Port.key(MyQueries, :find_user, [456]) => {:ok, %{id: 456, name: "Stubbed"}}
 })
 |> Throw.with_handler()
 |> Comp.run!()
@@ -2268,22 +2274,112 @@ end
 
 # Test: function-based handler with pattern matching (ideal for property tests)
 comp do
-  user <- Port.request(MyQueries, :find_user, id: 789)
+  user <- Port.request!(MyQueries, :find_user, [789])
   user
 end
 |> Port.with_fn_handler(fn
-  MyQueries, :find_user, [id: id] -> %{id: id, name: "Generated User #{id}"}
-  MyQueries, :list_users, [limit: n] when n > 100 -> {:error, :limit_too_high}
-  _mod, _fun, _params -> :default
+  MyQueries, :find_user, [id] -> {:ok, %{id: id, name: "Generated User #{id}"}}
+  MyQueries, :list_users, [limit] when limit > 100 -> {:error, :limit_too_high}
+  _mod, _fun, _args -> {:ok, :default}
 end)
+|> Throw.with_handler()
 |> Comp.run!()
 #=> %{id: 789, name: "Generated User 789"}
 ```
 
-The function handler enables Elixir's full pattern matching power - pins, guards,
-wildcards - making it ideal for property-based tests where exact values aren't
+The function handler enables Elixir's full pattern matching power — pins, guards,
+wildcards — making it ideal for property-based tests where exact values aren't
 known upfront. Use `with_test_handler` for simple exact-match cases and
 `with_fn_handler` for complex dynamic scenarios.
+
+**Resolver types:**
+
+- `:direct` — `apply(mod, name, args)` (call directly on the registered module)
+- `module` — `apply(module, name, args)` (implementation module, for contract→impl dispatch)
+- `fun/3` — `fun.(mod, name, args)` (function receives all three)
+- `{module, function}` — `apply(module, function, [mod, name, args])`
+
+#### Port.Contract
+
+For typed, Dialyzer-checked port operations, use `Port.Contract`. It generates caller
+functions, bang variants, behaviour callbacks, test key helpers, and introspection from
+`defport` declarations:
+
+```elixir
+defmodule MyApp.Repository do
+  use Skuld.Effects.Port.Contract
+
+  alias MyApp.Todo
+
+  defport get_todo(tenant_id :: String.t(), id :: String.t()) ::
+            {:ok, Todo.t()} | {:error, term()}
+
+  defport list_todos(tenant_id :: String.t(), opts :: map()) ::
+            {:ok, [Todo.t()]} | {:error, term()}
+
+  defport search_todos(tenant_id :: String.t(), query :: String.t(), limit :: integer()) ::
+            {:ok, [Todo.t()]} | {:error, term()}
+end
+```
+
+This generates for each `defport`:
+
+- **Caller** — `get_todo(tenant_id, id)` returning `computation({:ok, Todo.t()} | {:error, term()})`
+- **Bang** — `get_todo!(tenant_id, id)` returning `computation(Todo.t())` (unwraps `{:ok, v}` or throws)
+- **Callback** — `@callback get_todo(String.t(), String.t()) :: {:ok, Todo.t()} | {:error, term()}`
+- **Key helper** — `key(:get_todo, tenant_id, id)` for test stub matching
+- **Introspection** — `__port_operations__/0`
+
+**Implementation modules** add `@behaviour` and `@impl`:
+
+```elixir
+defmodule MyApp.Repository.Ecto do
+  @behaviour MyApp.Repository
+
+  @impl true
+  def get_todo(tenant_id, id) do
+    case Repo.get_by(Todo, tenant_id: tenant_id, id: id) do
+      nil -> {:error, {:not_found, Todo, id}}
+      todo -> {:ok, todo}
+    end
+  end
+
+  @impl true
+  def list_todos(tenant_id, opts), do: ...
+
+  @impl true
+  def search_todos(tenant_id, query, limit), do: ...
+end
+```
+
+**Handler installation** uses the contract module as the registry key:
+
+```elixir
+# Production: dispatch to Ecto implementation
+my_comp
+|> Port.with_handler(%{MyApp.Repository => MyApp.Repository.Ecto})
+|> Comp.run!()
+
+# Test: dispatch to in-memory implementation
+my_comp
+|> Port.with_handler(%{MyApp.Repository => MyApp.Repository.InMemory})
+|> Comp.run!()
+
+# Test: stub with generated key helpers
+my_comp
+|> Port.with_test_handler(%{
+  MyApp.Repository.key(:get_todo, "tenant-1", "id-1") => {:ok, mock_todo}
+})
+|> Throw.with_handler()
+|> Comp.run!()
+```
+
+**Benefits over raw `Port.request`:**
+
+- Dialyzer checks call sites and implementations via `@spec` and `@callback`
+- LSP autocomplete on `Repository.` shows available operations
+- Missing callback implementations produce compiler warnings
+- `key/N` helpers replace verbose `Port.key(Module, :name, [args...])` calls
 
 #### Command
 
@@ -2632,12 +2728,12 @@ The `Run.execute/2` function composes different handler stacks based on mode:
 ```elixir
 # Production: real database
 Run.execute(operation, mode: :database, tenant_id: tenant_id)
-# -> Port.with_handler(%{Repository.Ecto => :direct})
+# -> Port.with_handler(%{Repository => Repository.Ecto})
 # -> DB.Ecto.with_handler(Repo)
 
 # Testing: pure in-memory
 Run.execute(operation, mode: :in_memory, tenant_id: tenant_id)
-# -> Port.with_handler(%{Repository.Ecto => {Repository.InMemory, :delegate}})
+# -> Port.with_handler(%{Repository => Repository.InMemory})
 # -> InMemoryPersist.with_handler()
 ```
 
