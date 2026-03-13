@@ -20,8 +20,20 @@ defmodule Skuld.Comp.Types do
   @typedoc "Continuation after an effect"
   @type k :: (term(), env() -> {result(), env()})
 
-  @typedoc "A computation awaiting execution"
-  @type computation :: (env(), k() -> {result(), env()})
+  @typedoc """
+  A computation awaiting execution.
+
+  The type parameter documents what the computation produces when run.
+  Dialyzer erases it (it's a phantom parameter), but it appears in
+  hover docs, ExDoc, and generated specs for readability.
+
+  ## Examples
+
+      @spec get_todo(String.t()) :: computation({:ok, Todo.t()} | {:error, term()})
+      @spec get_todo!(String.t()) :: computation(Todo.t())
+  """
+  @type computation(_result) :: (env(), k() -> {result(), env()})
+  @type computation() :: computation(term())
 
   @typedoc "Leave-scope handler - cleans up or redirects"
   @type leave_scope :: (result(), env() -> {result(), env()})
