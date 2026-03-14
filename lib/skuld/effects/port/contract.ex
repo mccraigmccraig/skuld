@@ -99,6 +99,27 @@ defmodule Skuld.Effects.Port.Contract do
       my_comp
       |> Port.with_handler(%{MyApp.Repository => MyApp.Repository.Ecto})
       |> Comp.run!()
+
+  ## Provider Implementation (Effectful)
+
+  For the reverse direction — plain Elixir code calling into effectful
+  implementations — see `Skuld.Effects.Port.Provider`.
+
+      # Effectful implementation satisfies Provider behaviour
+      defmodule MyApp.Repository.Effectful do
+        @behaviour MyApp.Repository.Provider
+        defcomp get_todo(tenant_id, id) do
+          # ... effectful code returning computation(return_type)
+        end
+      end
+
+      # Provider adapter satisfies Consumer behaviour
+      defmodule MyApp.Repository.Effectful.Adapter do
+        use Skuld.Effects.Port.Provider,
+          contract: MyApp.Repository,
+          impl: MyApp.Repository.Effectful,
+          stack: &MyApp.Stacks.repository/1
+      end
   """
 
   @doc false

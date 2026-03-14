@@ -59,9 +59,42 @@ defmodule Skuld.Effects.Port.Provider do
   In hexagonal architecture terms:
 
     * **Consumer** (outbound/driven) — effectful code calls out to plain Elixir
-      implementations through the Port effect
+      implementations through the Port effect. The contract's caller functions
+      emit Port effects that are resolved by `Port.with_handler/2` at runtime.
     * **Provider** (inbound/driving) — plain Elixir code calls in to effectful
-      implementations through the Provider adapter
+      implementations through the Provider adapter. The adapter runs the effectful
+      code with a handler stack, producing plain return values.
+
+  This enables a symmetric architecture where the same contract module defines
+  the boundary, and implementations can be either plain Elixir (Consumer) or
+  effectful (Provider), depending on the direction of the call.
+
+  ## Testing Provider Adapters
+
+  Provider adapters produce plain Elixir values, so they can be tested directly
+  without effect machinery:
+
+      test "adapter returns expected result" do
+        result = MyApp.UserService.Adapter.find_user("user-123")
+        assert {:ok, %User{id: "user-123"}} = result
+      end
+
+  To test the effectful implementation in isolation (without the adapter), use
+  the standard effect testing patterns — install handlers and run the computation:
+
+      test "effectful impl uses DB effect" do
+        comp =
+          MyApp.UserService.Effectful.find_user("user-123")
+          |> DB.with_test_handler(...)
+          |> Throw.with_handler()
+
+        {result, _env} = Comp.run(comp)
+        assert {:ok, %User{}} = result
+      end
+
+  Since the adapter satisfies the Consumer behaviour, it can also be used as a
+  handler target in `Port.with_handler/2`, enabling effectful-to-effectful
+  composition through the Port system.
   """
 
   defmacro __using__(opts) do
