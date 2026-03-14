@@ -42,23 +42,23 @@ some common side-effecting operations and their effectful equivalents:
 
 ## Documentation
 
-- **[Syntax](syntax.html)** - Computations, the `comp` block, binds, auto-lifting, `else`/`catch` clauses, `defcomp`
-- **[Debugging](debugging.html)** - Stacktraces, exception handling, `try_catch`, `IThrowable`
+- **[Syntax](docs/syntax.md)** - Computations, the `comp` block, binds, auto-lifting, `else`/`catch` clauses, `defcomp`
+- **[Debugging](docs/debugging.md)** - Stacktraces, exception handling, `try_catch`, `IThrowable`
 - **Effects**
-  - [State & Environment](effects-state-environment.html) - State, Reader, Writer, tagged usage, scoped transforms
-  - [Control Flow](effects-control-flow.html) - Throw, Bracket, Yield, Yield.respond
-  - [Collections](effects-collections.html) - FxList, FxFasterList
-  - [Value Generation](effects-value-generation.html) - Fresh, Random
-  - [Basic Concurrency](effects-concurrency.html) - AtomicState, Parallel, AsyncComputation
-  - [Persistence & Data](effects-persistence.html) - DB, Command, EventAccumulator
-  - [Port](effects-port.html) - Port, Port.Contract, Port.Provider
+  - [State & Environment](docs/effects-state-environment.md) - State, Reader, Writer, tagged usage, scoped transforms
+  - [Control Flow](docs/effects-control-flow.md) - Throw, Bracket, Yield, Yield.respond
+  - [Collections](docs/effects-collections.md) - FxList, FxFasterList
+  - [Value Generation](docs/effects-value-generation.md) - Fresh, Random
+  - [Basic Concurrency](docs/effects-concurrency.md) - AtomicState, Parallel, AsyncComputation
+  - [Persistence & Data](docs/effects-persistence.md) - DB, Command, EventAccumulator
+  - [Port](docs/effects-port.md) - Port, Port.Contract, Port.Provider
 - **Slightly insane effects**
-  - [Concurrency](effects-concurrency.html) - FiberPool, Channel, Brook
-  - [DB.Batch](effects-persistence.html) - Batched DB reads via FiberPool
-  - [Serializable Coroutines](effect-logger.html) - EffectLogger
-- **[Property-Based Testing](testing.html)** - Testing effectful code with pure handlers
-- **[Architecture](architecture.html)** - Design, comparison with Freyja
-- **[Performance](performance.html)** - Benchmarks and analysis
+  - [Concurrency](docs/effects-concurrency.md) - FiberPool, Channel, Brook
+  - [DB.Batch](docs/effects-persistence.md) - Batched DB reads via FiberPool
+  - [Serializable Coroutines](docs/effect-logger.md) - EffectLogger
+- **[Property-Based Testing](docs/testing.md)** - Testing effectful code with pure handlers
+- **[Architecture](docs/architecture.md)** - Design, comparison with Freyja
+- **[Performance](docs/performance.md)** - Benchmarks and analysis
 
 ## Features
 
@@ -128,7 +128,7 @@ Example.example()
 #=> {{{:my_config, 0}, {:final_state, 1}}, {:log, ["processed item 0"]}}
 ```
 
-See the [Syntax guide](syntax.html) for full details on the `comp` block,
+See the [Syntax guide](docs/syntax.md) for full details on the `comp` block,
 pattern matching, error handling, and more.
 
 ## License
