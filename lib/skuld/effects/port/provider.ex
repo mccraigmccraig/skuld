@@ -1,0 +1,118 @@
+defmodule Skuld.Effects.Port.Provider do
+  @moduledoc """
+  Macro for bridging effectful (Provider) implementations to plain Elixir (Consumer) interfaces.
+
+  A Provider adapter wraps an effectful implementation module — one whose functions
+  return `computation(return_type)` — with a handler stack and `Comp.run!/1`, producing
+  a module that satisfies the Consumer behaviour with plain Elixir functions.
+
+  ## Options
+
+    * `:contract` — the Port.Contract module (required)
+    * `:impl` — the Provider-behaviour implementation module (required)
+    * `:stack` — a function `(computation -> computation)` that installs the
+      handler stack (required)
+
+  ## Example
+
+      # Contract defines the port
+      defmodule MyApp.UserService do
+        use Skuld.Effects.Port.Contract
+        defport find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
+      end
+
+      # Effectful implementation satisfies Provider behaviour
+      defmodule MyApp.UserService.Effectful do
+        @behaviour MyApp.UserService.Provider
+        defcomp find_user(id) do
+          user <- DB.get(User, id)
+          {:ok, user}
+        end
+      end
+
+      # Provider adapter satisfies Consumer behaviour, runs effectful impl
+      defmodule MyApp.UserService.Adapter do
+        use Skuld.Effects.Port.Provider,
+          contract: MyApp.UserService,
+          impl: MyApp.UserService.Effectful,
+          stack: &MyApp.Stacks.user_service/1
+      end
+
+      # Now MyApp.UserService.Adapter can be used as a plain Consumer implementation:
+      MyApp.UserService.Adapter.find_user("user-123")
+      # => {:ok, %User{...}}
+
+  ## How It Works
+
+  For each operation defined in the contract (via `__port_operations__/0`), the
+  adapter generates a function that:
+
+  1. Calls the impl module's corresponding function to get a computation
+  2. Pipes through the stack function to install effect handlers
+  3. Runs the computation with `Comp.run!/1`
+
+  The generated module declares `@behaviour ContractModule.Consumer`, ensuring
+  compile-time verification that all required callbacks are implemented.
+
+  ## Hexagonal Architecture
+
+  In hexagonal architecture terms:
+
+    * **Consumer** (outbound/driven) — effectful code calls out to plain Elixir
+      implementations through the Port effect
+    * **Provider** (inbound/driving) — plain Elixir code calls in to effectful
+      implementations through the Provider adapter
+  """
+
+  defmacro __using__(opts) do
+    contract = Keyword.fetch!(opts, :contract)
+    impl = Keyword.fetch!(opts, :impl)
+    stack = Keyword.fetch!(opts, :stack)
+
+    quote do
+      @before_compile {Skuld.Effects.Port.Provider, :__before_compile__}
+      @__port_provider_contract__ unquote(contract)
+      @__port_provider_impl__ unquote(impl)
+      @__port_provider_stack__ unquote(stack)
+    end
+  end
+
+  defmacro __before_compile__(env) do
+    contract = Module.get_attribute(env.module, :__port_provider_contract__)
+    impl = Module.get_attribute(env.module, :__port_provider_impl__)
+    stack = Module.get_attribute(env.module, :__port_provider_stack__)
+
+    # Validate contract module has __port_operations__/0
+    unless function_exported?(contract, :__port_operations__, 0) do
+      raise CompileError,
+        description:
+          "#{inspect(contract)} does not appear to be a Port.Contract module " <>
+            "(missing __port_operations__/0). Ensure it uses Skuld.Effects.Port.Contract " <>
+            "and defines at least one defport.",
+        file: env.file,
+        line: 0
+    end
+
+    consumer_behaviour = Module.concat(contract, Consumer)
+    operations = contract.__port_operations__()
+
+    functions =
+      Enum.map(operations, fn %{name: name, params: param_names} ->
+        param_vars = Enum.map(param_names, fn pname -> {pname, [], nil} end)
+
+        quote do
+          @impl true
+          def unquote(name)(unquote_splicing(param_vars)) do
+            unquote(impl).unquote(name)(unquote_splicing(param_vars))
+            |> unquote(stack).()
+            |> Skuld.Comp.run!()
+          end
+        end
+      end)
+
+    quote do
+      @behaviour unquote(consumer_behaviour)
+      unquote_splicing(functions)
+    end
+  end
+end
