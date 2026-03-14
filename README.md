@@ -2302,8 +2302,9 @@ known upfront. Use `with_test_handler` for simple exact-match cases and
 #### Port.Contract
 
 For typed, Dialyzer-checked port operations, use `Port.Contract`. It generates caller
-functions, bang variants, behaviour callbacks, test key helpers, and introspection from
-`defport` declarations:
+functions, behaviour callbacks, test key helpers, and introspection from `defport`
+declarations. Bang variants are generated automatically when the return type follows
+the `{:ok, T} | {:error, reason}` convention:
 
 ```elixir
 defmodule MyApp.Repository do
@@ -2311,24 +2312,63 @@ defmodule MyApp.Repository do
 
   alias MyApp.Todo
 
+  # Bang auto-generated: return type has {:ok, T}
   defport get_todo(tenant_id :: String.t(), id :: String.t()) ::
             {:ok, Todo.t()} | {:error, term()}
 
   defport list_todos(tenant_id :: String.t(), opts :: map()) ::
             {:ok, [Todo.t()]} | {:error, term()}
 
-  defport search_todos(tenant_id :: String.t(), query :: String.t(), limit :: integer()) ::
-            {:ok, [Todo.t()]} | {:error, term()}
+  # No bang auto-generated: return type is bare (no {:ok, T})
+  defport health_check() :: :ok | {:error, term()}
 end
 ```
 
 This generates for each `defport`:
 
 - **Caller** — `get_todo(tenant_id, id)` returning `computation({:ok, Todo.t()} | {:error, term()})`
-- **Bang** — `get_todo!(tenant_id, id)` returning `computation(Todo.t())` (unwraps `{:ok, v}` or throws)
+- **Bang** (when applicable) — `get_todo!(tenant_id, id)` returning `computation(Todo.t())` (unwraps `{:ok, v}` or throws)
 - **Callback** — `@callback get_todo(String.t(), String.t()) :: {:ok, Todo.t()} | {:error, term()}`
 - **Key helper** — `key(:get_todo, tenant_id, id)` for test stub matching
 - **Introspection** — `__port_operations__/0`
+
+**Bang variant generation** is controlled by auto-detection with optional overrides
+via the `bang:` option:
+
+```elixir
+defmodule MyApp.Users do
+  use Skuld.Effects.Port.Contract
+
+  # Auto-detect (default): bang generated because return type has {:ok, T}
+  defport get_user(id :: String.t()) ::
+            {:ok, User.t()} | {:error, term()}
+
+  # Auto-detect: NO bang generated because return type has no {:ok, T}
+  defport find_user(id :: String.t()) :: User.t() | nil
+
+  # bang: true — force standard {:ok, v}/{:error, r} unwrapping even
+  # when the return type doesn't match the pattern
+  defport find_by_email(email :: String.t()) :: User.t() | nil, bang: true
+
+  # bang: false — suppress bang even though return type has {:ok, T}
+  defport raw_query(sql :: String.t()) ::
+            {:ok, term()} | {:error, term()},
+            bang: false
+
+  # bang: custom_fn — generate bang using a custom unwrap function.
+  # The function receives the raw implementation result and must
+  # return {:ok, value} or {:error, reason}
+  defport find_user_safe(id :: String.t()) :: User.t() | nil,
+    bang: fn
+      nil -> {:error, :not_found}
+      user -> {:ok, user}
+    end
+end
+```
+
+This makes Contract easy to fit to **existing implementation code** regardless of
+its return convention — implementations that return bare values, nillable results,
+or custom result types can all have bang variants with appropriate unwrapping.
 
 **Implementation modules** add `@behaviour` and `@impl`:
 
@@ -2348,7 +2388,7 @@ defmodule MyApp.Repository.Ecto do
   def list_todos(tenant_id, opts), do: ...
 
   @impl true
-  def search_todos(tenant_id, query, limit), do: ...
+  def health_check, do: :ok
 end
 ```
 
@@ -2380,6 +2420,7 @@ my_comp
 - LSP autocomplete on `Repository.` shows available operations
 - Missing callback implementations produce compiler warnings
 - `key/N` helpers replace verbose `Port.key(Module, :name, [args...])` calls
+- Bang generation adapts to any return convention via `bang:` option
 
 #### Command
 
