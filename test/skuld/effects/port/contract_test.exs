@@ -189,44 +189,42 @@ defmodule Skuld.Effects.Port.ContractTest do
   end
 
   describe "Consumer and Provider submodule documentation" do
-    defp fetch_submodule_docs(source, submodule_suffix) do
+    defp fetch_all_docs(source) do
       Code.put_compiler_option(:docs, true)
       compiled = Code.compile_string(source)
       dir = System.tmp_dir!()
 
-      {mod, beam} =
-        Enum.find(compiled, fn {mod, _beam} ->
-          inspect(mod) |> String.ends_with?(submodule_suffix)
+      paths =
+        Enum.map(compiled, fn {mod, beam} ->
+          path = Path.join(dir, "Elixir.#{inspect(mod)}.beam")
+          File.write!(path, beam)
+          {mod, path}
         end)
 
-      path = Path.join(dir, "Elixir.#{inspect(mod)}.beam")
-      File.write!(path, beam)
-
       try do
-        Code.fetch_docs(path)
+        Map.new(paths, fn {mod, path} -> {mod, Code.fetch_docs(path)} end)
       after
-        File.rm(path)
+        Enum.each(paths, fn {_mod, path} -> File.rm(path) end)
       end
     end
 
-    @doc_test_source """
-    defmodule DocSubmoduleContract do
-      use Skuld.Effects.Port.Contract
+    test "Consumer and Provider submodules have @moduledoc" do
+      docs =
+        fetch_all_docs("""
+        defmodule DocSubmoduleContract do
+          use Skuld.Effects.Port.Contract
 
-      defport get_item(id :: String.t()) :: {:ok, map()} | {:error, term()}
-    end
-    """
+          defport get_item(id :: String.t()) :: {:ok, map()} | {:error, term()}
+        end
+        """)
 
-    test "Consumer submodule has @moduledoc" do
-      {:docs_v1, _, _, _, module_doc, _, _} = fetch_submodule_docs(@doc_test_source, ".Consumer")
-      assert %{"en" => doc} = module_doc
-      assert doc =~ "Consumer behaviour"
-    end
+      {:docs_v1, _, _, _, consumer_doc, _, _} = docs[DocSubmoduleContract.Consumer]
+      assert %{"en" => cdoc} = consumer_doc
+      assert cdoc =~ "Consumer behaviour"
 
-    test "Provider submodule has @moduledoc" do
-      {:docs_v1, _, _, _, module_doc, _, _} = fetch_submodule_docs(@doc_test_source, ".Provider")
-      assert %{"en" => doc} = module_doc
-      assert doc =~ "Provider behaviour"
+      {:docs_v1, _, _, _, provider_doc, _, _} = docs[DocSubmoduleContract.Provider]
+      assert %{"en" => pdoc} = provider_doc
+      assert pdoc =~ "Provider behaviour"
     end
   end
 
