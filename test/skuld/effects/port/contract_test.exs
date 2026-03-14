@@ -93,6 +93,144 @@ defmodule Skuld.Effects.Port.ContractTest do
   end
 
   # ---------------------------------------------------------------
+  # Consumer/Provider Behaviour Submodule Tests
+  # ---------------------------------------------------------------
+
+  describe "Consumer submodule generation" do
+    test "Consumer submodule exists for each contract" do
+      assert Code.ensure_loaded?(TestContract.Consumer)
+      assert Code.ensure_loaded?(NoBangContract.Consumer)
+      assert Code.ensure_loaded?(ForceBangContract.Consumer)
+      assert Code.ensure_loaded?(CustomBangContract.Consumer)
+      assert Code.ensure_loaded?(BareReturnContract.Consumer)
+    end
+
+    test "Consumer has callbacks with correct arities" do
+      callbacks = TestContract.Consumer.behaviour_info(:callbacks)
+      assert {:get_todo, 2} in callbacks
+      assert {:list_todos, 1} in callbacks
+      assert {:health_check, 0} in callbacks
+    end
+
+    test "Consumer callbacks match all contract operations" do
+      ops = TestContract.__port_operations__()
+      callbacks = TestContract.Consumer.behaviour_info(:callbacks)
+
+      for op <- ops do
+        assert {op.name, op.arity} in callbacks,
+               "Expected Consumer callback #{op.name}/#{op.arity}"
+      end
+
+      assert length(callbacks) == length(ops)
+    end
+
+    test "implementation module satisfies Consumer behaviour" do
+      # TestImpl declares @behaviour TestContract.Consumer and compiles without warnings
+      # Verify it implements all required callbacks
+      callbacks = TestContract.Consumer.behaviour_info(:callbacks)
+
+      for {name, arity} <- callbacks do
+        assert function_exported?(TestImpl, name, arity),
+               "TestImpl should export #{name}/#{arity} for Consumer behaviour"
+      end
+    end
+  end
+
+  describe "Provider submodule generation" do
+    test "Provider submodule exists for each contract" do
+      assert Code.ensure_loaded?(TestContract.Provider)
+      assert Code.ensure_loaded?(NoBangContract.Provider)
+      assert Code.ensure_loaded?(ForceBangContract.Provider)
+      assert Code.ensure_loaded?(CustomBangContract.Provider)
+      assert Code.ensure_loaded?(BareReturnContract.Provider)
+    end
+
+    test "Provider has callbacks with correct arities" do
+      callbacks = TestContract.Provider.behaviour_info(:callbacks)
+      assert {:get_todo, 2} in callbacks
+      assert {:list_todos, 1} in callbacks
+      assert {:health_check, 0} in callbacks
+    end
+
+    test "Provider callbacks match all contract operations" do
+      ops = TestContract.__port_operations__()
+      callbacks = TestContract.Provider.behaviour_info(:callbacks)
+
+      for op <- ops do
+        assert {op.name, op.arity} in callbacks,
+               "Expected Provider callback #{op.name}/#{op.arity}"
+      end
+
+      assert length(callbacks) == length(ops)
+    end
+
+    test "contract module's caller functions satisfy Provider behaviour" do
+      # The contract module's generated caller functions have the same names/arities
+      # as the Provider callbacks, so they satisfy the behaviour structurally
+      callbacks = TestContract.Provider.behaviour_info(:callbacks)
+
+      for {name, arity} <- callbacks do
+        assert function_exported?(TestContract, name, arity),
+               "Contract module should export #{name}/#{arity} to satisfy Provider behaviour"
+      end
+    end
+
+    test "contract callers return computations (matching Provider's computation return type)" do
+      # Provider behaviour expects computation(return_type) — verify callers return functions
+      comp = TestContract.get_todo("t1", "id1")
+      assert is_function(comp, 2), "Caller should return a computation (2-arity function)"
+
+      comp = TestContract.list_todos("t1")
+      assert is_function(comp, 2)
+
+      comp = TestContract.health_check()
+      assert is_function(comp, 2)
+    end
+  end
+
+  describe "Consumer and Provider submodule documentation" do
+    defp fetch_submodule_docs(source, submodule_suffix) do
+      Code.put_compiler_option(:docs, true)
+      compiled = Code.compile_string(source)
+      dir = System.tmp_dir!()
+
+      {mod, beam} =
+        Enum.find(compiled, fn {mod, _beam} ->
+          inspect(mod) |> String.ends_with?(submodule_suffix)
+        end)
+
+      path = Path.join(dir, "Elixir.#{inspect(mod)}.beam")
+      File.write!(path, beam)
+
+      try do
+        Code.fetch_docs(path)
+      after
+        File.rm(path)
+      end
+    end
+
+    @doc_test_source """
+    defmodule DocSubmoduleContract do
+      use Skuld.Effects.Port.Contract
+
+      defport get_item(id :: String.t()) :: {:ok, map()} | {:error, term()}
+    end
+    """
+
+    test "Consumer submodule has @moduledoc" do
+      {:docs_v1, _, _, _, module_doc, _, _} = fetch_submodule_docs(@doc_test_source, ".Consumer")
+      assert %{"en" => doc} = module_doc
+      assert doc =~ "Consumer behaviour"
+    end
+
+    test "Provider submodule has @moduledoc" do
+      {:docs_v1, _, _, _, module_doc, _, _} = fetch_submodule_docs(@doc_test_source, ".Provider")
+      assert %{"en" => doc} = module_doc
+      assert doc =~ "Provider behaviour"
+    end
+  end
+
+  # ---------------------------------------------------------------
   # Contract Macro Tests
   # ---------------------------------------------------------------
 
@@ -196,23 +334,7 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
   end
 
-  describe "defport generates @callback definitions" do
-    test "consumer callbacks are registered with correct arities" do
-      callbacks = TestContract.Consumer.behaviour_info(:callbacks)
-
-      assert {:get_todo, 2} in callbacks
-      assert {:list_todos, 1} in callbacks
-      assert {:health_check, 0} in callbacks
-    end
-
-    test "provider callbacks are registered with correct arities" do
-      callbacks = TestContract.Provider.behaviour_info(:callbacks)
-
-      assert {:get_todo, 2} in callbacks
-      assert {:list_todos, 1} in callbacks
-      assert {:health_check, 0} in callbacks
-    end
-
+  describe "defport generates @callback definitions in submodules" do
     test "contract module itself no longer defines behaviour callbacks" do
       refute function_exported?(TestContract, :behaviour_info, 1)
     end
