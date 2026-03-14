@@ -6,12 +6,12 @@ concern:
 - **DB** — write operations (insert, update, upsert, delete, bulk variants) and
   transaction management through a single effect with swappable handlers (Ecto for
   production, Test for stubbing and call recording, Noop for transaction-only tests).
-- **Port** — abstracts read queries (and any other blocking call to external code)
-  behind a dispatch layer with pluggable backends. Ecto's query language is too rich
-  to wrap in an effect, so reads are parameterised function calls routed through Port,
-  making them easy to stub in tests. **Port.Contract** adds typed contracts via
-  `defport` declarations, generating Dialyzer-checked caller functions, behaviour
-  callbacks, and test key helpers.
+- **[Port](effects-port.md)** — abstracts read queries (and any other blocking call
+  to external code) behind a dispatch layer with pluggable backends. Ecto's query
+  language is too rich to wrap in an effect, so reads are parameterised function calls
+  routed through Port, making them easy to stub in tests. **Port.Contract** adds typed
+  contracts via `defport`, and **Port.Provider** enables the reverse direction — plain
+  code calling into effectful implementations.
 - **DB.Batch** — a somewhat unusual (in Elixir) solution to the N+1 query problem.
   Batch-reads suspend the current FiberPool fiber; when the run queue empties, the
   scheduler groups pending reads by schema and executes a single batched query per
@@ -222,194 +222,15 @@ section for a full example of automatic batching with nested reads across concur
 
 ## Port
 
-Dispatch parameterizable blocking calls to pluggable backends. Ideal for wrapping
-any existing side-effecting code (database queries, HTTP calls, file I/O, etc.).
-Port uses positional arguments — the third argument to `Port.request/3` is a list
-of args, and dispatch uses `apply(module, name, args)`:
+Port abstracts read queries and other blocking calls behind a dispatch layer with
+pluggable backends, making them easy to stub in tests. Port.Contract adds typed
+contracts via `defport` declarations with Consumer/Provider behaviour generation,
+and Port.Provider enables the reverse direction — plain code calling into effectful
+implementations.
 
-```elixir
-use Skuld.Syntax
-alias Skuld.Comp
-alias Skuld.Effects.{Port, Throw}
-
-# Define a module with side-effecting functions (positional args)
-defmodule MyQueries do
-  def find_user(id), do: {:ok, %{id: id, name: "User #{id}"}}
-end
-
-# Runtime: dispatch to actual modules
-comp do
-  user <- Port.request!(MyQueries, :find_user, [123])
-  user
-end
-|> Port.with_handler(%{MyQueries => :direct})
-|> Throw.with_handler()
-|> Comp.run!()
-#=> %{id: 123, name: "User 123"}
-
-# Test: exact key matching with stub responses
-comp do
-  user <- Port.request!(MyQueries, :find_user, [456])
-  user
-end
-|> Port.with_test_handler(%{
-  Port.key(MyQueries, :find_user, [456]) => {:ok, %{id: 456, name: "Stubbed"}}
-})
-|> Throw.with_handler()
-|> Comp.run!()
-#=> %{id: 456, name: "Stubbed"}
-
-# Test: function-based handler with pattern matching (ideal for property tests)
-comp do
-  user <- Port.request!(MyQueries, :find_user, [789])
-  user
-end
-|> Port.with_fn_handler(fn
-  MyQueries, :find_user, [id] -> {:ok, %{id: id, name: "Generated User #{id}"}}
-  MyQueries, :list_users, [limit] when limit > 100 -> {:error, :limit_too_high}
-  _mod, _fun, _args -> {:ok, :default}
-end)
-|> Throw.with_handler()
-|> Comp.run!()
-#=> %{id: 789, name: "Generated User 789"}
-```
-
-The function handler enables Elixir's full pattern matching power — pins, guards,
-wildcards — making it ideal for property-based tests where exact values aren't
-known upfront. Use `with_test_handler` for simple exact-match cases and
-`with_fn_handler` for complex dynamic scenarios.
-
-**Resolver types:**
-
-- `:direct` — `apply(mod, name, args)` (call directly on the registered module)
-- `module` — `apply(module, name, args)` (implementation module, for contract->impl dispatch)
-- `fun/3` — `fun.(mod, name, args)` (function receives all three)
-- `{module, function}` — `apply(module, function, [mod, name, args])`
-
-## Port.Contract
-
-For typed, Dialyzer-checked port operations, use `Port.Contract`. It generates caller
-functions, behaviour callbacks, test key helpers, and introspection from `defport`
-declarations. Bang variants are generated automatically when the return type follows
-the `{:ok, T} | {:error, reason}` convention:
-
-```elixir
-defmodule MyApp.Repository do
-  use Skuld.Effects.Port.Contract
-
-  alias MyApp.Todo
-
-  # Bang auto-generated: return type has {:ok, T}
-  defport get_todo(tenant_id :: String.t(), id :: String.t()) ::
-            {:ok, Todo.t()} | {:error, term()}
-
-  defport list_todos(tenant_id :: String.t(), opts :: map()) ::
-            {:ok, [Todo.t()]} | {:error, term()}
-
-  # No bang auto-generated: return type is bare (no {:ok, T})
-  defport health_check() :: :ok | {:error, term()}
-end
-```
-
-This generates for each `defport`:
-
-- **Caller** — `get_todo(tenant_id, id)` returning `computation({:ok, Todo.t()} | {:error, term()})`
-- **Bang** (when applicable) — `get_todo!(tenant_id, id)` returning `computation(Todo.t())` (unwraps `{:ok, v}` or throws)
-- **Callback** — `@callback get_todo(String.t(), String.t()) :: {:ok, Todo.t()} | {:error, term()}`
-- **Key helper** — `key(:get_todo, tenant_id, id)` for test stub matching
-- **Introspection** — `__port_operations__/0`
-
-**Bang variant generation** is controlled by auto-detection with optional overrides
-via the `bang:` option:
-
-```elixir
-defmodule MyApp.Users do
-  use Skuld.Effects.Port.Contract
-
-  # Auto-detect (default): bang generated because return type has {:ok, T}
-  defport get_user(id :: String.t()) ::
-            {:ok, User.t()} | {:error, term()}
-
-  # Auto-detect: NO bang generated because return type has no {:ok, T}
-  defport find_user(id :: String.t()) :: User.t() | nil
-
-  # bang: true — force standard {:ok, v}/{:error, r} unwrapping even
-  # when the return type doesn't match the pattern
-  defport find_by_email(email :: String.t()) :: User.t() | nil, bang: true
-
-  # bang: false — suppress bang even though return type has {:ok, T}
-  defport raw_query(sql :: String.t()) ::
-            {:ok, term()} | {:error, term()},
-            bang: false
-
-  # bang: custom_fn — generate bang using a custom unwrap function.
-  # The function receives the raw implementation result and must
-  # return {:ok, value} or {:error, reason}
-  defport find_user_safe(id :: String.t()) :: User.t() | nil,
-    bang: fn
-      nil -> {:error, :not_found}
-      user -> {:ok, user}
-    end
-end
-```
-
-This makes Contract easy to fit to **existing implementation code** regardless of
-its return convention — implementations that return bare values, nillable results,
-or custom result types can all have bang variants with appropriate unwrapping.
-
-### Implementation modules
-
-Implementation modules add `@behaviour` and `@impl`:
-
-```elixir
-defmodule MyApp.Repository.Ecto do
-  @behaviour MyApp.Repository
-
-  @impl true
-  def get_todo(tenant_id, id) do
-    case Repo.get_by(Todo, tenant_id: tenant_id, id: id) do
-      nil -> {:error, {:not_found, Todo, id}}
-      todo -> {:ok, todo}
-    end
-  end
-
-  @impl true
-  def list_todos(tenant_id, opts), do: ...
-
-  @impl true
-  def health_check, do: :ok
-end
-```
-
-### Handler installation
-
-```elixir
-# Production: dispatch to Ecto implementation
-my_comp
-|> Port.with_handler(%{MyApp.Repository => MyApp.Repository.Ecto})
-|> Comp.run!()
-
-# Test: dispatch to in-memory implementation
-my_comp
-|> Port.with_handler(%{MyApp.Repository => MyApp.Repository.InMemory})
-|> Comp.run!()
-
-# Test: stub with generated key helpers
-my_comp
-|> Port.with_test_handler(%{
-  MyApp.Repository.key(:get_todo, "tenant-1", "id-1") => {:ok, mock_todo}
-})
-|> Throw.with_handler()
-|> Comp.run!()
-```
-
-**Benefits over raw `Port.request`:**
-
-- Dialyzer checks call sites and implementations via `@spec` and `@callback`
-- LSP autocomplete on `Repository.` shows available operations
-- Missing callback implementations produce compiler warnings
-- `key/N` helpers replace verbose `Port.key(Module, :name, [args...])` calls
-- Bang generation adapts to any return convention via `bang:` option
+See **[Port documentation](effects-port.md)** for the full API: low-level
+`Port.request`, typed `Port.Contract`, provider-side `Port.Provider`, handler
+types, and testing patterns.
 
 ## Command
 
