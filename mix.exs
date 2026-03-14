@@ -17,7 +17,22 @@ defmodule Skuld.MixProject do
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
         main: "readme",
-        extras: ["README.md"],
+        extras: [
+          "README.md",
+          "docs/syntax.md",
+          "docs/debugging.md",
+          "docs/effects-state-environment.md",
+          "docs/effects-control-flow.md",
+          "docs/effects-collections.md",
+          "docs/effects-value-generation.md",
+          "docs/effects-concurrency.md",
+          "docs/effects-persistence.md",
+          "docs/effects-port.md",
+          "docs/effect-logger.md",
+          "docs/testing.md",
+          "docs/architecture.md",
+          "docs/performance.md"
+        ],
         groups_for_modules: [
           Core: [
             Skuld,
