@@ -2,13 +2,29 @@ defmodule Skuld.Effects.Port.Contract do
   @moduledoc """
   Macro for defining typed port contracts with `defport` declarations.
 
-  A Port contract defines a set of operations as a behaviour, generating:
+  A Port contract defines a set of operations, generating:
 
-    * **Caller functions** — typed public API returning `computation(return_type)`
+    * **Consumer behaviour** (`__MODULE__.Consumer`) — plain Elixir callbacks for
+      non-effectful implementations
+    * **Provider behaviour** (`__MODULE__.Provider`) — computation-returning callbacks
+      for effectful implementations
+    * **Caller functions** — typed public API returning `computation(return_type)`,
+      which also satisfy the Provider behaviour
     * **Bang variants** — unwrap `{:ok, v}` or dispatch Throw (when applicable)
-    * **Behaviour callbacks** — typed `@callback` for implementations
     * **Key helpers** — for test stub matching
     * **Introspection** — `__port_operations__/0`
+
+  ## Consumer vs Provider
+
+  The contract generates two behaviour modules:
+
+    * `MyContract.Consumer` — callbacks return plain values. Use for non-effectful
+      implementations that are called via `Port.with_handler/2`.
+    * `MyContract.Provider` — callbacks return `computation(return_type)`. Use for
+      effectful implementations that need to be wrapped with `Port.Provider`.
+
+  The contract module's own caller functions satisfy the Provider behaviour (they
+  return computations that emit Port effects).
 
   ## Bang Variant Generation
 
@@ -50,7 +66,15 @@ defmodule Skuld.Effects.Port.Contract do
 
   This generates:
 
-      # Caller (returns computation)
+      # Consumer behaviour (plain Elixir)
+      MyApp.Repository.Consumer
+      @callback get_todo(String.t(), String.t()) :: {:ok, Todo.t()} | {:error, term()}
+
+      # Provider behaviour (computation-returning)
+      MyApp.Repository.Provider
+      @callback get_todo(String.t(), String.t()) :: computation({:ok, Todo.t()} | {:error, term()})
+
+      # Caller (returns computation, satisfies Provider behaviour)
       @spec get_todo(String.t(), String.t()) :: Types.computation({:ok, Todo.t()} | {:error, term()})
       def get_todo(tenant_id, id)
 
@@ -58,16 +82,13 @@ defmodule Skuld.Effects.Port.Contract do
       @spec get_todo!(String.t(), String.t()) :: Types.computation(Todo.t())
       def get_todo!(tenant_id, id)
 
-      # Callback (for implementations)
-      @callback get_todo(String.t(), String.t()) :: {:ok, Todo.t()} | {:error, term()}
-
       # Key helper (for test stubs)
       def key(:get_todo, tenant_id, id)
 
-  ## Implementation
+  ## Consumer Implementation
 
       defmodule MyApp.Repository.Ecto do
-        @behaviour MyApp.Repository
+        @behaviour MyApp.Repository.Consumer
 
         @impl true
         def get_todo(tenant_id, id), do: ...
@@ -189,7 +210,12 @@ defmodule Skuld.Effects.Port.Contract do
         line: 0
     end
 
-    callbacks = Enum.map(operations, &generate_callback/1)
+    consumer_module = Module.concat(env.module, Consumer)
+    provider_module = Module.concat(env.module, Provider)
+
+    consumer_callbacks = Enum.map(operations, &generate_callback/1)
+    provider_callbacks = Enum.map(operations, &generate_provider_callback/1)
+
     callers = Enum.map(operations, &generate_caller/1)
 
     bangs =
@@ -201,7 +227,32 @@ defmodule Skuld.Effects.Port.Contract do
     introspection = generate_introspection(operations)
 
     quote do
-      unquote_splicing(callbacks)
+      defmodule unquote(consumer_module) do
+        @moduledoc """
+        Consumer behaviour for `#{inspect(unquote(env.module))}`.
+
+        Defines plain Elixir callbacks — implementations receive and return
+        ordinary values (no computations). Use this behaviour for modules that
+        provide non-effectful implementations of the port contract.
+        """
+
+        unquote_splicing(consumer_callbacks)
+      end
+
+      defmodule unquote(provider_module) do
+        @moduledoc """
+        Provider behaviour for `#{inspect(unquote(env.module))}`.
+
+        Defines computation-returning callbacks — implementations return
+        `computation(return_type)` values. Use this behaviour for modules that
+        provide effectful implementations of the port contract.
+
+        The contract module's own caller functions satisfy this behaviour.
+        """
+
+        unquote_splicing(provider_callbacks)
+      end
+
       unquote_splicing(callers)
       unquote_splicing(bangs)
       unquote_splicing(key_helpers)
@@ -274,6 +325,28 @@ defmodule Skuld.Effects.Port.Contract do
 
     quote do
       @callback unquote(name)(unquote_splicing(callback_params)) :: unquote(return_type)
+    end
+  end
+
+  defp generate_provider_callback(%{
+         name: name,
+         param_names: param_names,
+         param_types: param_types,
+         return_type: return_type
+       }) do
+    # Build typed callback params: param_name :: type
+    callback_params =
+      Enum.zip(param_names, param_types)
+      |> Enum.map(fn {pname, ptype} ->
+        {:"::", [], [{pname, [], nil}, ptype]}
+      end)
+
+    # Provider callbacks return computation(return_type) instead of plain return_type
+    comp_type = {:computation, [], [return_type]}
+
+    quote do
+      @callback unquote(name)(unquote_splicing(callback_params)) ::
+                  Skuld.Comp.Types.unquote(comp_type)
     end
   end
 

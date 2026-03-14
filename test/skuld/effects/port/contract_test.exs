@@ -74,7 +74,7 @@ defmodule Skuld.Effects.Port.ContractTest do
 
   # Implementation module for dispatch tests
   defmodule TestImpl do
-    @behaviour TestContract
+    @behaviour TestContract.Consumer
 
     @impl true
     def get_todo(tenant_id, id) do
@@ -197,12 +197,24 @@ defmodule Skuld.Effects.Port.ContractTest do
   end
 
   describe "defport generates @callback definitions" do
-    test "callbacks are registered with correct arities" do
-      callbacks = TestContract.behaviour_info(:callbacks)
+    test "consumer callbacks are registered with correct arities" do
+      callbacks = TestContract.Consumer.behaviour_info(:callbacks)
 
       assert {:get_todo, 2} in callbacks
       assert {:list_todos, 1} in callbacks
       assert {:health_check, 0} in callbacks
+    end
+
+    test "provider callbacks are registered with correct arities" do
+      callbacks = TestContract.Provider.behaviour_info(:callbacks)
+
+      assert {:get_todo, 2} in callbacks
+      assert {:list_todos, 1} in callbacks
+      assert {:health_check, 0} in callbacks
+    end
+
+    test "contract module itself no longer defines behaviour callbacks" do
+      refute function_exported?(TestContract, :behaviour_info, 1)
     end
   end
 
@@ -319,8 +331,18 @@ defmodule Skuld.Effects.Port.ContractTest do
     defp fetch_docs_from_compiled(source) do
       # Ensure docs chunk is included in compiled beam
       Code.put_compiler_option(:docs, true)
-      [{mod, beam}] = Code.compile_string(source)
+      compiled = Code.compile_string(source)
       dir = System.tmp_dir!()
+
+      # Find the contract module (not Consumer or Provider submodule)
+      {mod, beam} =
+        Enum.find(compiled, fn {mod, _beam} ->
+          mod_name = inspect(mod)
+
+          not String.ends_with?(mod_name, ".Consumer") and
+            not String.ends_with?(mod_name, ".Provider")
+        end)
+
       path = Path.join(dir, "Elixir.#{inspect(mod)}.beam")
       File.write!(path, beam)
 
@@ -609,7 +631,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       defmodule OtherImpl do
-        @behaviour OtherContract
+        @behaviour OtherContract.Consumer
 
         @impl true
         def lookup(key) do
