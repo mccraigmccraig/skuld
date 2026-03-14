@@ -31,7 +31,8 @@ some common side-effecting operations and their effectful equivalents:
 | Run effects from LiveView       | AsyncComputation             |
 | DB writes & transactions        | DB                           |
 | Batched DB reads (FiberPool)    | DB.Batch                     |
-| Blocking calls to external code | Port                         |
+| Blocking calls to external code | Port, Port.Contract          |
+| Effectful code from plain code  | Port.Provider                |
 | Decider pattern                 | Command, EventAccumulator    |
 | Serializable coroutines         | EffectLogger                 |
 | Raising exceptions              | Throw                        |
@@ -49,7 +50,8 @@ some common side-effecting operations and their effectful equivalents:
   - [Collections](docs/effects-collections.md) - FxList, FxFasterList
   - [Value Generation](docs/effects-value-generation.md) - Fresh, Random
   - [Concurrency](docs/effects-concurrency.md) - AtomicState, Parallel, AsyncComputation, FiberPool, Channel, Brook
-  - [Persistence & Data](docs/effects-persistence.md) - DB, DB.Batch, Port, Port.Contract, Command, EventAccumulator
+  - [Persistence & Data](docs/effects-persistence.md) - DB, DB.Batch, Command, EventAccumulator
+  - [Port](docs/effects-port.md) - Port, Port.Contract, Port.Provider
   - [Serializable Coroutines](docs/effect-logger.md) - EffectLogger
 - **[Property-Based Testing](docs/testing.md)** - Testing effectful code with pure handlers
 - **[Architecture](docs/architecture.md)** - Design, comparison with Freyja
