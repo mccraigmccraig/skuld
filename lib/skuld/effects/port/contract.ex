@@ -5,21 +5,47 @@ defmodule Skuld.Effects.Port.Contract do
   A Port contract defines a set of operations as a behaviour, generating:
 
     * **Caller functions** — typed public API returning `computation(return_type)`
-    * **Bang variants** — unwrap `{:ok, v}` or dispatch Throw
+    * **Bang variants** — unwrap `{:ok, v}` or dispatch Throw (when applicable)
     * **Behaviour callbacks** — typed `@callback` for implementations
     * **Key helpers** — for test stub matching
     * **Introspection** — `__port_operations__/0`
+
+  ## Bang Variant Generation
+
+  Bang variants (`name!`) are generated based on the return type:
+
+    * **Auto-detect** (default): If the return type contains `{:ok, T}`, a bang
+      variant is generated that unwraps `{:ok, value}` or dispatches `Throw` on
+      `{:error, reason}`. If no `{:ok, T}` is found, no bang is generated.
+    * **`bang: true`**: Force bang generation with standard `{:ok, v}` / `{:error, r}`
+      unwrapping, even if the return type doesn't match the pattern.
+    * **`bang: false`**: Suppress bang generation even if the return type matches.
+    * **`bang: unwrap_fn`**: Generate a bang that first applies `unwrap_fn` to the
+      raw result (which must return `{:ok, v}` or `{:error, r}`), then unwraps.
 
   ## Example
 
       defmodule MyApp.Repository do
         use Skuld.Effects.Port.Contract
 
+        # Auto-detected: has {:ok, T}, bang generated automatically
         defport get_todo(tenant_id :: String.t(), id :: String.t()) ::
                   {:ok, Todo.t()} | {:error, term()}
 
-        defport list_todos(tenant_id :: String.t()) ::
-                  {:ok, [Todo.t()]} | {:error, term()}
+        # No {:ok, T} in return type, no bang generated
+        defport find_user(id :: String.t()) :: User.t() | nil
+
+        # Force bang with custom unwrap (nil → error, value → ok)
+        defport find_user(id :: String.t()) :: User.t() | nil,
+          bang: fn
+            nil -> {:error, :not_found}
+            user -> {:ok, user}
+          end
+
+        # Suppress bang even though return type has {:ok, T}
+        defport raw_query(sql :: String.t()) ::
+                  {:ok, term()} | {:error, term()},
+                  bang: false
       end
 
   This generates:
@@ -28,7 +54,7 @@ defmodule Skuld.Effects.Port.Contract do
       @spec get_todo(String.t(), String.t()) :: Types.computation({:ok, Todo.t()} | {:error, term()})
       def get_todo(tenant_id, id)
 
-      # Bang (unwraps or throws)
+      # Bang (unwraps or throws) — auto-detected from {:ok, T}
       @spec get_todo!(String.t(), String.t()) :: Types.computation(Todo.t())
       def get_todo!(tenant_id, id)
 
@@ -57,7 +83,7 @@ defmodule Skuld.Effects.Port.Contract do
   @doc false
   defmacro __using__(_opts) do
     quote do
-      import Skuld.Effects.Port.Contract, only: [defport: 1]
+      import Skuld.Effects.Port.Contract, only: [defport: 1, defport: 2]
       Module.register_attribute(__MODULE__, :port_operations, accumulate: true)
       @before_compile Skuld.Effects.Port.Contract
     end
@@ -69,17 +95,61 @@ defmodule Skuld.Effects.Port.Contract do
   ## Syntax
 
       defport function_name(param :: type(), ...) :: return_type()
+      defport function_name(param :: type(), ...) :: return_type(), bang: option
 
-  Each `defport` declaration generates a caller function, bang variant,
-  `@callback`, key helper, and `@doc` strings.
+  Each `defport` declaration generates a caller function, `@callback`, key
+  helper, and `@doc` strings. A bang variant is generated based on the `bang`
+  option:
 
-  Default arguments (`\\\\`) are not supported in v1 — use a wrapper function instead.
+    * **omitted** — auto-detect: generate bang only if return type contains `{:ok, T}`
+    * **`true`** — force standard `{:ok, v}` / `{:error, r}` unwrapping
+    * **`false`** — suppress bang generation
+    * **`unwrap_fn`** — generate bang using custom unwrap function, which receives
+      the raw result and must return `{:ok, v}` or `{:error, r}`
+
+  Default arguments (`\\\\`) are not supported — use a wrapper function instead.
   """
-  defmacro defport({:"::", _meta, [call_ast, return_type_ast]}) do
+  defmacro defport(spec, opts \\ [])
+
+  defmacro defport({:"::", _meta, [call_ast, return_type_ast]}, opts) do
+    bang_opt = Keyword.get(opts, :bang, :auto)
+    build_defport_ast(call_ast, return_type_ast, bang_opt)
+  end
+
+  defmacro defport(other, _opts) do
+    raise CompileError,
+      description:
+        "invalid defport syntax. Expected: defport name(param :: type(), ...) :: return_type()\n" <>
+          "Got: #{Macro.to_string(other)}",
+      file: __CALLER__.file,
+      line: __CALLER__.line
+  end
+
+  defp build_defport_ast(call_ast, return_type_ast, bang_opt) do
     {name, params} = parse_call(call_ast)
 
     param_names = Enum.map(params, &elem(&1, 0))
     param_types = Enum.map(params, &elem(&1, 1))
+
+    # Determine bang mode:
+    #   :auto — generate if return type has {:ok, T}, with standard unwrap
+    #   true — force standard unwrap
+    #   false — no bang
+    #   ast — custom unwrap function (any non-boolean, non-:auto expression)
+    bang_mode =
+      case bang_opt do
+        :auto ->
+          if has_ok_error_pattern?(return_type_ast), do: :standard, else: :none
+
+        true ->
+          :standard
+
+        false ->
+          :none
+
+        custom_fn_ast ->
+          {:custom, custom_fn_ast}
+      end
 
     # Build the base operation map (without user_doc — that's captured at module level)
     op_base = %{
@@ -87,6 +157,7 @@ defmodule Skuld.Effects.Port.Contract do
       param_names: param_names,
       param_types: param_types,
       return_type: return_type_ast,
+      bang_mode: bang_mode,
       user_doc: nil
     }
 
@@ -107,15 +178,6 @@ defmodule Skuld.Effects.Port.Contract do
     end
   end
 
-  defmacro defport(other) do
-    raise CompileError,
-      description:
-        "invalid defport syntax. Expected: defport name(param :: type(), ...) :: return_type()\n" <>
-          "Got: #{Macro.to_string(other)}",
-      file: __CALLER__.file,
-      line: __CALLER__.line
-  end
-
   @doc false
   defmacro __before_compile__(env) do
     operations = Module.get_attribute(env.module, :port_operations) |> Enum.reverse()
@@ -129,7 +191,12 @@ defmodule Skuld.Effects.Port.Contract do
 
     callbacks = Enum.map(operations, &generate_callback/1)
     callers = Enum.map(operations, &generate_caller/1)
-    bangs = Enum.map(operations, &generate_bang/1)
+
+    bangs =
+      operations
+      |> Enum.filter(fn op -> op.bang_mode != :none end)
+      |> Enum.map(&generate_bang/1)
+
     key_helpers = Enum.map(operations, &generate_key_helper/1)
     introspection = generate_introspection(operations)
 
@@ -256,7 +323,8 @@ defmodule Skuld.Effects.Port.Contract do
          name: name,
          param_names: param_names,
          param_types: param_types,
-         return_type: return_type
+         return_type: return_type,
+         bang_mode: bang_mode
        }) do
     bang_name = :"#{name}!"
     param_vars = Enum.map(param_names, fn pname -> {pname, [], nil} end)
@@ -268,15 +336,42 @@ defmodule Skuld.Effects.Port.Contract do
     unwrapped = extract_success_type(return_type)
     comp_type = {:computation, [], [unwrapped]}
 
-    doc_string =
-      "Port operation: `#{bang_name}/#{length(param_names)}`\n\nLike `#{name}/#{length(param_names)}` but unwraps `{:ok, value}` or dispatches `Throw` on error.\n"
+    {doc_string, body_ast} =
+      case bang_mode do
+        :standard ->
+          doc =
+            "Port operation: `#{bang_name}/#{length(param_names)}`\n\nLike `#{name}/#{length(param_names)}` but unwraps `{:ok, value}` or dispatches `Throw` on error.\n"
+
+          body =
+            quote do
+              Skuld.Effects.Port.request!(__MODULE__, unquote(name), unquote(args_list))
+            end
+
+          {doc, body}
+
+        {:custom, unwrap_fn_ast} ->
+          doc =
+            "Port operation: `#{bang_name}/#{length(param_names)}`\n\nLike `#{name}/#{length(param_names)}` but applies a custom unwrap function, then unwraps `{:ok, value}` or dispatches `Throw` on error.\n"
+
+          body =
+            quote do
+              Skuld.Effects.Port.request_bang(
+                __MODULE__,
+                unquote(name),
+                unquote(args_list),
+                unquote(unwrap_fn_ast)
+              )
+            end
+
+          {doc, body}
+      end
 
     quote do
       @doc unquote(doc_string)
       @spec unquote(bang_name)(unquote_splicing(spec_params)) ::
               Skuld.Comp.Types.unquote(comp_type)
       def unquote(bang_name)(unquote_splicing(param_vars)) do
-        Skuld.Effects.Port.request!(__MODULE__, unquote(name), unquote(args_list))
+        unquote(body_ast)
       end
     end
   end
@@ -333,6 +428,12 @@ defmodule Skuld.Effects.Port.Contract do
   # Type Extraction
   # -------------------------------------------------------------------
 
+  # Check whether the return type AST contains an {:ok, T} pattern.
+  @doc false
+  def has_ok_error_pattern?(return_type_ast) do
+    extract_from_union(return_type_ast) != nil
+  end
+
   # Extract the success type from {:ok, T} | {:error, _} patterns.
   # Falls back to term() if the pattern doesn't match.
   @doc false
@@ -356,8 +457,10 @@ defmodule Skuld.Effects.Port.Contract do
   # Two-element tuple: {:{}, _, [:ok, inner_type]} or {:ok, inner_type} (2-tuple shorthand)
   defp extract_from_ok_tuple({:{}, _, [:ok, inner_type]}), do: inner_type
 
-  # Elixir AST represents 2-tuples as {left, right} directly
-  defp extract_from_ok_tuple({:ok, inner_type}) when not is_list(inner_type), do: inner_type
+  # Elixir AST represents 2-tuples as {left, right} directly.
+  # Note: function calls like ok(arg) are 3-tuples {:ok, meta, args}, not 2-tuples,
+  # so this only matches actual 2-tuple type literals like {:ok, some_type}.
+  defp extract_from_ok_tuple({:ok, inner_type}), do: inner_type
 
   defp extract_from_ok_tuple(_), do: nil
 end

@@ -23,7 +23,41 @@ defmodule Skuld.Effects.Port.ContractTest do
         {:ok, [map()]} | {:error, term()}
     )
 
+    # No {:ok, T} in return type — bang auto-detected as not needed
     defport(health_check() :: :ok)
+  end
+
+  # Contract with bang: false to suppress auto-generated bang
+  defmodule NoBangContract do
+    use Skuld.Effects.Port.Contract
+
+    defport(get_item(id :: String.t()) :: {:ok, map()} | {:error, term()}, bang: false)
+  end
+
+  # Contract with bang: true to force bang on non-ok/error return type
+  defmodule ForceBangContract do
+    use Skuld.Effects.Port.Contract
+
+    defport(find_user(id :: String.t()) :: map() | nil, bang: true)
+  end
+
+  # Contract with custom unwrap function
+  defmodule CustomBangContract do
+    use Skuld.Effects.Port.Contract
+
+    defport(find_user(id :: String.t()) :: map() | nil,
+      bang: fn
+        nil -> {:error, :not_found}
+        user -> {:ok, user}
+      end
+    )
+  end
+
+  # Contract with bare return type (no bang auto-generated)
+  defmodule BareReturnContract do
+    use Skuld.Effects.Port.Contract
+
+    defport(count_items(category :: String.t()) :: integer())
   end
 
   defmodule TestContractWithDoc do
@@ -82,15 +116,83 @@ defmodule Skuld.Effects.Port.ContractTest do
   end
 
   describe "defport generates bang variants" do
-    test "for every operation" do
+    test "for operations with {:ok, T} return type (auto-detect)" do
       assert function_exported?(TestContract, :get_todo!, 2)
       assert function_exported?(TestContract, :list_todos!, 1)
-      assert function_exported?(TestContract, :health_check!, 0)
+    end
+
+    test "not for operations without {:ok, T} return type (auto-detect)" do
+      refute function_exported?(TestContract, :health_check!, 0)
+    end
+
+    test "not for bare return types (auto-detect)" do
+      refute function_exported?(BareReturnContract, :count_items!, 1)
     end
 
     test "bang returns a computation" do
       comp = TestContract.get_todo!("t1", "id1")
       assert is_function(comp, 2)
+    end
+  end
+
+  describe "bang: false suppresses bang generation" do
+    test "no bang variant even with {:ok, T} return type" do
+      # NoBangContract has {:ok, map()} | {:error, term()} but bang: false
+      refute function_exported?(NoBangContract, :get_item!, 1)
+    end
+
+    test "caller still generated" do
+      assert function_exported?(NoBangContract, :get_item, 1)
+    end
+  end
+
+  describe "bang: true forces bang generation" do
+    test "bang variant generated for non-ok/error return type" do
+      assert function_exported?(ForceBangContract, :find_user!, 1)
+    end
+
+    test "forced bang returns a computation" do
+      comp = ForceBangContract.find_user!("u1")
+      assert is_function(comp, 2)
+    end
+  end
+
+  describe "bang: custom_fn generates bang with custom unwrap" do
+    test "bang variant generated with custom unwrap" do
+      assert function_exported?(CustomBangContract, :find_user!, 1)
+    end
+
+    test "custom bang returns a computation" do
+      comp = CustomBangContract.find_user!("u1")
+      assert is_function(comp, 2)
+    end
+
+    test "custom bang unwraps success through custom function" do
+      handler = fn CustomBangContract, :find_user, ["u1"] ->
+        %{id: "u1", name: "Alice"}
+      end
+
+      comp =
+        CustomBangContract.find_user!("u1")
+        |> Port.with_fn_handler(handler)
+        |> Throw.with_handler()
+
+      {result, _env} = Comp.run(comp)
+      assert %{id: "u1", name: "Alice"} = result
+    end
+
+    test "custom bang throws on error via custom function" do
+      handler = fn CustomBangContract, :find_user, ["bad"] ->
+        nil
+      end
+
+      comp =
+        CustomBangContract.find_user!("bad")
+        |> Port.with_fn_handler(handler)
+        |> Throw.with_handler()
+
+      {result, _env} = Comp.run(comp)
+      assert %ThrowResult{error: :not_found} = result
     end
   end
 
@@ -170,9 +272,9 @@ defmodule Skuld.Effects.Port.ContractTest do
       assert is_function(comp, 2)
     end
 
-    test "generates zero-arity bang" do
-      comp = TestContract.health_check!()
-      assert is_function(comp, 2)
+    test "does not generate bang for non-ok/error return type" do
+      # health_check returns :ok (bare atom), no {:ok, T} pattern
+      refute function_exported?(TestContract, :health_check!, 0)
     end
 
     test "generates single-arity key helper" do

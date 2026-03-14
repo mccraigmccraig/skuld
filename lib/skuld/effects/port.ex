@@ -174,6 +174,37 @@ defmodule Skuld.Effects.Port do
     end)
   end
 
+  @doc """
+  Build a request that applies a custom unwrap function, then unwraps or throws.
+
+  The `unwrap_fn` receives the raw result from the handler and must return
+  `{:ok, value}` or `{:error, reason}`. The result is then handled like
+  `request!/3`: success values are unwrapped, errors dispatch `Throw`.
+
+  This is used by `Port.Contract` when `bang:` is set to a custom function.
+
+  Requires a `Throw.with_handler/1` in the handler chain.
+
+  ## Example
+
+      Port.request_bang(MyApp.Users, :find_by_id, [123], fn
+        nil -> {:error, :not_found}
+        user -> {:ok, user}
+      end)
+      # => %User{...} or throws :not_found
+  """
+  @spec request_bang(port_module(), port_name(), args(), (term() ->
+                                                            {:ok, term()} | {:error, term()})) ::
+          Types.computation()
+  def request_bang(mod, name, args, unwrap_fn) do
+    Comp.bind(request(mod, name, args), fn result ->
+      case unwrap_fn.(result) do
+        {:ok, value} -> Comp.pure(value)
+        {:error, reason} -> Throw.throw(reason)
+      end
+    end)
+  end
+
   #############################################################################
   ## Key Generation (for test stubs)
   #############################################################################
