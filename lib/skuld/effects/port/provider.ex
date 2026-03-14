@@ -67,20 +67,24 @@ defmodule Skuld.Effects.Port.Provider do
   defmacro __using__(opts) do
     contract = Keyword.fetch!(opts, :contract)
     impl = Keyword.fetch!(opts, :impl)
-    stack = Keyword.fetch!(opts, :stack)
+    stack_ast = Keyword.fetch!(opts, :stack)
+
+    # Store stack as escaped AST so it survives module attribute storage
+    # and can be re-injected in __before_compile__
+    escaped_stack = Macro.escape(stack_ast)
 
     quote do
       @before_compile {Skuld.Effects.Port.Provider, :__before_compile__}
       @__port_provider_contract__ unquote(contract)
       @__port_provider_impl__ unquote(impl)
-      @__port_provider_stack__ unquote(stack)
+      @__port_provider_stack_ast__ unquote(escaped_stack)
     end
   end
 
   defmacro __before_compile__(env) do
     contract = Module.get_attribute(env.module, :__port_provider_contract__)
     impl = Module.get_attribute(env.module, :__port_provider_impl__)
-    stack = Module.get_attribute(env.module, :__port_provider_stack__)
+    stack_ast = Module.get_attribute(env.module, :__port_provider_stack_ast__)
 
     # Validate contract module has __port_operations__/0
     unless function_exported?(contract, :__port_operations__, 0) do
@@ -104,7 +108,7 @@ defmodule Skuld.Effects.Port.Provider do
           @impl true
           def unquote(name)(unquote_splicing(param_vars)) do
             unquote(impl).unquote(name)(unquote_splicing(param_vars))
-            |> unquote(stack).()
+            |> unquote(stack_ast).()
             |> Skuld.Comp.run!()
           end
         end
