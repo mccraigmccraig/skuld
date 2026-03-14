@@ -50,10 +50,11 @@ some common side-effecting operations and their effectful equivalents:
   - [Collections](docs/effects-collections.md) - FxList, FxFasterList
   - [Value Generation](docs/effects-value-generation.md) - Fresh, Random
   - [Basic Concurrency](docs/effects-concurrency.md) - AtomicState, Parallel, AsyncComputation
-  - [Persistence & Data](docs/effects-persistence.md) - DB, DB.Batch, Command, EventAccumulator
+  - [Persistence & Data](docs/effects-persistence.md) - DB, Command, EventAccumulator
   - [Port](docs/effects-port.md) - Port, Port.Contract, Port.Provider
 - **Slightly insane effects**
   - [Concurrency](docs/effects-concurrency.md) - FiberPool, Channel, Brook
+  - [DB.Batch](docs/effects-persistence.md) - Batched DB reads via FiberPool
   - [Serializable Coroutines](docs/effect-logger.md) - EffectLogger
 - **[Property-Based Testing](docs/testing.md)** - Testing effectful code with pure handlers
 - **[Architecture](docs/architecture.md)** - Design, comparison with Freyja
