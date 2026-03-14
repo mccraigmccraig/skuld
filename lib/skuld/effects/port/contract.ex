@@ -155,7 +155,7 @@ defmodule Skuld.Effects.Port.Contract do
 
   defmacro defport({:"::", _meta, [call_ast, return_type_ast]}, opts) do
     bang_opt = Keyword.get(opts, :bang, :auto)
-    build_defport_ast(call_ast, return_type_ast, bang_opt)
+    build_defport_ast(call_ast, return_type_ast, bang_opt, __CALLER__)
   end
 
   defmacro defport(other, _opts) do
@@ -167,8 +167,8 @@ defmodule Skuld.Effects.Port.Contract do
       line: __CALLER__.line
   end
 
-  defp build_defport_ast(call_ast, return_type_ast, bang_opt) do
-    {name, params} = parse_call(call_ast)
+  defp build_defport_ast(call_ast, return_type_ast, bang_opt, caller) do
+    {name, params} = parse_call(call_ast, caller)
 
     param_names = Enum.map(params, &elem(&1, 0))
     param_types = Enum.map(params, &elem(&1, 1))
@@ -288,12 +288,12 @@ defmodule Skuld.Effects.Port.Contract do
   # Parse `name(param1 :: type1, param2 :: type2, ...)`
   # Returns {name, [{param_name, type_ast}, ...]}
   @doc false
-  def parse_call({name, _meta, nil}) when is_atom(name) do
+  def parse_call({name, _meta, nil}, _caller) when is_atom(name) do
     # Zero-arg: defport health_check() :: :ok
     {name, []}
   end
 
-  def parse_call({name, _meta, args}) when is_atom(name) and is_list(args) do
+  def parse_call({name, _meta, args}, caller) when is_atom(name) and is_list(args) do
     params =
       Enum.map(args, fn
         {:"::", _, [{param_name, _, _}, type_ast]} when is_atom(param_name) ->
@@ -306,25 +306,25 @@ defmodule Skuld.Effects.Port.Contract do
                 "Use a wrapper function instead.\n" <>
                 "  defport #{name}(...) :: ...\n" <>
                 "  def #{name}_default(...), do: #{name}(..., default_value)",
-            file: "",
-            line: 0
+            file: caller.file,
+            line: caller.line
 
         other ->
           raise CompileError,
             description:
               "defport parameters must be typed: `name :: type()`. Got: #{Macro.to_string(other)}",
-            file: "",
-            line: 0
+            file: caller.file,
+            line: caller.line
       end)
 
     {name, params}
   end
 
-  def parse_call(other) do
+  def parse_call(other, caller) do
     raise CompileError,
       description: "invalid defport call syntax. Got: #{Macro.to_string(other)}",
-      file: "",
-      line: 0
+      file: caller.file,
+      line: caller.line
   end
 
   # -------------------------------------------------------------------

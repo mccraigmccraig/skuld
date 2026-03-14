@@ -69,6 +69,30 @@ defmodule Skuld.Effects.Port.Provider do
   the boundary, and implementations can be either plain Elixir (Consumer) or
   effectful (Provider), depending on the direction of the call.
 
+  ## Throw handler in the stack
+
+  If the effectful implementation can throw (via `Skuld.Effects.Throw`), the
+  stack function **must** install a `Throw.with_handler/1`. Without it,
+  `Comp.run!/1` raises `Skuld.Comp.ThrowError`, which can be confusing if you
+  don't realise a Throw handler is missing from the stack.
+
+  A minimal stack that only handles throws:
+
+      use Skuld.Effects.Port.Provider,
+        contract: MyContract,
+        impl: MyEffectfulImpl,
+        stack: &Skuld.Effects.Throw.with_handler/1
+
+  For stacks with multiple effects, place `Throw.with_handler/1` last (outermost)
+  so it catches throws from all inner handlers:
+
+      stack: fn comp ->
+        comp
+        |> State.with_handler(initial_state)
+        |> DB.Ecto.with_handler(MyApp.Repo)
+        |> Throw.with_handler()
+      end
+
   ## Testing Provider Adapters
 
   Provider adapters produce plain Elixir values, so they can be tested directly

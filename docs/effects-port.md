@@ -322,6 +322,12 @@ stack: fn comp ->
 end
 ```
 
+> **Note:** If the effectful implementation can throw (via `Throw`), the stack
+> function **must** include `Throw.with_handler/1`. Without it, `Comp.run!/1`
+> raises `ThrowError` — which can be confusing when you don't realise a Throw
+> handler is missing from the stack. Place it last (outermost) so it catches
+> throws from all inner handlers.
+
 ### Hexagonal architecture
 
 The Port system supports both directions of hexagonal architecture through the
