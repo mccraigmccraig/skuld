@@ -822,8 +822,32 @@ defmodule Skuld.Effects.FiberPool do
           result
       end
 
-    # Resume the main computation with env (avoids capturing stale env with pending fibers)
-    {new_result, new_env} = resume.(unwrapped, env)
+    # Clean pending work from env before resuming to avoid stale entries
+    # (the env flowing through run_scheduler_loop may still have PendingWork
+    # from before the fibers were added to state in run_with_fibers)
+    clean_env = %{env | state: Map.put(env.state, PendingWork.env_key(), PendingWork.new())}
+
+    # Resume the main computation with clean env
+    {new_result, new_env} = resume.(unwrapped, clean_env)
+
+    # Extract any new pending work spawned during the continuation
+    # (same pattern as run/2 lines 347-361)
+    pending_work = Env.get_state(new_env, PendingWork.env_key(), PendingWork.new())
+    {pending_fibers, pending_tasks, _} = PendingWork.take_all(pending_work)
+
+    # Add new fibers to state
+    state =
+      Enum.reduce(pending_fibers, state, fn {_id, fiber}, acc ->
+        {_id, acc} = State.add_fiber(acc, fiber)
+        acc
+      end)
+
+    # Spawn new tasks
+    state = Tasks.spawn_pending(state, pending_tasks)
+
+    # Clear pending work from env
+    clean_env_state = Map.put(new_env.state, PendingWork.env_key(), PendingWork.new())
+    new_env = %{new_env | state: clean_env_state}
 
     # Check if we got another suspension
     case new_result do

@@ -862,15 +862,21 @@ defmodule Skuld.Effects.ChannelTest do
           ch <- Channel.new(0)
 
           # Spawn a fiber that puts, it will block
-          putter <- FiberPool.fiber(comp do
-            _ <- Channel.put(ch, :item)
-            :put_done
-          end)
+          putter <-
+            FiberPool.fiber(
+              comp do
+                _ <- Channel.put(ch, :item)
+                :put_done
+              end
+            )
 
           # Spawn a fiber that takes after a "delay" (just yields control)
-          taker <- FiberPool.fiber(comp do
-            Channel.take(ch)
-          end)
+          taker <-
+            FiberPool.fiber(
+              comp do
+                Channel.take(ch)
+              end
+            )
 
           # Await both
           put_result <- FiberPool.await(putter)
@@ -892,15 +898,21 @@ defmodule Skuld.Effects.ChannelTest do
           ch <- Channel.new(0)
 
           # Spawn a fiber that takes, it will block
-          taker <- FiberPool.fiber(comp do
-            Channel.take(ch)
-          end)
+          taker <-
+            FiberPool.fiber(
+              comp do
+                Channel.take(ch)
+              end
+            )
 
           # Spawn a fiber that puts
-          putter <- FiberPool.fiber(comp do
-            _ <- Channel.put(ch, :item)
-            :put_done
-          end)
+          putter <-
+            FiberPool.fiber(
+              comp do
+                _ <- Channel.put(ch, :item)
+                :put_done
+              end
+            )
 
           # Await both
           take_result <- FiberPool.await(taker)
@@ -921,13 +933,16 @@ defmodule Skuld.Effects.ChannelTest do
           ch <- Channel.new(0)
 
           # Producer puts 3 items
-          producer <- FiberPool.fiber(comp do
-            _ <- Channel.put(ch, 1)
-            _ <- Channel.put(ch, 2)
-            _ <- Channel.put(ch, 3)
-            _ <- Channel.close(ch)
-            :producer_done
-          end)
+          producer <-
+            FiberPool.fiber(
+              comp do
+                _ <- Channel.put(ch, 1)
+                _ <- Channel.put(ch, 2)
+                _ <- Channel.put(ch, 3)
+                _ <- Channel.close(ch)
+                :producer_done
+              end
+            )
 
           # Consumer takes until closed
           consumer <- FiberPool.fiber(take_until_closed(ch, []))

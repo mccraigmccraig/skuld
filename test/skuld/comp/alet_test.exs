@@ -5,7 +5,6 @@ defmodule Skuld.Comp.AletTest do
   alias Skuld.Comp
   alias Skuld.Effects.FiberPool
   alias Skuld.Effects.State
-  alias Skuld.Effects.Writer
 
   describe "ap/2" do
     test "applies function computation to value computation" do
@@ -272,14 +271,6 @@ defmodule Skuld.Comp.AletTest do
         |> FiberPool.run!()
 
       assert result == 42
-    end
-        |> Writer.with_handler([], output: fn r, l -> {r, l} end)
-        |> FiberPool.with_handler()
-        |> FiberPool.run!()
-
-      assert result == 42
-      assert :fetched_a in log
-      assert :fetched_b in log
     end
   end
 
