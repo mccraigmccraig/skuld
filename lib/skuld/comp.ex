@@ -259,6 +259,87 @@ defmodule Skuld.Comp do
   end
 
   #############################################################################
+  ## Applicative Operations
+  #############################################################################
+
+  @doc """
+  Applicative `ap` — run a function-producing computation and a value-producing
+  computation concurrently via FiberPool fibers, then apply the function to
+  the value.
+
+  This is the standard applicative functor `<*>` operation. Both computations
+  are spawned as cooperative fibers within the same FiberPool, so their effects
+  (including data fetches) land in the same batch round, enabling implicit
+  concurrency.
+
+  Requires a `FiberPool` handler to be installed.
+
+  ## Example
+
+      comp_f = Comp.pure(fn x -> x * 2 end)
+      comp_a = Comp.pure(21)
+      result = Comp.ap(comp_f, comp_a)
+      # result is a computation that returns 42
+  """
+  @spec ap(Types.computation(), Types.computation()) :: Types.computation()
+  def ap(comp_f, comp_a) do
+    alias Skuld.Effects.FiberPool
+
+    bind(FiberPool.fiber(comp_f), fn hf ->
+      bind(FiberPool.fiber(comp_a), fn ha ->
+        bind(FiberPool.await_all!([hf, ha]), fn [f, a] ->
+          pure(f.(a))
+        end)
+      end)
+    end)
+  end
+
+  @doc """
+  Run a list of computations concurrently as cooperative fibers, returning
+  all results in order.
+
+  Each computation is spawned as a fiber within the current FiberPool,
+  then all are awaited. This is the primitive used by the `alet` macro
+  for independent binding groups.
+
+  Requires a `FiberPool` handler to be installed.
+
+  ## Example
+
+      Comp.ap_all([fetch(:x), fetch(:y), fetch(:z)])
+      # returns a computation producing [x_result, y_result, z_result]
+  """
+  @spec ap_all([Types.computation()]) :: Types.computation()
+  def ap_all([single]) do
+    # Optimization: single computation doesn't need fiber overhead
+    bind(single, fn result -> pure([result]) end)
+  end
+
+  def ap_all(comps) when is_list(comps) do
+    alias Skuld.Effects.FiberPool
+
+    # Spawn all computations as fibers
+    spawn_all(comps, [], fn handles ->
+      # Await all in order
+      FiberPool.await_all!(Enum.reverse(handles))
+    end)
+  end
+
+  # Helper: spawn a list of computations as fibers, collecting handles,
+  # then call the continuation with the handles list
+  defp spawn_all([], handles_acc, then_fn) do
+    then_fn.(handles_acc)
+  end
+
+  defp spawn_all([comp | rest], handles_acc, then_fn) do
+    alias Skuld.Effects.FiberPool
+
+    bind(FiberPool.fiber(comp), fn handle ->
+      spawn_all(rest, [handle | handles_acc], then_fn)
+    end)
+  end
+
+  #############################################################################
   ## Combinators
   #############################################################################
 
