@@ -306,16 +306,16 @@ defmodule Skuld.Comp do
 
   ## Example
 
-      Comp.ap_all([fetch(:x), fetch(:y), fetch(:z)])
+      Comp.spawn_await_all([fetch(:x), fetch(:y), fetch(:z)])
       # returns a computation producing [x_result, y_result, z_result]
   """
-  @spec ap_all([Types.computation()]) :: Types.computation()
-  def ap_all([single]) do
+  @spec spawn_await_all([Types.computation()]) :: Types.computation()
+  def spawn_await_all([single]) do
     # Optimization: single computation doesn't need fiber overhead
     bind(single, fn result -> pure([result]) end)
   end
 
-  def ap_all(comps) when is_list(comps) do
+  def spawn_await_all(comps) when is_list(comps) do
     alias Skuld.Effects.FiberPool
 
     # Spawn all computations as fibers

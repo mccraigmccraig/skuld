@@ -30,10 +30,10 @@ defmodule Skuld.Comp.AletTest do
     end
   end
 
-  describe "ap_all/1" do
+  describe "spawn_await_all/1" do
     test "single computation returns list with one result" do
       result =
-        Comp.ap_all([Comp.pure(42)])
+        Comp.spawn_await_all([Comp.pure(42)])
         |> FiberPool.with_handler()
         |> FiberPool.run!()
 
@@ -42,7 +42,7 @@ defmodule Skuld.Comp.AletTest do
 
     test "multiple computations return results in order" do
       result =
-        Comp.ap_all([Comp.pure(:a), Comp.pure(:b), Comp.pure(:c)])
+        Comp.spawn_await_all([Comp.pure(:a), Comp.pure(:b), Comp.pure(:c)])
         |> FiberPool.with_handler()
         |> FiberPool.run!()
 
@@ -51,7 +51,7 @@ defmodule Skuld.Comp.AletTest do
 
     test "computations run as fibers (concurrent)" do
       result =
-        Comp.ap_all([
+        Comp.spawn_await_all([
           Comp.pure(10),
           Comp.pure(20),
           Comp.pure(12)

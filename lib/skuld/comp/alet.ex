@@ -18,7 +18,7 @@
 # The macro analyses that `a` and `b` are independent (neither references
 # the other), while `c` depends on both. It emits code equivalent to:
 #
-#     Comp.ap_all([fetch(:x), fetch(:y)])
+#     Comp.spawn_await_all([fetch(:x), fetch(:y)])
 #     |> Comp.bind(fn [a, b] ->
 #       pure(a + b)
 #       |> Comp.map(fn c -> c * 2 end)
@@ -333,7 +333,7 @@ defmodule Skuld.Comp.Alet do
 
       quote do
         Skuld.Comp.bind(
-          Skuld.Comp.ap_all(unquote(comps)),
+          Skuld.Comp.spawn_await_all(unquote(comps)),
           fn unquote(list_pattern) ->
             unquote(inner)
           end
