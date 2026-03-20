@@ -1,0 +1,189 @@
+defmodule Skuld.Query.Cache do
+  @moduledoc """
+  Composable caching layer for `Query.Contract` queries.
+
+  Provides:
+  - **Cross-batch result caching** — identical queries across batch rounds
+    return cached results without re-executing
+  - **Within-batch request deduplication** — identical queries in the same
+    batch round are sent to the executor only once, with the result fanned
+    out to all requesting fibers
+
+  ## Usage
+
+      comp
+      |> QueryCache.with_executor(Users, Users.EctoExecutor)
+      |> FiberPool.with_handler()
+      |> FiberPool.run()
+
+      # Multiple contracts (shared cache scope):
+      comp
+      |> QueryCache.with_executors([
+        {Users, Users.EctoExecutor},
+        {Orders, Orders.EctoExecutor}
+      ])
+      |> FiberPool.with_handler()
+      |> FiberPool.run()
+
+  ## Cache Scope
+
+  The cache is scoped per computation run. It's initialised as an empty map
+  by `Comp.scoped` and cleaned up on scope exit. No TTL, no eviction.
+
+  ## Cache Key
+
+  `{batch_key, op_struct}` where:
+  - `batch_key` is `{ContractModule, :query_name}`
+  - `op_struct` is the operation struct (e.g. `%Users.GetUser{id: "123"}`)
+
+  Structural equality on Elixir structs provides correct comparison.
+  """
+
+  alias Skuld.Comp
+  alias Skuld.Comp.Env
+  alias Skuld.Fiber.FiberPool.BatchExecutor
+
+  @cache_key {__MODULE__, :cache}
+
+  @doc """
+  Install caching-wrapped executors for multiple contracts.
+
+  Initialises a scoped cache and registers caching-wrapped executors for
+  all query operations in each contract.
+
+  ## Example
+
+      comp
+      |> QueryCache.with_executors([
+        {Users, Users.EctoExecutor},
+        {Orders, Orders.EctoExecutor}
+      ])
+      |> FiberPool.with_handler()
+      |> FiberPool.run()
+  """
+  @spec with_executors(Comp.Types.computation(), [{module(), module()}]) ::
+          Comp.Types.computation()
+  def with_executors(comp, contract_executor_pairs) do
+    # Build the list of {batch_key, caching_wrapper} tuples for all operations
+    executor_entries =
+      Enum.flat_map(contract_executor_pairs, fn {contract_module, executor_module} ->
+        contract_module.__query_operations__()
+        |> Enum.map(fn op ->
+          batch_key = {contract_module, op.name}
+
+          wrapper =
+            make_caching_wrapper(contract_module, executor_module, op.name, batch_key)
+
+          {batch_key, wrapper}
+        end)
+      end)
+
+    # Install the cache scope and all wrapped executors
+    comp
+    |> init_cache_scope()
+    |> BatchExecutor.with_executors(executor_entries)
+  end
+
+  @doc """
+  Install a caching-wrapped executor for a single contract.
+
+  Shorthand for `with_executors(comp, [{contract_module, executor_module}])`.
+  """
+  @spec with_executor(Comp.Types.computation(), module(), module()) ::
+          Comp.Types.computation()
+  def with_executor(comp, contract_module, executor_module) do
+    with_executors(comp, [{contract_module, executor_module}])
+  end
+
+  # -------------------------------------------------------------------
+  # Cache Scope
+  # -------------------------------------------------------------------
+
+  defp init_cache_scope(comp) do
+    Comp.scoped(comp, fn env ->
+      previous_cache = Env.get_state(env, @cache_key, nil)
+      env_with_cache = Env.put_state(env, @cache_key, %{})
+
+      cleanup = fn value, cleanup_env ->
+        restored_env =
+          if previous_cache do
+            Env.put_state(cleanup_env, @cache_key, previous_cache)
+          else
+            %{cleanup_env | state: Map.delete(cleanup_env.state, @cache_key)}
+          end
+
+        {value, restored_env}
+      end
+
+      {env_with_cache, cleanup}
+    end)
+  end
+
+  # -------------------------------------------------------------------
+  # Caching Wrapper
+  # -------------------------------------------------------------------
+
+  defp make_caching_wrapper(contract_module, executor_module, query_name, batch_key) do
+    fn ops ->
+      # The wrapper is a computation — it needs access to env to read/write cache
+      fn env, k ->
+        cache = Env.get_state(env, @cache_key, %{})
+
+        # Partition ops into cache hits and misses
+        {hit_results, miss_ops} = partition_cached(ops, cache, batch_key)
+
+        if miss_ops == [] do
+          # All cache hits — return immediately
+          k.(hit_results, env)
+        else
+          # Call real executor for misses only
+          executor_comp =
+            contract_module.__dispatch__(executor_module, query_name, miss_ops)
+
+          Comp.call(
+            Comp.bind(executor_comp, fn miss_results ->
+              # Update cache with new results
+              new_cache_entries =
+                Enum.reduce(miss_ops, %{}, fn {ref, op}, acc ->
+                  result = Map.fetch!(miss_results, ref)
+                  Map.put(acc, {batch_key, op}, result)
+                end)
+
+              # Return a computation that updates env.state and returns merged results
+              fn inner_env, inner_k ->
+                updated_cache =
+                  Map.merge(Env.get_state(inner_env, @cache_key, %{}), new_cache_entries)
+
+                updated_env = Env.put_state(inner_env, @cache_key, updated_cache)
+
+                merged_results = Map.merge(hit_results, miss_results)
+                inner_k.(merged_results, updated_env)
+              end
+            end),
+            env,
+            k
+          )
+        end
+      end
+    end
+  end
+
+  # -------------------------------------------------------------------
+  # Helpers
+  # -------------------------------------------------------------------
+
+  defp partition_cached(ops, cache, batch_key) do
+    Enum.reduce(ops, {%{}, []}, fn {ref, op}, {hits, misses} ->
+      cache_key = {batch_key, op}
+
+      case Map.fetch(cache, cache_key) do
+        {:ok, cached_result} ->
+          {Map.put(hits, ref, cached_result), misses}
+
+        :error ->
+          {hits, [{ref, op} | misses]}
+      end
+    end)
+    |> then(fn {hits, misses} -> {hits, Enum.reverse(misses)} end)
+  end
+end
