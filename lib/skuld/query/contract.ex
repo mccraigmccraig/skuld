@@ -157,7 +157,8 @@ defmodule Skuld.Query.Contract do
 
   defmacro defquery({:"::", _meta, [call_ast, return_type_ast]}, opts) do
     bang_opt = Keyword.get(opts, :bang, :auto)
-    build_defquery_ast(call_ast, return_type_ast, bang_opt, __CALLER__)
+    cache_opt = Keyword.get(opts, :cache, true)
+    build_defquery_ast(call_ast, return_type_ast, bang_opt, cache_opt, __CALLER__)
   end
 
   defmacro defquery(other, _opts) do
@@ -169,7 +170,7 @@ defmodule Skuld.Query.Contract do
       line: __CALLER__.line
   end
 
-  defp build_defquery_ast(call_ast, return_type_ast, bang_opt, caller) do
+  defp build_defquery_ast(call_ast, return_type_ast, bang_opt, cache_opt, caller) do
     {name, params} = Skuld.Effects.Port.Contract.parse_call(call_ast, caller)
 
     param_names = Enum.map(params, &elem(&1, 0))
@@ -198,6 +199,7 @@ defmodule Skuld.Query.Contract do
       param_types: param_types,
       return_type: return_type_ast,
       bang_mode: bang_mode,
+      cacheable: cache_opt,
       user_doc: nil
     }
 
@@ -525,7 +527,8 @@ defmodule Skuld.Query.Contract do
                                 name: name,
                                 param_names: param_names,
                                 param_types: param_types,
-                                return_type: return_type
+                                return_type: return_type,
+                                cacheable: cacheable
                               } ->
         quote do
           %{
@@ -533,7 +536,8 @@ defmodule Skuld.Query.Contract do
             params: unquote(param_names),
             param_types: unquote(Macro.escape(param_types)),
             return_type: unquote(Macro.escape(return_type)),
-            arity: unquote(length(param_names))
+            arity: unquote(length(param_names)),
+            cacheable: unquote(cacheable)
           }
         end
       end)

@@ -59,6 +59,14 @@ defmodule Skuld.Query.ContractTest do
     defquery(health_check() :: :ok)
   end
 
+  defmodule CacheOptQueries do
+    use Skuld.Query.Contract
+
+    defquery(get_user(id :: String.t()) :: User.t() | nil)
+    defquery(get_random() :: term(), cache: false)
+    defquery(get_explicit_cached(id :: String.t()) :: term(), cache: true)
+  end
+
   # ---------------------------------------------------------------
   # Test executor — implements the TestQueries.Executor behaviour
   # ---------------------------------------------------------------
@@ -421,6 +429,43 @@ defmodule Skuld.Query.ContractTest do
       count_op = Enum.find(ops, &(&1.name == :get_user_count))
       assert count_op.params == [:org_id]
       assert count_op.arity == 1
+    end
+
+    test "cacheable defaults to true" do
+      ops = TestQueries.__query_operations__()
+
+      Enum.each(ops, fn op ->
+        assert op.cacheable == true, "Expected #{op.name} to have cacheable: true"
+      end)
+    end
+
+    test "cache: false sets cacheable to false" do
+      ops = CacheOptQueries.__query_operations__()
+
+      random_op = Enum.find(ops, &(&1.name == :get_random))
+      assert random_op.cacheable == false
+    end
+
+    test "cache: true (explicit) sets cacheable to true" do
+      ops = CacheOptQueries.__query_operations__()
+
+      explicit_op = Enum.find(ops, &(&1.name == :get_explicit_cached))
+      assert explicit_op.cacheable == true
+    end
+
+    test "default and explicit cache options coexist in same contract" do
+      ops = CacheOptQueries.__query_operations__()
+
+      assert length(ops) == 3
+
+      get_user_op = Enum.find(ops, &(&1.name == :get_user))
+      assert get_user_op.cacheable == true
+
+      random_op = Enum.find(ops, &(&1.name == :get_random))
+      assert random_op.cacheable == false
+
+      explicit_op = Enum.find(ops, &(&1.name == :get_explicit_cached))
+      assert explicit_op.cacheable == true
     end
   end
 
