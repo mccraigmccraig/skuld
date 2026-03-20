@@ -71,10 +71,15 @@ defmodule Skuld.Query.Cache do
         |> Enum.map(fn op ->
           batch_key = {contract_module, op.name}
 
-          wrapper =
-            make_caching_wrapper(contract_module, executor_module, op.name, batch_key)
+          executor_fn =
+            if op.cacheable do
+              make_caching_wrapper(contract_module, executor_module, op.name, batch_key)
+            else
+              # Non-cacheable: raw dispatch, bypasses cache entirely
+              fn ops -> contract_module.__dispatch__(executor_module, op.name, ops) end
+            end
 
-          {batch_key, wrapper}
+          {batch_key, executor_fn}
         end)
       end)
 

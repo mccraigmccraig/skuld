@@ -14,11 +14,28 @@ defmodule Skuld.Query.CacheTest do
     defstruct [:id, :name]
   end
 
+  defmodule Order do
+    defstruct [:id, :total]
+  end
+
   defmodule TestQueries do
     use Skuld.Query.Contract
 
     defquery(get_user(id :: String.t()) :: User.t() | nil)
     defquery(list_users(org_id :: String.t()) :: [User.t()])
+  end
+
+  defmodule CacheOptQueries do
+    use Skuld.Query.Contract
+
+    defquery(get_user(id :: String.t()) :: User.t() | nil)
+    defquery(get_random(seed :: String.t()) :: term(), cache: false)
+  end
+
+  defmodule OrderQueries do
+    use Skuld.Query.Contract
+
+    defquery(get_order(id :: String.t()) :: Order.t() | nil)
   end
 
   defmodule CountingExecutor do
@@ -55,6 +72,64 @@ defmodule Skuld.Query.CacheTest do
     defp find_test_pid do
       Process.get(:test_pid) || raise "test_pid not set in process dictionary"
     end
+  end
+
+  defmodule CacheOptExecutor do
+    @behaviour CacheOptQueries.Executor
+
+    @impl true
+    def get_user(ops) do
+      test_pid = Process.get(:test_pid) || raise "test_pid not set"
+      send(test_pid, {:executor_called, :cache_opt_get_user, length(ops)})
+
+      Comp.pure(
+        Map.new(ops, fn {ref, %CacheOptQueries.GetUser{id: id}} ->
+          {ref, %User{id: id, name: "User #{id}"}}
+        end)
+      )
+    end
+
+    @impl true
+    def get_random(ops) do
+      test_pid = Process.get(:test_pid) || raise "test_pid not set"
+      send(test_pid, {:executor_called, :get_random, length(ops)})
+
+      Comp.pure(
+        Map.new(ops, fn {ref, %CacheOptQueries.GetRandom{seed: seed}} ->
+          {ref, "random-#{seed}-#{System.unique_integer()}"}
+        end)
+      )
+    end
+  end
+
+  defmodule OrderExecutor do
+    @behaviour OrderQueries.Executor
+
+    @impl true
+    def get_order(ops) do
+      test_pid = Process.get(:test_pid) || raise "test_pid not set"
+      send(test_pid, {:executor_called, :get_order, length(ops)})
+
+      Comp.pure(
+        Map.new(ops, fn {ref, %OrderQueries.GetOrder{id: id}} ->
+          {ref, %Order{id: id, total: 100}}
+        end)
+      )
+    end
+  end
+
+  defmodule FailingExecutor do
+    @behaviour TestQueries.Executor
+
+    @impl true
+    def get_user(ops) do
+      test_pid = Process.get(:test_pid) || raise "test_pid not set"
+      send(test_pid, {:executor_called, :failing_get_user, length(ops)})
+      Skuld.Effects.Throw.throw(:executor_error)
+    end
+
+    @impl true
+    def list_users(_ops), do: Comp.pure(%{})
   end
 
   # ---------------------------------------------------------------
@@ -350,6 +425,174 @@ defmodule Skuld.Query.CacheTest do
         # Cache hit on second query
         assert_received {:executor_called, :get_user, 1}
         refute_received {:executor_called, :get_user, _}
+      end)
+    end
+  end
+
+  describe "cache: false opt-out" do
+    test "uncacheable query always hits executor" do
+      with_test_pid(fn ->
+        result =
+          comp do
+            h1 <- FiberPool.fiber(CacheOptQueries.get_random("seed1"))
+            r1 <- FiberPool.await!(h1)
+
+            # Same query again — should NOT be cached
+            h2 <- FiberPool.fiber(CacheOptQueries.get_random("seed1"))
+            r2 <- FiberPool.await!(h2)
+
+            return({r1, r2})
+          end
+          |> QueryCache.with_executor(CacheOptQueries, CacheOptExecutor)
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+
+        {r1, r2} = result
+        # Both calls hit executor — results may differ
+        assert is_binary(r1)
+        assert is_binary(r2)
+
+        # Executor called twice (not cached)
+        assert_received {:executor_called, :get_random, 1}
+        assert_received {:executor_called, :get_random, 1}
+      end)
+    end
+
+    test "cached and uncached queries coexist in same contract" do
+      with_test_pid(fn ->
+        result =
+          comp do
+            # Cacheable query
+            h1 <- FiberPool.fiber(CacheOptQueries.get_user("1"))
+            r1 <- FiberPool.await!(h1)
+
+            # Same cacheable query — cache hit
+            h2 <- FiberPool.fiber(CacheOptQueries.get_user("1"))
+            r2 <- FiberPool.await!(h2)
+
+            # Uncacheable query
+            h3 <- FiberPool.fiber(CacheOptQueries.get_random("s1"))
+            r3 <- FiberPool.await!(h3)
+
+            # Same uncacheable query — not cached
+            h4 <- FiberPool.fiber(CacheOptQueries.get_random("s1"))
+            r4 <- FiberPool.await!(h4)
+
+            return({r1, r2, r3, r4})
+          end
+          |> QueryCache.with_executor(CacheOptQueries, CacheOptExecutor)
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+
+        {r1, r2, r3, r4} = result
+        # Cacheable: same result
+        assert %User{id: "1"} = r1
+        assert %User{id: "1"} = r2
+        # Uncacheable: both are strings
+        assert is_binary(r3)
+        assert is_binary(r4)
+
+        # get_user called once (cached), get_random called twice (not cached)
+        assert_received {:executor_called, :cache_opt_get_user, 1}
+        refute_received {:executor_called, :cache_opt_get_user, _}
+        assert_received {:executor_called, :get_random, 1}
+        assert_received {:executor_called, :get_random, 1}
+      end)
+    end
+  end
+
+  describe "executor failure not cached" do
+    test "executor failure does not populate cache — next request retries" do
+      with_test_pid(fn ->
+        # First call: executor fails
+        assert_raise RuntimeError, ~r/Fiber failed/, fn ->
+          comp do
+            h <- FiberPool.fiber(TestQueries.get_user("1"))
+            FiberPool.await!(h)
+          end
+          |> QueryCache.with_executor(TestQueries, FailingExecutor)
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+        end
+
+        assert_received {:executor_called, :failing_get_user, 1}
+
+        # Second call with working executor — should NOT hit cache
+        # (failure wasn't cached), should go to executor
+        result =
+          comp do
+            h <- FiberPool.fiber(TestQueries.get_user("1"))
+            FiberPool.await!(h)
+          end
+          |> QueryCache.with_executor(TestQueries, CountingExecutor)
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+
+        assert %User{id: "1"} = result
+        assert_received {:executor_called, :get_user, 1}
+      end)
+    end
+  end
+
+  describe "multi-contract shared cache" do
+    test "two contracts cached independently via with_executors" do
+      with_test_pid(fn ->
+        result =
+          comp do
+            # Query from both contracts
+            h1 <- FiberPool.fiber(TestQueries.get_user("1"))
+            h2 <- FiberPool.fiber(OrderQueries.get_order("o1"))
+            [r1, r2] <- FiberPool.await_all!([h1, h2])
+
+            # Same queries again — both should be cache hits
+            h3 <- FiberPool.fiber(TestQueries.get_user("1"))
+            h4 <- FiberPool.fiber(OrderQueries.get_order("o1"))
+            [r3, r4] <- FiberPool.await_all!([h3, h4])
+
+            return({r1, r2, r3, r4})
+          end
+          |> QueryCache.with_executors([
+            {TestQueries, CountingExecutor},
+            {OrderQueries, OrderExecutor}
+          ])
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+
+        {r1, r2, r3, r4} = result
+        assert %User{id: "1"} = r1
+        assert %Order{id: "o1", total: 100} = r2
+        assert %User{id: "1"} = r3
+        assert %Order{id: "o1", total: 100} = r4
+
+        # Each executor called once (second calls were cache hits)
+        assert_received {:executor_called, :get_user, 1}
+        refute_received {:executor_called, :get_user, _}
+        assert_received {:executor_called, :get_order, 1}
+        refute_received {:executor_called, :get_order, _}
+      end)
+    end
+
+    test "no collision between contracts with same query name and params" do
+      with_test_pid(fn ->
+        # Both TestQueries and CacheOptQueries have get_user
+        result =
+          comp do
+            h1 <- FiberPool.fiber(TestQueries.get_user("1"))
+            h2 <- FiberPool.fiber(CacheOptQueries.get_user("1"))
+            FiberPool.await_all!([h1, h2])
+          end
+          |> QueryCache.with_executors([
+            {TestQueries, CountingExecutor},
+            {CacheOptQueries, CacheOptExecutor}
+          ])
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+
+        assert [%User{id: "1"}, %User{id: "1"}] = result
+
+        # Both executors called — different batch keys, no sharing
+        assert_received {:executor_called, :get_user, 1}
+        assert_received {:executor_called, :cache_opt_get_user, 1}
       end)
     end
   end
