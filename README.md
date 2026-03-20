@@ -54,7 +54,7 @@ some common side-effecting operations and their effectful equivalents:
   - [Port](docs/effects-port.md) - Port, Port.Contract, Port.Provider
 - **Slightly insane effects**
   - [Concurrency](docs/effects-concurrency.md) - FiberPool, Channel, Brook
-   - [Query.Contract](docs/effects-persistence.md) - Typed batchable queries via FiberPool
+  - [Query.Contract](docs/query-contract.md) - Typed batchable queries via FiberPool
   - [Serializable Coroutines](docs/effect-logger.md) - EffectLogger
 - **[Property-Based Testing](docs/testing.md)** - Testing effectful code with pure handlers
 - **[Architecture](docs/architecture.md)** - Design, comparison with Freyja

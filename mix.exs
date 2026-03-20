@@ -27,6 +27,7 @@ defmodule Skuld.MixProject do
           "docs/effects-value-generation.md",
           "docs/effects-concurrency.md",
           "docs/effects-persistence.md",
+          "docs/query-contract.md",
           "docs/effects-port.md",
           "docs/effect-logger.md",
           "docs/testing.md",

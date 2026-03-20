@@ -201,29 +201,19 @@ structs, typed caller functions, an Executor behaviour, dispatch, and wiring hel
 Multiple concurrent query calls are automatically batched, solving the N+1 problem:
 
 ```elixir
-# Define a typed query contract
 defmodule MyApp.Queries.Users do
   use Skuld.Query.Contract
 
   defquery get_user(id :: String.t()) :: User.t() | nil
   defquery get_users_by_org(org_id :: String.t()) :: [User.t()]
 end
+```
 
-# Implement the executor
-defmodule MyApp.Queries.Users.EctoExecutor do
-  @behaviour MyApp.Queries.Users.Executor
+The programmer writes simple per-record query calls. When multiple fibers make the
+same type of query concurrently, they are automatically batched into a single executor
+invocation:
 
-  @impl true
-  def get_user(ops) do
-    # ops is [{ref, %MyApp.Queries.Users.GetUser{id: id}}]
-    # Return computation yielding %{ref => result}
-  end
-
-  @impl true
-  def get_users_by_org(ops), do: ...
-end
-
-# Use in a FiberPool — calls are automatically batched
+```elixir
 comp do
   h1 <- FiberPool.fiber(MyApp.Queries.Users.get_user("1"))
   h2 <- FiberPool.fiber(MyApp.Queries.Users.get_user("2"))
@@ -237,8 +227,12 @@ end
 # All 3 get_user calls batched into a single executor invocation
 ```
 
-See the [Concurrency effects - Brook I/O Batching](effects-concurrency.md#io-batching-in-brook)
-section for a full example of automatic batching with nested reads across concurrent fibers.
+See **[Query.Contract documentation](query-contract.md)** for the full API:
+contract definition, executor implementation, wiring, bulk wiring, bang variants,
+introspection, and testing patterns.
+
+See also [Concurrency effects - Brook I/O Batching](effects-concurrency.md#io-batching-in-brook)
+for automatic batching with nested reads across concurrent fibers.
 
 ## Port
 
