@@ -12,11 +12,13 @@ concern:
   routed through Port, making them easy to stub in tests. **Port.Contract** adds typed
   contracts via `defport`, and **Port.Provider** enables the reverse direction — plain
   code calling into effectful implementations.
-- **DB.Batch** — a somewhat unusual (in Elixir) solution to the N+1 query problem.
-  Batch-reads suspend the current FiberPool fiber; when the run queue empties, the
-  scheduler groups pending reads by schema and executes a single batched query per
-  group, distributing results back to the waiting fibers. The programmer writes
-  simple per-record fetch calls and gets automatic batching for free.
+- **Query.Contract** — a typed DSL for batchable queries, solving the N+1 problem.
+  `defquery` declarations generate operation structs, typed caller functions, an
+  Executor behaviour, and wiring helpers. Batch-reads suspend the current FiberPool
+  fiber; when the run queue empties, the scheduler groups pending reads by query type
+  and executes a single batched query per group, distributing results back to the
+  waiting fibers. The programmer writes simple per-record fetch calls and gets
+  automatic batching for free, with full type safety and LSP completion.
 - **Command** and **EventAccumulator** — building blocks for the
   [Decider pattern](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider).
   Command dispatches mutation structs through a handler that returns a computation;
@@ -192,30 +194,48 @@ alias Skuld.Effects.DB
 #=> {%User{id: "test-id", name: "Stubbed"}, [{:insert, %Ecto.Changeset{...}}]}
 ```
 
-## DB.Batch
+## Query.Contract
 
-Batched database reads using FiberPool. Multiple concurrent fetch operations for the
-same schema are automatically batched into a single query, solving the N+1 problem:
+Typed batchable queries using FiberPool. `defquery` declarations generate operation
+structs, typed caller functions, an Executor behaviour, dispatch, and wiring helpers.
+Multiple concurrent query calls are automatically batched, solving the N+1 problem:
 
 ```elixir
-use Skuld.Syntax
-alias Skuld.Effects.{DB, FiberPool}
+# Define a typed query contract
+defmodule MyApp.Queries.Users do
+  use Skuld.Query.Contract
 
-comp do
-  h1 <- FiberPool.fiber(DB.Batch.fetch(User, 1))
-  h2 <- FiberPool.fiber(DB.Batch.fetch(User, 2))
-  h3 <- FiberPool.fiber(DB.Batch.fetch(User, 3))
-
-  FiberPool.await_all([h1, h2, h3])
+  defquery get_user(id :: String.t()) :: User.t() | nil
+  defquery get_users_by_org(org_id :: String.t()) :: [User.t()]
 end
-|> DB.Batch.with_executors()
-|> Reader.with_handler(MyApp.Repo, tag: :repo)
+
+# Implement the executor
+defmodule MyApp.Queries.Users.EctoExecutor do
+  @behaviour MyApp.Queries.Users.Executor
+
+  @impl true
+  def get_user(ops) do
+    # ops is [{ref, %MyApp.Queries.Users.GetUser{id: id}}]
+    # Return computation yielding %{ref => result}
+  end
+
+  @impl true
+  def get_users_by_org(ops), do: ...
+end
+
+# Use in a FiberPool — calls are automatically batched
+comp do
+  h1 <- FiberPool.fiber(MyApp.Queries.Users.get_user("1"))
+  h2 <- FiberPool.fiber(MyApp.Queries.Users.get_user("2"))
+  h3 <- FiberPool.fiber(MyApp.Queries.Users.get_user("3"))
+
+  FiberPool.await_all!([h1, h2, h3])
+end
+|> MyApp.Queries.Users.with_executor(MyApp.Queries.Users.EctoExecutor)
 |> FiberPool.with_handler()
 |> FiberPool.run!()
-# All 3 fetches batched into a single WHERE id IN (...) query
+# All 3 get_user calls batched into a single executor invocation
 ```
-
-Operations: `fetch/2` (single record by ID), `fetch_all/3` (records matching a filter)
 
 See the [Concurrency effects - Brook I/O Batching](effects-concurrency.md#io-batching-in-brook)
 section for a full example of automatic batching with nested reads across concurrent fibers.

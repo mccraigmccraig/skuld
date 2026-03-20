@@ -30,7 +30,7 @@ some common side-effecting operations and their effectful equivalents:
 | Concurrent fibers / streaming   | FiberPool, Channel, Brook    |
 | Run effects from LiveView       | AsyncComputation             |
 | DB writes & transactions        | DB                           |
-| Batched DB reads (FiberPool)    | DB.Batch                     |
+| Typed batchable queries         | Query.Contract               |
 | Blocking calls to external code | Port, Port.Contract          |
 | Effectful code from plain code  | Port.Provider                |
 | Decider pattern                 | Command, EventAccumulator    |
@@ -54,7 +54,7 @@ some common side-effecting operations and their effectful equivalents:
   - [Port](docs/effects-port.md) - Port, Port.Contract, Port.Provider
 - **Slightly insane effects**
   - [Concurrency](docs/effects-concurrency.md) - FiberPool, Channel, Brook
-  - [DB.Batch](docs/effects-persistence.md) - Batched DB reads via FiberPool
+   - [Query.Contract](docs/effects-persistence.md) - Typed batchable queries via FiberPool
   - [Serializable Coroutines](docs/effect-logger.md) - EffectLogger
 - **[Property-Based Testing](docs/testing.md)** - Testing effectful code with pure handlers
 - **[Architecture](docs/architecture.md)** - Design, comparison with Freyja

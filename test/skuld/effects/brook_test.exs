@@ -455,22 +455,32 @@ defmodule Skuld.Effects.BrookTest do
   end
 
   describe "Brook with I/O batching" do
-    # Replicates the README.md I/O Batching example with nested fetches
+    # Demonstrates automatic batching of nested I/O using Query.Contract.
+    # Fetching users and their orders — both operations get batched across fibers.
+
     defmodule Order do
       defstruct [:id, :user_id, :total]
+    end
+
+    # Query contract for user/order fetching
+    defmodule Queries do
+      use Skuld.Query.Contract
+
+      defquery(fetch_user(id :: pos_integer()) :: map() | nil)
+      defquery(fetch_orders(user_id :: pos_integer()) :: [map()])
     end
 
     defmodule User do
       use Skuld.Syntax
       alias Skuld.Effects.Brook
-      alias Skuld.Effects.DB
+      alias Skuld.Effects.BrookTest.Queries
 
       defstruct [:id, :name, :orders]
 
-      # Fetch a user and all their orders - composes DB.Batch.fetch with DB.Batch.fetch_all
+      # Fetch a user and all their orders using typed Query.Contract calls
       defcomp with_orders(user_id) do
-        user <- DB.Batch.fetch(__MODULE__, user_id)
-        orders <- DB.Batch.fetch_all(Order, :user_id, user_id)
+        user <- Queries.fetch_user(user_id)
+        orders <- Queries.fetch_orders(user_id)
         %{user | orders: orders}
       end
 
@@ -483,40 +493,52 @@ defmodule Skuld.Effects.BrookTest do
     end
 
     alias Skuld.Comp
-    alias Skuld.Effects.DB
-    alias Skuld.Fiber.FiberPool.BatchExecutor
 
-    test "nested fetches batch across concurrent fibers" do
-      test_pid = self()
+    defmodule BrookBatchExecutor do
+      @behaviour Skuld.Effects.BrookTest.Queries.Executor
 
-      user_executor = fn ops ->
-        send(test_pid, {:user_fetch, length(ops)})
+      @impl true
+      def fetch_user(ops) do
+        send(Process.get(:test_pid), {:user_fetch, length(ops)})
 
         Comp.pure(
-          Map.new(ops, fn {ref, %DB.Batch.Fetch{id: id}} ->
-            {ref, %User{id: id, name: "User #{id}", orders: nil}}
+          Map.new(ops, fn {ref, %Skuld.Effects.BrookTest.Queries.FetchUser{id: id}} ->
+            {ref, %Skuld.Effects.BrookTest.User{id: id, name: "User #{id}", orders: nil}}
           end)
         )
       end
 
-      order_executor = fn ops ->
-        send(test_pid, {:order_fetch_all, length(ops)})
+      @impl true
+      def fetch_orders(ops) do
+        send(Process.get(:test_pid), {:order_fetch, length(ops)})
 
         Comp.pure(
-          Map.new(ops, fn {ref, %DB.Batch.FetchAll{filter_value: user_id}} ->
+          Map.new(ops, fn {ref, %Skuld.Effects.BrookTest.Queries.FetchOrders{user_id: user_id}} ->
             {ref,
              [
-               %Order{id: user_id * 10 + 1, user_id: user_id, total: 100},
-               %Order{id: user_id * 10 + 2, user_id: user_id, total: 200}
+               %Skuld.Effects.BrookTest.Order{
+                 id: user_id * 10 + 1,
+                 user_id: user_id,
+                 total: 100
+               },
+               %Skuld.Effects.BrookTest.Order{
+                 id: user_id * 10 + 2,
+                 user_id: user_id,
+                 total: 200
+               }
              ]}
           end)
         )
       end
+    end
+
+    test "nested fetches batch across concurrent fibers" do
+      # Store test_pid in process dictionary so executor can send messages
+      Process.put(:test_pid, self())
 
       result =
         User.fetch_users_with_orders([1, 2, 3, 4, 5])
-        |> BatchExecutor.with_executor({:db_fetch, User}, user_executor)
-        |> BatchExecutor.with_executor({:db_fetch_all, Order, :user_id}, order_executor)
+        |> Queries.with_executor(BrookBatchExecutor)
         |> Channel.with_handler()
         |> FiberPool.with_handler()
         |> FiberPool.run!()
@@ -532,7 +554,7 @@ defmodule Skuld.Effects.BrookTest do
 
       # Both executors should have been called (batching happened)
       assert_received {:user_fetch, _count}
-      assert_received {:order_fetch_all, _count}
+      assert_received {:order_fetch, _count}
     end
   end
 end

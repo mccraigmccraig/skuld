@@ -107,7 +107,7 @@ if Code.ensure_loaded?(Ecto) do
 
     ## Batched Reads
 
-    For batched database reads using FiberPool, see `Skuld.Effects.DB.Batch`.
+    For batched database reads using FiberPool, see `Skuld.Query.Contract`.
     """
 
     import Skuld.Comp.DefOp
