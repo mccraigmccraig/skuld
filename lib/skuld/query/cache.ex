@@ -30,6 +30,11 @@ defmodule Skuld.Query.Cache do
   The cache is scoped per computation run. It's initialised as an empty map
   by `Comp.scoped` and cleaned up on scope exit. No TTL, no eviction.
 
+  Multiple `with_executors`/`with_executor` calls share a single cache scope.
+  The first call creates the cache; subsequent calls reuse the existing cache
+  and register their executors against it. Only the outermost scope performs
+  cleanup.
+
   ## Cache Key
 
   `{batch_key, op_struct}` where:
@@ -120,21 +125,23 @@ defmodule Skuld.Query.Cache do
 
   defp init_cache_scope(comp) do
     Comp.scoped(comp, fn env ->
-      previous_cache = Env.get_state(env, @cache_key, nil)
-      env_with_cache = Env.put_state(env, @cache_key, %{})
+      case Env.get_state(env, @cache_key, nil) do
+        nil ->
+          # No cache exists — create a new scope
+          env_with_cache = Env.put_state(env, @cache_key, %{})
 
-      cleanup = fn value, cleanup_env ->
-        restored_env =
-          if previous_cache do
-            Env.put_state(cleanup_env, @cache_key, previous_cache)
-          else
-            %{cleanup_env | state: Map.delete(cleanup_env.state, @cache_key)}
+          cleanup = fn value, cleanup_env ->
+            restored_env = %{cleanup_env | state: Map.delete(cleanup_env.state, @cache_key)}
+            {value, restored_env}
           end
 
-        {value, restored_env}
-      end
+          {env_with_cache, cleanup}
 
-      {env_with_cache, cleanup}
+        _existing_cache ->
+          # Cache already established by an outer with_executors — reuse it
+          cleanup = fn value, cleanup_env -> {value, cleanup_env} end
+          {env, cleanup}
+      end
     end)
   end
 

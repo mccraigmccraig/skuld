@@ -572,6 +572,43 @@ defmodule Skuld.Query.CacheTest do
       end)
     end
 
+    test "nested with_executors calls share the outer cache scope" do
+      with_test_pid(fn ->
+        # Inner with_executors (Users) wraps the comp, outer (Orders) wraps that.
+        # Both should share a single cache — the outer scope's.
+        result =
+          comp do
+            # Round 1: query from both contracts — cache misses
+            h1 <- FiberPool.fiber(TestQueries.get_user("1"))
+            h2 <- FiberPool.fiber(OrderQueries.get_order("o1"))
+            [r1, r2] <- FiberPool.await_all!([h1, h2])
+
+            # Round 2: same queries again — both should be cache hits
+            h3 <- FiberPool.fiber(TestQueries.get_user("1"))
+            h4 <- FiberPool.fiber(OrderQueries.get_order("o1"))
+            [r3, r4] <- FiberPool.await_all!([h3, h4])
+
+            return({r1, r2, r3, r4})
+          end
+          |> QueryCache.with_executor(TestQueries, CountingExecutor)
+          |> QueryCache.with_executor(OrderQueries, OrderExecutor)
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+
+        {r1, r2, r3, r4} = result
+        assert %User{id: "1"} = r1
+        assert %Order{id: "o1", total: 100} = r2
+        assert %User{id: "1"} = r3
+        assert %Order{id: "o1", total: 100} = r4
+
+        # Each executor called once — second calls were cache hits from shared cache
+        assert_received {:executor_called, :get_user, 1}
+        refute_received {:executor_called, :get_user, _}
+        assert_received {:executor_called, :get_order, 1}
+        refute_received {:executor_called, :get_order, _}
+      end)
+    end
+
     test "no collision between contracts with same query name and params" do
       with_test_pid(fn ->
         # Both TestQueries and CacheOptQueries have get_user
