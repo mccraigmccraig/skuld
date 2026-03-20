@@ -557,8 +557,7 @@ defmodule Skuld.Query.Contract do
     atom
     |> Atom.to_string()
     |> String.split("_")
-    |> Enum.map(&String.capitalize/1)
-    |> Enum.join()
+    |> Enum.map_join(&String.capitalize/1)
     |> String.to_atom()
   end
 end
