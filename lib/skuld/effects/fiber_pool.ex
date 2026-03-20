@@ -294,6 +294,83 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   #############################################################################
+  ## Combinators
+  #############################################################################
+
+  @doc """
+  Spawn each computation as a fiber, returning all handles.
+
+  The handles can be awaited individually or with `await_all/1` / `await_all!/1`.
+
+  ## Example
+
+      comp do
+        handles <- FiberPool.fiber_all([fetch(:x), fetch(:y), fetch(:z)])
+        FiberPool.await_all!(handles)
+      end
+  """
+  @spec fiber_all([Comp.Types.computation()]) :: Comp.Types.computation()
+  def fiber_all(comps) when is_list(comps) do
+    fiber_all_acc(comps, [])
+  end
+
+  defp fiber_all_acc([], handles_acc) do
+    Comp.pure(Enum.reverse(handles_acc))
+  end
+
+  defp fiber_all_acc([comp | rest], handles_acc) do
+    Comp.bind(fiber(comp), fn handle ->
+      fiber_all_acc(rest, [handle | handles_acc])
+    end)
+  end
+
+  @doc """
+  Run a list of computations concurrently as fibers, returning all results in order.
+
+  Each computation is spawned as a fiber, then all are awaited with `await_all!/1`.
+  Raises if any fiber fails.
+
+  A single-element list is optimised to skip fiber overhead.
+
+  This is the primitive used by the `alet` macro for independent binding groups.
+
+  ## Example
+
+      FiberPool.spawn_await_all([fetch(:x), fetch(:y), fetch(:z)])
+      # returns a computation producing [x_result, y_result, z_result]
+  """
+  @spec spawn_await_all([Comp.Types.computation()]) :: Comp.Types.computation()
+  def spawn_await_all([single]) do
+    # Optimization: single computation doesn't need fiber overhead
+    Comp.bind(single, fn result -> Comp.pure([result]) end)
+  end
+
+  def spawn_await_all(comps) when is_list(comps) do
+    Comp.bind(fiber_all(comps), fn handles ->
+      await_all!(handles)
+    end)
+  end
+
+  @doc """
+  Map a function over items, running each result computation as a fiber,
+  and return all results in order.
+
+  This is a convenience combining `Enum.map/2`, `fiber_all/1`, and `await_all!/1`.
+  Raises if any fiber fails.
+
+  ## Example
+
+      FiberPool.map([1, 2, 3], &Queries.get_user/1)
+      # returns a computation producing [user1, user2, user3]
+  """
+  @spec map([a], (a -> Comp.Types.computation())) :: Comp.Types.computation() when a: term()
+  def map(items, fun) when is_list(items) and is_function(fun, 1) do
+    items
+    |> Enum.map(fun)
+    |> spawn_await_all()
+  end
+
+  #############################################################################
   ## Handler Installation
   #############################################################################
 

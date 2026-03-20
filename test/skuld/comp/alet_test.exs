@@ -30,10 +30,10 @@ defmodule Skuld.Comp.AletTest do
     end
   end
 
-  describe "spawn_await_all/1" do
+  describe "FiberPool.spawn_await_all/1" do
     test "single computation returns list with one result" do
       result =
-        Comp.spawn_await_all([Comp.pure(42)])
+        FiberPool.spawn_await_all([Comp.pure(42)])
         |> FiberPool.with_handler()
         |> FiberPool.run!()
 
@@ -42,7 +42,7 @@ defmodule Skuld.Comp.AletTest do
 
     test "multiple computations return results in order" do
       result =
-        Comp.spawn_await_all([Comp.pure(:a), Comp.pure(:b), Comp.pure(:c)])
+        FiberPool.spawn_await_all([Comp.pure(:a), Comp.pure(:b), Comp.pure(:c)])
         |> FiberPool.with_handler()
         |> FiberPool.run!()
 
@@ -51,7 +51,7 @@ defmodule Skuld.Comp.AletTest do
 
     test "computations run as fibers (concurrent)" do
       result =
-        Comp.spawn_await_all([
+        FiberPool.spawn_await_all([
           Comp.pure(10),
           Comp.pure(20),
           Comp.pure(12)
@@ -61,6 +61,121 @@ defmodule Skuld.Comp.AletTest do
         |> FiberPool.run!()
 
       assert result == 42
+    end
+  end
+
+  describe "FiberPool.fiber_all/1" do
+    test "returns handles for all computations" do
+      result =
+        comp do
+          handles <- FiberPool.fiber_all([Comp.pure(:a), Comp.pure(:b), Comp.pure(:c)])
+          FiberPool.await_all!(handles)
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == [:a, :b, :c]
+    end
+
+    test "empty list returns empty list of handles" do
+      result =
+        comp do
+          handles <- FiberPool.fiber_all([])
+          FiberPool.await_all!(handles)
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == []
+    end
+
+    test "handles can be awaited individually" do
+      result =
+        comp do
+          handles <- FiberPool.fiber_all([Comp.pure(10), Comp.pure(20)])
+          r1 <- FiberPool.await!(Enum.at(handles, 0))
+          r2 <- FiberPool.await!(Enum.at(handles, 1))
+          r1 + r2
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == 30
+    end
+  end
+
+  describe "FiberPool.map/2" do
+    test "maps function over items and collects results" do
+      result =
+        FiberPool.map([1, 2, 3], fn x -> Comp.pure(x * 10) end)
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == [10, 20, 30]
+    end
+
+    test "empty list returns empty list" do
+      result =
+        FiberPool.map([], fn x -> Comp.pure(x) end)
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == []
+    end
+
+    test "works with query-style functions" do
+      # Simulates the Query.Contract use case
+      get_value = fn id ->
+        Comp.pure(%{id: id, name: "Item #{id}"})
+      end
+
+      result =
+        FiberPool.map([1, 2, 3], get_value)
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == [
+               %{id: 1, name: "Item 1"},
+               %{id: 2, name: "Item 2"},
+               %{id: 3, name: "Item 3"}
+             ]
+    end
+
+    test "results are batched when used with Query.Contract" do
+      # Verify batching works through map
+      test_pid = self()
+
+      defmodule MapBatchContract do
+        use Skuld.Query.Contract
+        defquery(get_item(id :: pos_integer()) :: map())
+      end
+
+      defmodule MapBatchExecutor do
+        @behaviour Skuld.Comp.AletTest.MapBatchContract.Executor
+
+        @impl true
+        def get_item(ops) do
+          send(Process.get(:test_pid), {:batch_called, length(ops)})
+
+          Skuld.Comp.pure(
+            Map.new(ops, fn {ref, %Skuld.Comp.AletTest.MapBatchContract.GetItem{id: id}} ->
+              {ref, %{id: id}}
+            end)
+          )
+        end
+      end
+
+      Process.put(:test_pid, test_pid)
+
+      result =
+        FiberPool.map([1, 2, 3], &MapBatchContract.get_item/1)
+        |> MapBatchContract.with_executor(MapBatchExecutor)
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == [%{id: 1}, %{id: 2}, %{id: 3}]
+      # All 3 should have been batched into a single executor call
+      assert_received {:batch_called, 3}
     end
   end
 

@@ -306,20 +306,17 @@ defmodule UserQueries.Impl do
 end
 
 # Multiple fibers fetching users - batched into single executor call
-comp do
-  h1 <- FiberPool.fiber(UserQueries.get_user(1))
-  h2 <- FiberPool.fiber(UserQueries.get_user(2))
-  h3 <- FiberPool.fiber(UserQueries.get_user(3))
-
-  results <- FiberPool.await_all([h1, h2, h3])
-  results
-end
+FiberPool.map([1, 2, 3], &UserQueries.get_user/1)
 |> UserQueries.with_executor(UserQueries.Impl)
 |> FiberPool.with_handler()
 |> FiberPool.run!()
 # Prints: Executor called with 3 operations
 #=> [%{id: 1, name: "User 1"}, %{id: 2, name: "User 2"}, %{id: 3, name: "User 3"}]
 ```
+
+`FiberPool.map/2` spawns each computation as a fiber and awaits all results in order.
+For more control, use `fiber_all/1` to get handles back, or `spawn_await_all/1` with
+a pre-built list of computations.
 
 ### Parallel Tasks
 
@@ -338,7 +335,7 @@ end
 |> FiberPool.run!()
 ```
 
-Operations: `fiber/1`, `task/1`, `await/1`, `await_all/1`, `await_any/1`, `cancel/1`
+Operations: `fiber/1`, `fiber_all/1`, `spawn_await_all/1`, `map/2`, `task/1`, `await/1`, `await_all/1`, `await_any/1`, `cancel/1`
 
 ## Channel
 

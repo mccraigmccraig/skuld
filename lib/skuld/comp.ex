@@ -294,51 +294,6 @@ defmodule Skuld.Comp do
     end)
   end
 
-  @doc """
-  Run a list of computations concurrently as cooperative fibers, returning
-  all results in order.
-
-  Each computation is spawned as a fiber within the current FiberPool,
-  then all are awaited. This is the primitive used by the `alet` macro
-  for independent binding groups.
-
-  Requires a `FiberPool` handler to be installed.
-
-  ## Example
-
-      Comp.spawn_await_all([fetch(:x), fetch(:y), fetch(:z)])
-      # returns a computation producing [x_result, y_result, z_result]
-  """
-  @spec spawn_await_all([Types.computation()]) :: Types.computation()
-  def spawn_await_all([single]) do
-    # Optimization: single computation doesn't need fiber overhead
-    bind(single, fn result -> pure([result]) end)
-  end
-
-  def spawn_await_all(comps) when is_list(comps) do
-    alias Skuld.Effects.FiberPool
-
-    # Spawn all computations as fibers
-    spawn_all(comps, [], fn handles ->
-      # Await all in order
-      FiberPool.await_all!(Enum.reverse(handles))
-    end)
-  end
-
-  # Helper: spawn a list of computations as fibers, collecting handles,
-  # then call the continuation with the handles list
-  defp spawn_all([], handles_acc, then_fn) do
-    then_fn.(handles_acc)
-  end
-
-  defp spawn_all([comp | rest], handles_acc, then_fn) do
-    alias Skuld.Effects.FiberPool
-
-    bind(FiberPool.fiber(comp), fn handle ->
-      spawn_all(rest, [handle | handles_acc], then_fn)
-    end)
-  end
-
   #############################################################################
   ## Combinators
   #############################################################################

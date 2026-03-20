@@ -214,13 +214,7 @@ same type of query concurrently, they are automatically batched into a single ex
 invocation:
 
 ```elixir
-comp do
-  h1 <- FiberPool.fiber(MyApp.Queries.Users.get_user("1"))
-  h2 <- FiberPool.fiber(MyApp.Queries.Users.get_user("2"))
-  h3 <- FiberPool.fiber(MyApp.Queries.Users.get_user("3"))
-
-  FiberPool.await_all!([h1, h2, h3])
-end
+FiberPool.map(["1", "2", "3"], &MyApp.Queries.Users.get_user/1)
 |> MyApp.Queries.Users.with_executor(MyApp.Queries.Users.EctoExecutor)
 |> FiberPool.with_handler()
 |> FiberPool.run!()

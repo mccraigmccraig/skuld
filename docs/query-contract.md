@@ -158,9 +158,20 @@ Since executor callbacks return computations, they can use any Skuld effect
 Install an executor for a contract using `with_executor/2`:
 
 ```elixir
-use Skuld.Syntax
 alias Skuld.Effects.FiberPool
 
+FiberPool.map(["1", "2", "3"], &MyApp.Queries.Users.get_user/1)
+|> MyApp.Queries.Users.with_executor(MyApp.Queries.Users.EctoExecutor)
+|> Reader.with_handler(MyApp.Repo, tag: :repo)
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+# All 3 get_user calls batched into a single executor invocation
+```
+
+`FiberPool.map/2` spawns each computation as a fiber and awaits all results in order.
+For more control, use individual `fiber/1` + `await_all!/1`:
+
+```elixir
 comp do
   h1 <- FiberPool.fiber(MyApp.Queries.Users.get_user("1"))
   h2 <- FiberPool.fiber(MyApp.Queries.Users.get_user("2"))
@@ -168,11 +179,6 @@ comp do
 
   FiberPool.await_all!([h1, h2, h3])
 end
-|> MyApp.Queries.Users.with_executor(MyApp.Queries.Users.EctoExecutor)
-|> Reader.with_handler(MyApp.Repo, tag: :repo)
-|> FiberPool.with_handler()
-|> FiberPool.run!()
-# All 3 get_user calls batched into a single executor invocation
 ```
 
 `with_executor/2` registers the executor for *all* queries in the contract. Each
