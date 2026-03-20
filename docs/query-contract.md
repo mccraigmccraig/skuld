@@ -325,6 +325,108 @@ end
 |> FiberPool.run!()
 ```
 
+## Caching
+
+`Skuld.Query.Cache` provides a composable caching layer that sits between your
+computation and the batch executors. It provides two levels of optimization:
+
+- **Cross-batch result caching** — identical queries across batch rounds return
+  cached results without re-executing
+- **Within-batch request deduplication** — identical queries in the same batch
+  round are sent to the executor only once, with the result fanned out to all
+  requesting fibers
+
+### Wiring with Cache
+
+Use `QueryCache.with_executor/3` or `QueryCache.with_executors/2` instead of
+`Contract.with_executor/2`:
+
+```elixir
+alias Skuld.Query.Cache, as: QueryCache
+
+# Single contract
+comp
+|> QueryCache.with_executor(MyApp.Queries.Users, MyApp.Queries.Users.EctoExecutor)
+|> FiberPool.with_handler()
+|> FiberPool.run()
+
+# Multiple contracts (shared cache scope)
+comp
+|> QueryCache.with_executors([
+  {MyApp.Queries.Users, MyApp.Queries.Users.EctoExecutor},
+  {MyApp.Queries.Orders, MyApp.Queries.Orders.EctoExecutor}
+])
+|> FiberPool.with_handler()
+|> FiberPool.run()
+```
+
+### Cache Scope and Lifetime
+
+The cache is scoped per computation run. It's initialised as an empty map when
+`with_executors` sets up the scope, and cleaned up on scope exit. No TTL, no
+eviction — the cache lives exactly as long as the computation.
+
+This matches Haxl's per-`Env` cache semantics: within a single request/computation,
+you get automatic deduplication and caching, with no stale data concerns.
+
+### Cache Keys
+
+Cache keys are `{batch_key, op_struct}` where:
+- `batch_key` is `{ContractModule, :query_name}` (e.g., `{Users, :get_user}`)
+- `op_struct` is the operation struct (e.g., `%Users.GetUser{id: "123"}`)
+
+Structural equality on Elixir structs provides correct comparison. Two queries
+with the same parameters will have equal op structs and thus share a cache entry.
+
+Since the batch key includes the contract module, different contracts with
+identically-named queries never collide.
+
+### Per-Query Opt-Out
+
+Mark individual queries as non-cacheable with `cache: false`:
+
+```elixir
+defmodule MyApp.Queries.Users do
+  use Skuld.Query.Contract
+
+  defquery get_user(id :: String.t()) :: User.t() | nil
+  defquery get_random_user() :: User.t(), cache: false
+end
+```
+
+Non-cacheable queries bypass the cache entirely — they always go directly to the
+executor. The `cacheable` field is exposed via `__query_operations__/0`:
+
+```elixir
+MyApp.Queries.Users.__query_operations__()
+#=> [
+#     %{name: :get_user, ..., cacheable: true},
+#     %{name: :get_random_user, ..., cacheable: false}
+#   ]
+```
+
+### Error Handling
+
+Executor failures are **not cached**. When an executor returns a Throw/error:
+- The error propagates normally to requesting fibers
+- Nothing is stored in the cache
+- Subsequent requests for the same query go to the executor again
+
+This happens naturally by design — the Throw bypasses the bind callback that would
+store results in the cache, so no special error-detection logic is needed.
+
+### How It Works
+
+For each batch execution, the caching wrapper:
+
+1. Reads the current cache from `env.state`
+2. Partitions ops into cache hits and cache misses
+3. **Within-batch dedup**: Groups identical miss ops, keeps one representative per unique op
+4. Calls the real executor only for unique misses
+5. Stores miss results in cache
+6. Fans out results to all refs (both deduped and cached)
+7. Returns the merged `%{ref => result}` map
+
 ## Comparison with Port.Contract
 
 | Aspect | Port.Contract | Query.Contract |

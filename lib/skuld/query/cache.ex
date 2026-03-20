@@ -37,6 +37,18 @@ defmodule Skuld.Query.Cache do
   - `op_struct` is the operation struct (e.g. `%Users.GetUser{id: "123"}`)
 
   Structural equality on Elixir structs provides correct comparison.
+
+  ## Per-Query Opt-Out
+
+  Queries declared with `cache: false` bypass caching entirely:
+
+      defquery get_random_user() :: User.t(), cache: false
+
+  ## Error Handling
+
+  Executor failures are not cached. When an executor produces a Throw, the error
+  propagates normally and the cache is not polluted — subsequent requests for the
+  same query go to the executor again.
   """
 
   alias Skuld.Comp
@@ -49,7 +61,9 @@ defmodule Skuld.Query.Cache do
   Install caching-wrapped executors for multiple contracts.
 
   Initialises a scoped cache and registers caching-wrapped executors for
-  all query operations in each contract.
+  all query operations in each contract. Queries with `cacheable: false`
+  (from `defquery ..., cache: false`) are registered with raw dispatch
+  that bypasses the cache entirely.
 
   ## Example
 

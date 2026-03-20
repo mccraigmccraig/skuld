@@ -221,9 +221,21 @@ FiberPool.map(["1", "2", "3"], &MyApp.Queries.Users.get_user/1)
 # All 3 get_user calls batched into a single executor invocation
 ```
 
+Queries can be wrapped with `Skuld.Query.Cache` for automatic cross-batch result
+caching and within-batch request deduplication:
+
+```elixir
+alias Skuld.Query.Cache, as: QueryCache
+
+FiberPool.map(["1", "2", "3"], &MyApp.Queries.Users.get_user/1)
+|> QueryCache.with_executor(MyApp.Queries.Users, MyApp.Queries.Users.EctoExecutor)
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+```
+
 See **[Query.Contract documentation](query-contract.md)** for the full API:
-contract definition, executor implementation, wiring, bulk wiring, bang variants,
-introspection, and testing patterns.
+contract definition, executor implementation, wiring, bulk wiring, caching,
+bang variants, introspection, and testing patterns.
 
 See also [Concurrency effects - Brook I/O Batching](effects-concurrency.md#io-batching-in-brook)
 for automatic batching with nested reads across concurrent fibers.
