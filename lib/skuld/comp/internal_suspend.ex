@@ -51,11 +51,12 @@ defmodule Skuld.Comp.InternalSuspend do
     @moduledoc false
 
     @type t :: %__MODULE__{
+            batch_key: term(),
             op: term(),
             request_id: reference()
           }
 
-    defstruct [:op, :request_id]
+    defstruct [:batch_key, :op, :request_id]
   end
 
   # Payload for channel operation suspensions.
@@ -102,11 +103,11 @@ defmodule Skuld.Comp.InternalSuspend do
   @doc """
   Create a batch operation suspension.
   """
-  @spec batch(term(), reference(), Types.k()) :: t()
-  def batch(op, request_id, resume) do
+  @spec batch(term(), term(), reference(), Types.k()) :: t()
+  def batch(batch_key, op, request_id, resume) do
     %__MODULE__{
       resume: resume,
-      payload: %Batch{op: op, request_id: request_id}
+      payload: %Batch{batch_key: batch_key, op: op, request_id: request_id}
     }
   end
 
@@ -189,8 +190,8 @@ defimpl Skuld.Comp.ISentinel, for: Skuld.Comp.InternalSuspend do
   def suspend?(_), do: true
   def error?(_), do: false
 
-  def serializable_payload(%{payload: %Batch{op: op, request_id: id}}) do
-    %{type: :batch, op: op, request_id: id}
+  def serializable_payload(%{payload: %Batch{batch_key: batch_key, op: op, request_id: id}}) do
+    %{type: :batch, batch_key: batch_key, op: op, request_id: id}
   end
 
   def serializable_payload(%{payload: %Channel{channel_id: ch_id, operation: op, item: item}}) do

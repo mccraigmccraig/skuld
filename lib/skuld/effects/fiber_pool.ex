@@ -614,26 +614,12 @@ defmodule Skuld.Effects.FiberPool do
       {state, env}
     else
       # Group suspensions by batch_key
-      {groups, non_batchable} = Batching.group_suspended(suspensions)
+      groups = Batching.group_suspended(suspensions)
 
       # Execute each batch group
-      {state, env} =
-        Enum.reduce(groups, {state, env}, fn {batch_key, group}, {acc_state, acc_env} ->
-          execute_batch_group(acc_state, acc_env, batch_key, group)
-        end)
-
-      # Handle non-batchable individually (shouldn't happen if IBatchable is implemented correctly)
-      state =
-        Enum.reduce(non_batchable, state, fn {fiber_id, internal_suspend}, acc ->
-          # Resume with error - no batch executor available
-          resume_fiber_with_result(
-            acc,
-            fiber_id,
-            {:error, {:not_batchable, internal_suspend.payload.op}}
-          )
-        end)
-
-      {state, env}
+      Enum.reduce(groups, {state, env}, fn {batch_key, group}, {acc_state, acc_env} ->
+        execute_batch_group(acc_state, acc_env, batch_key, group)
+      end)
     end
   end
 

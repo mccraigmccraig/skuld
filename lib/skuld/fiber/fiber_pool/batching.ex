@@ -11,7 +11,6 @@ defmodule Skuld.Fiber.FiberPool.Batching do
   alias Skuld.Comp.Throw
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Fiber.FiberPool.BatchExecutor
-  alias Skuld.Fiber.FiberPool.IBatchable
 
   @type fiber_id :: reference()
   @type batch_key :: term()
@@ -19,38 +18,31 @@ defmodule Skuld.Fiber.FiberPool.Batching do
   @doc """
   Group suspended fibers by batch_key.
 
-  Returns `{batchable_groups, non_batchable}` where:
-  - `batchable_groups` is a map of `batch_key => [{fiber_id, InternalSuspend.t()}]`
-  - `non_batchable` is a list of `{fiber_id, InternalSuspend.t()}` with nil batch_key
+  Returns a map of `batch_key => [{fiber_id, InternalSuspend.t()}]`.
+
+  The batch_key is stored directly in the `InternalSuspend.Batch` payload,
+  set at suspension time by the caller.
 
   ## Example
 
       suspended = [
-        {fid1, %InternalSuspend{payload: %InternalSuspend.Batch{op: %DB.Fetch{...}, ...}, ...}},
-        {fid2, %InternalSuspend{payload: %InternalSuspend.Batch{op: %DB.Fetch{...}, ...}, ...}},
-        {fid3, %InternalSuspend{payload: %InternalSuspend.Batch{op: %DB.Fetch{...}, ...}, ...}}
+        {fid1, %InternalSuspend{payload: %InternalSuspend.Batch{batch_key: {:db_fetch, User}, ...}, ...}},
+        {fid2, %InternalSuspend{payload: %InternalSuspend.Batch{batch_key: {:db_fetch, User}, ...}, ...}},
+        {fid3, %InternalSuspend{payload: %InternalSuspend.Batch{batch_key: {:db_fetch, Post}, ...}, ...}}
       ]
 
-      {groups, non_batchable} = Batching.group_suspended(suspended)
+      groups = Batching.group_suspended(suspended)
       # groups = %{
       #   {:db_fetch, User} => [{fid1, suspend1}, {fid2, suspend2}],
       #   {:db_fetch, Post} => [{fid3, suspend3}]
       # }
   """
   @spec group_suspended([{fiber_id, InternalSuspend.t()}]) ::
-          {%{batch_key => [{fiber_id, InternalSuspend.t()}]}, [{fiber_id, InternalSuspend.t()}]}
+          %{batch_key => [{fiber_id, InternalSuspend.t()}]}
   def group_suspended(suspended_fibers) do
-    {batchable, non_batchable} =
-      Enum.split_with(suspended_fibers, fn {_fid, suspend} ->
-        IBatchable.batch_key(suspend.payload.op) != nil
-      end)
-
-    groups =
-      Enum.group_by(batchable, fn {_fid, suspend} ->
-        IBatchable.batch_key(suspend.payload.op)
-      end)
-
-    {groups, non_batchable}
+    Enum.group_by(suspended_fibers, fn {_fid, suspend} ->
+      suspend.payload.batch_key
+    end)
   end
 
   @doc """

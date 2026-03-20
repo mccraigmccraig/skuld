@@ -75,18 +75,6 @@ defmodule Skuld.Effects.DB.Batch do
   end
 
   #############################################################################
-  ## IBatchable Implementations
-  #############################################################################
-
-  defimpl Skuld.Fiber.FiberPool.IBatchable, for: Skuld.Effects.DB.Batch.Fetch do
-    def batch_key(%{schema: schema}), do: {:db_fetch, schema}
-  end
-
-  defimpl Skuld.Fiber.FiberPool.IBatchable, for: Skuld.Effects.DB.Batch.FetchAll do
-    def batch_key(%{schema: schema, filter_key: key}), do: {:db_fetch_all, schema, key}
-  end
-
-  #############################################################################
   ## Public API
   #############################################################################
 
@@ -102,10 +90,11 @@ defmodule Skuld.Effects.DB.Batch do
   def fetch(schema, id) do
     fn env, k ->
       op = %Fetch{schema: schema, id: id}
+      batch_key = {:db_fetch, schema}
 
       # Note: resume takes env as parameter to avoid capturing stale env with pending fibers
       resume = fn result, resume_env -> k.(result, resume_env) end
-      suspend = InternalSuspend.batch(op, make_ref(), resume)
+      suspend = InternalSuspend.batch(batch_key, op, make_ref(), resume)
 
       {suspend, env}
     end
@@ -123,10 +112,11 @@ defmodule Skuld.Effects.DB.Batch do
   def fetch_all(schema, filter_key, filter_value) do
     fn env, k ->
       op = %FetchAll{schema: schema, filter_key: filter_key, filter_value: filter_value}
+      batch_key = {:db_fetch_all, schema, filter_key}
 
       # Note: resume takes env as parameter to avoid capturing stale env with pending fibers
       resume = fn result, resume_env -> k.(result, resume_env) end
-      suspend = InternalSuspend.batch(op, make_ref(), resume)
+      suspend = InternalSuspend.batch(batch_key, op, make_ref(), resume)
 
       {suspend, env}
     end

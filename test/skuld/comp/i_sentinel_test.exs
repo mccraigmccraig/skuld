@@ -24,7 +24,9 @@ defmodule Skuld.Comp.ISentinelTest do
     end
 
     test "InternalSuspend is a suspend sentinel" do
-      suspend = InternalSuspend.batch(%{op: :test}, make_ref(), fn val, env -> {val, env} end)
+      suspend =
+        InternalSuspend.batch(:test_batch, %{op: :test}, make_ref(), fn val, env -> {val, env} end)
+
       assert ISentinel.sentinel?(suspend) == true
       assert ISentinel.suspend?(suspend) == true
       assert ISentinel.error?(suspend) == false
@@ -49,7 +51,7 @@ defmodule Skuld.Comp.ISentinelTest do
     test "all sentinels are either suspend or error" do
       sentinels = [
         %ExternalSuspend{value: :test},
-        InternalSuspend.batch(%{op: :test}, make_ref(), fn val, env -> {val, env} end),
+        InternalSuspend.batch(:test_batch, %{op: :test}, make_ref(), fn val, env -> {val, env} end),
         %Throw{error: :test},
         %Cancelled{reason: :test}
       ]
@@ -65,7 +67,7 @@ defmodule Skuld.Comp.ISentinelTest do
     test "suspend and error are mutually exclusive" do
       sentinels = [
         %ExternalSuspend{value: :test},
-        InternalSuspend.batch(%{op: :test}, make_ref(), fn val, env -> {val, env} end),
+        InternalSuspend.batch(:test_batch, %{op: :test}, make_ref(), fn val, env -> {val, env} end),
         %Throw{error: :test},
         %Cancelled{reason: :test}
       ]
