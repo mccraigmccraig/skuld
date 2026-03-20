@@ -136,18 +136,19 @@ defmodule Skuld.Query.Cache do
           # All cache hits — return immediately
           k.(hit_results, env)
         else
-          # Call real executor for misses only
+          # Within-batch dedup: group identical ops, send only unique ops to executor
+          {unique_ops, dedup_groups} = dedup_ops(miss_ops)
+
+          # Call real executor for unique misses only
           executor_comp =
-            contract_module.__dispatch__(executor_module, query_name, miss_ops)
+            contract_module.__dispatch__(executor_module, query_name, unique_ops)
 
           Comp.call(
-            Comp.bind(executor_comp, fn miss_results ->
-              # Update cache with new results
-              new_cache_entries =
-                Enum.reduce(miss_ops, %{}, fn {ref, op}, acc ->
-                  result = Map.fetch!(miss_results, ref)
-                  Map.put(acc, {batch_key, op}, result)
-                end)
+            Comp.bind(executor_comp, fn unique_results ->
+              # Fan out results to all refs that requested each unique op,
+              # and build cache entries
+              {fanned_results, new_cache_entries} =
+                fan_out_results(unique_results, unique_ops, dedup_groups, batch_key)
 
               # Return a computation that updates env.state and returns merged results
               fn inner_env, inner_k ->
@@ -156,7 +157,7 @@ defmodule Skuld.Query.Cache do
 
                 updated_env = Env.put_state(inner_env, @cache_key, updated_cache)
 
-                merged_results = Map.merge(hit_results, miss_results)
+                merged_results = Map.merge(hit_results, fanned_results)
                 inner_k.(merged_results, updated_env)
               end
             end),
@@ -171,6 +172,51 @@ defmodule Skuld.Query.Cache do
   # -------------------------------------------------------------------
   # Helpers
   # -------------------------------------------------------------------
+
+  # Group miss_ops by op value for within-batch deduplication.
+  #
+  # Returns {unique_ops, dedup_groups} where:
+  # - unique_ops: [{ref, op}] with one representative ref per unique op
+  # - dedup_groups: %{op => [ref1, ref2, ...]} mapping each unique op to ALL refs
+  defp dedup_ops(miss_ops) do
+    # Build groups: %{op => [ref, ...]} (refs in original order)
+    groups =
+      Enum.reduce(miss_ops, %{}, fn {ref, op}, acc ->
+        Map.update(acc, op, [ref], fn refs -> refs ++ [ref] end)
+      end)
+
+    # Build unique_ops using first ref for each unique op
+    unique_ops =
+      Enum.reduce(miss_ops, {MapSet.new(), []}, fn {ref, op}, {seen, acc} ->
+        if MapSet.member?(seen, op) do
+          {seen, acc}
+        else
+          {MapSet.put(seen, op), [{ref, op} | acc]}
+        end
+      end)
+      |> elem(1)
+      |> Enum.reverse()
+
+    {unique_ops, groups}
+  end
+
+  # Expand executor results from unique refs to all requesting refs,
+  # and build cache entries for the new results.
+  defp fan_out_results(unique_results, unique_ops, dedup_groups, batch_key) do
+    Enum.reduce(unique_ops, {%{}, %{}}, fn {ref, op}, {results_acc, cache_acc} ->
+      result = Map.fetch!(unique_results, ref)
+      all_refs = Map.fetch!(dedup_groups, op)
+
+      # Fan out result to all refs for this op
+      expanded =
+        Enum.reduce(all_refs, results_acc, fn r, acc ->
+          Map.put(acc, r, result)
+        end)
+
+      # Add cache entry
+      {expanded, Map.put(cache_acc, {batch_key, op}, result)}
+    end)
+  end
 
   defp partition_cached(ops, cache, batch_key) do
     Enum.reduce(ops, {%{}, []}, fn {ref, op}, {hits, misses} ->

@@ -219,6 +219,113 @@ defmodule Skuld.Query.CacheTest do
     end
   end
 
+  describe "within-batch dedup" do
+    test "two fibers requesting same query in same round — executor receives one op" do
+      with_test_pid(fn ->
+        result =
+          comp do
+            # Both fibers start in the same round — same query
+            h1 <- FiberPool.fiber(TestQueries.get_user("X"))
+            h2 <- FiberPool.fiber(TestQueries.get_user("X"))
+            FiberPool.await_all!([h1, h2])
+          end
+          |> QueryCache.with_executor(TestQueries, CountingExecutor)
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+
+        # Both fibers get the result
+        assert [%User{id: "X", name: "User X"}, %User{id: "X", name: "User X"}] = result
+
+        # Executor called once with 1 op (deduped from 2)
+        assert_received {:executor_called, :get_user, 1}
+        refute_received {:executor_called, :get_user, _}
+      end)
+    end
+
+    test "dedup with different ops in same round" do
+      with_test_pid(fn ->
+        result =
+          comp do
+            h1 <- FiberPool.fiber(TestQueries.get_user("X"))
+            h2 <- FiberPool.fiber(TestQueries.get_user("X"))
+            h3 <- FiberPool.fiber(TestQueries.get_user("Y"))
+            FiberPool.await_all!([h1, h2, h3])
+          end
+          |> QueryCache.with_executor(TestQueries, CountingExecutor)
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+
+        # All three fibers get correct results
+        assert [
+                 %User{id: "X", name: "User X"},
+                 %User{id: "X", name: "User X"},
+                 %User{id: "Y", name: "User Y"}
+               ] = result
+
+        # Executor called once with 2 ops (X and Y — deduped from 3)
+        assert_received {:executor_called, :get_user, 2}
+        refute_received {:executor_called, :get_user, _}
+      end)
+    end
+
+    test "dedup populates cache — subsequent rounds hit cache" do
+      with_test_pid(fn ->
+        result =
+          comp do
+            # Round 1: two fibers both request get_user("X") — deduped
+            h1 <- FiberPool.fiber(TestQueries.get_user("X"))
+            h2 <- FiberPool.fiber(TestQueries.get_user("X"))
+            [r1, r2] <- FiberPool.await_all!([h1, h2])
+
+            # Round 2: another fiber requests get_user("X") — cache hit
+            h3 <- FiberPool.fiber(TestQueries.get_user("X"))
+            r3 <- FiberPool.await!(h3)
+
+            return({r1, r2, r3})
+          end
+          |> QueryCache.with_executor(TestQueries, CountingExecutor)
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+
+        {r1, r2, r3} = result
+        assert %User{id: "X"} = r1
+        assert %User{id: "X"} = r2
+        assert %User{id: "X"} = r3
+
+        # Executor called only once (round 1 deduped, round 2 cached)
+        assert_received {:executor_called, :get_user, 1}
+        refute_received {:executor_called, :get_user, _}
+      end)
+    end
+
+    test "three or more duplicates in same round" do
+      with_test_pid(fn ->
+        result =
+          comp do
+            h1 <- FiberPool.fiber(TestQueries.get_user("Z"))
+            h2 <- FiberPool.fiber(TestQueries.get_user("Z"))
+            h3 <- FiberPool.fiber(TestQueries.get_user("Z"))
+            h4 <- FiberPool.fiber(TestQueries.get_user("Z"))
+            FiberPool.await_all!([h1, h2, h3, h4])
+          end
+          |> QueryCache.with_executor(TestQueries, CountingExecutor)
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+
+        assert [
+                 %User{id: "Z", name: "User Z"},
+                 %User{id: "Z", name: "User Z"},
+                 %User{id: "Z", name: "User Z"},
+                 %User{id: "Z", name: "User Z"}
+               ] = result
+
+        # Executor called once with 1 op
+        assert_received {:executor_called, :get_user, 1}
+        refute_received {:executor_called, :get_user, _}
+      end)
+    end
+  end
+
   describe "with_executor shorthand" do
     test "single-contract API works identically to with_executors" do
       with_test_pid(fn ->
