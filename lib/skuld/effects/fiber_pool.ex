@@ -504,18 +504,6 @@ defmodule Skuld.Effects.FiberPool do
     end
   end
 
-  @spec run(Comp.Types.computation()) :: {term(), Comp.Types.env()}
-  @deprecated "Use Comp.run/1 instead — fibers are now an ambient capability"
-  def run(comp) do
-    Comp.run(comp)
-  end
-
-  @spec run!(Comp.Types.computation()) :: term()
-  @deprecated "Use Comp.run!/1 instead — fibers are now an ambient capability"
-  def run!(comp) do
-    Comp.run!(comp)
-  end
-
   #############################################################################
   ## Handler Implementation
   #############################################################################

@@ -10,7 +10,7 @@
 #
 # Unlike `EnvState` which is shared across all fibers, `PendingWork` is
 # fiber-local. It's accumulated during fiber execution via effect handlers,
-# then extracted and cleared by FiberPool.run and Scheduler:
+# then extracted and cleared by Comp.run (via FiberPool.drain_pending) and Scheduler:
 #
 # 1. Fiber calls `FiberPool.fiber(comp)` → handler adds to `fibers`
 # 2. Fiber calls `FiberPool.task(thunk)` → handler adds to `tasks`
