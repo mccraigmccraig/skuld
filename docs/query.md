@@ -160,6 +160,11 @@ When 50 posts resolve their `author` field concurrently, all 50
 `get_user` calls are batched into a single executor invocation that
 receives all 50 author IDs at once.
 
+(Absinthe already has its own batch-scheduling infrastructure via
+`Absinthe.Middleware.Dataloader`, so Skuld's query system wouldn't add much
+there. But if you were building your own GraphQL execution engine, Skuld's
+fiber-based batching would be a good foundation.)
+
 ## The `query` Macro
 
 The `query` macro (`Skuld.Query.QueryBlock`) provides the lowest-boilerplate way to
