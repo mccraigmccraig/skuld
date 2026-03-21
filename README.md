@@ -30,7 +30,7 @@ some common side-effecting operations and their effectful equivalents:
 | Concurrent fibers / streaming   | FiberPool, Channel, Brook    |
 | Run effects from LiveView       | AsyncComputation             |
 | DB writes & transactions        | DB                           |
-| Typed batchable queries         | Query.Contract               |
+| Typed batchable queries         | query, deffetch, Query.Cache |
 | Blocking calls to external code | Port, Port.Contract          |
 | Effectful code from plain code  | Port.Provider                |
 | Decider pattern                 | Command, EventAccumulator    |
