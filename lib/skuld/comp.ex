@@ -172,12 +172,7 @@ defmodule Skuld.Comp do
   """
   @spec run(Types.computation()) :: {Types.result(), Types.env()}
   def run(comp) do
-    {result, final_env} =
-      call(
-        comp,
-        Env.with_leave_scope(Env.new(), &identity_k/2),
-        &identity_k/2
-      )
+    {result, final_env} = call(comp, Env.new(), &identity_k/2)
 
     ISentinel.run(result, final_env)
   end

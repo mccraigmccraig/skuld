@@ -481,9 +481,7 @@ defmodule Skuld.Effects.FiberPool do
   """
   @spec run(Comp.Types.computation()) :: {term(), Comp.Types.env()}
   def run(comp) do
-    env = Env.new()
-
-    {result, env} = Comp.call(comp, env, &Comp.identity_k/2)
+    {result, env} = Comp.call(comp, Env.new(), &Comp.identity_k/2)
 
     # Extract pending work from env
     pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())
