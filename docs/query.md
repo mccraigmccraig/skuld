@@ -77,6 +77,47 @@ function three levels down that calls `get_user_by_email` still participates in
 the same batch, because batching is a property of the runtime, not the call
 site.
 
+### Streaming: Constant-Memory Batching
+
+The `FiberPool.map` example above loads all staging rows into memory at once.
+For large imports — millions of rows, or an unbounded stream of incoming
+data — you can use [Brook](effects-concurrency.md#brook) (Skuld's streaming
+API) for **constant-memory** batched processing. Brook uses bounded channel
+buffers for backpressure: only a fixed window of items is in flight at any
+time, while batching still works across all concurrent fibers in that window.
+
+```elixir
+# Constant-memory streaming import — batching + backpressure
+comp do
+  # Stream rows from the staging table (or any source)
+  source <- Brook.from_function(fn ->
+    case StagingTable.next_batch() do
+      {:ok, rows} -> {:items, rows}
+      :done -> :done
+    end
+  end, chunk_size: 50)
+
+  # Process rows with bounded concurrency — buffer size controls
+  # how many chunks are in flight (and thus how many fibers batch together)
+  Brook.map(source, &process_row/1, concurrency: 10, buffer: 5)
+  |> Brook.run(fn result -> persist_result(result) end)
+end
+|> Import.Queries.with_executor(Import.Queries.EctoExecutor)
+|> Channel.with_handler()
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+```
+
+With `concurrency: 10` and `chunk_size: 50`, at most ~500 rows are being
+processed at any time. The `deffetch` calls from those ~500 rows batch into
+just a handful of executor invocations per round, regardless of whether the
+total import is 1,000 rows or 10 million. Memory stays bounded, and the
+batching efficiency is the same as the in-memory version.
+
+See the [Brook documentation](effects-concurrency.md#brook) for the full
+streaming API, including `from_enum`, `from_function`, `map`, `filter`, `each`,
+and backpressure configuration.
+
 ### Example: GraphQL Resolvers
 
 GraphQL is the canonical N+1 scenario. A query like `{ posts { author { name } } }`
