@@ -639,4 +639,192 @@ defmodule Skuld.Query.QueryBlockTest do
       assert result == 42
     end
   end
+
+  describe "defquery macro" do
+    defquery simple_query do
+      a <- Comp.pure(42)
+      a
+    end
+
+    defquery query_with_effects do
+      a <- Comp.pure(10)
+      b <- Comp.pure(32)
+      a + b
+    end
+
+    defquery query_with_arg(x) do
+      a <- Comp.pure(x)
+      b <- Comp.pure(a * 2)
+      b
+    end
+
+    defquery query_with_multiple_args(x, y) do
+      a <- Comp.pure(x)
+      b <- Comp.pure(y)
+      a + b
+    end
+
+    defquery query_with_dependency(id) do
+      user <- Comp.pure(%{id: id, name: "User #{id}"})
+      orders <- Comp.pure([%{user_id: user.id}])
+      {user, orders}
+    end
+
+    test "defquery with no args" do
+      assert Comp.run!(simple_query() |> FiberPool.with_handler()) == 42
+    end
+
+    test "defquery with independent bindings" do
+      assert Comp.run!(query_with_effects() |> FiberPool.with_handler()) == 42
+    end
+
+    test "defquery with single arg" do
+      assert Comp.run!(query_with_arg(21) |> FiberPool.with_handler()) == 42
+    end
+
+    test "defquery with multiple args" do
+      assert Comp.run!(query_with_multiple_args(10, 32) |> FiberPool.with_handler()) == 42
+    end
+
+    test "defquery with dependency analysis" do
+      {user, orders} =
+        Comp.run!(query_with_dependency("u1") |> FiberPool.with_handler())
+
+      assert user == %{id: "u1", name: "User u1"}
+      assert orders == [%{user_id: "u1"}]
+    end
+  end
+
+  describe "defqueryp macro" do
+    defqueryp private_query do
+      a <- Comp.pure(21)
+      b <- Comp.pure(a * 2)
+      b
+    end
+
+    defquery uses_private_query do
+      result <- private_query()
+      result
+    end
+
+    test "defqueryp defines private function usable internally" do
+      assert Comp.run!(uses_private_query() |> FiberPool.with_handler()) == 42
+    end
+  end
+
+  describe "defquery with Query.Contract" do
+    defquery fetch_user_and_recent(id) do
+      user <- TestQueries.get_user(id)
+      recent <- TestQueries.get_recent()
+      {user, recent}
+    end
+
+    defquery fetch_user_with_orders(id) do
+      user <- TestQueries.get_user(id)
+      orders <- TestQueries.get_orders(user.id)
+      {user, orders}
+    end
+
+    test "defquery batches independent contract queries" do
+      with_test_pid(fn ->
+        {user, recent} =
+          fetch_user_and_recent("1")
+          |> TestQueries.with_executor(TestExecutor)
+          |> FiberPool.with_handler()
+          |> Comp.run!()
+
+        assert %{id: "1", name: "User 1"} = user
+        assert [%{id: "recent1"}] = recent
+
+        assert_received {:get_user_batch, 1}
+        assert_received {:get_recent_batch, 1}
+      end)
+    end
+
+    test "defquery sequences dependent contract queries" do
+      with_test_pid(fn ->
+        {user, orders} =
+          fetch_user_with_orders("1")
+          |> TestQueries.with_executor(TestExecutor)
+          |> FiberPool.with_handler()
+          |> Comp.run!()
+
+        assert %{id: "1", name: "User 1"} = user
+        assert [%{id: "o1", user_id: "1"}] = orders
+
+        assert_received {:get_user_batch, 1}
+        assert_received {:get_orders_batch, 1}
+      end)
+    end
+  end
+
+  describe "defquery — compile errors" do
+    test "defquery rejects else clause" do
+      assert_raise CompileError, ~r/does not support.*:else/, fn ->
+        capture_io(:stderr, fn ->
+          Code.compile_string("""
+          defmodule DefqueryElseTest do
+            import Skuld.Query.QueryBlock
+
+            defquery bad_query(x) do
+              a <- Skuld.Comp.pure(x)
+              a
+            else
+              {:error, _} -> Skuld.Comp.pure(:default)
+            end
+          end
+          """)
+        end)
+      end
+    end
+
+    test "defquery rejects catch clause" do
+      # catch is a reserved Elixir keyword that interferes with macro parsing,
+      # so we test the validate_clauses! function directly
+      assert_raise CompileError, ~r/does not support.*:catch/, fn ->
+        Skuld.Query.QueryBlock.Impl.defquery(
+          %Macro.Env{file: "test", line: 1},
+          {:bad_query, [], [{:x, [], nil}]},
+          do: {:a, [], nil},
+          catch: [{:->, [], [[{:_, [], nil}], {:ok, [], nil}]}]
+        )
+      end
+    end
+  end
+
+  describe "use Skuld.Syntax with defquery" do
+    defmodule UseSyntaxQueryExample do
+      use Skuld.Syntax
+
+      defquery public_query(x) do
+        a <- Skuld.Comp.pure(x)
+        b <- Skuld.Comp.pure(a + 1)
+        a + b
+      end
+
+      defqueryp private_query(x) do
+        a <- Skuld.Comp.pure(x * 2)
+        a
+      end
+
+      defquery uses_private(x) do
+        result <- private_query(x)
+        result
+      end
+    end
+
+    test "defquery works via use Skuld.Syntax" do
+      assert Comp.run!(
+               UseSyntaxQueryExample.public_query(10)
+               |> FiberPool.with_handler()
+             ) == 21
+    end
+
+    test "defqueryp works via use Skuld.Syntax" do
+      assert Comp.run!(
+               UseSyntaxQueryExample.uses_private(21)
+               |> FiberPool.with_handler()
+             ) == 42
+    end
+  end
 end

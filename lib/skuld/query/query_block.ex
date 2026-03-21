@@ -87,8 +87,97 @@ defmodule Skuld.Query.QueryBlock do
     Skuld.Query.QueryBlock.Impl.compile(__CALLER__, do_block)
   end
 
+  @doc """
+  Define a public function whose body is a `query` block.
+
+  ## Example
+
+      defquery user_with_orders(id) do
+        user <- Users.get_user(id)
+        recent <- Orders.get_recent()
+        orders <- Orders.get_by_user(user.id)
+        {user, recent, orders}
+      end
+
+  This is equivalent to:
+
+      def user_with_orders(id) do
+        query do
+          user <- Users.get_user(id)
+          recent <- Orders.get_recent()
+          orders <- Orders.get_by_user(user.id)
+          {user, recent, orders}
+        end
+      end
+  """
+  defmacro defquery(call_ast, clauses) do
+    Skuld.Query.QueryBlock.Impl.defquery(__CALLER__, call_ast, clauses)
+  end
+
+  @doc """
+  Define a private function whose body is a `query` block.
+
+  ## Example
+
+      defqueryp internal_fetch(id) do
+        user <- Users.get_user(id)
+        orders <- Orders.get_by_user(user.id)
+        {user, orders}
+      end
+  """
+  defmacro defqueryp(call_ast, clauses) do
+    Skuld.Query.QueryBlock.Impl.defqueryp(__CALLER__, call_ast, clauses)
+  end
+
   defmodule Impl do
     @moduledoc false
+
+    @doc false
+    def defquery(caller, call_ast, clauses) do
+      validate_clauses!(caller, clauses)
+      do_block = Keyword.fetch!(clauses, :do)
+
+      quote do
+        def unquote(call_ast) do
+          Skuld.Query.QueryBlock.query(do: unquote(do_block))
+        end
+      end
+    end
+
+    @doc false
+    def defqueryp(caller, call_ast, clauses) do
+      validate_clauses!(caller, clauses)
+      do_block = Keyword.fetch!(clauses, :do)
+
+      quote do
+        defp unquote(call_ast) do
+          Skuld.Query.QueryBlock.query(do: unquote(do_block))
+        end
+      end
+    end
+
+    defp validate_clauses!(caller, clauses) do
+      valid_keys = [:do]
+      actual_keys = Keyword.keys(clauses)
+
+      unless :do in actual_keys do
+        raise CompileError,
+          file: caller.file,
+          line: caller.line,
+          description: "query block requires a do clause"
+      end
+
+      invalid = actual_keys -- valid_keys
+
+      if invalid != [] do
+        raise CompileError,
+          file: caller.file,
+          line: caller.line,
+          description:
+            "query block does not support #{Enum.map_join(invalid, ", ", &inspect/1)} clauses. " <>
+              "Only :do is supported."
+      end
+    end
 
     @doc false
     def compile(caller, do_block) do

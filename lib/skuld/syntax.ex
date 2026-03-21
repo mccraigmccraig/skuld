@@ -9,6 +9,8 @@ defmodule Skuld.Syntax do
       # Now you have access to:
       # - comp (inline computation block)
       # - defcomp, defcompp (function definitions)
+      # - query (inline query block with automatic batching)
+      # - defquery, defqueryp (query function definitions)
 
   ## Example
 
@@ -33,6 +35,19 @@ defmodule Skuld.Syntax do
       defcompp private_helper() do
         ctx <- Reader.ask()
         return(ctx.value)
+      end
+
+  ## Query Functions
+
+      defquery user_with_orders(id) do
+        user <- Users.get_user(id)
+        orders <- Orders.get_by_user(user.id)
+        {user, orders}
+      end
+
+      defqueryp private_fetch(id) do
+        data <- DataSource.fetch(id)
+        data
       end
 
   ## Syntax Reference
