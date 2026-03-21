@@ -148,9 +148,8 @@ defmodule Blog.Queries do
 end
 
 # Per-field resolver logic — still per-record, but batches automatically
-defcomp resolve_author(post) do
-  author <- Blog.Queries.get_user(post.author_id)
-  author
+def resolve_author(post) do
+  Blog.Queries.get_user(post.author_id)
 end
 ```
 
