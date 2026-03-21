@@ -489,23 +489,28 @@ defmodule Skuld.Effects.FiberPool do
     pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())
     {pending_fibers, pending_tasks, _} = PendingWork.take_all(pending_work)
 
-    if pending_fibers == [] and pending_tasks == [] and not await_suspend?(result) do
-      # No fibers or tasks spawned, simple completion
-      {result, env}
-    else
-      # Read task supervisor from env (installed by with_task_supervisor, or nil)
-      task_sup = Env.get_state(env, @task_supervisor_key)
+    {final_result, final_env} =
+      if pending_fibers == [] and pending_tasks == [] and not await_suspend?(result) do
+        # No fibers or tasks spawned, simple completion
+        {result, env}
+      else
+        # Read task supervisor from env (installed by with_task_supervisor, or nil)
+        task_sup = Env.get_state(env, @task_supervisor_key)
 
-      state = State.new(task_supervisor: task_sup)
+        state = State.new(task_supervisor: task_sup)
 
-      # Seed state.env_state from main computation's env.state
-      # But clear pending work since we've already extracted it
-      clean_env_state = Map.put(env.state, PendingWork.env_key(), PendingWork.new())
+        # Seed state.env_state from main computation's env.state
+        # But clear pending work since we've already extracted it
+        clean_env_state = Map.put(env.state, PendingWork.env_key(), PendingWork.new())
 
-      state = State.put_env_state(state, clean_env_state)
-      # Run fibers and tasks
-      run_with_fibers(state, env, result, pending_fibers, pending_tasks)
-    end
+        state = State.put_env_state(state, clean_env_state)
+        # Run fibers and tasks
+        run_with_fibers(state, env, result, pending_fibers, pending_tasks)
+      end
+
+    # Invoke leave_scope chain and transform_suspend for proper cleanup
+    # (Bracket release, scoped state restoration, suspend decorations, etc.)
+    Comp.ISentinel.run(final_result, final_env)
   end
 
   @doc """
