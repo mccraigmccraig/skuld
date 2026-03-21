@@ -26,14 +26,14 @@
 #     # Production - real DB executor
 #     comp
 #     |> BatchExecutor.with_executor({:db_fetch, :_}, &DB.Executors.fetch_executor/1)
-#     |> FiberPool.run()
+#     |> Comp.run()
 #
 #     # Test - mock executor
 #     comp
 #     |> BatchExecutor.with_executor({:db_fetch, User}, fn ops ->
 #       Comp.pure(Map.new(ops, fn {ref, _op} -> {ref, %User{id: 1}} end))
 #     end)
-#     |> FiberPool.run()
+#     |> Comp.run()
 defmodule Skuld.Fiber.FiberPool.BatchExecutor do
   @moduledoc false
 

@@ -14,7 +14,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -26,7 +26,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -45,7 +45,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           r1 + r2 + r3
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -65,7 +65,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -82,7 +82,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await_all!([h1, h2, h3])
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [10, 20, 12]
     end
@@ -93,7 +93,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await_all!([])
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == []
     end
@@ -108,7 +108,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await_all!([h3, h1, h2])
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [:third, :first, :second]
     end
@@ -124,7 +124,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await_any!([h1, h2])
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # Should return one of the handles and its result
       assert result in [:one, :two]
@@ -140,7 +140,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.cancel(h)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == :ok
     end
@@ -158,7 +158,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
       end
     end
   end
@@ -172,7 +172,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           x + y
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -186,7 +186,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run()
+        |> Comp.run()
 
       assert result == 42
       assert env != nil
@@ -223,7 +223,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           )
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # Scope returns the body's result
       assert result == :scope_body_done
@@ -241,7 +241,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           )
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 105
     end
@@ -267,7 +267,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           )
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == {10, 20}
     end
@@ -290,7 +290,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           )
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # Scope still returns body result
       assert result == :body_done
@@ -308,7 +308,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           )
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -323,7 +323,7 @@ defmodule Skuld.Effects.FiberPoolTest do
         end
         |> FiberPool.with_handler()
         |> FiberPool.with_task_supervisor()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -339,7 +339,7 @@ defmodule Skuld.Effects.FiberPoolTest do
         end
         |> FiberPool.with_handler()
         |> FiberPool.with_task_supervisor()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # Task should have run in a different process
       assert result == true
@@ -356,7 +356,7 @@ defmodule Skuld.Effects.FiberPoolTest do
         end
         |> FiberPool.with_handler()
         |> FiberPool.with_task_supervisor()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [10, 20, 12]
     end
@@ -374,7 +374,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           end
           |> FiberPool.with_handler()
           |> FiberPool.with_task_supervisor()
-          |> FiberPool.run!()
+          |> Comp.run!()
         end
       end)
     end
@@ -394,7 +394,7 @@ defmodule Skuld.Effects.FiberPoolTest do
         end
         |> FiberPool.with_handler()
         |> FiberPool.with_task_supervisor()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == {:fiber_result, :task_result}
     end
@@ -411,7 +411,7 @@ defmodule Skuld.Effects.FiberPoolTest do
         end
         |> FiberPool.with_handler()
         |> FiberPool.with_task_supervisor()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 100
     end
@@ -426,7 +426,7 @@ defmodule Skuld.Effects.FiberPoolTest do
         end
         |> FiberPool.with_handler()
         |> FiberPool.with_task_supervisor()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result in [:first, :second]
     end
@@ -438,7 +438,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
       end
     end
 
@@ -452,7 +452,7 @@ defmodule Skuld.Effects.FiberPoolTest do
         end
         |> FiberPool.with_handler()
         |> FiberPool.with_task_supervisor(supervisor: sup)
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
       # Supervisor should still be alive (caller manages lifecycle)

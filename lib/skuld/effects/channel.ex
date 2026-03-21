@@ -37,7 +37,7 @@ defmodule Skuld.Effects.Channel do
       end
       |> Channel.with_handler()
       |> FiberPool.with_handler()
-      |> FiberPool.run()
+      |> Comp.run()
 
   ## Error Propagation
 
@@ -589,7 +589,7 @@ defmodule Skuld.Effects.Channel do
       end
       |> Channel.with_handler()
       |> FiberPool.with_handler()
-      |> FiberPool.run()
+      |> Comp.run()
   """
   @spec with_handler(Comp.Types.computation()) :: Comp.Types.computation()
   def with_handler(comp) do

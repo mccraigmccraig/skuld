@@ -162,7 +162,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         assert %User{id: "1", name: "User 1"} = result
         assert_received {:executor_called, :get_user, 1}
@@ -187,7 +187,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {r1, r2} = result
         assert %User{id: "1", name: "User 1"} = r1
@@ -217,7 +217,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {r1, r2} = result
         assert %User{id: "A", name: "User A"} = r1
@@ -247,7 +247,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {r1, r2} = result
         assert %User{id: "X", name: "User X"} = r1
@@ -271,7 +271,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         assert %User{id: "1"} = inner_result
         assert_received {:executor_called, :get_user, 1}
@@ -284,7 +284,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         assert %User{id: "1"} = outer_result
 
@@ -306,7 +306,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         # Both fibers get the result
         assert [%User{id: "X", name: "User X"}, %User{id: "X", name: "User X"}] = result
@@ -328,7 +328,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         # All three fibers get correct results
         assert [
@@ -360,7 +360,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {r1, r2, r3} = result
         assert %User{id: "X"} = r1
@@ -385,7 +385,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         assert [
                  %User{id: "Z", name: "User Z"},
@@ -416,7 +416,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {r1, r2} = result
         assert %User{id: "1"} = r1
@@ -445,7 +445,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(CacheOptQueries, CacheOptExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {r1, r2} = result
         # Both calls hit executor — results may differ
@@ -482,7 +482,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(CacheOptQueries, CacheOptExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {r1, r2, r3, r4} = result
         # Cacheable: same result
@@ -512,7 +512,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, FailingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
         end
 
         assert_received {:executor_called, :failing_get_user, 1}
@@ -526,7 +526,7 @@ defmodule Skuld.Query.CacheTest do
           end
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         assert %User{id: "1"} = result
         assert_received {:executor_called, :get_user, 1}
@@ -556,7 +556,7 @@ defmodule Skuld.Query.CacheTest do
             {OrderQueries, OrderExecutor}
           ])
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {r1, r2, r3, r4} = result
         assert %User{id: "1"} = r1
@@ -593,7 +593,7 @@ defmodule Skuld.Query.CacheTest do
           |> QueryCache.with_executor(TestQueries, CountingExecutor)
           |> QueryCache.with_executor(OrderQueries, OrderExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {r1, r2, r3, r4} = result
         assert %User{id: "1"} = r1
@@ -623,7 +623,7 @@ defmodule Skuld.Query.CacheTest do
             {CacheOptQueries, CacheOptExecutor}
           ])
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         assert [%User{id: "1"}, %User{id: "1"}] = result
 

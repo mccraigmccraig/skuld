@@ -50,7 +50,7 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
         comp
         |> FiberPool.with_handler()
         |> FiberPool.with_task_supervisor()
-        |> FiberPool.run!()
+        |> Comp.run!()
     """
   end
 

@@ -209,7 +209,7 @@ defmodule Skuld.Query.ContractTest do
         end
         |> TestQueries.with_executor(TestExecutor)
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert %User{id: "1", name: "User 1"} = result
     end
@@ -244,7 +244,7 @@ defmodule Skuld.Query.ContractTest do
           counting_executor.get_user
         )
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert_received {:batch_size, 3}
 
@@ -287,7 +287,7 @@ defmodule Skuld.Query.ContractTest do
         |> BatchExecutor.with_executor({TestQueries, :get_user}, user_executor)
         |> BatchExecutor.with_executor({TestQueries, :get_user_count}, count_executor)
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert_received {:user_batch, 1}
       assert_received {:count_batch, 1}
@@ -307,7 +307,7 @@ defmodule Skuld.Query.ContractTest do
         end
         |> TestQueries.with_executor(TestExecutor)
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [
                %User{id: "1", name: "User 1"},
@@ -330,7 +330,7 @@ defmodule Skuld.Query.ContractTest do
           {PostQueries, PostExecutor}
         ])
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [%User{id: "1"}, %Post{id: "p1"}] = result
     end
@@ -347,7 +347,7 @@ defmodule Skuld.Query.ContractTest do
           PostQueries => PostExecutor
         })
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [%User{id: "1"}, %Post{id: "p1"}] = result
     end
@@ -388,7 +388,7 @@ defmodule Skuld.Query.ContractTest do
         |> BatchExecutor.with_executor({TestQueries, :get_user}, user_exec)
         |> BatchExecutor.with_executor({PostQueries, :get_post}, post_exec)
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert_received {:user_exec, 2}
       assert_received {:post_exec, 2}
@@ -508,7 +508,7 @@ defmodule Skuld.Query.ContractTest do
         |> BatchExecutor.with_executor({OkErrorQueries, :find_user}, ok_executor)
         |> Throw.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert %User{id: "1", name: "Found"} = result
     end
@@ -531,7 +531,7 @@ defmodule Skuld.Query.ContractTest do
         end
         |> BatchExecutor.with_executor({OkErrorQueries, :find_user}, error_executor)
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
       end
     end
 
@@ -552,7 +552,7 @@ defmodule Skuld.Query.ContractTest do
         end
         |> BatchExecutor.with_executor({CustomBangQueries, :find_user}, found_executor)
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert %User{id: "1", name: "Found"} = ok_result
     end
@@ -571,7 +571,7 @@ defmodule Skuld.Query.ContractTest do
         end
         |> BatchExecutor.with_executor({CustomBangQueries, :find_user}, nil_executor)
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
       end
     end
   end
@@ -584,7 +584,7 @@ defmodule Skuld.Query.ContractTest do
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
       end
     end
 

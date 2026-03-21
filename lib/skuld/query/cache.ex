@@ -14,7 +14,7 @@ defmodule Skuld.Query.Cache do
       comp
       |> QueryCache.with_executor(Users, Users.EctoExecutor)
       |> FiberPool.with_handler()
-      |> FiberPool.run()
+      |> Comp.run()
 
       # Multiple contracts (shared cache scope):
       comp
@@ -23,7 +23,7 @@ defmodule Skuld.Query.Cache do
         {Orders, Orders.EctoExecutor}
       ])
       |> FiberPool.with_handler()
-      |> FiberPool.run()
+      |> Comp.run()
 
   ## Cache Scope
 
@@ -78,7 +78,7 @@ defmodule Skuld.Query.Cache do
         {Orders, Orders.EctoExecutor}
       ])
       |> FiberPool.with_handler()
-      |> FiberPool.run()
+      |> Comp.run()
   """
   @spec with_executors(Comp.Types.computation(), [{module(), module()}]) ::
           Comp.Types.computation()

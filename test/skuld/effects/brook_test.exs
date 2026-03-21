@@ -2,6 +2,7 @@ defmodule Skuld.Effects.BrookTest do
   use ExUnit.Case, async: true
   use Skuld.Syntax
 
+  alias Skuld.Comp
   alias Skuld.Effects.Channel
   alias Skuld.Effects.FiberPool
   alias Skuld.Effects.Brook, as: B
@@ -15,7 +16,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [1, 2, 3]
     end
@@ -28,7 +29,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [1, 2, 3, 4, 5]
     end
@@ -41,7 +42,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [1, 2, 3]
     end
@@ -54,7 +55,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == []
     end
@@ -82,7 +83,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [0, 1, 2, 3, 4]
     end
@@ -108,7 +109,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [1, 2, 3, 4, 5]
     end
@@ -125,7 +126,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == {:error, :test_error}
     end
@@ -141,7 +142,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [2, 4, 6]
     end
@@ -155,7 +156,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == []
     end
@@ -169,7 +170,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # Order IS preserved with concurrency thanks to put_async/take_async
       assert result == [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
@@ -184,7 +185,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == {:error, :source_error}
     end
@@ -200,7 +201,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [2, 4, 6, 8, 10]
     end
@@ -214,7 +215,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == []
     end
@@ -228,7 +229,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == []
     end
@@ -242,7 +243,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == {:error, :filter_test_error}
     end
@@ -262,7 +263,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == :ok
       assert :ets.lookup(collected, 1) == [{1, true}]
@@ -280,7 +281,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == :ok
     end
@@ -293,7 +294,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == {:error, :each_error}
     end
@@ -314,7 +315,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == :ok
       assert :ets.lookup(collected, 1) == [{1, true}]
@@ -332,7 +333,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == {:error, :run_error}
     end
@@ -347,7 +348,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [1, 2, 3, 4, 5]
     end
@@ -360,7 +361,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == {:error, :to_list_error}
     end
@@ -377,7 +378,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [12, 14, 16, 18, 20]
     end
@@ -392,7 +393,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [4, 8, 12, 16, 20]
     end
@@ -408,7 +409,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # 1 -> 2 -> 4 -> 16
       # 2 -> 3 -> 6 -> 36
@@ -427,7 +428,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # evens: 2, 4, 6, 8, 10, 12, 14, 16, 18, 20
       # doubled: 4, 8, 12, 16, 20, 24, 28, 32, 36, 40
@@ -448,7 +449,7 @@ defmodule Skuld.Effects.BrookTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == Enum.to_list(1..100)
     end
@@ -541,7 +542,7 @@ defmodule Skuld.Effects.BrookTest do
         |> Queries.with_executor(BrookBatchExecutor)
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # Should get all users with their orders, in order
       assert [

@@ -90,7 +90,7 @@ defmodule Skuld.Query.QueryBlockTest do
           a
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -102,7 +102,7 @@ defmodule Skuld.Query.QueryBlockTest do
           Comp.pure(a)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -113,7 +113,7 @@ defmodule Skuld.Query.QueryBlockTest do
           Comp.pure(42)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -125,7 +125,7 @@ defmodule Skuld.Query.QueryBlockTest do
           a
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -140,7 +140,7 @@ defmodule Skuld.Query.QueryBlockTest do
           a + b
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -154,7 +154,7 @@ defmodule Skuld.Query.QueryBlockTest do
           a + b + c
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -169,7 +169,7 @@ defmodule Skuld.Query.QueryBlockTest do
           b
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -185,7 +185,7 @@ defmodule Skuld.Query.QueryBlockTest do
           c
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -203,7 +203,7 @@ defmodule Skuld.Query.QueryBlockTest do
           d
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # a=10, b=15, c=27, d=42
       assert result == 42
@@ -219,7 +219,7 @@ defmodule Skuld.Query.QueryBlockTest do
           d
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 4
     end
@@ -238,7 +238,7 @@ defmodule Skuld.Query.QueryBlockTest do
           e
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # a=10, b=20, c=12, d=23, e=32
       assert result == 32
@@ -254,7 +254,7 @@ defmodule Skuld.Query.QueryBlockTest do
           Comp.pure(b)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -267,7 +267,7 @@ defmodule Skuld.Query.QueryBlockTest do
           a + b
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -281,7 +281,7 @@ defmodule Skuld.Query.QueryBlockTest do
           a
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -294,7 +294,7 @@ defmodule Skuld.Query.QueryBlockTest do
           b
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -309,7 +309,7 @@ defmodule Skuld.Query.QueryBlockTest do
           {user, orders}
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       {user, orders} = result
       assert user == %{id: "u1", name: "Alice"}
@@ -327,7 +327,7 @@ defmodule Skuld.Query.QueryBlockTest do
           c
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -340,7 +340,7 @@ defmodule Skuld.Query.QueryBlockTest do
           greeting
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == "Hello Alice, your id is u1"
     end
@@ -353,7 +353,7 @@ defmodule Skuld.Query.QueryBlockTest do
           detail
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == "user-u1"
     end
@@ -366,7 +366,7 @@ defmodule Skuld.Query.QueryBlockTest do
           doubled
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 20
     end
@@ -379,7 +379,7 @@ defmodule Skuld.Query.QueryBlockTest do
           label
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == "Alice#1"
     end
@@ -395,7 +395,7 @@ defmodule Skuld.Query.QueryBlockTest do
           c
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -412,7 +412,7 @@ defmodule Skuld.Query.QueryBlockTest do
           end
           |> TestQueries.with_executor(TestExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {user, recent, orders} = result
         assert %{id: "1", name: "User 1"} = user
@@ -437,7 +437,7 @@ defmodule Skuld.Query.QueryBlockTest do
         end
         |> State.with_handler(32)
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -452,7 +452,7 @@ defmodule Skuld.Query.QueryBlockTest do
           a
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end
@@ -469,7 +469,7 @@ defmodule Skuld.Query.QueryBlockTest do
           end
           |> TestQueries.with_executor(TestExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {user, recent} = result
         assert %{id: "1", name: "User 1"} = user
@@ -491,7 +491,7 @@ defmodule Skuld.Query.QueryBlockTest do
           end
           |> TestQueries.with_executor(TestExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {user, orders} = result
         assert %{id: "1", name: "User 1"} = user
@@ -513,7 +513,7 @@ defmodule Skuld.Query.QueryBlockTest do
           end
           |> TestQueries.with_executor(TestExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {user, recent, orders} = result
         assert %{id: "1", name: "User 1"} = user
@@ -539,7 +539,7 @@ defmodule Skuld.Query.QueryBlockTest do
           end
           |> TestQueries.with_executor(TestExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run!()
+          |> Comp.run!()
 
         {u1, u2, u3} = result
         assert %{id: "1"} = u1
@@ -634,7 +634,7 @@ defmodule Skuld.Query.QueryBlockTest do
           return(a)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == 42
     end

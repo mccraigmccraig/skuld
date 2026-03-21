@@ -35,7 +35,7 @@ defmodule Skuld.Effects.Brook do
       end
       |> Channel.with_handler()
       |> FiberPool.with_handler()
-      |> FiberPool.run()
+      |> Comp.run()
 
   ## Error Propagation
 

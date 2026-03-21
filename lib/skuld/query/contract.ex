@@ -63,7 +63,7 @@ defmodule Skuld.Query.Contract do
       my_comp
       |> MyApp.Queries.Users.with_executor(MyApp.Queries.Users.EctoExecutor)
       |> FiberPool.with_handler()
-      |> FiberPool.run()
+      |> Comp.run()
 
   ## Bulk Wiring
 
@@ -454,7 +454,7 @@ defmodule Skuld.Query.Contract do
           comp
           |> MyContract.with_executor(MyContract.EctoExecutor)
           |> FiberPool.with_handler()
-          |> FiberPool.run()
+          |> Comp.run()
       """
       @spec with_executor(Skuld.Comp.Types.computation(), module()) ::
               Skuld.Comp.Types.computation()

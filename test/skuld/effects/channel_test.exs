@@ -16,7 +16,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {:ok, :item} = result
     end
@@ -37,7 +37,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {{:ok, 1}, {:ok, 2}, {:ok, 3}} = result
     end
@@ -56,7 +56,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {{:ok, :item}, {:ok, :item}, {:ok, :item}} = result
     end
@@ -69,7 +69,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert :empty = result
     end
@@ -117,7 +117,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [:producer_done, :consumer_done] = result
 
@@ -164,7 +164,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [:consumer_done, :producer_done] = result
 
@@ -213,7 +213,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       {[consumer_result, producer_result], peek_result} = result
 
@@ -265,7 +265,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [:ok, {{:ok, :first}, {:ok, :from_putter}}] = result
 
@@ -289,7 +289,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {{:error, :closed}, {:ok, :before_close}} = result
     end
@@ -307,7 +307,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {{:ok, :item}, :closed} = result
     end
@@ -345,7 +345,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [:closed, :closer_done] = result
 
@@ -364,7 +364,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert :closed = result
     end
@@ -379,7 +379,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {:ok, :ok} = result
     end
@@ -397,7 +397,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {{:error, :test_error}} = result
     end
@@ -416,7 +416,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # All takes return the error, even though there was an item in buffer
       assert {{:error, :sticky_error}, {:error, :sticky_error}, {:error, :sticky_error}} = result
@@ -465,7 +465,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [{:error, :propagated_error}, {:error, :propagated_error}, :errorer_done] = result
 
@@ -513,7 +513,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [{:error, :putter_error}, :errorer_done] = result
 
@@ -533,7 +533,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {:error, :first_error} = result
     end
@@ -547,7 +547,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {:error, :peek_error} = result
     end
@@ -565,7 +565,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {false, true} = result
     end
@@ -581,7 +581,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {false, true} = result
     end
@@ -596,7 +596,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert %{capacity: 5, buffer_size: 2, status: :open} = result
     end
@@ -627,7 +627,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [:producer_done, items] = result
       assert items == Enum.to_list(1..10)
@@ -688,7 +688,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {{:ok, 1}, {:ok, 2}, {:ok, 3}, :closed} = result
     end
@@ -711,7 +711,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert result == [:first, :second, :third]
     end
@@ -744,7 +744,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [:producer_done, [10, 20, 30]] = result
     end
@@ -767,7 +767,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {:error, _reason} = result
     end
@@ -794,7 +794,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       # Regular items returned as-is, async items awaited
       assert {{:ok, :regular1}, {:ok, :async1}, {:ok, :regular2}, {:ok, :async2}} = result
@@ -830,7 +830,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert [:done, [1, 2, 3, 4]] = result
     end
@@ -886,7 +886,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {{:ok, :put_done}, {:ok, {:ok, :item}}} = result
     end
@@ -922,7 +922,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {{:ok, {:ok, :item}}, {:ok, :put_done}} = result
     end
@@ -954,7 +954,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {{:ok, :producer_done}, {:ok, [1, 2, 3]}} = result
     end
@@ -977,7 +977,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {{:ok, :ok}, {:ok, :closed}} = result
     end
@@ -1000,7 +1000,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert {{:ok, :ok}, {:ok, {:error, :test_error}}} = result
     end
@@ -1013,7 +1013,7 @@ defmodule Skuld.Effects.ChannelTest do
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()
-        |> FiberPool.run!()
+        |> Comp.run!()
 
       assert :empty = result
     end

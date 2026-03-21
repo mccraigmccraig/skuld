@@ -5,6 +5,7 @@
 #
 # Run with: mix run bench/brook_vs_genstage.exs
 
+alias Skuld.Comp
 alias Skuld.Effects.Brook, as: B
 alias Skuld.Effects.Channel
 alias Skuld.Effects.FiberPool
@@ -136,7 +137,7 @@ defmodule Bench.SkuldPipeline do
     build_pipeline(enumerable, num_stages, buffer_size)
     |> Channel.with_handler()
     |> FiberPool.with_handler()
-    |> FiberPool.run!()
+    |> Comp.run!()
   end
 
   defp build_pipeline(enumerable, num_stages, buffer_size) do
@@ -205,7 +206,12 @@ for num_stages <- num_stages_list do
 
   for input_size <- input_sizes do
     input = 1..input_size
-    size_label = if input_size >= 1_000_000, do: "#{div(input_size, 1_000_000)}M", else: "#{div(input_size, 1000)}k"
+
+    size_label =
+      if input_size >= 1_000_000,
+        do: "#{div(input_size, 1_000_000)}M",
+        else: "#{div(input_size, 1000)}k"
+
     IO.puts("\n  #{size_label} items:")
 
     Benchee.run(

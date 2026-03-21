@@ -1,12 +1,10 @@
-# Comp.run vs FiberPool.run Benchmark
+# Comp.run overhead benchmark
 #
 # Run with: mix run bench/comp_vs_fiberpool_run.exs
 #
-# Compares the overhead of FiberPool.run (with fiber scheduling fast-path)
-# against Comp.run (simple execution) for computations that don't use fibers.
-#
-# This measures whether FiberPool.run's extra work (PendingWork extraction,
-# empty list check) is cheap enough to justify replacing Comp.run.
+# Measures the overhead of Comp.run's fiber-scheduling fast-path
+# (drain_pending) and the cost of installing FiberPool.with_handler
+# for computations that don't use fibers.
 
 alias Skuld.Comp
 alias Skuld.Effects.State, as: SkuldState
@@ -45,14 +43,10 @@ defmodule CompVsFiberPoolBench do
     Comp.run!(computation)
   end
 
-  def run_fiberpool(computation) do
-    FiberPool.run!(computation)
-  end
-
   def run_fiberpool_with_handler(computation) do
     computation
     |> FiberPool.with_handler()
-    |> FiberPool.run!()
+    |> Comp.run!()
   end
 
   # ============================================================
@@ -60,11 +54,11 @@ defmodule CompVsFiberPoolBench do
   # ============================================================
 
   def run do
-    IO.puts("Comp.run vs FiberPool.run Benchmark")
-    IO.puts("====================================")
+    IO.puts("Comp.run Overhead Benchmark")
+    IO.puts("===========================")
     IO.puts("")
-    IO.puts("Measuring overhead of FiberPool.run's fiber-scheduling fast-path")
-    IO.puts("on computations that don't use fibers.")
+    IO.puts("Measuring overhead of Comp.run's drain_pending fast-path")
+    IO.puts("and FiberPool.with_handler on computations that don't use fibers.")
     IO.puts("")
 
     iterations = 7
@@ -74,13 +68,10 @@ defmodule CompVsFiberPoolBench do
     IO.puts("---------------------------------------")
 
     trivial_comp = trivial()
-    trivial_with_state = trivial() |> SkuldState.with_handler(0)
+    trivial_with_state = trivial_comp |> SkuldState.with_handler(0)
 
     comp_trivial =
       median_time(iterations, fn -> :timer.tc(fn -> run_comp(trivial_with_state) end) end)
-
-    fp_trivial =
-      median_time(iterations, fn -> :timer.tc(fn -> run_fiberpool(trivial_with_state) end) end)
 
     fp_handler_trivial =
       median_time(iterations, fn ->
@@ -89,12 +80,11 @@ defmodule CompVsFiberPoolBench do
         end)
       end)
 
-    IO.puts("  Comp.run!:                    #{format_time(comp_trivial)}")
-    IO.puts("  FiberPool.run!:               #{format_time(fp_trivial)}")
-    IO.puts("  FiberPool.run! + with_handler: #{format_time(fp_handler_trivial)}")
+    IO.puts("  Comp.run!:              #{format_time(comp_trivial)}")
+    IO.puts("  Comp.run! + FP.handler: #{format_time(fp_handler_trivial)}")
 
     IO.puts(
-      "  FP/Comp ratio:                #{Float.round(fp_trivial / max(comp_trivial, 1), 2)}x"
+      "  FP+h/Comp ratio:        #{Float.round(fp_handler_trivial / max(comp_trivial, 1), 2)}x"
     )
 
     IO.puts("")
@@ -109,48 +99,39 @@ defmodule CompVsFiberPoolBench do
     header =
       String.pad_trailing("Target", 10) <>
         String.pad_trailing("Comp.run", 14) <>
-        String.pad_trailing("FP.run", 14) <>
         String.pad_trailing("FP+handler", 14) <>
-        String.pad_trailing("FP/Comp", 10) <>
         String.pad_trailing("FP+h/Comp", 10)
 
     IO.puts(header)
-    IO.puts(String.duplicate("-", 72))
+    IO.puts(String.duplicate("-", 48))
 
     for target <- targets do
       loop = state_loop(target)
       comp_wrapped = loop |> SkuldState.with_handler(0)
-      fp_wrapped = loop |> SkuldState.with_handler(0)
       fp_handler_wrapped = loop |> FiberPool.with_handler() |> SkuldState.with_handler(0)
 
       comp_time = median_time(iterations, fn -> :timer.tc(fn -> run_comp(comp_wrapped) end) end)
-      fp_time = median_time(iterations, fn -> :timer.tc(fn -> run_fiberpool(fp_wrapped) end) end)
 
       fp_handler_time =
         median_time(iterations, fn ->
           :timer.tc(fn -> run_fiberpool_with_handler(fp_handler_wrapped) end)
         end)
 
-      ratio = Float.round(fp_time / max(comp_time, 1), 2)
       handler_ratio = Float.round(fp_handler_time / max(comp_time, 1), 2)
 
       IO.puts(
         String.pad_trailing("#{target}", 10) <>
           String.pad_trailing(format_time(comp_time), 14) <>
-          String.pad_trailing(format_time(fp_time), 14) <>
           String.pad_trailing(format_time(fp_handler_time), 14) <>
-          String.pad_trailing("#{ratio}x", 10) <>
           String.pad_trailing("#{handler_ratio}x", 10)
       )
     end
 
     IO.puts("")
     IO.puts("Legend:")
-    IO.puts("  Comp.run   — Current simple Comp.run! (baseline)")
-    IO.puts("  FP.run     — FiberPool.run! without with_handler (scheduling overhead only)")
-    IO.puts("  FP+handler — FiberPool.run! with with_handler (full fiber support installed)")
-    IO.puts("  FP/Comp    — Ratio of FP.run to Comp.run (< 1.05 = negligible overhead)")
-    IO.puts("  FP+h/Comp  — Ratio of FP+handler to Comp.run")
+    IO.puts("  Comp.run   — Comp.run! with no fiber handler (baseline)")
+    IO.puts("  FP+handler — Comp.run! with FiberPool.with_handler installed")
+    IO.puts("  FP+h/Comp  — Ratio (< 1.05 = negligible overhead)")
   end
 
   defp median_time(iterations, fun) do
