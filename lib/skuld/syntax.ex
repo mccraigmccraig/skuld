@@ -60,6 +60,7 @@ defmodule Skuld.Syntax do
     quote do
       import Skuld.Comp.CompBlock
       import Skuld.Comp.Alet
+      import Skuld.Query.Macro
     end
   end
 end
