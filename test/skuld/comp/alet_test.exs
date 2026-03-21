@@ -6,10 +6,10 @@ defmodule Skuld.Comp.AletTest do
   alias Skuld.Effects.FiberPool
   alias Skuld.Effects.State
 
-  describe "ap/2" do
+  describe "FiberPool.ap/2" do
     test "applies function computation to value computation" do
       result =
-        Comp.ap(Comp.pure(fn x -> x * 2 end), Comp.pure(21))
+        FiberPool.ap(Comp.pure(fn x -> x * 2 end), Comp.pure(21))
         |> FiberPool.with_handler()
         |> FiberPool.run!()
 
@@ -19,7 +19,7 @@ defmodule Skuld.Comp.AletTest do
     test "both computations run concurrently as fibers" do
       # Prove both sides execute by having them produce observable results
       result =
-        Comp.ap(
+        FiberPool.ap(
           Comp.pure(fn x -> x + 10 end),
           Comp.pure(32)
         )

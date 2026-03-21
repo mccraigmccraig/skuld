@@ -352,6 +352,32 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   @doc """
+  Applicative `ap` — run a function-producing computation and a value-producing
+  computation concurrently as FiberPool fibers, then apply the function to
+  the value.
+
+  This is the standard applicative functor `<*>` operation. Both computations
+  are spawned as cooperative fibers within the same FiberPool, so their effects
+  (including data fetches) land in the same batch round, enabling implicit
+  concurrency.
+
+  Requires a `FiberPool` handler to be installed.
+
+  ## Example
+
+      comp_f = Comp.pure(fn x -> x * 2 end)
+      comp_a = Comp.pure(21)
+      result = FiberPool.ap(comp_f, comp_a)
+      # result is a computation that returns 42
+  """
+  @spec ap(Comp.Types.computation(), Comp.Types.computation()) :: Comp.Types.computation()
+  def ap(comp_f, comp_a) do
+    Comp.bind(spawn_await_all([comp_f, comp_a]), fn [f, a] ->
+      Comp.pure(f.(a))
+    end)
+  end
+
+  @doc """
   Map a function over items, running each result computation as a fiber,
   and return all results in order.
 

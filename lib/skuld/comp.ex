@@ -259,42 +259,6 @@ defmodule Skuld.Comp do
   end
 
   #############################################################################
-  ## Applicative Operations
-  #############################################################################
-
-  @doc """
-  Applicative `ap` — run a function-producing computation and a value-producing
-  computation concurrently via FiberPool fibers, then apply the function to
-  the value.
-
-  This is the standard applicative functor `<*>` operation. Both computations
-  are spawned as cooperative fibers within the same FiberPool, so their effects
-  (including data fetches) land in the same batch round, enabling implicit
-  concurrency.
-
-  Requires a `FiberPool` handler to be installed.
-
-  ## Example
-
-      comp_f = Comp.pure(fn x -> x * 2 end)
-      comp_a = Comp.pure(21)
-      result = Comp.ap(comp_f, comp_a)
-      # result is a computation that returns 42
-  """
-  @spec ap(Types.computation(), Types.computation()) :: Types.computation()
-  def ap(comp_f, comp_a) do
-    alias Skuld.Effects.FiberPool
-
-    bind(FiberPool.fiber(comp_f), fn hf ->
-      bind(FiberPool.fiber(comp_a), fn ha ->
-        bind(FiberPool.await_all!([hf, ha]), fn [f, a] ->
-          pure(f.(a))
-        end)
-      end)
-    end)
-  end
-
-  #############################################################################
   ## Combinators
   #############################################################################
 
