@@ -22,23 +22,23 @@ defmodule Skuld.Query.ContractTest do
   defmodule TestQueries do
     use Skuld.Query.Contract
 
-    defquery(get_user(id :: String.t()) :: User.t() | nil)
-    defquery(get_users_by_org(org_id :: String.t()) :: [User.t()])
-    defquery(get_user_count(org_id :: String.t()) :: non_neg_integer())
+    deffetch(get_user(id :: String.t()) :: User.t() | nil)
+    deffetch(get_users_by_org(org_id :: String.t()) :: [User.t()])
+    deffetch(get_user_count(org_id :: String.t()) :: non_neg_integer())
   end
 
   defmodule OkErrorQueries do
     use Skuld.Query.Contract
 
-    defquery(find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()})
-    defquery(find_post(id :: String.t()) :: Post.t() | nil, bang: false)
-    defquery(find_item(id :: String.t()) :: term(), bang: true)
+    deffetch(find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()})
+    deffetch(find_post(id :: String.t()) :: Post.t() | nil, bang: false)
+    deffetch(find_item(id :: String.t()) :: term(), bang: true)
   end
 
   defmodule CustomBangQueries do
     use Skuld.Query.Contract
 
-    defquery(find_user(id :: String.t()) :: User.t() | nil,
+    deffetch(find_user(id :: String.t()) :: User.t() | nil,
       bang: fn
         nil -> {:error, :not_found}
         user -> {:ok, user}
@@ -49,22 +49,22 @@ defmodule Skuld.Query.ContractTest do
   defmodule PostQueries do
     use Skuld.Query.Contract
 
-    defquery(get_post(id :: String.t()) :: Post.t() | nil)
-    defquery(get_posts_by_user(user_id :: String.t()) :: [Post.t()])
+    deffetch(get_post(id :: String.t()) :: Post.t() | nil)
+    deffetch(get_posts_by_user(user_id :: String.t()) :: [Post.t()])
   end
 
   defmodule ZeroArgQueries do
     use Skuld.Query.Contract
 
-    defquery(health_check() :: :ok)
+    deffetch(health_check() :: :ok)
   end
 
   defmodule CacheOptQueries do
     use Skuld.Query.Contract
 
-    defquery(get_user(id :: String.t()) :: User.t() | nil)
-    defquery(get_random() :: term(), cache: false)
-    defquery(get_explicit_cached(id :: String.t()) :: term(), cache: true)
+    deffetch(get_user(id :: String.t()) :: User.t() | nil)
+    deffetch(get_random() :: term(), cache: false)
+    deffetch(get_explicit_cached(id :: String.t()) :: term(), cache: true)
   end
 
   # ---------------------------------------------------------------
@@ -588,20 +588,20 @@ defmodule Skuld.Query.ContractTest do
       end
     end
 
-    test "invalid defquery syntax raises CompileError" do
+    test "invalid deffetch syntax raises CompileError" do
       assert_raise CompileError, fn ->
         Code.compile_string("""
         defmodule BadQuery do
           use Skuld.Query.Contract
 
-          defquery not_valid_syntax
+          deffetch not_valid_syntax
         end
         """)
       end
     end
 
-    test "no defquery declarations raises CompileError" do
-      assert_raise CompileError, ~r/has no defquery declarations/, fn ->
+    test "no deffetch declarations raises CompileError" do
+      assert_raise CompileError, ~r/has no deffetch declarations/, fn ->
         Code.compile_string("""
         defmodule EmptyContract do
           use Skuld.Query.Contract

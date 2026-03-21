@@ -147,7 +147,7 @@ defmodule Skuld.Comp.AletTest do
 
       defmodule MapBatchContract do
         use Skuld.Query.Contract
-        defquery(get_item(id :: pos_integer()) :: map())
+        deffetch(get_item(id :: pos_integer()) :: map())
       end
 
       defmodule MapBatchExecutor do

@@ -47,7 +47,7 @@ defmodule Skuld.Query.Cache do
 
   Queries declared with `cache: false` bypass caching entirely:
 
-      defquery get_random_user() :: User.t(), cache: false
+      deffetch get_random_user() :: User.t(), cache: false
 
   ## Error Handling
 
@@ -67,7 +67,7 @@ defmodule Skuld.Query.Cache do
 
   Initialises a scoped cache and registers caching-wrapped executors for
   all query operations in each contract. Queries with `cacheable: false`
-  (from `defquery ..., cache: false`) are registered with raw dispatch
+  (from `deffetch ..., cache: false`) are registered with raw dispatch
   that bypasses the cache entirely.
 
   ## Example

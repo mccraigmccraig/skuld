@@ -11,7 +11,7 @@ type and executes a single batched call per group.
 
 ## Overview
 
-A Query contract defines a set of query operations using `defquery` declarations.
+A Query contract defines a set of fetch operations using `deffetch` declarations.
 The macro generates:
 
 - **Operation structs** — nested struct modules per query (e.g., `MyContract.GetUser`)
@@ -28,17 +28,17 @@ The macro generates:
 defmodule MyApp.Queries.Users do
   use Skuld.Query.Contract
 
-  defquery get_user(id :: String.t()) :: User.t() | nil
-  defquery get_users_by_org(org_id :: String.t()) :: [User.t()]
-  defquery get_user_count(org_id :: String.t()) :: non_neg_integer()
+  deffetch get_user(id :: String.t()) :: User.t() | nil
+  deffetch get_users_by_org(org_id :: String.t()) :: [User.t()]
+  deffetch get_user_count(org_id :: String.t()) :: non_neg_integer()
 end
 ```
 
-Each `defquery` follows the same syntax as `Port.Contract`'s `defport`:
+Each `deffetch` follows the same syntax as `Port.Contract`'s `defport`:
 
 ```
-defquery function_name(param :: type(), ...) :: return_type()
-defquery function_name(param :: type(), ...) :: return_type(), bang: option
+deffetch function_name(param :: type(), ...) :: return_type()
+deffetch function_name(param :: type(), ...) :: return_type(), bang: option
 ```
 
 ### What Gets Generated
@@ -236,22 +236,22 @@ defmodule MyApp.Queries.Accounts do
   use Skuld.Query.Contract
 
   # Auto-detect: {:ok, T} in return type -> bang generated
-  defquery find_account(id :: String.t()) :: {:ok, Account.t()} | {:error, term()}
+  deffetch find_account(id :: String.t()) :: {:ok, Account.t()} | {:error, term()}
   # Generated: find_account!/1 returning computation(Account.t())
 
   # No {:ok, T} pattern -> no bang
-  defquery get_account(id :: String.t()) :: Account.t() | nil
+  deffetch get_account(id :: String.t()) :: Account.t() | nil
   # No bang generated
 
   # Force bang
-  defquery lookup_account(id :: String.t()) :: Account.t() | nil, bang: true
+  deffetch lookup_account(id :: String.t()) :: Account.t() | nil, bang: true
 
   # Suppress bang
-  defquery search_accounts(q :: String.t()) :: {:ok, [Account.t()]} | {:error, term()},
+  deffetch search_accounts(q :: String.t()) :: {:ok, [Account.t()]} | {:error, term()},
     bang: false
 
   # Custom unwrap
-  defquery fetch_account(id :: String.t()) :: map(),
+  deffetch fetch_account(id :: String.t()) :: map(),
     bang: fn result -> {:ok, result} end
 end
 ```
@@ -389,8 +389,8 @@ Mark individual queries as non-cacheable with `cache: false`:
 defmodule MyApp.Queries.Users do
   use Skuld.Query.Contract
 
-  defquery get_user(id :: String.t()) :: User.t() | nil
-  defquery get_random_user() :: User.t(), cache: false
+  deffetch get_user(id :: String.t()) :: User.t() | nil
+  deffetch get_random_user() :: User.t(), cache: false
 end
 ```
 
@@ -436,6 +436,6 @@ For each batch execution, the caching wrapper:
 | Requires FiberPool | No | Yes |
 | Executor receives | Single call args | List of `{ref, op_struct}` |
 | Executor returns | Single result | `%{ref => result}` map |
-| Macro | `defport` | `defquery` |
+| Macro | `defport` | `deffetch` |
 | Bang variants | Same rules | Same rules |
 | Handler installation | `Port.with_handler/2` | `Contract.with_executor/2` |

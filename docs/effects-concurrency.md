@@ -289,7 +289,7 @@ alias Skuld.Effects.FiberPool
 # Define a typed query contract
 defmodule UserQueries do
   use Skuld.Query.Contract
-  defquery get_user(id :: pos_integer()) :: map() | nil
+  deffetch get_user(id :: pos_integer()) :: map() | nil
 end
 
 # Implement the executor
@@ -497,8 +497,8 @@ end
 defmodule Queries do
   use Skuld.Query.Contract
 
-  defquery fetch_user(id :: pos_integer()) :: map() | nil
-  defquery fetch_orders(user_id :: pos_integer()) :: [map()]
+  deffetch fetch_user(id :: pos_integer()) :: map() | nil
+  deffetch fetch_orders(user_id :: pos_integer()) :: [map()]
 end
 
 defmodule User do

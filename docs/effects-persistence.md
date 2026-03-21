@@ -13,7 +13,7 @@ concern:
   contracts via `defport`, and **Port.Provider** enables the reverse direction — plain
   code calling into effectful implementations.
 - **Query.Contract** — a typed DSL for batchable queries, solving the N+1 problem.
-  `defquery` declarations generate operation structs, typed caller functions, an
+  `deffetch` declarations generate operation structs, typed caller functions, an
   Executor behaviour, and wiring helpers. Batch-reads suspend the current FiberPool
   fiber; when the run queue empties, the scheduler groups pending reads by query type
   and executes a single batched query per group, distributing results back to the
@@ -196,7 +196,7 @@ alias Skuld.Effects.DB
 
 ## Query.Contract
 
-Typed batchable queries using FiberPool. `defquery` declarations generate operation
+Typed batchable queries using FiberPool. `deffetch` declarations generate operation
 structs, typed caller functions, an Executor behaviour, dispatch, and wiring helpers.
 Multiple concurrent query calls are automatically batched, solving the N+1 problem:
 
@@ -204,8 +204,8 @@ Multiple concurrent query calls are automatically batched, solving the N+1 probl
 defmodule MyApp.Queries.Users do
   use Skuld.Query.Contract
 
-  defquery get_user(id :: String.t()) :: User.t() | nil
-  defquery get_users_by_org(org_id :: String.t()) :: [User.t()]
+  deffetch get_user(id :: String.t()) :: User.t() | nil
+  deffetch get_users_by_org(org_id :: String.t()) :: [User.t()]
 end
 ```
 

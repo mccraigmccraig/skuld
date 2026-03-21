@@ -1,16 +1,16 @@
 defmodule Skuld.Query.Contract do
   @moduledoc """
-  Macro for defining typed batchable query contracts with `defquery` declarations.
+  Macro for defining typed batchable fetch contracts with `deffetch` declarations.
 
-  A Query contract defines a set of query operations, generating:
+  A Query contract defines a set of fetch operations, generating:
 
-    * **Operation structs** — nested struct modules per query (e.g., `MyContract.GetUser`)
+    * **Operation structs** — nested struct modules per fetch (e.g., `MyContract.GetUser`)
     * **Caller functions** — typed public API returning `computation(return_type)`,
       which suspend the current fiber for batched execution
     * **Executor behaviour** (`__MODULE__.Executor`) — typed callbacks for batch
-      execution, one per query
+      execution, one per fetch
     * **Dispatch function** — `__dispatch__/3` routes from batch key to executor callback
-    * **Wiring function** — `with_executor/2` installs an executor module for all queries
+    * **Wiring function** — `with_executor/2` installs an executor module for all fetches
     * **Bang variants** — unwrap `{:ok, v}` or dispatch Throw (when applicable)
     * **Introspection** — `__query_operations__/0`
 
@@ -19,9 +19,9 @@ defmodule Skuld.Query.Contract do
       defmodule MyApp.Queries.Users do
         use Skuld.Query.Contract
 
-        defquery get_user(id :: String.t()) :: User.t() | nil
-        defquery get_users_by_org(org_id :: String.t()) :: [User.t()]
-        defquery get_user_count(org_id :: String.t()) :: non_neg_integer()
+        deffetch get_user(id :: String.t()) :: User.t() | nil
+        deffetch get_users_by_org(org_id :: String.t()) :: [User.t()]
+        deffetch get_user_count(org_id :: String.t()) :: non_neg_integer()
       end
 
   This generates:
@@ -123,27 +123,27 @@ defmodule Skuld.Query.Contract do
   end
 
   # -------------------------------------------------------------------
-  # __using__ / defquery / __before_compile__
+  # __using__ / deffetch / __before_compile__
   # -------------------------------------------------------------------
 
   @doc false
   defmacro __using__(_opts) do
     quote do
-      import Skuld.Query.Contract, only: [defquery: 1, defquery: 2]
+      import Skuld.Query.Contract, only: [deffetch: 1, deffetch: 2, defquery: 1, defquery: 2]
       Module.register_attribute(__MODULE__, :query_operations, accumulate: true)
       @before_compile Skuld.Query.Contract
     end
   end
 
   @doc """
-  Define a typed query operation.
+  Define a typed fetch operation.
 
   ## Syntax
 
-      defquery function_name(param :: type(), ...) :: return_type()
-      defquery function_name(param :: type(), ...) :: return_type(), bang: option
+      deffetch function_name(param :: type(), ...) :: return_type()
+      deffetch function_name(param :: type(), ...) :: return_type(), bang: option
 
-  Each `defquery` declaration generates an operation struct, caller function,
+  Each `deffetch` declaration generates an operation struct, caller function,
   executor callback, dispatch clause, and optionally a bang variant.
 
   The `bang` option follows the same rules as `Port.Contract.defport`:
@@ -153,24 +153,47 @@ defmodule Skuld.Query.Contract do
     * **`false`** -- suppress bang generation
     * **`unwrap_fn`** -- custom unwrap function
   """
-  defmacro defquery(spec, opts \\ [])
+  defmacro deffetch(spec, opts \\ [])
 
-  defmacro defquery({:"::", _meta, [call_ast, return_type_ast]}, opts) do
+  defmacro deffetch({:"::", _meta, [call_ast, return_type_ast]}, opts) do
     bang_opt = Keyword.get(opts, :bang, :auto)
     cache_opt = Keyword.get(opts, :cache, true)
-    build_defquery_ast(call_ast, return_type_ast, bang_opt, cache_opt, __CALLER__)
+    build_deffetch_ast(call_ast, return_type_ast, bang_opt, cache_opt, __CALLER__)
   end
 
-  defmacro defquery(other, _opts) do
+  defmacro deffetch(other, _opts) do
     raise CompileError,
       description:
-        "invalid defquery syntax. Expected: defquery name(param :: type(), ...) :: return_type()\n" <>
+        "invalid deffetch syntax. Expected: deffetch name(param :: type(), ...) :: return_type()\n" <>
           "Got: #{Macro.to_string(other)}",
       file: __CALLER__.file,
       line: __CALLER__.line
   end
 
-  defp build_defquery_ast(call_ast, return_type_ast, bang_opt, cache_opt, caller) do
+  @doc """
+  Deprecated: use `deffetch` instead.
+
+  `defquery` is a deprecated alias for `deffetch`. It will be removed in a future release.
+  """
+  defmacro defquery(spec, opts \\ [])
+
+  defmacro defquery({:"::", _meta, [call_ast, return_type_ast]}, opts) do
+    IO.warn("defquery is deprecated, use deffetch instead", __CALLER__)
+    bang_opt = Keyword.get(opts, :bang, :auto)
+    cache_opt = Keyword.get(opts, :cache, true)
+    build_deffetch_ast(call_ast, return_type_ast, bang_opt, cache_opt, __CALLER__)
+  end
+
+  defmacro defquery(other, _opts) do
+    raise CompileError,
+      description:
+        "invalid defquery syntax. Expected: deffetch name(param :: type(), ...) :: return_type()\n" <>
+          "Got: #{Macro.to_string(other)}",
+      file: __CALLER__.file,
+      line: __CALLER__.line
+  end
+
+  defp build_deffetch_ast(call_ast, return_type_ast, bang_opt, cache_opt, caller) do
     {name, params} = Skuld.Effects.Port.Contract.parse_call(call_ast, caller)
 
     param_names = Enum.map(params, &elem(&1, 0))
@@ -228,7 +251,7 @@ defmodule Skuld.Query.Contract do
     if operations == [] do
       raise CompileError,
         description:
-          "#{inspect(env.module)} uses Query.Contract but has no defquery declarations",
+          "#{inspect(env.module)} uses Query.Contract but has no deffetch declarations",
         file: env.file,
         line: 0
     end
@@ -349,7 +372,7 @@ defmodule Skuld.Query.Contract do
         end
       else
         doc_string =
-          "Query operation: `#{name}/#{length(param_names)}`\n\nSuspends the current fiber for batched execution.\n"
+          "Fetch operation: `#{name}/#{length(param_names)}`\n\nSuspends the current fiber for batched execution.\n"
 
         quote do
           @doc unquote(doc_string)
@@ -472,7 +495,7 @@ defmodule Skuld.Query.Contract do
       case bang_mode do
         :standard ->
           doc =
-            "Query operation: `#{bang_name}/#{length(param_names)}`\n\nLike `#{name}/#{length(param_names)}` but unwraps `{:ok, value}` or dispatches `Throw` on error.\n"
+            "Fetch operation: `#{bang_name}/#{length(param_names)}`\n\nLike `#{name}/#{length(param_names)}` but unwraps `{:ok, value}` or dispatches `Throw` on error.\n"
 
           body =
             quote do
@@ -489,7 +512,7 @@ defmodule Skuld.Query.Contract do
 
         {:custom, unwrap_fn_ast} ->
           doc =
-            "Query operation: `#{bang_name}/#{length(param_names)}`\n\nLike `#{name}/#{length(param_names)}` but applies a custom unwrap function, then unwraps `{:ok, value}` or dispatches `Throw` on error.\n"
+            "Fetch operation: `#{bang_name}/#{length(param_names)}`\n\nLike `#{name}/#{length(param_names)}` but applies a custom unwrap function, then unwraps `{:ok, value}` or dispatches `Throw` on error.\n"
 
           body =
             quote do
