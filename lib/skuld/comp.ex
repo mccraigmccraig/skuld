@@ -172,9 +172,12 @@ defmodule Skuld.Comp do
   """
   @spec run(Types.computation()) :: {Types.result(), Types.env()}
   def run(comp) do
-    {result, final_env} = call(comp, Env.new(), &identity_k/2)
+    {result, env} = call(comp, Env.new(), &identity_k/2)
 
-    ISentinel.run(result, final_env)
+    {final_result, final_env} =
+      Skuld.Effects.FiberPool.drain_pending(result, env)
+
+    ISentinel.run(final_result, final_env)
   end
 
   @doc "Run a computation, extracting just the value (raises on ExternalSuspend/Throw)"

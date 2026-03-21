@@ -21,7 +21,7 @@ defmodule Skuld.Effects.FiberPool do
         {r1, r2}
       end
       |> FiberPool.with_handler()
-      |> FiberPool.run()
+      |> Comp.run()
 
   ## Structured Concurrency
 
@@ -429,7 +429,7 @@ defmodule Skuld.Effects.FiberPool do
       end
       |> FiberPool.with_handler()
       |> FiberPool.with_task_supervisor()
-      |> FiberPool.run!()
+      |> Comp.run!()
 
   ## Options
 
@@ -469,57 +469,51 @@ defmodule Skuld.Effects.FiberPool do
   def task_supervisor_key, do: @task_supervisor_key
 
   @doc """
-  Run a computation with FiberPool scheduling.
+  Drain any pending fibers and tasks accumulated during computation execution.
 
-  This is the main entry point. It:
-  1. Runs the main computation
-  2. Schedules any spawned fibers and tasks
-  3. Returns when all fibers and tasks complete
+  This is called by `Comp.run/1` after `Comp.call/3` to schedule and execute
+  any fibers or tasks that were spawned during the computation. If no fibers
+  or tasks are pending (and the result is not an await suspension), this is
+  a fast-path no-op.
 
-  To use `FiberPool.task/2` for BEAM-level parallelism, install a
-  Task.Supervisor with `with_task_supervisor/2` before running.
+  Returns `{result, env}` — either the original values unchanged (fast path)
+  or the final values after all fibers and tasks have completed.
   """
-  @spec run(Comp.Types.computation()) :: {term(), Comp.Types.env()}
-  def run(comp) do
-    {result, env} = Comp.call(comp, Env.new(), &Comp.identity_k/2)
-
+  @spec drain_pending(term(), Comp.Types.env()) :: {term(), Comp.Types.env()}
+  def drain_pending(result, env) do
     # Extract pending work from env
     pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())
     {pending_fibers, pending_tasks, _} = PendingWork.take_all(pending_work)
 
-    {final_result, final_env} =
-      if pending_fibers == [] and pending_tasks == [] and not await_suspend?(result) do
-        # No fibers or tasks spawned, simple completion
-        {result, env}
-      else
-        # Read task supervisor from env (installed by with_task_supervisor, or nil)
-        task_sup = Env.get_state(env, @task_supervisor_key)
+    if pending_fibers == [] and pending_tasks == [] and not await_suspend?(result) do
+      # No fibers or tasks spawned, simple completion
+      {result, env}
+    else
+      # Read task supervisor from env (installed by with_task_supervisor, or nil)
+      task_sup = Env.get_state(env, @task_supervisor_key)
 
-        state = State.new(task_supervisor: task_sup)
+      state = State.new(task_supervisor: task_sup)
 
-        # Seed state.env_state from main computation's env.state
-        # But clear pending work since we've already extracted it
-        clean_env_state = Map.put(env.state, PendingWork.env_key(), PendingWork.new())
+      # Seed state.env_state from main computation's env.state
+      # But clear pending work since we've already extracted it
+      clean_env_state = Map.put(env.state, PendingWork.env_key(), PendingWork.new())
 
-        state = State.put_env_state(state, clean_env_state)
-        # Run fibers and tasks
-        run_with_fibers(state, env, result, pending_fibers, pending_tasks)
-      end
-
-    # Invoke leave_scope chain and transform_suspend for proper cleanup
-    # (Bracket release, scoped state restoration, suspend decorations, etc.)
-    Comp.ISentinel.run(final_result, final_env)
+      state = State.put_env_state(state, clean_env_state)
+      # Run fibers and tasks
+      run_with_fibers(state, env, result, pending_fibers, pending_tasks)
+    end
   end
 
-  @doc """
-  Run a computation with FiberPool scheduling, extracting the result.
+  @spec run(Comp.Types.computation()) :: {term(), Comp.Types.env()}
+  @deprecated "Use Comp.run/1 instead — fibers are now an ambient capability"
+  def run(comp) do
+    Comp.run(comp)
+  end
 
-  Raises if the result is a suspension or error sentinel.
-  """
   @spec run!(Comp.Types.computation()) :: term()
+  @deprecated "Use Comp.run!/1 instead — fibers are now an ambient capability"
   def run!(comp) do
-    {result, _env} = run(comp)
-    Comp.ISentinel.run!(result)
+    Comp.run!(comp)
   end
 
   #############################################################################
