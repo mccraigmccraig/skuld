@@ -50,11 +50,14 @@ defmodule Import.Queries do
   deffetch get_account_by_ref(ref :: String.t()) :: Account.t() | nil
 end
 
-# Processing a single row — reads like normal per-record code
-defcomp process_row(row) do
-  user <- Import.Queries.get_user_by_email(row.email)
-  account <- Import.Queries.get_account_by_ref(row.account_ref)
-  do_process(row, user, account)
+# Processing a single row — reads like normal per-record code.
+# The two fetches are independent, so `query` runs them concurrently.
+def process_row(row) do
+  query do
+    user <- Import.Queries.get_user_by_email(row.email)
+    account <- Import.Queries.get_account_by_ref(row.account_ref)
+    do_process(row, user, account)
+  end
 end
 
 # Process all rows — FiberPool.map spawns concurrent fibers,
