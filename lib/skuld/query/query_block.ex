@@ -28,7 +28,7 @@
 #
 # ## Syntax
 #
-# Uses do-block syntax (like `comp`), not comma-separated bindings (like `alet`):
+# Uses do-block syntax (like `comp`):
 #
 # - `var <- computation` — bind the result of an effectful computation
 # - `var = expression` — pure binding (participates in dependency analysis)
@@ -42,12 +42,6 @@
 #
 # - `comp` is purely sequential (monadic bind chain)
 # - `query` analyses dependencies and parallelises independent bindings
-#
-# ## Differences from `alet`
-#
-# - `alet` uses comma-separated bindings: `alet a <- x, b <- y do ... end`
-# - `query` uses do-block syntax: `query do a <- x; b <- y; ... end`
-# - Same dependency analysis and batching strategy
 defmodule Skuld.Query.QueryBlock do
   @moduledoc """
   The `query` macro for applicative-do style automatic concurrent batching.

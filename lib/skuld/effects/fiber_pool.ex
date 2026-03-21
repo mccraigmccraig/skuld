@@ -332,7 +332,7 @@ defmodule Skuld.Effects.FiberPool do
 
   A single-element list is optimised to skip fiber overhead.
 
-  This is the primitive used by the `alet` macro for independent binding groups.
+  This is the primitive used by the `query` macro for independent binding groups.
 
   ## Example
 
