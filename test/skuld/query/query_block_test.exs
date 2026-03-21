@@ -298,6 +298,133 @@ defmodule Skuld.Query.QueryBlockTest do
 
       assert result == 42
     end
+
+    test "destructured LHS variables create dependencies for later bindings" do
+      # The variable `user` is extracted from a tuple pattern on the LHS.
+      # A later binding referencing `user` must be in a later batch.
+      result =
+        query do
+          {:ok, user} <- Comp.pure({:ok, %{id: "u1", name: "Alice"}})
+          orders <- Comp.pure([%{id: "o1", user_id: user.id}])
+          {user, orders}
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      {user, orders} = result
+      assert user == %{id: "u1", name: "Alice"}
+      assert orders == [%{id: "o1", user_id: "u1"}]
+    end
+
+    test "destructured tuple — independent bindings still batch" do
+      # {:ok, a} and {:ok, b} are independent — should run concurrently.
+      # c depends on both a and b.
+      result =
+        query do
+          {:ok, a} <- Comp.pure({:ok, 10})
+          {:ok, b} <- Comp.pure({:ok, 32})
+          c <- Comp.pure(a + b)
+          c
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == 42
+    end
+
+    test "map pattern extracts variables that create dependencies" do
+      result =
+        query do
+          %{name: name, id: uid} <- Comp.pure(%{name: "Alice", id: "u1"})
+          greeting <- Comp.pure("Hello #{name}, your id is #{uid}")
+          greeting
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == "Hello Alice, your id is u1"
+    end
+
+    test "nested destructuring extracts inner variables" do
+      result =
+        query do
+          {:ok, %{user: %{id: uid}}} <- Comp.pure({:ok, %{user: %{id: "u1"}}})
+          detail <- Comp.pure("user-#{uid}")
+          detail
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == "user-u1"
+    end
+
+    test "list pattern extracts variables" do
+      result =
+        query do
+          [first | _rest] <- Comp.pure([10, 20, 30])
+          doubled <- Comp.pure(first * 2)
+          doubled
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == 20
+    end
+
+    test "struct pattern extracts variables" do
+      result =
+        query do
+          %User{id: uid, name: uname} <- Comp.pure(%User{id: 1, name: "Alice"})
+          label <- Comp.pure("#{uname}##{uid}")
+          label
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == "Alice#1"
+    end
+
+    test "mixed destructured and simple bindings batch correctly" do
+      # {:ok, a} and b are independent (batch 1).
+      # c depends on a (from destructuring) and b (batch 2).
+      result =
+        query do
+          {:ok, a} <- Comp.pure({:ok, 10})
+          b <- Comp.pure(32)
+          c <- Comp.pure(a + b)
+          c
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+
+      assert result == 42
+    end
+
+    test "destructured pattern with Query.Contract dependency" do
+      # Real contract integration: destructured result feeds into a dependent query
+      with_test_pid(fn ->
+        result =
+          query do
+            user <- TestQueries.get_user("1")
+            {:ok, recent} <- Comp.pure({:ok, :some_recent_data})
+            orders <- TestQueries.get_orders(user.id)
+            {user, recent, orders}
+          end
+          |> TestQueries.with_executor(TestExecutor)
+          |> FiberPool.with_handler()
+          |> FiberPool.run!()
+
+        {user, recent, orders} = result
+        assert %{id: "1", name: "User 1"} = user
+        assert recent == :some_recent_data
+        assert [%{id: "o1", user_id: "1"}] = orders
+
+        # user and {:ok, recent} are independent (batch 1)
+        # orders depends on user (batch 2)
+        assert_received {:get_user_batch, 1}
+        assert_received {:get_orders_batch, 1}
+      end)
+    end
   end
 
   describe "query — effects" do
