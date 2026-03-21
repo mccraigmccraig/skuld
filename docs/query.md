@@ -13,6 +13,117 @@ The system has three layers:
 2. **`deffetch` contracts** — declare typed, batchable fetch operations
 3. **`Query.Cache`** — cross-batch caching and within-batch deduplication
 
+## The N+1 Problem
+
+The N+1 problem occurs when code fetches a collection of N items and then makes
+a separate query for each one — 1 query for the list, then N queries for
+related data. This happens naturally whenever per-record fetch logic is spread
+across helper functions, and the caller iterates a collection.
+
+### Example: CSV Import Processing
+
+Consider importing rows from a staging table, where processing each row needs
+to look up related records:
+
+```elixir
+# WITHOUT Skuld — classic N+1
+def process_import(staging_rows) do
+  Enum.map(staging_rows, fn row ->
+    # Each call hits the DB individually — N queries for users, N for accounts
+    user = Repo.get_by(User, email: row.email)
+    account = Repo.get_by(Account, external_id: row.account_ref)
+    process_row(row, user, account)
+  end)
+end
+```
+
+With 1,000 staging rows, this makes 2,000 individual queries. With Skuld's
+query system, you write the same per-record logic, but the runtime batches
+automatically:
+
+```elixir
+# WITH Skuld — per-record calls, automatic batching
+defmodule Import.Queries do
+  use Skuld.Query.Contract
+
+  deffetch get_user_by_email(email :: String.t()) :: User.t() | nil
+  deffetch get_account_by_ref(ref :: String.t()) :: Account.t() | nil
+end
+
+# Processing a single row — reads like normal per-record code
+defcomp process_row(row) do
+  user <- Import.Queries.get_user_by_email(row.email)
+  account <- Import.Queries.get_account_by_ref(row.account_ref)
+  do_process(row, user, account)
+end
+
+# Process all rows — FiberPool.map spawns concurrent fibers,
+# and all get_user_by_email calls batch into one executor invocation,
+# all get_account_by_ref calls batch into another
+FiberPool.map(staging_rows, &process_row/1)
+|> Import.Queries.with_executor(Import.Queries.EctoExecutor)
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+# Result: 2 batched queries instead of 2,000 individual ones
+```
+
+The per-record code is simple and composable — `process_row` doesn't know or
+care that it runs concurrently alongside hundreds of other rows. The batching
+happens at the runtime level when the FiberPool scheduler collects suspended
+fibers and groups their batch requests by type.
+
+This works even when the N+1 is buried deep in the call stack — a helper
+function three levels down that calls `get_user_by_email` still participates in
+the same batch, because batching is a property of the runtime, not the call
+site.
+
+### Example: GraphQL Resolvers
+
+GraphQL is the canonical N+1 scenario. A query like `{ posts { author { name } } }`
+resolves each post's `author` field individually — if there are 50 posts, that's
+50 author lookups:
+
+```elixir
+# WITHOUT batching — N+1 in every list-of-objects resolver
+object :post do
+  field :author, :user do
+    resolve fn post, _, _ ->
+      {:ok, Repo.get(User, post.author_id)}  # called once per post
+    end
+  end
+end
+```
+
+With Skuld's query system, per-field resolvers stay simple while batching happens
+automatically across all concurrent fibers in a resolution round:
+
+```elixir
+# Skuld query contracts for the data layer
+defmodule Blog.Queries do
+  use Skuld.Query.Contract
+
+  deffetch get_user(id :: String.t()) :: User.t() | nil
+  deffetch get_comments(post_id :: String.t()) :: [Comment.t()]
+end
+
+# Per-field resolver logic — still per-record, but batches automatically
+defcomp resolve_author(post) do
+  author <- Blog.Queries.get_user(post.author_id)
+  author
+end
+```
+
+When 50 posts resolve their `author` field concurrently, all 50
+`get_user` calls are batched into a single executor invocation that
+receives all 50 author IDs at once.
+
+> **Note:** Integrating Skuld with Absinthe's resolution pipeline would require
+> an Absinthe plugin (similar to how `Absinthe.Middleware.Dataloader` works).
+> Absinthe's plugin system supports suspension-based batching — resolvers
+> suspend during resolution, the plugin executes batches between passes, and
+> Absinthe re-runs resolution to deliver results. See the
+> [Absinthe integration](#absinthe-integration) section for details.
+
 ## The `query` Macro
 
 The `query` macro (`Skuld.Query.QueryBlock`) provides the lowest-boilerplate way to
@@ -460,3 +571,83 @@ end
 | Bang variants | Same rules | Same rules |
 | Handler installation | `Port.with_handler/2` | `Contract.with_executor/2` |
 | Composition | `comp do` (sequential) | `query do` (auto-concurrent) |
+
+## Absinthe Integration
+
+Skuld's query system is a natural fit for GraphQL resolvers, where the N+1
+problem is pervasive. Absinthe (the Elixir GraphQL library) already has a
+plugin-based solution for this — `Absinthe.Middleware.Dataloader` — and Skuld
+could integrate using the same extension points.
+
+### How Absinthe Batching Works
+
+Absinthe's resolution pipeline supports **suspension-based batching** through
+the `Absinthe.Plugin` behaviour:
+
+1. **Resolve fields** — Absinthe walks the query tree, calling each field's
+   resolver
+2. **Suspend** — A resolver that needs batched data returns a middleware tuple
+   that sets the field's state to `:suspended` and queues a load
+3. **Batch** — After the walk, plugins get a `before_resolution` callback to
+   execute accumulated batches
+4. **Re-run** — If the plugin's `pipeline/2` callback detects pending work,
+   Absinthe re-inserts the Resolution phase and walks the tree again, this
+   time delivering results to suspended fields
+5. **Repeat** — This loop continues until no plugin requests another pass
+
+This is exactly how `Absinthe.Middleware.Dataloader` works — it implements both
+`Absinthe.Middleware` (to suspend/resume individual fields) and
+`Absinthe.Plugin` (to run batches between passes).
+
+### Integration Strategy
+
+A Skuld integration would follow the same pattern, implementing both
+behaviours:
+
+```elixir
+defmodule Skuld.Absinthe.Plugin do
+  @behaviour Absinthe.Middleware
+  @behaviour Absinthe.Plugin
+
+  # Middleware: queue a deffetch operation and suspend the field
+  def call(%{state: :unresolved} = res, {skuld_ctx, callback}) do
+    %{res |
+      state: :suspended,
+      middleware: [{__MODULE__, callback} | res.middleware],
+      context: Map.put(res.context, :skuld, skuld_ctx)}
+  end
+
+  # Middleware: field was suspended, data now available — resolve it
+  def call(%{state: :suspended} = res, callback) do
+    result = callback.(res.context.skuld)
+    Absinthe.Resolution.put_result(res, {:ok, result})
+  end
+
+  # Plugin: run Skuld batches between resolution passes
+  def before_resolution(%{context: %{skuld: ctx}} = exec) do
+    # Execute queued deffetch operations through FiberPool
+    %{exec | context: Map.put(exec.context, :skuld, run_batches(ctx))}
+  end
+
+  # Plugin: re-run resolution if there are still pending batches
+  def pipeline(pipeline, exec) do
+    if has_pending?(exec.context.skuld) do
+      [Absinthe.Phase.Document.Execution.Resolution | pipeline]
+    else
+      pipeline
+    end
+  end
+end
+```
+
+The key challenge is bridging Absinthe's imperative suspension model (set state,
+re-walk tree) with Skuld's functional effect model (fiber suspension, `Comp.bind`
+chains). The plugin would need to collect `deffetch` operation structs during
+resolution, then run them through a Skuld computation (with FiberPool and batch
+executors) in `before_resolution`, and store results for retrieval on the next
+pass.
+
+> **Status:** Absinthe integration is not yet implemented. The architecture is
+> compatible — Absinthe's plugin system was designed for exactly this kind of
+> extension — but the bridging code needs to be written. See the issue tracker
+> for progress.
