@@ -1,5 +1,7 @@
 # Query
 
+Heavily inspired by [Haxl](https://github.com/facebook/Haxl).
+
 Skuld's query system solves the N+1 problem with automatic batching and
 concurrency. You write simple per-record fetch calls; the runtime batches
 concurrent calls of the same type into a single executor invocation, and the
