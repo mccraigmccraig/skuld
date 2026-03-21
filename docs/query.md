@@ -1,0 +1,438 @@
+# Query
+
+Skuld's query system solves the N+1 problem with automatic batching and
+concurrency. You write simple per-record fetch calls; the runtime batches
+concurrent calls of the same type into a single executor invocation, and the
+`query` macro automatically runs independent fetches concurrently.
+
+The system has three layers:
+
+1. **`query do` block** — compose fetch operations with automatic concurrency
+2. **`deffetch` contracts** — declare typed, batchable fetch operations
+3. **`Query.Cache`** — cross-batch caching and within-batch deduplication
+
+## The `query` Macro
+
+The `query` macro (`Skuld.Query.QueryBlock`) provides the lowest-boilerplate way to
+compose batchable fetch computations. It analyses variable dependencies at compile
+time and automatically groups independent bindings into concurrent fiber batches.
+
+```elixir
+use Skuld.Syntax
+
+query do
+  user   <- Users.get_user(id)
+  recent <- Orders.get_recent()
+  orders <- Orders.get_by_user(user.id)
+  {user, recent, orders}
+end
+```
+
+Here `get_user` and `get_recent` are independent (neither references the other's
+result), so they run concurrently in the same fiber batch. `get_by_user` depends on
+`user`, so it runs in a subsequent batch after the first completes.
+
+### Syntax
+
+- `var <- computation` — effectful binding (auto-batched if independent)
+- `var = expression` — pure binding (participates in dependency analysis)
+- Last expression — the block's return value (auto-lifted to `Comp.pure`)
+
+### How It Works
+
+The macro performs compile-time dependency analysis:
+
+1. Parse the block into `<-` / `=` bindings plus a final expression
+2. For each binding, compute which bound variables from earlier bindings are
+   referenced in its right-hand side
+3. Group bindings into "rounds" using topological sort — a binding goes in the
+   earliest round where all its dependencies are satisfied
+4. Single-binding rounds use `FiberPool.fiber` + `await!`; multi-binding rounds
+   use `FiberPool.fiber_all` + `await_all!`
+
+The above example compiles to roughly:
+
+```elixir
+FiberPool.fiber_all([Users.get_user(id), Orders.get_recent()])
+|> Comp.bind(fn [user, recent] ->
+  FiberPool.fiber(Orders.get_by_user(user.id))
+  |> Comp.bind(&FiberPool.await!/1)
+  |> Comp.bind(fn orders ->
+    Comp.pure({user, recent, orders})
+  end)
+end)
+```
+
+### Differences from `comp`
+
+Both `comp` and `query` use do-block syntax with `<-` bindings, but:
+
+- **`comp`** is purely sequential — each binding waits for the previous one
+- **`query`** analyses dependencies and runs independent bindings concurrently
+
+Use `comp` for sequential effect chains (state updates, error handling). Use
+`query` when composing data fetches that may be independent.
+
+### Requirements
+
+`query` requires a `FiberPool` handler to be installed, since it spawns fibers
+for concurrency.
+
+## Defining Fetch Operations with `deffetch`
+
+`Query.Contract` (`Skuld.Query.Contract`) is a typed DSL for declaring batchable
+fetch operations. It generates the operation structs, caller functions, executor
+behaviour, and wiring that the `query` macro (and `FiberPool`) use for batching.
+
+### Defining a Contract
+
+```elixir
+defmodule MyApp.Queries.Users do
+  use Skuld.Query.Contract
+
+  deffetch get_user(id :: String.t()) :: User.t() | nil
+  deffetch get_users_by_org(org_id :: String.t()) :: [User.t()]
+  deffetch get_user_count(org_id :: String.t()) :: non_neg_integer()
+end
+```
+
+Each `deffetch` declaration generates:
+
+- **Operation struct** — e.g. `MyApp.Queries.Users.GetUser` with typed fields
+- **Caller function** — e.g. `get_user/1` returning `computation(User.t() | nil)`,
+  which suspends the current fiber for batched execution
+- **Executor callback** — on `MyApp.Queries.Users.Executor`, receiving a list of
+  `{ref, op_struct}` tuples and returning `computation(%{ref => result})`
+- **Dispatch function** — `__dispatch__/3` routes from batch key to executor callback
+- **Wiring function** — `with_executor/2` installs an executor for all fetches
+- **Bang variant** — when the return type contains `{:ok, T}` (see below)
+- **Introspection** — `__query_operations__/0` returns metadata
+
+### Implementing an Executor
+
+An executor implements the generated behaviour with one callback per fetch:
+
+```elixir
+defmodule MyApp.Queries.Users.EctoExecutor do
+  @behaviour MyApp.Queries.Users.Executor
+
+  alias Skuld.Comp
+  alias Skuld.Effects.Reader
+  alias MyApp.Queries.Users.{GetUser, GetUsersByOrg, GetUserCount}
+
+  @impl true
+  def get_user(ops) do
+    ids = Enum.map(ops, fn {_ref, %GetUser{id: id}} -> id end) |> Enum.uniq()
+
+    Comp.bind(Reader.ask(:repo), fn repo ->
+      results = repo.all(from u in User, where: u.id in ^ids)
+      by_id = Map.new(results, &{&1.id, &1})
+
+      Comp.pure(Map.new(ops, fn {ref, %GetUser{id: id}} ->
+        {ref, Map.get(by_id, id)}
+      end))
+    end)
+  end
+
+  @impl true
+  def get_users_by_org(ops) do
+    org_ids = Enum.map(ops, fn {_ref, %GetUsersByOrg{org_id: oid}} -> oid end) |> Enum.uniq()
+
+    Comp.bind(Reader.ask(:repo), fn repo ->
+      results = repo.all(from u in User, where: u.org_id in ^org_ids)
+      grouped = Enum.group_by(results, & &1.org_id)
+
+      Comp.pure(Map.new(ops, fn {ref, %GetUsersByOrg{org_id: oid}} ->
+        {ref, Map.get(grouped, oid, [])}
+      end))
+    end)
+  end
+
+  @impl true
+  def get_user_count(ops) do
+    org_ids = Enum.map(ops, fn {_ref, %GetUserCount{org_id: oid}} -> oid end) |> Enum.uniq()
+
+    Comp.bind(Reader.ask(:repo), fn repo ->
+      counts =
+        repo.all(from u in User, where: u.org_id in ^org_ids,
+          group_by: u.org_id, select: {u.org_id, count(u.id)})
+        |> Map.new()
+
+      Comp.pure(Map.new(ops, fn {ref, %GetUserCount{org_id: oid}} ->
+        {ref, Map.get(counts, oid, 0)}
+      end))
+    end)
+  end
+end
+```
+
+The pattern is always:
+1. Extract unique parameter values from the batched ops
+2. Execute a single query covering all values
+3. Map results back to `%{request_id => result}`
+
+Since executor callbacks return computations, they can use any Skuld effect
+(Reader, State, DB, Port, etc.).
+
+### Wiring
+
+Install an executor for a contract using `with_executor/2`:
+
+```elixir
+query do
+  user   <- Users.get_user("1")
+  recent <- Orders.get_recent()
+  {user, recent}
+end
+|> Users.with_executor(Users.EctoExecutor)
+|> Orders.with_executor(Orders.EctoExecutor)
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+```
+
+`with_executor/2` registers the executor for *all* fetches in the contract. Each
+fetch type batches independently — `get_user` calls batch together,
+`get_users_by_org` calls batch together, but they don't mix.
+
+### Bulk Wiring
+
+For applications with multiple contracts, use `Skuld.Query.Contract.with_executors/2`:
+
+```elixir
+my_query_comp
+|> Skuld.Query.Contract.with_executors([
+  {MyApp.Queries.Users, MyApp.Queries.Users.EctoExecutor},
+  {MyApp.Queries.Orders, MyApp.Queries.Orders.EctoExecutor}
+])
+```
+
+Also accepts a map:
+
+```elixir
+my_query_comp
+|> Skuld.Query.Contract.with_executors(%{
+  MyApp.Queries.Users => MyApp.Queries.Users.EctoExecutor,
+  MyApp.Queries.Orders => MyApp.Queries.Orders.EctoExecutor
+})
+```
+
+### Bang Variants
+
+Same rules as `Port.Contract`:
+
+- **Auto-detect** (default): If the return type contains `{:ok, T}`, a bang
+  variant is generated that unwraps `{:ok, value}` or dispatches `Throw` on
+  `{:error, reason}`.
+- **`bang: true`**: Force standard unwrapping.
+- **`bang: false`**: Suppress bang generation.
+- **`bang: unwrap_fn`**: Custom unwrap function.
+
+```elixir
+defmodule MyApp.Queries.Accounts do
+  use Skuld.Query.Contract
+
+  # Auto-detect: {:ok, T} in return type -> bang generated
+  deffetch find_account(id :: String.t()) :: {:ok, Account.t()} | {:error, term()}
+
+  # No {:ok, T} pattern -> no bang
+  deffetch get_account(id :: String.t()) :: Account.t() | nil
+
+  # Force bang
+  deffetch lookup_account(id :: String.t()) :: Account.t() | nil, bang: true
+
+  # Suppress bang
+  deffetch search_accounts(q :: String.t()) :: {:ok, [Account.t()]} | {:error, term()},
+    bang: false
+
+  # Custom unwrap
+  deffetch fetch_account(id :: String.t()) :: map(),
+    bang: fn result -> {:ok, result} end
+end
+```
+
+### Introspection
+
+Every contract module provides `__query_operations__/0`:
+
+```elixir
+MyApp.Queries.Users.__query_operations__()
+#=> [
+#     %{name: :get_user, params: [:id], param_types: [...], return_type: ..., arity: 1, cacheable: true},
+#     %{name: :get_users_by_org, params: [:org_id], ..., cacheable: true},
+#     %{name: :get_user_count, params: [:org_id], ..., cacheable: true}
+#   ]
+```
+
+## Caching
+
+`Skuld.Query.Cache` provides a composable caching layer that sits between your
+computation and the batch executors:
+
+- **Cross-batch result caching** — identical queries across batch rounds return
+  cached results without re-executing
+- **Within-batch request deduplication** — identical queries in the same batch
+  round are sent to the executor only once, with the result fanned out to all
+  requesting fibers
+
+### Wiring with Cache
+
+Use `QueryCache.with_executor/3` or `QueryCache.with_executors/2` instead of
+`Contract.with_executor/2`:
+
+```elixir
+alias Skuld.Query.Cache, as: QueryCache
+
+# Single contract
+my_comp
+|> QueryCache.with_executor(MyApp.Queries.Users, MyApp.Queries.Users.EctoExecutor)
+|> FiberPool.with_handler()
+|> FiberPool.run()
+
+# Multiple contracts (shared cache scope)
+my_comp
+|> QueryCache.with_executors([
+  {MyApp.Queries.Users, MyApp.Queries.Users.EctoExecutor},
+  {MyApp.Queries.Orders, MyApp.Queries.Orders.EctoExecutor}
+])
+|> FiberPool.with_handler()
+|> FiberPool.run()
+```
+
+### Cache Scope and Lifetime
+
+The cache is scoped per computation run. It's initialised as an empty map when
+`with_executors` sets up the scope, and cleaned up on scope exit. No TTL, no
+eviction — the cache lives exactly as long as the computation.
+
+This matches Haxl's per-`Env` cache semantics: within a single request/computation,
+you get automatic deduplication and caching, with no stale data concerns.
+
+### Cache Keys
+
+Cache keys are `{batch_key, op_struct}` where:
+- `batch_key` is `{ContractModule, :query_name}` (e.g., `{Users, :get_user}`)
+- `op_struct` is the operation struct (e.g., `%Users.GetUser{id: "123"}`)
+
+Structural equality on Elixir structs provides correct comparison. Two queries
+with the same parameters share a cache entry.
+
+### Per-Query Opt-Out
+
+Mark individual queries as non-cacheable with `cache: false`:
+
+```elixir
+defmodule MyApp.Queries.Users do
+  use Skuld.Query.Contract
+
+  deffetch get_user(id :: String.t()) :: User.t() | nil
+  deffetch get_random_user() :: User.t(), cache: false
+end
+```
+
+Non-cacheable queries bypass the cache entirely — they always go to the executor.
+
+### Error Handling
+
+Executor failures are **not cached**. When an executor returns a Throw/error:
+- The error propagates normally to requesting fibers
+- Nothing is stored in the cache
+- Subsequent requests for the same query go to the executor again
+
+## How Batching Works
+
+Under the hood, the query system uses FiberPool's batch suspension mechanism:
+
+1. Each caller function (e.g., `get_user/1`) creates an `InternalSuspend.batch`
+   with a batch key of `{ContractModule, :query_name}` and an operation struct
+2. The FiberPool scheduler collects batch-suspended fibers
+3. When the run queue empties, the scheduler groups suspensions by batch key
+4. For each group, the registered executor callback runs with all ops
+5. Results are distributed back to the waiting fibers via the `request_id` map
+
+The programmer writes simple per-record fetch calls. Batching happens automatically
+when multiple fibers make the same type of fetch concurrently.
+
+### Manual FiberPool Composition
+
+For cases where the `query` macro isn't suitable, you can compose fetches
+manually using FiberPool primitives:
+
+```elixir
+# Using FiberPool.map for collections
+FiberPool.map(["1", "2", "3"], &Users.get_user/1)
+|> Users.with_executor(Users.EctoExecutor)
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+# All 3 get_user calls batched into a single executor invocation
+
+# Using fiber/await for individual control
+comp do
+  h1 <- FiberPool.fiber(Users.get_user("1"))
+  h2 <- FiberPool.fiber(Users.get_user("2"))
+  h3 <- FiberPool.fiber(Users.get_user("3"))
+  FiberPool.await_all!([h1, h2, h3])
+end
+```
+
+## Testing
+
+For tests, implement a stub executor:
+
+```elixir
+defmodule MyApp.Queries.Users.TestExecutor do
+  @behaviour MyApp.Queries.Users.Executor
+
+  alias Skuld.Comp
+  alias MyApp.Queries.Users.{GetUser, GetUsersByOrg}
+
+  @impl true
+  def get_user(ops) do
+    Comp.pure(Map.new(ops, fn {ref, %GetUser{id: id}} ->
+      {ref, %User{id: id, name: "Test User #{id}"}}
+    end))
+  end
+
+  @impl true
+  def get_users_by_org(ops) do
+    Comp.pure(Map.new(ops, fn {ref, %GetUsersByOrg{org_id: _}} ->
+      {ref, []}
+    end))
+  end
+
+  # ...
+end
+```
+
+Or use inline anonymous executors for one-off tests (register directly with
+`BatchExecutor.with_executor/3`):
+
+```elixir
+alias Skuld.Fiber.FiberPool.BatchExecutor
+
+query do
+  user <- Users.get_user("1")
+  user
+end
+|> BatchExecutor.with_executor(
+  {Users, :get_user},
+  fn ops ->
+    Comp.pure(Map.new(ops, fn {ref, _op} -> {ref, %User{id: "1", name: "Stubbed"}} end))
+  end
+)
+|> FiberPool.with_handler()
+|> FiberPool.run!()
+```
+
+## Comparison with Port.Contract
+
+| Aspect | Port.Contract | Query.Contract |
+|--------|--------------|----------------|
+| Purpose | Blocking calls to external code | Batchable queries across fibers |
+| Execution | One call at a time | Multiple calls batched together |
+| Requires FiberPool | No | Yes |
+| Executor receives | Single call args | List of `{ref, op_struct}` |
+| Executor returns | Single result | `%{ref => result}` map |
+| Macro | `defport` | `deffetch` |
+| Bang variants | Same rules | Same rules |
+| Handler installation | `Port.with_handler/2` | `Contract.with_executor/2` |
+| Composition | `comp do` (sequential) | `query do` (auto-concurrent) |

@@ -279,7 +279,7 @@ end
 ### I/O Batching
 
 FiberPool automatically batches I/O operations across suspended fibers using
-[Query.Contract](query-contract.md):
+[Query](query.md):
 
 ```elixir
 use Skuld.Syntax
@@ -559,8 +559,8 @@ User.fetch_users_with_orders([1, 2, 3, 4, 5])
 #=> [%User{id: 1, orders: [%Order{...}, ...]}, %User{id: 2, ...}, ...]  # order preserved
 ```
 
-See **[Query.Contract documentation](query-contract.md)** for the full API: contract
-definition, executor implementation, wiring, bang variants, and testing patterns.
+See **[Query documentation](query.md)** for the full API: the `query` macro,
+`deffetch` contract definition, executor implementation, wiring, caching, and testing patterns.
 
 Without automatic batching, fetching 5 users with orders would require 1 + 5 = 6 queries
 (one for all users, one per user for orders) _or_ rearranging the code significantly.

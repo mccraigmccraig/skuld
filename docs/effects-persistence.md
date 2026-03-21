@@ -233,9 +233,9 @@ FiberPool.map(["1", "2", "3"], &MyApp.Queries.Users.get_user/1)
 |> FiberPool.run!()
 ```
 
-See **[Query.Contract documentation](query-contract.md)** for the full API:
-contract definition, executor implementation, wiring, bulk wiring, caching,
-bang variants, introspection, and testing patterns.
+See **[Query documentation](query.md)** for the full API:
+the `query` macro, `deffetch` contract definition, executor implementation,
+wiring, bulk wiring, caching, bang variants, introspection, and testing patterns.
 
 See also [Concurrency effects - Brook I/O Batching](effects-concurrency.md#io-batching-in-brook)
 for automatic batching with nested reads across concurrent fibers.
