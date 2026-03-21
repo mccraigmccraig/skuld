@@ -2,6 +2,8 @@ defmodule Skuld.Query.MacroTest do
   use ExUnit.Case, async: true
   use Skuld.Syntax
 
+  import ExUnit.CaptureIO
+
   alias Skuld.Comp
   alias Skuld.Effects.FiberPool
   alias Skuld.Effects.State
@@ -426,37 +428,73 @@ defmodule Skuld.Query.MacroTest do
   describe "query — compile errors" do
     test "empty block raises CompileError" do
       assert_raise CompileError, ~r/must contain at least one expression/, fn ->
-        Code.compile_string("""
-        import Skuld.Query.Macro
-        query do
-        end
-        """)
+        capture_io(:stderr, fn ->
+          Code.compile_string("""
+          import Skuld.Query.Macro
+          query do
+          end
+          """)
+        end)
       end
     end
 
-    test "ending with a binding raises CompileError" do
-      # Note: Elixir's parser catches this before the macro runs because
-      # `<-` as the last expression in a block is not valid Elixir syntax.
+    test "single binding (no final expression) raises CompileError" do
+      # Single `<-` in a do block is a single expression, which Elixir's
+      # parser rejects before the macro runs (`<-` is not a standalone expr).
       assert_raise CompileError, fn ->
-        Code.compile_string("""
-        import Skuld.Query.Macro
-        query do
-          a <- Skuld.Comp.pure(42)
-        end
-        """)
+        capture_io(:stderr, fn ->
+          Code.compile_string("""
+          import Skuld.Query.Macro
+          query do
+            a <- Skuld.Comp.pure(42)
+          end
+          """)
+        end)
+      end
+    end
+
+    test "ending with a <- binding raises CompileError" do
+      # Multiple bindings with no final expression — caught by the macro's
+      # own validation (not the Elixir parser).
+      assert_raise CompileError, ~r/must end with an expression, not a binding/, fn ->
+        capture_io(:stderr, fn ->
+          Code.compile_string("""
+          import Skuld.Query.Macro
+          query do
+            a <- Skuld.Comp.pure(42)
+            b <- Skuld.Comp.pure(a)
+          end
+          """)
+        end)
+      end
+    end
+
+    test "ending with an = assignment raises CompileError" do
+      assert_raise CompileError, ~r/must end with an expression, not an assignment/, fn ->
+        capture_io(:stderr, fn ->
+          Code.compile_string("""
+          import Skuld.Query.Macro
+          query do
+            a <- Skuld.Comp.pure(42)
+            b = a + 1
+          end
+          """)
+        end)
       end
     end
 
     test "bare expression in middle raises CompileError" do
       assert_raise CompileError, ~r/bare expression in query block/, fn ->
-        Code.compile_string("""
-        import Skuld.Query.Macro
-        query do
-          a <- Skuld.Comp.pure(42)
-          IO.puts("hello")
-          a
-        end
-        """)
+        capture_io(:stderr, fn ->
+          Code.compile_string("""
+          import Skuld.Query.Macro
+          query do
+            a <- Skuld.Comp.pure(42)
+            IO.puts("hello")
+            a
+          end
+          """)
+        end)
       end
     end
   end

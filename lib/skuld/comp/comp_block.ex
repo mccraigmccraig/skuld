@@ -696,6 +696,27 @@ defmodule Skuld.Comp.CompBlock do
     defp rewrite_block(caller, expr, has_else),
       do: rewrite_exprs(caller, [expr], has_else, _is_first = true)
 
+    # Trailing <- binding - not allowed (binding has no useful purpose as last expression)
+    defp rewrite_exprs(caller, [{:<-, _meta, _args}], _has_else, _is_first) do
+      raise CompileError,
+        file: (caller && caller.file) || "nofile",
+        line: (caller && caller.line) || 0,
+        description:
+          "comp block must end with an expression, not a `<-` binding. " <>
+            "Add a final expression after the last `<-` binding, or use `_ <- computation` " <>
+            "followed by a return value."
+    end
+
+    # Trailing = assignment - not allowed (assignment has no useful purpose as last expression)
+    defp rewrite_exprs(caller, [{:=, _meta, _args}], _has_else, _is_first) do
+      raise CompileError,
+        file: (caller && caller.file) || "nofile",
+        line: (caller && caller.line) || 0,
+        description:
+          "comp block must end with an expression, not an `=` assignment. " <>
+            "Add a final expression after the last assignment."
+    end
+
     # Single/last expression - this is always allowed (auto-lifted to pure)
     defp rewrite_exprs(_caller, [last], _has_else, is_first) do
       if is_first do

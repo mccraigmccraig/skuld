@@ -705,6 +705,40 @@ defmodule Skuld.Comp.CompBlockTest do
         """)
       end
     end
+
+    test "trailing <- binding is a compile error" do
+      import ExUnit.CaptureIO
+
+      assert_raise CompileError, ~r/must end with an expression, not a `<-` binding/, fn ->
+        capture_io(:stderr, fn ->
+          Code.compile_string("""
+          import Skuld.Comp.CompBlock
+          alias Skuld.Comp
+          comp do
+            _ <- Comp.pure(:setup)
+            a <- Comp.pure(42)
+          end
+          """)
+        end)
+      end
+    end
+
+    test "trailing = assignment is a compile error" do
+      import ExUnit.CaptureIO
+
+      assert_raise CompileError, ~r/must end with an expression, not an `=` assignment/, fn ->
+        capture_io(:stderr, fn ->
+          Code.compile_string("""
+          import Skuld.Comp.CompBlock
+          alias Skuld.Comp
+          comp do
+            _ <- Comp.pure(:setup)
+            a = 42
+          end
+          """)
+        end)
+      end
+    end
   end
 
   describe "else with catch" do
