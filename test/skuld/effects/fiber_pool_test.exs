@@ -322,6 +322,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
+        |> FiberPool.with_task_supervisor()
         |> FiberPool.run!()
 
       assert result == 42
@@ -337,6 +338,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
+        |> FiberPool.with_task_supervisor()
         |> FiberPool.run!()
 
       # Task should have run in a different process
@@ -353,6 +355,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await_all!([h1, h2, h3])
         end
         |> FiberPool.with_handler()
+        |> FiberPool.with_task_supervisor()
         |> FiberPool.run!()
 
       assert result == [10, 20, 12]
@@ -370,6 +373,7 @@ defmodule Skuld.Effects.FiberPoolTest do
             FiberPool.await!(h)
           end
           |> FiberPool.with_handler()
+          |> FiberPool.with_task_supervisor()
           |> FiberPool.run!()
         end
       end)
@@ -389,6 +393,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           {fiber_r, task_r}
         end
         |> FiberPool.with_handler()
+        |> FiberPool.with_task_supervisor()
         |> FiberPool.run!()
 
       assert result == {:fiber_result, :task_result}
@@ -405,6 +410,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await!(h1)
         end
         |> FiberPool.with_handler()
+        |> FiberPool.with_task_supervisor()
         |> FiberPool.run!()
 
       assert result == 100
@@ -419,9 +425,39 @@ defmodule Skuld.Effects.FiberPoolTest do
           FiberPool.await_any!([h1, h2])
         end
         |> FiberPool.with_handler()
+        |> FiberPool.with_task_supervisor()
         |> FiberPool.run!()
 
       assert result in [:first, :second]
+    end
+
+    test "task without supervisor raises clear error" do
+      assert_raise ArgumentError, ~r/FiberPool.task\/2 requires a Task.Supervisor/, fn ->
+        comp do
+          h <- FiberPool.task(fn -> 42 end)
+          FiberPool.await!(h)
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.run!()
+      end
+    end
+
+    test "with_task_supervisor with provided supervisor" do
+      {:ok, sup} = Task.Supervisor.start_link()
+
+      result =
+        comp do
+          h <- FiberPool.task(fn -> 42 end)
+          FiberPool.await!(h)
+        end
+        |> FiberPool.with_handler()
+        |> FiberPool.with_task_supervisor(supervisor: sup)
+        |> FiberPool.run!()
+
+      assert result == 42
+      # Supervisor should still be alive (caller manages lifecycle)
+      assert Process.alive?(sup)
+      Supervisor.stop(sup)
     end
   end
 end

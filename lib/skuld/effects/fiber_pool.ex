@@ -415,6 +415,60 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   @doc """
+  Install a Task.Supervisor for BEAM task support.
+
+  This starts a `Task.Supervisor` process before the computation runs and
+  stops it after completion. Required for `FiberPool.task/2` — calling
+  `task/2` without this will raise an error.
+
+  ## Example
+
+      comp do
+        h <- FiberPool.task(fn -> expensive_cpu_work() end)
+        FiberPool.await!(h)
+      end
+      |> FiberPool.with_handler()
+      |> FiberPool.with_task_supervisor()
+      |> FiberPool.run!()
+
+  ## Options
+
+  - `:supervisor` - An existing `Task.Supervisor` pid to use instead of
+    starting a new one. The caller is responsible for its lifecycle.
+  """
+  @task_supervisor_key {__MODULE__, :task_supervisor}
+
+  @spec with_task_supervisor(Comp.Types.computation(), keyword()) :: Comp.Types.computation()
+  def with_task_supervisor(comp, opts \\ []) do
+    Comp.scoped(comp, fn env ->
+      {sup, should_stop} =
+        case Keyword.get(opts, :supervisor) do
+          nil ->
+            {:ok, sup} = Task.Supervisor.start_link()
+            {sup, true}
+
+          sup when is_pid(sup) ->
+            {sup, false}
+        end
+
+      modified_env = Env.put_state(env, @task_supervisor_key, sup)
+
+      finally_k = fn value, final_env ->
+        if should_stop do
+          Supervisor.stop(sup)
+        end
+
+        {value, final_env}
+      end
+
+      {modified_env, finally_k}
+    end)
+  end
+
+  @doc false
+  def task_supervisor_key, do: @task_supervisor_key
+
+  @doc """
   Run a computation with FiberPool scheduling.
 
   This is the main entry point. It:
@@ -422,51 +476,35 @@ defmodule Skuld.Effects.FiberPool do
   2. Schedules any spawned fibers and tasks
   3. Returns when all fibers and tasks complete
 
-  ## Options
-
-  - `:task_supervisor` - Task.Supervisor pid to use for spawning tasks.
-    If not provided, a temporary supervisor is started.
+  To use `FiberPool.task/2` for BEAM-level parallelism, install a
+  Task.Supervisor with `with_task_supervisor/2` before running.
   """
-  @spec run(Comp.Types.computation(), keyword()) :: {term(), Comp.Types.env()}
-  def run(comp, opts \\ []) do
+  @spec run(Comp.Types.computation()) :: {term(), Comp.Types.env()}
+  def run(comp) do
     env = Env.new()
 
-    # Start or use provided Task.Supervisor
-    {task_sup, should_stop_sup} =
-      case Keyword.get(opts, :task_supervisor) do
-        nil ->
-          {:ok, sup} = Task.Supervisor.start_link()
-          {sup, true}
+    {result, env} = Comp.call(comp, env, &Comp.identity_k/2)
 
-        sup ->
-          {sup, false}
-      end
+    # Extract pending work from env
+    pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())
+    {pending_fibers, pending_tasks, _} = PendingWork.take_all(pending_work)
 
-    state = State.new(task_supervisor: task_sup)
+    if pending_fibers == [] and pending_tasks == [] and not await_suspend?(result) do
+      # No fibers or tasks spawned, simple completion
+      {result, env}
+    else
+      # Read task supervisor from env (installed by with_task_supervisor, or nil)
+      task_sup = Env.get_state(env, @task_supervisor_key)
 
-    try do
-      {result, env} = Comp.call(comp, env, &Comp.identity_k/2)
+      state = State.new(task_supervisor: task_sup)
 
-      # Extract pending work from env
-      pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())
-      {pending_fibers, pending_tasks, _} = PendingWork.take_all(pending_work)
+      # Seed state.env_state from main computation's env.state
+      # But clear pending work since we've already extracted it
+      clean_env_state = Map.put(env.state, PendingWork.env_key(), PendingWork.new())
 
-      if pending_fibers == [] and pending_tasks == [] and not await_suspend?(result) do
-        # No fibers or tasks spawned, simple completion
-        {result, env}
-      else
-        # Seed state.env_state from main computation's env.state
-        # But clear pending work since we've already extracted it
-        clean_env_state = Map.put(env.state, PendingWork.env_key(), PendingWork.new())
-
-        state = State.put_env_state(state, clean_env_state)
-        # Run fibers and tasks
-        run_with_fibers(state, env, result, pending_fibers, pending_tasks)
-      end
-    after
-      if should_stop_sup do
-        Supervisor.stop(task_sup)
-      end
+      state = State.put_env_state(state, clean_env_state)
+      # Run fibers and tasks
+      run_with_fibers(state, env, result, pending_fibers, pending_tasks)
     end
   end
 
@@ -475,9 +513,9 @@ defmodule Skuld.Effects.FiberPool do
 
   Raises if the result is a suspension or error sentinel.
   """
-  @spec run!(Comp.Types.computation(), keyword()) :: term()
-  def run!(comp, opts \\ []) do
-    {result, _env} = run(comp, opts)
+  @spec run!(Comp.Types.computation()) :: term()
+  def run!(comp) do
+    {result, _env} = run(comp)
     Comp.ISentinel.run!(result)
   end
 

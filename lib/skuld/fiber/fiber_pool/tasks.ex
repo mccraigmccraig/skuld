@@ -39,6 +39,21 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
   handled by `receive_message/1`.
   """
   @spec spawn_pending(State.t(), [task_info()]) :: State.t()
+  def spawn_pending(state, []), do: state
+
+  def spawn_pending(%{task_supervisor: nil}, [_ | _]) do
+    raise ArgumentError, """
+    FiberPool.task/2 requires a Task.Supervisor, but none is installed.
+
+    Wrap your computation with FiberPool.with_task_supervisor/1:
+
+        comp
+        |> FiberPool.with_handler()
+        |> FiberPool.with_task_supervisor()
+        |> FiberPool.run!()
+    """
+  end
+
   def spawn_pending(state, pending_tasks) do
     task_sup = state.task_supervisor
 
