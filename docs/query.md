@@ -68,10 +68,10 @@ Or equivalently, using `comp` with the fiber boilerplate explicit:
 
 ```elixir
 comp do
-  [user, recent] <- FiberPool.fiber_all([Users.get_user(id), Orders.get_recent()])
-                     |> Comp.bind(&FiberPool.await_all!/1)
-  orders <- FiberPool.fiber(Orders.get_by_user(user.id))
-            |> Comp.bind(&FiberPool.await!/1)
+  handles <- FiberPool.fiber_all([Users.get_user(id), Orders.get_recent()])
+  [user, recent] <- FiberPool.await_all!(handles)
+  handle <- FiberPool.fiber(Orders.get_by_user(user.id))
+  orders <- FiberPool.await!(handle)
   {user, recent, orders}
 end
 ```
