@@ -137,53 +137,51 @@ An executor implements the generated behaviour with one callback per fetch:
 
 ```elixir
 defmodule MyApp.Queries.Users.EctoExecutor do
+  use Skuld.Syntax
+
   @behaviour MyApp.Queries.Users.Executor
 
-  alias Skuld.Comp
   alias Skuld.Effects.Reader
   alias MyApp.Queries.Users.{GetUser, GetUsersByOrg, GetUserCount}
 
   @impl true
-  def get_user(ops) do
+  defcomp get_user(ops) do
     ids = Enum.map(ops, fn {_ref, %GetUser{id: id}} -> id end) |> Enum.uniq()
+    repo <- Reader.ask(:repo)
 
-    Comp.bind(Reader.ask(:repo), fn repo ->
-      results = repo.all(from u in User, where: u.id in ^ids)
-      by_id = Map.new(results, &{&1.id, &1})
+    results = repo.all(from u in User, where: u.id in ^ids)
+    by_id = Map.new(results, &{&1.id, &1})
 
-      Comp.pure(Map.new(ops, fn {ref, %GetUser{id: id}} ->
-        {ref, Map.get(by_id, id)}
-      end))
+    Map.new(ops, fn {ref, %GetUser{id: id}} ->
+      {ref, Map.get(by_id, id)}
     end)
   end
 
   @impl true
-  def get_users_by_org(ops) do
+  defcomp get_users_by_org(ops) do
     org_ids = Enum.map(ops, fn {_ref, %GetUsersByOrg{org_id: oid}} -> oid end) |> Enum.uniq()
+    repo <- Reader.ask(:repo)
 
-    Comp.bind(Reader.ask(:repo), fn repo ->
-      results = repo.all(from u in User, where: u.org_id in ^org_ids)
-      grouped = Enum.group_by(results, & &1.org_id)
+    results = repo.all(from u in User, where: u.org_id in ^org_ids)
+    grouped = Enum.group_by(results, & &1.org_id)
 
-      Comp.pure(Map.new(ops, fn {ref, %GetUsersByOrg{org_id: oid}} ->
-        {ref, Map.get(grouped, oid, [])}
-      end))
+    Map.new(ops, fn {ref, %GetUsersByOrg{org_id: oid}} ->
+      {ref, Map.get(grouped, oid, [])}
     end)
   end
 
   @impl true
-  def get_user_count(ops) do
+  defcomp get_user_count(ops) do
     org_ids = Enum.map(ops, fn {_ref, %GetUserCount{org_id: oid}} -> oid end) |> Enum.uniq()
+    repo <- Reader.ask(:repo)
 
-    Comp.bind(Reader.ask(:repo), fn repo ->
-      counts =
-        repo.all(from u in User, where: u.org_id in ^org_ids,
-          group_by: u.org_id, select: {u.org_id, count(u.id)})
-        |> Map.new()
+    counts =
+      repo.all(from u in User, where: u.org_id in ^org_ids,
+        group_by: u.org_id, select: {u.org_id, count(u.id)})
+      |> Map.new()
 
-      Comp.pure(Map.new(ops, fn {ref, %GetUserCount{org_id: oid}} ->
-        {ref, Map.get(counts, oid, 0)}
-      end))
+    Map.new(ops, fn {ref, %GetUserCount{org_id: oid}} ->
+      {ref, Map.get(counts, oid, 0)}
     end)
   end
 end
@@ -403,23 +401,24 @@ For tests, implement a stub executor:
 
 ```elixir
 defmodule MyApp.Queries.Users.TestExecutor do
+  use Skuld.Syntax
+
   @behaviour MyApp.Queries.Users.Executor
 
-  alias Skuld.Comp
   alias MyApp.Queries.Users.{GetUser, GetUsersByOrg}
 
   @impl true
-  def get_user(ops) do
-    Comp.pure(Map.new(ops, fn {ref, %GetUser{id: id}} ->
+  defcomp get_user(ops) do
+    Map.new(ops, fn {ref, %GetUser{id: id}} ->
       {ref, %User{id: id, name: "Test User #{id}"}}
-    end))
+    end)
   end
 
   @impl true
-  def get_users_by_org(ops) do
-    Comp.pure(Map.new(ops, fn {ref, %GetUsersByOrg{org_id: _}} ->
+  defcomp get_users_by_org(ops) do
+    Map.new(ops, fn {ref, %GetUsersByOrg{org_id: _}} ->
       {ref, []}
-    end))
+    end)
   end
 
   # ...
