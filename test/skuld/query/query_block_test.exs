@@ -1,4 +1,4 @@
-defmodule Skuld.Query.MacroTest do
+defmodule Skuld.Query.QueryBlockTest do
   use ExUnit.Case, async: true
   use Skuld.Syntax
 
@@ -430,7 +430,7 @@ defmodule Skuld.Query.MacroTest do
       assert_raise CompileError, ~r/must contain at least one expression/, fn ->
         capture_io(:stderr, fn ->
           Code.compile_string("""
-          import Skuld.Query.Macro
+          import Skuld.Query.QueryBlock
           query do
           end
           """)
@@ -444,7 +444,7 @@ defmodule Skuld.Query.MacroTest do
       assert_raise CompileError, fn ->
         capture_io(:stderr, fn ->
           Code.compile_string("""
-          import Skuld.Query.Macro
+          import Skuld.Query.QueryBlock
           query do
             a <- Skuld.Comp.pure(42)
           end
@@ -459,7 +459,7 @@ defmodule Skuld.Query.MacroTest do
       assert_raise CompileError, ~r/must end with an expression, not a binding/, fn ->
         capture_io(:stderr, fn ->
           Code.compile_string("""
-          import Skuld.Query.Macro
+          import Skuld.Query.QueryBlock
           query do
             a <- Skuld.Comp.pure(42)
             b <- Skuld.Comp.pure(a)
@@ -473,7 +473,7 @@ defmodule Skuld.Query.MacroTest do
       assert_raise CompileError, ~r/must end with an expression, not an assignment/, fn ->
         capture_io(:stderr, fn ->
           Code.compile_string("""
-          import Skuld.Query.Macro
+          import Skuld.Query.QueryBlock
           query do
             a <- Skuld.Comp.pure(42)
             b = a + 1
@@ -487,7 +487,7 @@ defmodule Skuld.Query.MacroTest do
       assert_raise CompileError, ~r/bare expression in query block/, fn ->
         capture_io(:stderr, fn ->
           Code.compile_string("""
-          import Skuld.Query.Macro
+          import Skuld.Query.QueryBlock
           query do
             a <- Skuld.Comp.pure(42)
             IO.puts("hello")

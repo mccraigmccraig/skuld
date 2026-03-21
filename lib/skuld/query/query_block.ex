@@ -7,7 +7,7 @@
 #
 # ## Usage
 #
-#     import Skuld.Query.Macro
+#     import Skuld.Query.QueryBlock
 #
 #     query do
 #       user <- Users.get_user(id)
@@ -48,7 +48,7 @@
 # - `alet` uses comma-separated bindings: `alet a <- x, b <- y do ... end`
 # - `query` uses do-block syntax: `query do a <- x; b <- y; ... end`
 # - Same dependency analysis and batching strategy
-defmodule Skuld.Query.Macro do
+defmodule Skuld.Query.QueryBlock do
   @moduledoc """
   The `query` macro for applicative-do style automatic concurrent batching.
 
@@ -90,7 +90,7 @@ defmodule Skuld.Query.Macro do
   """
   defmacro query(clauses) do
     do_block = Keyword.fetch!(clauses, :do)
-    Skuld.Query.Macro.Impl.compile(__CALLER__, do_block)
+    Skuld.Query.QueryBlock.Impl.compile(__CALLER__, do_block)
   end
 
   defmodule Impl do
