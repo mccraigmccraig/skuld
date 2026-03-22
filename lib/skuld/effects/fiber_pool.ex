@@ -378,6 +378,36 @@ defmodule Skuld.Effects.FiberPool do
   (including data fetches) land in the same batch round, enabling implicit
   concurrency.
 
+  ## How it achieves concurrency
+
+  `ap` runs exactly two computations concurrently: one that produces a
+  function, and one that produces a value. Both are spawned as fibers and
+  awaited together, so their data fetches land in the same batch round.
+  When both complete, the function is applied to the value.
+
+  To run more than two operations concurrently, `ap` is applied repeatedly
+  (like cons building a list). Each application adds one more concurrent
+  computation by pairing it with a function that accumulates results:
+
+      # Three concurrent fetches via repeated ap:
+      ap(
+        ap(
+          Comp.map(fetch(:x), fn x -> fn y -> [y, x] end end),
+          fetch(:y)
+        ),
+        fetch(:z)
+      )
+      |> Comp.map(fn [z, y, x] -> {x, y, z} end)
+
+  Each `ap` spawns two fibers — the accumulated computation so far (which
+  returns a function) and the next value computation. The function captures
+  previous results in a closure and conses the new value onto them. This is
+  the standard applicative pattern from Haskell's `<*>`, where `liftA2`,
+  `liftA3`, etc. are built by chaining `<*>` with `fmap`.
+
+  In practice, the `query` macro handles this desugaring automatically —
+  users rarely need to call `ap` directly.
+
   Requires a `FiberPool` handler to be installed.
 
   ## Example
