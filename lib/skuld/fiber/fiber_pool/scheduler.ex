@@ -21,7 +21,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   @moduledoc false
 
   alias Skuld.Fiber
-  alias Skuld.Fiber.FiberPool.State
+  alias Skuld.Fiber.FiberPool.SchedulerState, as: State
   alias Skuld.Fiber.FiberPool.EnvState
   alias Skuld.Fiber.FiberPool.PendingWork
   alias Skuld.Comp.Types

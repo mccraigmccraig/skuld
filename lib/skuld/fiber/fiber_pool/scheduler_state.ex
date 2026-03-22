@@ -15,7 +15,7 @@
 # - `batch_suspended` - Map of fiber_id => InternalSuspend.t() for batch-waiting fibers
 # - `channel_suspended` - Map of fiber_id => true for fibers waiting on channel operations
 # - `opts` - Configuration options
-defmodule Skuld.Fiber.FiberPool.State do
+defmodule Skuld.Fiber.FiberPool.SchedulerState do
   @moduledoc false
 
   alias Skuld.Fiber

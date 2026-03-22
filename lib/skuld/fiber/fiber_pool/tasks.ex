@@ -26,7 +26,7 @@
 defmodule Skuld.Fiber.FiberPool.Tasks do
   @moduledoc false
 
-  alias Skuld.Fiber.FiberPool.State
+  alias Skuld.Fiber.FiberPool.SchedulerState, as: State
   alias Skuld.Comp.Throw
 
   @type task_info :: {reference(), (-> term()), keyword()}

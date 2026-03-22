@@ -4,7 +4,7 @@ defmodule Skuld.Fiber.FiberPool.SchedulerTest do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Fiber
-  alias Skuld.Fiber.FiberPool.State
+  alias Skuld.Fiber.FiberPool.SchedulerState, as: State
   alias Skuld.Fiber.FiberPool.Scheduler
 
   describe "step/2" do

@@ -12,7 +12,7 @@ defmodule Skuld.Fiber.FiberPool.Batching do
   alias Skuld.Comp.Throw
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Fiber.FiberPool.BatchExecutor
-  alias Skuld.Fiber.FiberPool.State
+  alias Skuld.Fiber.FiberPool.SchedulerState, as: State
 
   @type fiber_id :: reference()
   @type batch_key :: term()

@@ -29,7 +29,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Effects.FiberPool, as: FiberPoolEffect
-  alias Skuld.Fiber.FiberPool.State
+  alias Skuld.Fiber.FiberPool.SchedulerState, as: State
   alias Skuld.Fiber.FiberPool.Scheduler
   alias Skuld.Fiber.FiberPool.Batching
   alias Skuld.Fiber.FiberPool.PendingWork
