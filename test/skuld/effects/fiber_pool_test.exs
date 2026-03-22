@@ -5,6 +5,7 @@ defmodule Skuld.Effects.FiberPoolTest do
   alias Skuld.Comp
   alias Skuld.Effects.FiberPool
   alias Skuld.Effects.State
+  alias Skuld.Effects.Throw
 
   describe "fiber and await" do
     test "runs and awaits a pure computation as fiber" do
@@ -308,6 +309,87 @@ defmodule Skuld.Effects.FiberPoolTest do
           )
         end
         |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert result == 42
+    end
+
+    test "scope cancels fibers when body throws" do
+      result =
+        comp do
+          Throw.try_catch(
+            comp do
+              FiberPool.scope(
+                comp do
+                  _ <- FiberPool.fiber(Comp.pure(:a))
+                  _ <- FiberPool.fiber(Comp.pure(:b))
+                  Throw.throw(:scope_error)
+                end
+              )
+            end
+          )
+        end
+        |> FiberPool.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert {:error, :scope_error} = result
+    end
+
+    test "scope error propagates through outer catch" do
+      result =
+        comp do
+          Throw.catch_error(
+            comp do
+              FiberPool.scope(
+                comp do
+                  _ <- FiberPool.fiber(Comp.pure(:ignored))
+                  Throw.throw(:boom)
+                end
+              )
+            end,
+            fn :boom -> Comp.pure(:recovered) end
+          )
+        end
+        |> FiberPool.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert result == :recovered
+    end
+
+    test "scope error with no fibers still propagates" do
+      result =
+        comp do
+          Throw.try_catch(
+            comp do
+              FiberPool.scope(
+                comp do
+                  Throw.throw(:no_fibers_error)
+                end
+              )
+            end
+          )
+        end
+        |> FiberPool.with_handler()
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert {:error, :no_fibers_error} = result
+    end
+
+    test "scope success still works when Throw handler is installed" do
+      result =
+        comp do
+          FiberPool.scope(
+            comp do
+              h <- FiberPool.fiber(Comp.pure(42))
+              FiberPool.await!(h)
+            end
+          )
+        end
+        |> FiberPool.with_handler()
+        |> Throw.with_handler()
         |> Comp.run!()
 
       assert result == 42

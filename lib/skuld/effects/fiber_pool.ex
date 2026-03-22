@@ -50,6 +50,7 @@ defmodule Skuld.Effects.FiberPool do
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Fiber.Handle
   alias Skuld.Fiber.FiberPool.PendingWork
+  alias Skuld.Effects.Throw
 
   @sig __MODULE__
 
@@ -618,9 +619,30 @@ defmodule Skuld.Effects.FiberPool do
     # Initialize scope's fiber tracking
     env = Env.put_state(env, scope_key, [])
 
-    # Create wrapped computation that tracks fibers submitted in this scope
+    # Wrap scoped_comp with error handling:
+    # - On success: run on_exit callback, await all scope fibers, return body result
+    # - On error: cancel all scope fibers, re-throw
+    guarded_comp =
+      Throw.catch_error(
+        scoped_comp,
+        fn error ->
+          # Error path: cancel all fibers spawned in this scope, then re-throw
+          fn err_env, err_k ->
+            scope_handles = Env.get_state(err_env, scope_key, [])
+
+            cancel_and_rethrow =
+              Comp.bind(cancel_all(scope_handles), fn _ ->
+                Throw.throw(error)
+              end)
+
+            Comp.call(cancel_and_rethrow, err_env, err_k)
+          end
+        end
+      )
+
+    # Create wrapped computation for the success path
     wrapped =
-      Comp.bind(scoped_comp, fn result ->
+      Comp.bind(guarded_comp, fn result ->
         # Get handles for fibers spawned in this scope
         fn inner_env, inner_k ->
           scope_handles = Env.get_state(inner_env, scope_key, [])
@@ -679,6 +701,13 @@ defmodule Skuld.Effects.FiberPool do
       |> Comp.with_handler(@sig, scope_fiber_handler)
 
     Comp.call(inner_comp, env, k)
+  end
+
+  # Cancel a list of handles sequentially
+  defp cancel_all([]), do: Comp.pure(:ok)
+
+  defp cancel_all([handle | rest]) do
+    Comp.bind(cancel(handle), fn _ -> cancel_all(rest) end)
   end
 
   # Unwrap a result, raising on error
