@@ -22,7 +22,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
   alias Skuld.Fiber
   alias Skuld.Fiber.FiberPool.SchedulerState
-  alias Skuld.Fiber.FiberPool.ChannelCoordinationState, as: EnvState
+  alias Skuld.Fiber.FiberPool.ChannelCoordinationState
   alias Skuld.Fiber.FiberPool.PendingWork
   alias Skuld.Comp.Types
   alias Skuld.Comp.Env
@@ -120,9 +120,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   def process_channel_wakes(state) do
     env_state = get_env_state(state)
 
-    if EnvState.has_channel_wakes?(env_state) do
+    if ChannelCoordinationState.has_channel_wakes?(env_state) do
       # Pop wakes and update env_state
-      {wakes, env_state} = EnvState.pop_channel_wakes(env_state)
+      {wakes, env_state} = ChannelCoordinationState.pop_channel_wakes(env_state)
       state = put_env_state(state, env_state)
 
       Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
@@ -215,7 +215,10 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     # - Set the current fiber ID for Channel operations
     base_env = fiber.env || env
     fiber_env = %{base_env | state: state.env_state}
-    fiber_env = update_env_state_in_env(fiber_env, &EnvState.set_fiber_id(&1, fiber.id))
+
+    fiber_env =
+      update_env_state_in_env(fiber_env, &ChannelCoordinationState.set_fiber_id(&1, fiber.id))
+
     fiber = %{fiber | env: fiber_env}
 
     fiber
@@ -227,7 +230,10 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     # Inject shared env_state before resuming
     # Also set the current fiber ID (env_state may have the previous fiber's ID)
     fiber_env = %{fiber.env | state: state.env_state}
-    fiber_env = update_env_state_in_env(fiber_env, &EnvState.set_fiber_id(&1, fiber.id))
+
+    fiber_env =
+      update_env_state_in_env(fiber_env, &ChannelCoordinationState.set_fiber_id(&1, fiber.id))
+
     fiber = %{fiber | env: fiber_env}
 
     fiber
@@ -437,19 +443,19 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   end
 
   #############################################################################
-  ## EnvState and PendingWork Helpers
+  ## ChannelCoordinationState and PendingWork Helpers
   #############################################################################
 
-  # Get the EnvState from state.env_state, defaulting to a new one
+  # Get the ChannelCoordinationState from state.env_state, defaulting to a new one
   defp get_env_state(state) do
-    Map.get(state.env_state, EnvState.env_key(), EnvState.new())
+    Map.get(state.env_state, ChannelCoordinationState.env_key(), ChannelCoordinationState.new())
   end
 
-  # Put the EnvState back into state.env_state
+  # Put the ChannelCoordinationState back into state.env_state
   defp put_env_state(state, env_state) do
     SchedulerState.put_env_state(
       state,
-      Map.put(state.env_state, EnvState.env_key(), env_state)
+      Map.put(state.env_state, ChannelCoordinationState.env_key(), env_state)
     )
   end
 
@@ -469,10 +475,12 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     SchedulerState.put_env_state(state, env_state)
   end
 
-  # Update the EnvState in an env (for setting fiber_id before running)
+  # Update the ChannelCoordinationState in an env (for setting fiber_id before running)
   defp update_env_state_in_env(env, fun) do
-    env_state = Env.get_state(env, EnvState.env_key(), EnvState.new())
+    env_state =
+      Env.get_state(env, ChannelCoordinationState.env_key(), ChannelCoordinationState.new())
+
     env_state = fun.(env_state)
-    Env.put_state(env, EnvState.env_key(), env_state)
+    Env.put_state(env, ChannelCoordinationState.env_key(), env_state)
   end
 end

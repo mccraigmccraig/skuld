@@ -58,7 +58,7 @@ defmodule Skuld.Effects.Channel do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
-  alias Skuld.Fiber.FiberPool.ChannelCoordinationState, as: EnvState
+  alias Skuld.Fiber.FiberPool.ChannelCoordinationState
   alias Skuld.Effects.Channel.State
 
   #############################################################################
@@ -594,10 +594,10 @@ defmodule Skuld.Effects.Channel do
   @spec with_handler(Comp.Types.computation()) :: Comp.Types.computation()
   def with_handler(comp) do
     fn env, k ->
-      # Initialize EnvState in env.state if not present
+      # Initialize ChannelCoordinationState in env.state if not present
       env =
-        if Env.get_state(env, EnvState.env_key()) == nil do
-          Env.put_state(env, EnvState.env_key(), EnvState.new())
+        if Env.get_state(env, ChannelCoordinationState.env_key()) == nil do
+          Env.put_state(env, ChannelCoordinationState.env_key(), ChannelCoordinationState.new())
         else
           env
         end
@@ -607,36 +607,36 @@ defmodule Skuld.Effects.Channel do
   end
 
   #############################################################################
-  ## Internal: Channel State Management (via EnvState)
+  ## Internal: Channel State Management (via ChannelCoordinationState)
   #############################################################################
 
   defp register_channel(env, state) do
-    update_env_state(env, &EnvState.register_channel(&1, state))
+    update_env_state(env, &ChannelCoordinationState.register_channel(&1, state))
   end
 
   defp get_channel(env, channel_id) do
     env_state = get_env_state(env)
-    EnvState.get_channel!(env_state, channel_id)
+    ChannelCoordinationState.get_channel!(env_state, channel_id)
   end
 
   defp update_channel(env, channel_id, state) do
-    update_env_state(env, &EnvState.put_channel(&1, channel_id, state))
+    update_env_state(env, &ChannelCoordinationState.put_channel(&1, channel_id, state))
   end
 
   #############################################################################
-  ## Internal: Fiber ID and Wake Management (via EnvState)
+  ## Internal: Fiber ID and Wake Management (via ChannelCoordinationState)
   #############################################################################
 
   # Get the current fiber ID from the environment
   defp get_fiber_id(env) do
     env_state = get_env_state(env)
-    EnvState.get_fiber_id!(env_state)
+    ChannelCoordinationState.get_fiber_id!(env_state)
   end
 
   # Add a channel wake request to env.state
   # The FiberPool scheduler will process these to wake suspended fibers
   defp add_channel_wake(env, fiber_id, result) do
-    update_env_state(env, &EnvState.add_channel_wake(&1, fiber_id, result))
+    update_env_state(env, &ChannelCoordinationState.add_channel_wake(&1, fiber_id, result))
   end
 
   # Wake a putter if one is waiting (after a take frees space)
@@ -654,16 +654,16 @@ defmodule Skuld.Effects.Channel do
   end
 
   #############################################################################
-  ## Internal: EnvState Helpers
+  ## Internal: ChannelCoordinationState Helpers
   #############################################################################
 
   defp get_env_state(env) do
-    Env.get_state(env, EnvState.env_key(), EnvState.new())
+    Env.get_state(env, ChannelCoordinationState.env_key(), ChannelCoordinationState.new())
   end
 
   defp update_env_state(env, fun) do
     env_state = get_env_state(env)
     env_state = fun.(env_state)
-    Env.put_state(env, EnvState.env_key(), env_state)
+    Env.put_state(env, ChannelCoordinationState.env_key(), env_state)
   end
 end
