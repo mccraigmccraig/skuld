@@ -519,9 +519,7 @@ defmodule Skuld.Effects.FiberPool do
     # Create a fiber for the computation
     pool_id = Env.get_state(env, {__MODULE__, :pool_id}, make_ref())
 
-    # Clear pending work from the fiber's env to avoid inheriting parent's pending list
-    # This prevents re-collecting the same fibers when the child runs
-    fiber_env = Env.put_state(env, PendingWork.env_key(), PendingWork.new())
+    fiber_env = fiber_env(env)
     fiber = Fiber.new(comp, fiber_env)
     handle = Handle.new(fiber.id, pool_id)
 
@@ -708,6 +706,17 @@ defmodule Skuld.Effects.FiberPool do
 
   defp cancel_all([handle | rest]) do
     Comp.bind(cancel(handle), fn _ -> cancel_all(rest) end)
+  end
+
+  # Prepare an env for a new fiber: inherit evidence (handlers) and state,
+  # but reset leave_scope and transform_suspend to identity — the fiber is
+  # an independent execution context whose scope chain starts fresh.
+  # Also clears pending work to avoid inheriting the parent's pending list.
+  defp fiber_env(env) do
+    env
+    |> Env.put_state(PendingWork.env_key(), PendingWork.new())
+    |> Map.put(:leave_scope, &Comp.identity_k/2)
+    |> Map.put(:transform_suspend, &Comp.identity_k/2)
   end
 
   # Unwrap a result, raising on error
