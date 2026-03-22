@@ -174,6 +174,14 @@ defmodule Skuld.Comp do
   def run(comp) do
     {result, env} = call(comp, Env.new(), &identity_k/2)
 
+    # Drive the FiberPool scheduler when the main computation has suspended
+    # with an InternalSuspend.Await — this is the execution engine that
+    # steps fibers until the await can be satisfied.
+    #
+    # Note: fire-and-forget fibers (spawned but not awaited) are drained
+    # separately inside FiberPool.with_handler, where scoped effect state
+    # (Writer, State, etc.) is still live. By the time we reach this point,
+    # those fibers have already been drained.
     {final_result, final_env} =
       Skuld.Fiber.FiberPool.Main.drain_pending(result, env)
 

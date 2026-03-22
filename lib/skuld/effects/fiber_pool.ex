@@ -49,6 +49,7 @@ defmodule Skuld.Effects.FiberPool do
   alias Skuld.Fiber
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Fiber.Handle
+  alias Skuld.Fiber.FiberPool.Main, as: FiberPoolMain
   alias Skuld.Fiber.FiberPool.PendingWork
   alias Skuld.Effects.Throw
 
@@ -452,7 +453,23 @@ defmodule Skuld.Effects.FiberPool do
   """
   @spec with_handler(Comp.Types.computation(), keyword()) :: Comp.Types.computation()
   def with_handler(comp, _opts \\ []) do
-    comp
+    # When the main computation completes, drain any remaining fire-and-forget
+    # fibers (spawned but not awaited) while still inside the handler chain.
+    # This ensures their effects (Writer.tell, State.put, etc.) execute while
+    # outer scoped handlers are still active and their state is still live.
+    #
+    # The scheduler for the main computation's own awaits is driven separately
+    # by drain_pending in Comp.run — that handles InternalSuspend.Await values
+    # that bubble up through the continuation chain.
+    drain_comp =
+      Comp.bind(comp, fn result ->
+        fn env, k ->
+          {drained_result, drained_env} = FiberPoolMain.drain_pending(result, env)
+          k.(drained_result, drained_env)
+        end
+      end)
+
+    drain_comp
     |> Comp.with_scoped_state(PendingWork.env_key(), PendingWork.new())
     |> Comp.with_handler(@sig, &handle/3)
   end

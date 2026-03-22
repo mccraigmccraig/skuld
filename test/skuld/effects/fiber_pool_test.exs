@@ -545,7 +545,6 @@ defmodule Skuld.Effects.FiberPoolTest do
   end
 
   describe "env_state propagation from fire-and-forget fibers" do
-    @tag :skip
     test "writer accumulations from un-awaited fibers are propagated back" do
       # Fire-and-forget fibers that write to a shared Writer log.
       # The main computation finishes immediately, so the fibers are drained
@@ -577,7 +576,6 @@ defmodule Skuld.Effects.FiberPoolTest do
       assert Enum.sort(log) == [:fiber_a, :fiber_b]
     end
 
-    @tag :skip
     test "writer accumulations from un-awaited fibers combine with main computation writes" do
       {result, log} =
         comp do
