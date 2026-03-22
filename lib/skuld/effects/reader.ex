@@ -100,7 +100,7 @@ defmodule Skuld.Effects.Reader do
     state_key = state_key(tag)
 
     Comp.scoped(comp, fn env ->
-      current = Env.get_state(env, state_key)
+      current = Env.get_state!(env, state_key)
       modified_env = Env.put_state(env, state_key, modify.(current))
       finally_k = fn value, e -> {value, Env.put_state(e, state_key, current)} end
       {modified_env, finally_k}
@@ -191,7 +191,7 @@ defmodule Skuld.Effects.Reader do
 
   @impl Skuld.Comp.IHandle
   def handle(%Ask{tag: tag}, env, k) do
-    value = Env.get_state(env, state_key(tag))
+    value = Env.get_state!(env, state_key(tag))
     k.(value, env)
   end
 

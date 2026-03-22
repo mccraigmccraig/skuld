@@ -304,7 +304,7 @@ defmodule Skuld.Effects.Writer do
   @impl Skuld.Comp.IHandle
   def handle(%Tell{tag: tag, msg: msg}, env, k) do
     state_key = state_key(tag)
-    current = Env.get_state(env, state_key, [])
+    current = Env.get_state!(env, state_key)
     updated = [msg | current]
     new_env = Env.put_state(env, state_key, updated)
     # Return the updated log as the result
@@ -313,7 +313,7 @@ defmodule Skuld.Effects.Writer do
 
   @impl Skuld.Comp.IHandle
   def handle(%Peek{tag: tag}, env, k) do
-    current = Env.get_state(env, state_key(tag), [])
+    current = Env.get_state!(env, state_key(tag))
     k.(current, env)
   end
 

@@ -89,7 +89,7 @@ defmodule Skuld.Effects.AtomicState.Sync do
 
   @impl Skuld.Comp.IHandle
   def handle(%AtomicState.Get{tag: tag}, env, k) do
-    value = Env.get_state(env, AtomicState.state_key(tag))
+    value = Env.get_state!(env, AtomicState.state_key(tag))
     k.(value, env)
   end
 
@@ -102,7 +102,7 @@ defmodule Skuld.Effects.AtomicState.Sync do
   @impl Skuld.Comp.IHandle
   def handle(%AtomicState.Modify{tag: tag, fun: fun}, env, k) do
     key = AtomicState.state_key(tag)
-    current = Env.get_state(env, key)
+    current = Env.get_state!(env, key)
     new_value = fun.(current)
     new_env = Env.put_state(env, key, new_value)
     k.(new_value, new_env)
@@ -111,7 +111,7 @@ defmodule Skuld.Effects.AtomicState.Sync do
   @impl Skuld.Comp.IHandle
   def handle(%AtomicState.AtomicState{tag: tag, fun: fun}, env, k) do
     key = AtomicState.state_key(tag)
-    current = Env.get_state(env, key)
+    current = Env.get_state!(env, key)
     {result, new_state} = fun.(current)
     new_env = Env.put_state(env, key, new_state)
     k.(result, new_env)
@@ -120,7 +120,7 @@ defmodule Skuld.Effects.AtomicState.Sync do
   @impl Skuld.Comp.IHandle
   def handle(%AtomicState.Cas{tag: tag, expected: expected, new: new}, env, k) do
     key = AtomicState.state_key(tag)
-    current = Env.get_state(env, key)
+    current = Env.get_state!(env, key)
 
     if current == expected do
       new_env = Env.put_state(env, key, new)

@@ -99,7 +99,7 @@ defmodule Skuld.Effects.Fresh.Test do
 
   @impl Skuld.Comp.IHandle
   def handle(%FreshUUID{}, env, k) do
-    %State{counter: counter, namespace: namespace} = state = Env.get_state(env, @sig)
+    %State{counter: counter, namespace: namespace} = state = Env.get_state!(env, @sig)
     uuid = Uniq.UUID.uuid5(namespace, Integer.to_string(counter))
     new_env = Env.put_state(env, @sig, %{state | counter: counter + 1})
     k.(uuid, new_env)

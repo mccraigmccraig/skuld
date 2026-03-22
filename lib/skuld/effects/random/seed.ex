@@ -82,14 +82,14 @@ defmodule Skuld.Effects.Random.Seed do
 
   @impl Skuld.Comp.IHandle
   def handle(%RandomFloat{}, env, k) do
-    %State{rand_state: rand_state} = Env.get_state(env, @sig)
+    %State{rand_state: rand_state} = Env.get_state!(env, @sig)
     {value, new_rand_state} = :rand.uniform_s(rand_state)
     new_env = Env.put_state(env, @sig, %State{rand_state: new_rand_state})
     k.(value, new_env)
   end
 
   def handle(%RandomInt{min: min, max: max}, env, k) do
-    %State{rand_state: rand_state} = Env.get_state(env, @sig)
+    %State{rand_state: rand_state} = Env.get_state!(env, @sig)
     {raw, new_rand_state} = :rand.uniform_s(max - min + 1, rand_state)
     value = min + raw - 1
     new_env = Env.put_state(env, @sig, %State{rand_state: new_rand_state})
@@ -97,7 +97,7 @@ defmodule Skuld.Effects.Random.Seed do
   end
 
   def handle(%RandomElement{list: list}, env, k) do
-    %State{rand_state: rand_state} = Env.get_state(env, @sig)
+    %State{rand_state: rand_state} = Env.get_state!(env, @sig)
     {raw, new_rand_state} = :rand.uniform_s(length(list), rand_state)
     index = raw - 1
     new_env = Env.put_state(env, @sig, %State{rand_state: new_rand_state})
@@ -106,7 +106,7 @@ defmodule Skuld.Effects.Random.Seed do
 
   def handle(%Shuffle{list: list}, env, k) do
     # Fisher-Yates shuffle with explicit state threading
-    %State{rand_state: rand_state} = Env.get_state(env, @sig)
+    %State{rand_state: rand_state} = Env.get_state!(env, @sig)
     {shuffled, new_rand_state} = shuffle_with_state(list, rand_state)
     new_env = Env.put_state(env, @sig, %State{rand_state: new_rand_state})
     k.(shuffled, new_env)

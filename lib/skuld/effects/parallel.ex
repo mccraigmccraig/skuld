@@ -200,7 +200,7 @@ defmodule Skuld.Effects.Parallel do
 
   @impl Skuld.Comp.IHandle
   def handle(%All{comps: comps}, env, k) do
-    sup = Env.get_state(env, @supervisor_key)
+    sup = Env.get_state!(env, @supervisor_key)
 
     # Isolate task env from parent's leave_scope to prevent scope cleanup cross-talk
     task_env = Env.with_leave_scope(env, fn result, e -> {result, e} end)
@@ -221,7 +221,7 @@ defmodule Skuld.Effects.Parallel do
   end
 
   def handle(%Race{comps: comps}, env, k) do
-    sup = Env.get_state(env, @supervisor_key)
+    sup = Env.get_state!(env, @supervisor_key)
 
     # Isolate task env from parent's leave_scope to prevent scope cleanup cross-talk
     task_env = Env.with_leave_scope(env, fn result, e -> {result, e} end)
@@ -242,7 +242,7 @@ defmodule Skuld.Effects.Parallel do
   end
 
   def handle(%ParallelMap{items: items, fun: fun}, env, k) do
-    sup = Env.get_state(env, @supervisor_key)
+    sup = Env.get_state!(env, @supervisor_key)
 
     # Isolate task env from parent's leave_scope to prevent scope cleanup cross-talk
     task_env = Env.with_leave_scope(env, fn result, e -> {result, e} end)

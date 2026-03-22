@@ -86,6 +86,18 @@ defmodule Skuld.Comp.Env do
     Map.get(env.state, key, default)
   end
 
+  @doc "Get state for an effect, raising if the key is not present (use-after-cleanup guard)"
+  @spec get_state!(Skuld.Comp.Types.env(), term()) :: term()
+  def get_state!(env, key) do
+    case Map.fetch(env.state, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        raise "Effect state not found for key #{inspect(key)} — effect used outside its handler scope"
+    end
+  end
+
   @doc "Install a new leave-scope handler"
   @spec with_leave_scope(Skuld.Comp.Types.env(), Skuld.Comp.Types.leave_scope()) ::
           Skuld.Comp.Types.env()

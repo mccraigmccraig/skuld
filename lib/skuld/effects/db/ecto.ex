@@ -310,23 +310,12 @@ if Code.ensure_loaded?(Ecto) do
     #############################################################################
 
     defp get_repo!(env) do
-      case Env.get_state(env, @state_key) do
-        nil ->
-          raise "DB.Ecto handler not installed. Use DB.Ecto.with_handler/2"
-
-        %{repo: repo} ->
-          repo
-      end
+      %{repo: repo} = Env.get_state!(env, @state_key)
+      repo
     end
 
     defp get_config!(env) do
-      case Env.get_state(env, @state_key) do
-        nil ->
-          raise "DB.Ecto handler not installed. Use DB.Ecto.with_handler/2"
-
-        %{} = config ->
-          config
-      end
+      Env.get_state!(env, @state_key)
     end
 
     # Normalize input to {changeset, merged_opts}

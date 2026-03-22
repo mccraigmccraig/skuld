@@ -152,13 +152,7 @@ defmodule Skuld.Effects.Command do
   end
 
   defp get_handler_fn!(env) do
-    case Env.get_state(env, @state_key) do
-      nil ->
-        raise "Command handler not installed. Use Command.with_handler/2"
-
-      handler_fn ->
-        handler_fn
-    end
+    Env.get_state!(env, @state_key)
   end
 
   #############################################################################

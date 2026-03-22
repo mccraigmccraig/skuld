@@ -301,10 +301,7 @@ if Code.ensure_loaded?(Ecto) do
     #############################################################################
 
     defp get_handler!(env) do
-      case Env.get_state(env, {__MODULE__, :handler}) do
-        nil -> raise "DB.Test handler not installed"
-        handler -> handler
-      end
+      Env.get_state!(env, {__MODULE__, :handler})
     end
 
     defp record_and_continue(call, result, env, k) do

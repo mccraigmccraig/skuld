@@ -119,7 +119,7 @@ defmodule Skuld.Effects.Random.Fixed do
   end
 
   defp next_fixed_value(env) do
-    state = Env.get_state(env, @sig)
+    state = Env.get_state!(env, @sig)
 
     {value, remaining} =
       case state.values do

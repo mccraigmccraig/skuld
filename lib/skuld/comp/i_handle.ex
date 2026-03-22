@@ -14,7 +14,7 @@ defmodule Skuld.Comp.IHandle do
 
         @impl Skuld.Comp.IHandle
         def handle(%Get{}, env, k) do
-          value = Env.get_state(env, @state_key)
+          value = Env.get_state!(env, @state_key)
           k.(value, env)
         end
 

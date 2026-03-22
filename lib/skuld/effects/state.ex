@@ -225,14 +225,14 @@ defmodule Skuld.Effects.State do
 
   @impl Skuld.Comp.IHandle
   def handle(%Get{tag: tag}, env, k) do
-    value = Env.get_state(env, state_key(tag))
+    value = Env.get_state!(env, state_key(tag))
     k.(value, env)
   end
 
   @impl Skuld.Comp.IHandle
   def handle(%Put{tag: tag, value: value}, env, k) do
     key = state_key(tag)
-    old_value = Env.get_state(env, key)
+    old_value = Env.get_state!(env, key)
     new_env = Env.put_state(env, key, value)
     k.(Change.new(old_value, value), new_env)
   end

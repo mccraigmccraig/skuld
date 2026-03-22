@@ -96,21 +96,21 @@ defmodule Skuld.Effects.AtomicState.Agent do
 
   @impl Skuld.Comp.IHandle
   def handle(%AtomicState.Get{tag: tag}, env, k) do
-    agent = Env.get_state(env, AtomicState.agent_key(tag))
+    agent = Env.get_state!(env, AtomicState.agent_key(tag))
     value = Agent.get(agent, & &1)
     k.(value, env)
   end
 
   @impl Skuld.Comp.IHandle
   def handle(%AtomicState.Put{tag: tag, value: value}, env, k) do
-    agent = Env.get_state(env, AtomicState.agent_key(tag))
+    agent = Env.get_state!(env, AtomicState.agent_key(tag))
     Agent.update(agent, fn _ -> value end)
     k.(:ok, env)
   end
 
   @impl Skuld.Comp.IHandle
   def handle(%AtomicState.Modify{tag: tag, fun: fun}, env, k) do
-    agent = Env.get_state(env, AtomicState.agent_key(tag))
+    agent = Env.get_state!(env, AtomicState.agent_key(tag))
 
     new_value =
       Agent.get_and_update(agent, fn v ->
@@ -123,7 +123,7 @@ defmodule Skuld.Effects.AtomicState.Agent do
 
   @impl Skuld.Comp.IHandle
   def handle(%AtomicState.AtomicState{tag: tag, fun: fun}, env, k) do
-    agent = Env.get_state(env, AtomicState.agent_key(tag))
+    agent = Env.get_state!(env, AtomicState.agent_key(tag))
 
     result =
       Agent.get_and_update(agent, fn v ->
@@ -136,7 +136,7 @@ defmodule Skuld.Effects.AtomicState.Agent do
 
   @impl Skuld.Comp.IHandle
   def handle(%AtomicState.Cas{tag: tag, expected: expected, new: new}, env, k) do
-    agent = Env.get_state(env, AtomicState.agent_key(tag))
+    agent = Env.get_state!(env, AtomicState.agent_key(tag))
 
     result =
       Agent.get_and_update(agent, fn current ->

@@ -470,7 +470,7 @@ defmodule Skuld.Effects.Port do
 
   @impl Skuld.Comp.IHandle
   def handle(%Request{mod: mod, name: name, args: args}, env, k) do
-    case Env.get_state(env, @state_key) do
+    case Env.get_state!(env, @state_key) do
       {:runtime, registry} ->
         handle_runtime(registry, mod, name, args, env, k)
 
@@ -482,10 +482,6 @@ defmodule Skuld.Effects.Port do
 
       {:fn_handler, handler_fn} ->
         handle_fn(handler_fn, mod, name, args, env, k)
-
-      nil ->
-        # No handler state - this shouldn't happen if with_handler was called
-        {%ThrowResult{error: {:port_handler_not_configured, mod, name}}, env}
     end
   end
 
