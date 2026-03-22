@@ -6,6 +6,7 @@ defmodule Skuld.Effects.FiberPoolTest do
   alias Skuld.Effects.FiberPool
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
+  alias Skuld.Effects.Writer
 
   describe "fiber and await" do
     test "runs and awaits a pure computation as fiber" do
@@ -540,6 +541,64 @@ defmodule Skuld.Effects.FiberPoolTest do
       # Supervisor should still be alive (caller manages lifecycle)
       assert Process.alive?(sup)
       Supervisor.stop(sup)
+    end
+  end
+
+  describe "env_state propagation from fire-and-forget fibers" do
+    @tag :skip
+    test "writer accumulations from un-awaited fibers are propagated back" do
+      # Fire-and-forget fibers that write to a shared Writer log.
+      # The main computation finishes immediately, so the fibers are drained
+      # via the run_fibers_to_completion path. Their Writer.tell side-effects
+      # must be propagated back into the final env_state.
+      {result, log} =
+        comp do
+          _ <-
+            FiberPool.fiber(
+              comp do
+                Writer.tell(:fiber_a)
+              end
+            )
+
+          _ <-
+            FiberPool.fiber(
+              comp do
+                Writer.tell(:fiber_b)
+              end
+            )
+
+          :main_done
+        end
+        |> FiberPool.with_handler()
+        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
+        |> Comp.run!()
+
+      assert result == :main_done
+      assert Enum.sort(log) == [:fiber_a, :fiber_b]
+    end
+
+    @tag :skip
+    test "writer accumulations from un-awaited fibers combine with main computation writes" do
+      {result, log} =
+        comp do
+          _ <- Writer.tell(:from_main)
+
+          _ <-
+            FiberPool.fiber(
+              comp do
+                Writer.tell(:from_fiber)
+              end
+            )
+
+          :done
+        end
+        |> FiberPool.with_handler()
+        |> Writer.with_handler([], output: fn result, log -> {result, log} end)
+        |> Comp.run!()
+
+      assert result == :done
+      assert :from_main in log
+      assert :from_fiber in log
     end
   end
 end

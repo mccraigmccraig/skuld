@@ -93,15 +93,15 @@ defmodule Skuld.Fiber.FiberPool.Main do
   # Delegates to Scheduler.run and handles batch rounds.
   defp run_fibers_to_completion(state, env, result) do
     case Scheduler.run(state, env) do
-      {:done, _results, _final_state} ->
-        {result, env}
+      {:done, _results, final_state} ->
+        {result, %{env | state: SchedulerState.get_env_state(final_state)}}
 
-      {:suspended, _fiber, _state} ->
-        {result, env}
+      {:suspended, _fiber, final_state} ->
+        {result, %{env | state: SchedulerState.get_env_state(final_state)}}
 
       {:waiting_for_tasks, state} ->
-        _state = Tasks.wait_for_all(state)
-        {result, env}
+        final_state = Tasks.wait_for_all(state)
+        {result, %{env | state: SchedulerState.get_env_state(final_state)}}
 
       {:batch_ready, state} ->
         {state, env} = Batching.execute_pending_batches(state, env)
