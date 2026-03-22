@@ -2,7 +2,7 @@
 #
 # Analyses variable dependencies in a do-block and automatically groups
 # independent computations into concurrent fiber batches via
-# `FiberPool.spawn_await_all`. This gives users Haxl-style automatic
+# `FiberPool.fiber_await_all`. This gives users Haxl-style automatic
 # batching without manual `FiberPool.fiber` + `await_all!` boilerplate.
 #
 # ## Usage
@@ -19,7 +19,7 @@
 # The macro analyses that `user` and `recent` are independent (neither
 # references the other), while `orders` depends on `user`. It emits:
 #
-#     FiberPool.spawn_await_all([Users.get_user(id), Orders.get_recent()])
+#     FiberPool.fiber_await_all([Users.get_user(id), Orders.get_recent()])
 #     |> Comp.bind(fn [user, recent] ->
 #       Comp.bind(Orders.get_by_user(user.id), fn orders ->
 #         {user, recent, orders}
@@ -48,7 +48,7 @@ defmodule Skuld.Query.QueryBlock do
 
   Analyses `<-` bindings in a do-block for data independence, then groups
   independent computations into concurrent fiber batches via
-  `FiberPool.spawn_await_all/1`. Dependent bindings are sequenced with
+  `FiberPool.fiber_await_all/1`. Dependent bindings are sequenced with
   `Comp.bind/2` as usual.
 
   This gives users Haxl-style automatic batching without manual
@@ -464,10 +464,10 @@ defmodule Skuld.Query.QueryBlock do
           emit_pure_bindings(pure_only, inner)
 
         {effectful, []} ->
-          emit_spawn_await_all(effectful, inner)
+          emit_fiber_await_all(effectful, inner)
 
         {effectful, pure} ->
-          emit_pure_bindings(pure, emit_spawn_await_all(effectful, inner))
+          emit_pure_bindings(pure, emit_fiber_await_all(effectful, inner))
       end
     end
 
@@ -480,12 +480,12 @@ defmodule Skuld.Query.QueryBlock do
       end
     end
 
-    defp emit_spawn_await_all(effectful, inner) do
+    defp emit_fiber_await_all(effectful, inner) do
       comps = Enum.map(effectful, & &1.rhs)
       patterns = Enum.map(effectful, & &1.pattern)
 
-      # Use fiber_all + await_all! explicitly rather than spawn_await_all,
-      # because spawn_await_all has a single-element optimization that skips
+      # Use fiber_all + await_all! explicitly rather than fiber_await_all,
+      # because fiber_await_all has a single-element optimization that skips
       # fiber wrapping, but query computations need fiber context for
       # InternalSuspend.batch to work.
       quote do

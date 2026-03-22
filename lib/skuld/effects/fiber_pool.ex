@@ -353,16 +353,16 @@ defmodule Skuld.Effects.FiberPool do
 
   ## Example
 
-      FiberPool.spawn_await_all([fetch(:x), fetch(:y), fetch(:z)])
+      FiberPool.fiber_await_all([fetch(:x), fetch(:y), fetch(:z)])
       # returns a computation producing [x_result, y_result, z_result]
   """
-  @spec spawn_await_all([Comp.Types.computation()]) :: Comp.Types.computation()
-  def spawn_await_all([single]) do
+  @spec fiber_await_all([Comp.Types.computation()]) :: Comp.Types.computation()
+  def fiber_await_all([single]) do
     # Optimization: single computation doesn't need fiber overhead
     Comp.bind(single, fn result -> Comp.pure([result]) end)
   end
 
-  def spawn_await_all(comps) when is_list(comps) do
+  def fiber_await_all(comps) when is_list(comps) do
     Comp.bind(fiber_all(comps), fn handles ->
       await_all!(handles)
     end)
@@ -389,7 +389,7 @@ defmodule Skuld.Effects.FiberPool do
   """
   @spec ap(Comp.Types.computation(), Comp.Types.computation()) :: Comp.Types.computation()
   def ap(comp_f, comp_a) do
-    Comp.bind(spawn_await_all([comp_f, comp_a]), fn [f, a] ->
+    Comp.bind(fiber_await_all([comp_f, comp_a]), fn [f, a] ->
       Comp.pure(f.(a))
     end)
   end
@@ -410,7 +410,7 @@ defmodule Skuld.Effects.FiberPool do
   def map(items, fun) when is_list(items) and is_function(fun, 1) do
     items
     |> Enum.map(fun)
-    |> spawn_await_all()
+    |> fiber_await_all()
   end
 
   #############################################################################
