@@ -220,7 +220,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
     fiber
     |> Fiber.run_until_suspend()
-    |> handle_fiber_result(state, fiber.id)
+    |> handle_fiber_result(state)
   end
 
   defp resume_fiber(state, fiber, result) do
@@ -232,38 +232,39 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
     fiber
     |> Fiber.resume(result)
-    |> handle_fiber_result(state, fiber.id)
+    |> handle_fiber_result(state)
   end
 
-  # Handle the result of running or resuming a fiber
-  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
-  defp handle_fiber_result({:completed, value, final_env}, state, fiber_id) do
-    state = State.put_env_state(state, final_env.state)
-    state = collect_pending_fibers(state, final_env)
-    handle_completion(state, fiber_id, {:ok, value})
+  # Handle the result of running or resuming a fiber.
+  # All state is now in the fiber struct — switch on fiber.status.
+  defp handle_fiber_result(%Fiber{status: :completed} = fiber, state) do
+    state = State.put_env_state(state, fiber.env.state)
+    state = collect_pending_fibers(state, fiber.env)
+    handle_completion(state, fiber.id, {:ok, fiber.result})
   end
 
-  defp handle_fiber_result({:suspended, suspended_fiber}, state, _fiber_id) do
-    state = State.put_env_state(state, suspended_fiber.env.state)
-    {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-    handle_suspension(state, suspended_fiber)
+  defp handle_fiber_result(%Fiber{status: :suspended, internal_suspend: nil} = fiber, state) do
+    state = State.put_env_state(state, fiber.env.state)
+    {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
+    handle_suspension(state, fiber)
   end
 
   defp handle_fiber_result(
-         {:internal_suspended, suspended_fiber,
-          %InternalSuspend{payload: payload} = internal_suspend},
-         state,
-         _fiber_id
+         %Fiber{
+           status: :suspended,
+           internal_suspend: %InternalSuspend{payload: payload} = internal_suspend
+         } = fiber,
+         state
        ) do
-    state = State.put_env_state(state, suspended_fiber.env.state)
-    {state, suspended_fiber} = collect_and_clear_pending_fibers(state, suspended_fiber)
-    handle_internal_suspension(state, suspended_fiber, internal_suspend, payload)
+    state = State.put_env_state(state, fiber.env.state)
+    {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
+    handle_internal_suspension(state, fiber, internal_suspend, payload)
   end
 
-  defp handle_fiber_result({:error, reason, error_env}, state, fiber_id) do
-    state = if error_env, do: State.put_env_state(state, error_env.state), else: state
-    state = collect_pending_fibers(state, error_env)
-    handle_completion(state, fiber_id, {:error, reason})
+  defp handle_fiber_result(%Fiber{status: :error} = fiber, state) do
+    state = if fiber.env, do: State.put_env_state(state, fiber.env.state), else: state
+    state = collect_pending_fibers(state, fiber.env)
+    handle_completion(state, fiber.id, {:error, fiber.error})
   end
 
   # Extract any pending fibers from the env and add them to the scheduler state.

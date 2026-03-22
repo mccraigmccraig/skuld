@@ -9,10 +9,11 @@ defmodule Skuld.Fiber do
   ## Lifecycle
 
   1. Create with `new/2` - fiber is `:pending`
-  2. Run with `run_until_suspend/1` - fiber becomes `:running`, then either:
-     - Completes: returns `{:completed, result, env}`
-     - Suspends: returns `{:suspended, fiber}` with fiber in `:suspended` state
-     - Errors: returns `{:error, reason, env}`
+  2. Run with `run_until_suspend/1` - fiber becomes `:running`, then reaches a
+     terminal or suspended state. All state is captured in the struct:
+     - `:completed` - `result` and `env` are set
+     - `:suspended` - `suspended_k`, `env`, and optionally `internal_suspend` are set
+     - `:error` - `error` and `env` are set
   3. Resume with `resume/2` - suspended fiber runs again until completion/suspension
   4. Cancel with `cancel/1` - marks fiber as `:cancelled`
 
@@ -22,13 +23,10 @@ defmodule Skuld.Fiber do
   scheduler handles running fibers, tracking suspensions, and resuming when
   results are available.
 
-  ## Internal Details
+  ## State Convention
 
-  When a fiber suspends, it stores:
-  - `suspended_k` - the CPS continuation `(val, env) -> {result, env}`
-  - `env` - the environment at suspension point
-
-  Resume calls `suspended_k.(value, env)` to continue execution.
+  All fiber state is consolidated in the struct. Callers switch on
+  `fiber.status` rather than pattern-matching different tuple shapes.
   """
 
   alias Skuld.Comp
@@ -43,10 +41,13 @@ defmodule Skuld.Fiber do
           status: status(),
           computation: Types.computation() | nil,
           suspended_k: Types.k() | nil,
-          env: Types.env() | nil
+          internal_suspend: InternalSuspend.t() | nil,
+          env: Types.env() | nil,
+          result: term(),
+          error: term()
         }
 
-  defstruct [:id, :status, :computation, :suspended_k, :env]
+  defstruct [:id, :status, :computation, :suspended_k, :internal_suspend, :env, :result, :error]
 
   @doc """
   Create a new fiber from a computation.
@@ -78,30 +79,27 @@ defmodule Skuld.Fiber do
   @doc """
   Run a fiber until it completes, suspends, or errors.
 
-  Takes a `:pending` fiber and runs its computation. Returns one of:
+  Takes a `:pending` fiber and runs its computation. Returns the fiber with
+  all state consolidated in the struct. Callers switch on `fiber.status`:
 
-  - `{:completed, result, env}` - Fiber completed with result
-  - `{:suspended, fiber}` - External suspension, updated fiber has `:suspended_k` and `:env`
-  - `{:internal_suspended, fiber, internal_suspend}` - Internal suspension (batch/channel/await)
-  - `{:error, reason, env}` - Fiber errored
+  - `:completed` - `fiber.result` and `fiber.env` are set
+  - `:suspended` - `fiber.suspended_k` and `fiber.env` are set;
+    `fiber.internal_suspend` is set for internal suspensions (batch/channel/await)
+  - `:error` - `fiber.error` and `fiber.env` are set
 
   The returned fiber (on suspension) can be resumed with `resume/2`.
 
   ## Example
 
       fiber = Fiber.new(my_comp, env)
-      case Fiber.run_until_suspend(fiber) do
-        {:completed, result, _env} -> IO.puts("Done: \#{inspect(result)}")
-        {:suspended, fiber} -> IO.puts("External suspended, can resume later")
-        {:internal_suspended, fiber, suspend} -> IO.puts("Internal suspended: \#{inspect(suspend)}")
-        {:error, reason, _env} -> IO.puts("Error: \#{inspect(reason)}")
+      fiber = Fiber.run_until_suspend(fiber)
+      case fiber.status do
+        :completed -> IO.puts("Done: \#{inspect(fiber.result)}")
+        :suspended -> IO.puts("Suspended, can resume later")
+        :error -> IO.puts("Error: \#{inspect(fiber.error)}")
       end
   """
-  @spec run_until_suspend(t()) ::
-          {:completed, term(), Types.env()}
-          | {:suspended, t()}
-          | {:internal_suspended, t(), InternalSuspend.t()}
-          | {:error, term(), Types.env() | nil}
+  @spec run_until_suspend(t()) :: t()
   def run_until_suspend(%__MODULE__{status: :pending, computation: comp, env: env} = fiber) do
     fiber = %{fiber | status: :running, computation: nil}
     do_run(fiber, comp, env)
@@ -115,7 +113,8 @@ defmodule Skuld.Fiber do
   Resume a suspended fiber with a value.
 
   Takes a `:suspended` fiber and resumes it by calling the suspended continuation
-  with the provided value. Returns the same result types as `run_until_suspend/1`.
+  with the provided value. Returns the fiber with updated state — same contract
+  as `run_until_suspend/1`.
 
   ## Parameters
 
@@ -124,23 +123,19 @@ defmodule Skuld.Fiber do
 
   ## Example
 
-      {:suspended, fiber} = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run_until_suspend(fiber)
       # ... later, when we have a result ...
-      case Fiber.resume(fiber, result) do
-        {:completed, final, _env} -> final
-        {:suspended, fiber} -> # external suspended again
-        {:internal_suspended, fiber, suspend} -> # internal suspended
-        {:error, reason, _env} -> # errored
+      fiber = Fiber.resume(fiber, result)
+      case fiber.status do
+        :completed -> fiber.result
+        :suspended -> # suspended again
+        :error -> # errored
       end
   """
-  @spec resume(t(), term()) ::
-          {:completed, term(), Types.env()}
-          | {:suspended, t()}
-          | {:internal_suspended, t(), InternalSuspend.t()}
-          | {:error, term(), Types.env() | nil}
+  @spec resume(t(), term()) :: t()
   def resume(%__MODULE__{status: :suspended, suspended_k: k, env: env} = fiber, value)
       when is_function(k, 2) do
-    fiber = %{fiber | status: :running, suspended_k: nil, env: nil}
+    fiber = %{fiber | status: :running, suspended_k: nil, internal_suspend: nil, env: nil}
     do_resume(fiber, k, value, env)
   end
 
@@ -161,7 +156,16 @@ defmodule Skuld.Fiber do
   """
   @spec cancel(t()) :: t()
   def cancel(%__MODULE__{} = fiber) do
-    %{fiber | status: :cancelled, computation: nil, suspended_k: nil, env: nil}
+    %{
+      fiber
+      | status: :cancelled,
+        computation: nil,
+        suspended_k: nil,
+        internal_suspend: nil,
+        env: nil,
+        result: nil,
+        error: nil
+    }
   end
 
   @doc """
@@ -186,7 +190,8 @@ defmodule Skuld.Fiber do
     execute_and_handle(fiber, env, fn -> k.(value, env) end)
   end
 
-  # Execute an invocation and handle all result types
+  # Execute an invocation and handle all result types.
+  # Returns the fiber with all state consolidated in the struct.
   defp execute_and_handle(fiber, env, invocation) do
     case invocation.() do
       {%Comp.ExternalSuspend{} = suspend, suspend_env} ->
@@ -196,23 +201,23 @@ defmodule Skuld.Fiber do
         handle_internal_suspend(fiber, internal_suspend, internal_env)
 
       {%Comp.Throw{} = throw, throw_env} ->
-        {:error, {:throw, throw.error}, throw_env}
+        %{fiber | status: :error, error: {:throw, throw.error}, env: throw_env}
 
       {%Comp.Cancelled{} = cancelled, cancelled_env} ->
-        {:error, {:cancelled, cancelled.reason}, cancelled_env}
+        %{fiber | status: :error, error: {:cancelled, cancelled.reason}, env: cancelled_env}
 
       {value, %Env{} = final_env} ->
-        {:completed, value, final_env}
+        %{fiber | status: :completed, result: value, env: final_env}
     end
   rescue
     e ->
-      {:error, {:exception, e, __STACKTRACE__}, env}
+      %{fiber | status: :error, error: {:exception, e, __STACKTRACE__}, env: env}
   catch
     :throw, reason ->
-      {:error, {:throw, reason}, env}
+      %{fiber | status: :error, error: {:throw, reason}, env: env}
 
     :exit, reason ->
-      {:error, {:exit, reason}, env}
+      %{fiber | status: :error, error: {:exit, reason}, env: env}
   end
 
   # Handle an external Suspend sentinel (closes over env)
@@ -225,14 +230,13 @@ defmodule Skuld.Fiber do
       resume.(value)
     end
 
-    suspended_fiber = %{
+    %{
       fiber
       | status: :suspended,
         suspended_k: suspended_k,
+        internal_suspend: nil,
         env: env
     }
-
-    {:suspended, suspended_fiber}
   end
 
   # Handle an internal suspend (receives env at resume time)
@@ -244,13 +248,12 @@ defmodule Skuld.Fiber do
       resume.(value, resume_env)
     end
 
-    suspended_fiber = %{
+    %{
       fiber
       | status: :suspended,
         suspended_k: suspended_k,
+        internal_suspend: internal_suspend,
         env: env
     }
-
-    {:internal_suspended, suspended_fiber, internal_suspend}
   end
 end

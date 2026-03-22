@@ -40,7 +40,10 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(Comp.pure(42), env)
 
-      assert {:completed, 42, _env} = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :completed
+      assert fiber.result == 42
+      assert fiber.env != nil
     end
 
     test "effectful computation completes" do
@@ -56,7 +59,9 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      assert {:completed, {5, 15}, _env} = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :completed
+      assert fiber.result == {5, 15}
     end
 
     test "yielding computation suspends" do
@@ -70,10 +75,11 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      assert {:suspended, suspended_fiber} = Fiber.run_until_suspend(fiber)
-      assert suspended_fiber.status == :suspended
-      assert is_function(suspended_fiber.suspended_k, 2)
-      assert suspended_fiber.env != nil
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :suspended
+      assert is_function(fiber.suspended_k, 2)
+      assert fiber.env != nil
+      assert fiber.internal_suspend == nil
     end
 
     test "throws return error" do
@@ -87,7 +93,10 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      assert {:error, {:throw, :my_error}, _env} = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :error
+      assert fiber.error == {:throw, :my_error}
+      assert fiber.env != nil
     end
 
     test "elixir raise returns error" do
@@ -100,15 +109,17 @@ defmodule Skuld.FiberTest do
 
       # Comp.call converts exceptions to Throw effects with a map containing
       # :kind, :payload, :stacktrace - which then becomes {:throw, map} error
-      assert {:error, {:throw, %{kind: :error, payload: %RuntimeError{message: "boom"}}}, _env} =
-               Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :error
+      assert {:throw, %{kind: :error, payload: %RuntimeError{message: "boom"}}} = fiber.error
+      assert fiber.env != nil
     end
 
     test "cannot run non-pending fiber" do
       env = Env.new()
       fiber = Fiber.new(Comp.pure(42), env)
 
-      {:completed, _, _} = Fiber.run_until_suspend(fiber)
+      %Fiber{status: :completed} = Fiber.run_until_suspend(fiber)
 
       # Make a new fiber and manually set status
       suspended_fiber = %{fiber | status: :suspended}
@@ -131,8 +142,12 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      {:suspended, suspended_fiber} = Fiber.run_until_suspend(fiber)
-      assert {:completed, 42, _env} = Fiber.resume(suspended_fiber, 21)
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :suspended
+
+      fiber = Fiber.resume(fiber, 21)
+      assert fiber.status == :completed
+      assert fiber.result == 42
     end
 
     test "resumes to another suspension" do
@@ -147,9 +162,15 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      {:suspended, fiber1} = Fiber.run_until_suspend(fiber)
-      {:suspended, fiber2} = Fiber.resume(fiber1, 10)
-      {:completed, 30, _env} = Fiber.resume(fiber2, 20)
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :suspended
+
+      fiber = Fiber.resume(fiber, 10)
+      assert fiber.status == :suspended
+
+      fiber = Fiber.resume(fiber, 20)
+      assert fiber.status == :completed
+      assert fiber.result == 30
     end
 
     test "resume can error" do
@@ -169,8 +190,12 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      {:suspended, suspended_fiber} = Fiber.run_until_suspend(fiber)
-      assert {:error, {:throw, :triggered}, _env} = Fiber.resume(suspended_fiber, :trigger_error)
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :suspended
+
+      fiber = Fiber.resume(fiber, :trigger_error)
+      assert fiber.status == :error
+      assert fiber.error == {:throw, :triggered}
     end
 
     test "cannot resume non-suspended fiber" do
@@ -193,7 +218,10 @@ defmodule Skuld.FiberTest do
       assert cancelled.status == :cancelled
       assert cancelled.computation == nil
       assert cancelled.suspended_k == nil
+      assert cancelled.internal_suspend == nil
       assert cancelled.env == nil
+      assert cancelled.result == nil
+      assert cancelled.error == nil
     end
 
     test "cancels suspended fiber" do
@@ -201,11 +229,14 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      {:suspended, suspended_fiber} = Fiber.run_until_suspend(fiber)
-      cancelled = Fiber.cancel(suspended_fiber)
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :suspended
+
+      cancelled = Fiber.cancel(fiber)
 
       assert cancelled.status == :cancelled
       assert cancelled.suspended_k == nil
+      assert cancelled.internal_suspend == nil
     end
   end
 
@@ -219,8 +250,9 @@ defmodule Skuld.FiberTest do
       comp = Yield.yield(:value) |> Yield.with_handler()
       fiber = Fiber.new(comp, Env.new())
 
-      {:suspended, suspended_fiber} = Fiber.run_until_suspend(fiber)
-      refute Fiber.terminal?(suspended_fiber)
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :suspended
+      refute Fiber.terminal?(fiber)
     end
 
     test "cancelled is terminal" do
