@@ -26,7 +26,7 @@
 defmodule Skuld.Fiber.FiberPool.Tasks do
   @moduledoc false
 
-  alias Skuld.Fiber.FiberPool.SchedulerState, as: State
+  alias Skuld.Fiber.FiberPool.SchedulerState
   alias Skuld.Comp.Throw
 
   @type task_info :: {reference(), (-> term()), keyword()}
@@ -38,7 +38,7 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
   as an async task. The task results are sent back as messages and
   handled by `receive_message/1`.
   """
-  @spec spawn_pending(State.t(), [task_info()]) :: State.t()
+  @spec spawn_pending(SchedulerState.t(), [task_info()]) :: SchedulerState.t()
   def spawn_pending(state, []), do: state
 
   def spawn_pending(%{task_supervisor: nil}, [_ | _]) do
@@ -68,7 +68,7 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
         end)
 
       # Track the task by its ref
-      State.add_task(acc, task.ref, handle_id)
+      SchedulerState.add_task(acc, task.ref, handle_id)
     end)
   end
 
@@ -78,9 +78,9 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
   Blocks until all tracked tasks have sent their completion messages.
   Returns the updated state with all task results recorded.
   """
-  @spec wait_for_all(State.t()) :: State.t()
+  @spec wait_for_all(SchedulerState.t()) :: SchedulerState.t()
   def wait_for_all(state) do
-    if State.has_tasks?(state) do
+    if SchedulerState.has_tasks?(state) do
       {:task_completed, state} = receive_message(state)
       wait_for_all(state)
     else
@@ -96,7 +96,7 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
 
   Returns `{:task_completed, state}` with the updated state.
   """
-  @spec receive_message(State.t()) :: {:task_completed, State.t()}
+  @spec receive_message(SchedulerState.t()) :: {:task_completed, SchedulerState.t()}
   def receive_message(state) do
     receive do
       {ref, result} when is_reference(ref) ->
@@ -115,7 +115,7 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
   #############################################################################
 
   defp handle_task_result(state, ref, result) do
-    case State.pop_task(state, ref) do
+    case SchedulerState.pop_task(state, ref) do
       {nil, state} ->
         # Unknown task ref, ignore
         {:task_completed, state}
@@ -131,20 +131,22 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
               {:ok, result}
           end
 
-        state = State.record_completion(state, handle_id, completion)
+        state = SchedulerState.record_completion(state, handle_id, completion)
         {:task_completed, state}
     end
   end
 
   defp handle_task_crash(state, ref, reason) do
-    case State.pop_task(state, ref) do
+    case SchedulerState.pop_task(state, ref) do
       {nil, state} ->
         # Unknown task, ignore
         {:task_completed, state}
 
       {handle_id, state} ->
         # Record error
-        state = State.record_completion(state, handle_id, {:error, {:task_crashed, reason}})
+        state =
+          SchedulerState.record_completion(state, handle_id, {:error, {:task_crashed, reason}})
+
         {:task_completed, state}
     end
   end

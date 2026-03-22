@@ -12,7 +12,7 @@ defmodule Skuld.Fiber.FiberPool.Batching do
   alias Skuld.Comp.Throw
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Fiber.FiberPool.BatchExecutor
-  alias Skuld.Fiber.FiberPool.SchedulerState, as: State
+  alias Skuld.Fiber.FiberPool.SchedulerState
 
   @type fiber_id :: reference()
   @type batch_key :: term()
@@ -126,9 +126,10 @@ defmodule Skuld.Fiber.FiberPool.Batching do
 
   Returns `{state, env}` with fibers re-enqueued.
   """
-  @spec execute_pending_batches(State.t(), Comp.Types.env()) :: {State.t(), Comp.Types.env()}
+  @spec execute_pending_batches(SchedulerState.t(), Comp.Types.env()) ::
+          {SchedulerState.t(), Comp.Types.env()}
   def execute_pending_batches(state, env) do
-    {suspensions, state} = State.pop_all_batch_suspensions(state)
+    {suspensions, state} = SchedulerState.pop_all_batch_suspensions(state)
 
     if suspensions == [] do
       {state, env}
@@ -169,19 +170,19 @@ defmodule Skuld.Fiber.FiberPool.Batching do
 
   # Resume a fiber with a batch result by enqueuing it with a wake marker
   defp resume_fiber_with_result(state, fiber_id, result) do
-    case State.get_fiber(state, fiber_id) do
+    case SchedulerState.get_fiber(state, fiber_id) do
       nil ->
         state
 
       _fiber ->
-        state = State.remove_batch_suspension(state, fiber_id)
+        state = SchedulerState.remove_batch_suspension(state, fiber_id)
 
         wake_value = unwrap_batch_result(result)
 
         state =
           put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:batch_wake, wake_value})
 
-        State.enqueue(state, fiber_id)
+        SchedulerState.enqueue(state, fiber_id)
     end
   end
 

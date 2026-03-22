@@ -4,15 +4,15 @@ defmodule Skuld.Fiber.FiberPool.SchedulerTest do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Fiber
-  alias Skuld.Fiber.FiberPool.SchedulerState, as: State
+  alias Skuld.Fiber.FiberPool.SchedulerState
   alias Skuld.Fiber.FiberPool.Scheduler
 
   describe "step/2" do
     test "runs one fiber and returns :continue" do
-      state = State.new()
+      state = SchedulerState.new()
       env = Env.new()
       fiber = Fiber.new(Comp.pure(42), env)
-      {_fid, state} = State.add_fiber(state, fiber)
+      {_fid, state} = SchedulerState.add_fiber(state, fiber)
 
       {:continue, state} = Scheduler.step(state, env)
 
@@ -21,7 +21,7 @@ defmodule Skuld.Fiber.FiberPool.SchedulerTest do
     end
 
     test "returns :done when no work" do
-      state = State.new()
+      state = SchedulerState.new()
       env = Env.new()
 
       {:done, _state} = Scheduler.step(state, env)
@@ -30,16 +30,16 @@ defmodule Skuld.Fiber.FiberPool.SchedulerTest do
 
   describe "run/2" do
     test "runs all fibers to completion" do
-      state = State.new()
+      state = SchedulerState.new()
       env = Env.new()
 
       fiber1 = Fiber.new(Comp.pure(1), env)
       fiber2 = Fiber.new(Comp.pure(2), env)
       fiber3 = Fiber.new(Comp.pure(3), env)
 
-      {fid1, state} = State.add_fiber(state, fiber1)
-      {fid2, state} = State.add_fiber(state, fiber2)
-      {fid3, state} = State.add_fiber(state, fiber3)
+      {fid1, state} = SchedulerState.add_fiber(state, fiber1)
+      {fid2, state} = SchedulerState.add_fiber(state, fiber2)
+      {fid3, state} = SchedulerState.add_fiber(state, fiber3)
 
       {:done, results, _state} = Scheduler.run(state, env)
 
@@ -49,7 +49,7 @@ defmodule Skuld.Fiber.FiberPool.SchedulerTest do
     end
 
     test "handles empty state" do
-      state = State.new()
+      state = SchedulerState.new()
       env = Env.new()
 
       {:done, results, _state} = Scheduler.run(state, env)
@@ -58,7 +58,7 @@ defmodule Skuld.Fiber.FiberPool.SchedulerTest do
     end
 
     test "collects errors from failed fibers" do
-      state = State.new()
+      state = SchedulerState.new()
       env = Env.new()
 
       # Create a fiber that will error
@@ -67,7 +67,7 @@ defmodule Skuld.Fiber.FiberPool.SchedulerTest do
       end
 
       fiber = Fiber.new(error_comp, env)
-      {fid, state} = State.add_fiber(state, fiber)
+      {fid, state} = SchedulerState.add_fiber(state, fiber)
 
       {:done, results, _state} = Scheduler.run(state, env)
 
@@ -78,14 +78,14 @@ defmodule Skuld.Fiber.FiberPool.SchedulerTest do
 
   describe "run_ready/2" do
     test "runs all ready fibers" do
-      state = State.new()
+      state = SchedulerState.new()
       env = Env.new()
 
       fiber1 = Fiber.new(Comp.pure(1), env)
       fiber2 = Fiber.new(Comp.pure(2), env)
 
-      {_fid1, state} = State.add_fiber(state, fiber1)
-      {_fid2, state} = State.add_fiber(state, fiber2)
+      {_fid1, state} = SchedulerState.add_fiber(state, fiber1)
+      {_fid2, state} = SchedulerState.add_fiber(state, fiber2)
 
       {:done, state} = Scheduler.run_ready(state, env)
 

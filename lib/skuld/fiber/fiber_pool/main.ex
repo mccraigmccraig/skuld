@@ -29,7 +29,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Effects.FiberPool, as: FiberPoolEffect
-  alias Skuld.Fiber.FiberPool.SchedulerState, as: State
+  alias Skuld.Fiber.FiberPool.SchedulerState
   alias Skuld.Fiber.FiberPool.Scheduler
   alias Skuld.Fiber.FiberPool.Batching
   alias Skuld.Fiber.FiberPool.PendingWork
@@ -54,12 +54,12 @@ defmodule Skuld.Fiber.FiberPool.Main do
       {result, env}
     else
       task_sup = Env.get_state(env, FiberPoolEffect.task_supervisor_key())
-      state = State.new(task_supervisor: task_sup)
+      state = SchedulerState.new(task_supervisor: task_sup)
 
       # Seed state.env_state from main computation's env.state,
       # clearing pending work since we've already extracted it
       clean_env_state = Map.put(env.state, PendingWork.env_key(), PendingWork.new())
-      state = State.put_env_state(state, clean_env_state)
+      state = SchedulerState.put_env_state(state, clean_env_state)
 
       run_with_fibers(state, env, result, pending_fibers, pending_tasks)
     end
@@ -72,7 +72,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
   defp run_with_fibers(state, env, main_result, pending_fibers, pending_tasks) do
     state =
       Enum.reduce(pending_fibers, state, fn {_id, fiber}, acc ->
-        {_id, acc} = State.add_fiber(acc, fiber)
+        {_id, acc} = SchedulerState.add_fiber(acc, fiber)
         acc
       end)
 
@@ -133,7 +133,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
         :any -> :any
       end
 
-    case State.suspend_awaiting(state, awaiter_id, fiber_ids, await_mode) do
+    case SchedulerState.suspend_awaiting(state, awaiter_id, fiber_ids, await_mode) do
       {:ready, result, state} ->
         handle_await_result(state, env, result, resume, mode)
 
@@ -150,7 +150,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
 
     case Scheduler.step(state, env) do
       {:continue, state} ->
-        {wake_result, state} = State.pop_wake_result(state, awaiter_id)
+        {wake_result, state} = SchedulerState.pop_wake_result(state, awaiter_id)
 
         case wake_result do
           nil -> run_until_await_satisfied(state, env, awaiter_id, resume, mode)
@@ -158,11 +158,11 @@ defmodule Skuld.Fiber.FiberPool.Main do
         end
 
       {:done, state} ->
-        {wake_result, state} = State.pop_wake_result(state, awaiter_id)
+        {wake_result, state} = SchedulerState.pop_wake_result(state, awaiter_id)
 
         case wake_result do
           nil ->
-            if State.has_tasks?(state) do
+            if SchedulerState.has_tasks?(state) do
               wait_for_task_and_retry(state, env, awaiter_id, resume, mode)
             else
               {{:error, :await_never_satisfied}, env}
@@ -189,11 +189,11 @@ defmodule Skuld.Fiber.FiberPool.Main do
   defp wait_for_task_and_retry(state, env, awaiter_id, resume, mode) do
     {:task_completed, state} = Tasks.receive_message(state)
 
-    {wake_result, state} = State.pop_wake_result(state, awaiter_id)
+    {wake_result, state} = SchedulerState.pop_wake_result(state, awaiter_id)
 
     case wake_result do
       nil ->
-        if State.has_tasks?(state) or not State.queue_empty?(state) do
+        if SchedulerState.has_tasks?(state) or not SchedulerState.queue_empty?(state) do
           run_until_await_satisfied(state, env, awaiter_id, resume, mode)
         else
           {{:error, :await_never_satisfied}, env}
@@ -231,7 +231,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
 
     state =
       Enum.reduce(pending_fibers, state, fn {_id, fiber}, acc ->
-        {_id, acc} = State.add_fiber(acc, fiber)
+        {_id, acc} = SchedulerState.add_fiber(acc, fiber)
         acc
       end)
 

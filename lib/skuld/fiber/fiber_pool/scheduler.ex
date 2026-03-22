@@ -14,14 +14,14 @@
 # The scheduler is typically used through the FiberPool effect, not directly.
 # For testing or advanced use:
 #
-#     state = State.new()
-#     {fiber_id, state} = State.add_fiber(state, fiber)
+#     state = SchedulerState.new()
+#     {fiber_id, state} = SchedulerState.add_fiber(state, fiber)
 #     {:done, results, state} = Scheduler.run(state, env)
 defmodule Skuld.Fiber.FiberPool.Scheduler do
   @moduledoc false
 
   alias Skuld.Fiber
-  alias Skuld.Fiber.FiberPool.SchedulerState, as: State
+  alias Skuld.Fiber.FiberPool.SchedulerState
   alias Skuld.Fiber.FiberPool.EnvState
   alias Skuld.Fiber.FiberPool.PendingWork
   alias Skuld.Comp.Types
@@ -29,18 +29,18 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   alias Skuld.Comp.InternalSuspend
 
   @type step_result ::
-          {:continue, State.t()}
-          | {:done, State.t()}
-          | {:suspended, Fiber.t(), State.t()}
-          | {:batch_ready, State.t()}
-          | {:error, term(), State.t()}
+          {:continue, SchedulerState.t()}
+          | {:done, SchedulerState.t()}
+          | {:suspended, Fiber.t(), SchedulerState.t()}
+          | {:batch_ready, SchedulerState.t()}
+          | {:error, term(), SchedulerState.t()}
 
   @type run_result ::
-          {:done, %{reference() => term()}, State.t()}
-          | {:suspended, Fiber.t(), State.t()}
-          | {:waiting_for_tasks, State.t()}
-          | {:batch_ready, State.t()}
-          | {:error, term(), State.t()}
+          {:done, %{reference() => term()}, SchedulerState.t()}
+          | {:suspended, Fiber.t(), SchedulerState.t()}
+          | {:waiting_for_tasks, SchedulerState.t()}
+          | {:batch_ready, SchedulerState.t()}
+          | {:error, term(), SchedulerState.t()}
 
   #############################################################################
   ## Public API
@@ -55,7 +55,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   - `{:waiting_for_tasks, state}` - Fibers done but tasks still running
   - `{:error, reason, state}` - Fatal error (when on_error: :stop)
   """
-  @spec run(State.t(), Types.env()) :: run_result()
+  @spec run(SchedulerState.t(), Types.env()) :: run_result()
   def run(state, env) do
     run_loop(state, env)
   end
@@ -66,7 +66,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   Useful for draining the queue after receiving external events.
   Does not block waiting for completions.
   """
-  @spec run_ready(State.t(), Types.env()) :: step_result()
+  @spec run_ready(SchedulerState.t(), Types.env()) :: step_result()
   def run_ready(state, env) do
     case step(state, env) do
       {:continue, state} -> run_ready(state, env)
@@ -84,15 +84,15 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   - `{:batch_ready, state}` - Queue empty but batch suspensions ready for execution
   - `{:error, reason, state}` - Fiber errored (with on_error: :stop)
   """
-  @spec step(State.t(), Types.env()) :: step_result()
+  @spec step(SchedulerState.t(), Types.env()) :: step_result()
   def step(state, env) do
-    case State.dequeue(state) do
+    case SchedulerState.dequeue(state) do
       {:empty, state} ->
         cond do
-          State.all_done?(state) ->
+          SchedulerState.all_done?(state) ->
             {:done, state}
 
-          State.has_batch_suspensions?(state) ->
+          SchedulerState.has_batch_suspensions?(state) ->
             # Batch suspensions are ready for execution
             {:batch_ready, state}
 
@@ -116,7 +116,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   Called internally by `run/2`, but also available for use when calling
   `step/2` directly (which does not process wakes automatically).
   """
-  @spec process_channel_wakes(State.t()) :: State.t()
+  @spec process_channel_wakes(SchedulerState.t()) :: SchedulerState.t()
   def process_channel_wakes(state) do
     env_state = get_env_state(state)
 
@@ -150,9 +150,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
         state = process_channel_wakes(state)
 
         # Check if we now have work to do
-        if State.queue_empty?(state) do
+        if SchedulerState.queue_empty?(state) do
           # Check if there are still running tasks
-          if State.has_tasks?(state) do
+          if SchedulerState.has_tasks?(state) do
             {:waiting_for_tasks, state}
           else
             # Collect results for completed fibers/tasks
@@ -177,14 +177,14 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   end
 
   defp run_one_fiber(state, fiber_id, env) do
-    case State.get_fiber(state, fiber_id) do
+    case SchedulerState.get_fiber(state, fiber_id) do
       nil ->
         # Fiber was removed (cancelled?) - continue
         {:continue, state}
 
       fiber ->
         # Check if this is a wake-up (fiber was suspended awaiting or batch)
-        {wake_result, state} = State.pop_wake_result(state, fiber_id)
+        {wake_result, state} = SchedulerState.pop_wake_result(state, fiber_id)
 
         case wake_result do
           nil ->
@@ -238,13 +238,13 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   # Handle the result of running or resuming a fiber.
   # All state is now in the fiber struct — switch on fiber.status.
   defp handle_fiber_result(%Fiber{status: :completed} = fiber, state) do
-    state = State.put_env_state(state, fiber.env.state)
+    state = SchedulerState.put_env_state(state, fiber.env.state)
     state = collect_pending_fibers(state, fiber.env)
     handle_completion(state, fiber.id, {:ok, fiber.result})
   end
 
   defp handle_fiber_result(%Fiber{status: :suspended, internal_suspend: nil} = fiber, state) do
-    state = State.put_env_state(state, fiber.env.state)
+    state = SchedulerState.put_env_state(state, fiber.env.state)
     {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
     handle_suspension(state, fiber)
   end
@@ -256,13 +256,13 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
          } = fiber,
          state
        ) do
-    state = State.put_env_state(state, fiber.env.state)
+    state = SchedulerState.put_env_state(state, fiber.env.state)
     {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
     handle_internal_suspension(state, fiber, internal_suspend, payload)
   end
 
   defp handle_fiber_result(%Fiber{status: :error} = fiber, state) do
-    state = if fiber.env, do: State.put_env_state(state, fiber.env.state), else: state
+    state = if fiber.env, do: SchedulerState.put_env_state(state, fiber.env.state), else: state
     state = collect_pending_fibers(state, fiber.env)
     handle_completion(state, fiber.id, {:error, fiber.error})
   end
@@ -281,7 +281,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
       # Add pending fibers to state
       state =
         Enum.reduce(fibers, state, fn {_id, fiber}, acc ->
-          {_id, acc} = State.add_fiber(acc, fiber)
+          {_id, acc} = SchedulerState.add_fiber(acc, fiber)
           acc
         end)
 
@@ -308,7 +308,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
         # Add pending fibers to state
         state =
           Enum.reduce(fibers, state, fn {_id, fiber}, acc ->
-            {_id, acc} = State.add_fiber(acc, fiber)
+            {_id, acc} = SchedulerState.add_fiber(acc, fiber)
             acc
           end)
 
@@ -328,31 +328,31 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   end
 
   defp handle_completion(state, fiber_id, result) do
-    state = State.remove_fiber(state, fiber_id)
-    state = State.record_completion(state, fiber_id, result)
+    state = SchedulerState.remove_fiber(state, fiber_id)
+    state = SchedulerState.record_completion(state, fiber_id, result)
     {:continue, state}
   end
 
   defp handle_suspension(state, fiber) do
     # For now, any suspension is treated as an external yield
     # The FiberPool effect handler will intercept await suspensions
-    # and convert them to proper State.suspend_awaiting calls
-    state = State.put_fiber(state, fiber)
+    # and convert them to proper SchedulerState.suspend_awaiting calls
+    state = SchedulerState.put_fiber(state, fiber)
     {:suspended, fiber, state}
   end
 
   # Dispatch internal suspensions based on payload type
   defp handle_internal_suspension(state, fiber, internal_suspend, %InternalSuspend.Batch{}) do
     # Store the fiber and add to batch-suspended tracking
-    state = State.put_fiber(state, fiber)
-    state = State.add_batch_suspension(state, fiber.id, internal_suspend)
+    state = SchedulerState.put_fiber(state, fiber)
+    state = SchedulerState.add_batch_suspension(state, fiber.id, internal_suspend)
     {:continue, state}
   end
 
   defp handle_internal_suspension(state, fiber, _internal_suspend, %InternalSuspend.Channel{}) do
     # Store the fiber and add to channel-suspended tracking
-    state = State.put_fiber(state, fiber)
-    state = State.add_channel_suspension(state, fiber.id)
+    state = SchedulerState.put_fiber(state, fiber)
+    state = SchedulerState.add_channel_suspension(state, fiber.id)
     {:continue, state}
   end
 
@@ -364,7 +364,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     # A fiber is awaiting other fibers - use the State's await tracking
     waiting_for = Enum.map(handles, & &1.id)
 
-    case State.suspend_awaiting(state, fiber.id, waiting_for, mode) do
+    case SchedulerState.suspend_awaiting(state, fiber.id, waiting_for, mode) do
       {:ready, result, state} ->
         # Results already available - resume immediately
         # Clean up consumed fiber IDs if specified
@@ -373,7 +373,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
       {:suspended, state} ->
         # Need to wait - store the fiber and track consume_ids for later cleanup
-        state = State.put_fiber(state, fiber)
+        state = SchedulerState.put_fiber(state, fiber)
         # Store consume_ids in suspension info for cleanup when woken
         state = store_consume_ids(state, fiber.id, consume_ids)
         {:continue, state}
@@ -421,15 +421,15 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
   # Resume a fiber that was waiting on a channel operation
   defp resume_channel_fiber(state, fiber_id, result) do
-    if State.channel_suspended?(state, fiber_id) do
+    if SchedulerState.channel_suspended?(state, fiber_id) do
       # Remove from channel_suspended and enqueue with result
-      state = State.remove_channel_suspension(state, fiber_id)
+      state = SchedulerState.remove_channel_suspension(state, fiber_id)
 
       # Store wake result wrapped in :channel_wake tuple and enqueue
       state =
         put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:channel_wake, result})
 
-      State.enqueue(state, fiber_id)
+      SchedulerState.enqueue(state, fiber_id)
     else
       # Fiber not found in channel suspensions - might have been cancelled
       state
@@ -447,7 +447,10 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
   # Put the EnvState back into state.env_state
   defp put_env_state(state, env_state) do
-    State.put_env_state(state, Map.put(state.env_state, EnvState.env_key(), env_state))
+    SchedulerState.put_env_state(
+      state,
+      Map.put(state.env_state, EnvState.env_key(), env_state)
+    )
   end
 
   # Get the PendingWork from an env, defaulting to empty
@@ -463,7 +466,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   # Clear the PendingWork in state.env_state
   defp clear_pending_work_in_env_state(state) do
     env_state = Map.put(state.env_state, PendingWork.env_key(), PendingWork.new())
-    State.put_env_state(state, env_state)
+    SchedulerState.put_env_state(state, env_state)
   end
 
   # Update the EnvState in an env (for setting fiber_id before running)
