@@ -128,6 +128,23 @@ defmodule Skuld.Effects.FiberPool do
   Effects do not work inside tasks because they run in a different process.
   Extract any values you need from Reader/State before constructing the thunk.
 
+  ## Why thunks, not computations?
+
+  Tasks run in a separate BEAM process. While an effectful computation *could*
+  be shipped to the other process and executed there, the modified environment
+  it returns would then need to be integrated back into the calling process's
+  environment. There is no general way to do this — environment changes from
+  effects (State mutations, Writer accumulations, handler installations, etc.)
+  have no guarantee of commutativity, so a task's environment modifications
+  cannot be safely merged with whatever the calling process has done in the
+  meantime.
+
+  Restricting tasks to plain thunks forces the caller to explicitly extract
+  any needed values from the environment *before* spawning the task, and to
+  explicitly handle the task's return value *after* awaiting it. This makes
+  the cross-process boundary visible and avoids the need for an unsound
+  automatic environment merge.
+
   ## Options
 
   - `:timeout` - Task timeout in milliseconds (default: 5000)
