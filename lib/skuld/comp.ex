@@ -175,7 +175,7 @@ defmodule Skuld.Comp do
     {result, env} = call(comp, Env.new(), &identity_k/2)
 
     {final_result, final_env} =
-      Skuld.Fiber.FiberPool.Runner.drain_pending(result, env)
+      Skuld.Fiber.FiberPool.Main.drain_pending(result, env)
 
     ISentinel.run(final_result, final_env)
   end

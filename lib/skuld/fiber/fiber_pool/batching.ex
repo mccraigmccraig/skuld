@@ -1,9 +1,10 @@
-# Batch grouping and execution for the FiberPool scheduler.
+# Batch grouping, execution, and fiber resumption for the FiberPool.
 #
-# This module provides functions to:
+# This module provides the complete batch lifecycle:
 # - Group suspended fibers by their batch_key
 # - Execute batch groups using registered executors
 # - Match results back to the requesting fibers
+# - Pop batch suspensions from state, execute them, and resume fibers with results
 defmodule Skuld.Fiber.FiberPool.Batching do
   @moduledoc false
 
@@ -11,6 +12,7 @@ defmodule Skuld.Fiber.FiberPool.Batching do
   alias Skuld.Comp.Throw
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Fiber.FiberPool.BatchExecutor
+  alias Skuld.Fiber.FiberPool.State
 
   @type fiber_id :: reference()
   @type batch_key :: term()
@@ -109,5 +111,83 @@ defmodule Skuld.Fiber.FiberPool.Batching do
         end)
       end)
     end)
+  end
+
+  #############################################################################
+  ## Batch Execution and Fiber Resumption
+  #############################################################################
+
+  @doc """
+  Pop all pending batch suspensions from state, execute them, and resume
+  the suspended fibers with their results.
+
+  Groups suspensions by batch_key, executes each group via the registered
+  executor, and enqueues the fibers to run with their results.
+
+  Returns `{state, env}` with fibers re-enqueued.
+  """
+  @spec execute_pending_batches(State.t(), Comp.Types.env()) :: {State.t(), Comp.Types.env()}
+  def execute_pending_batches(state, env) do
+    {suspensions, state} = State.pop_all_batch_suspensions(state)
+
+    if suspensions == [] do
+      {state, env}
+    else
+      groups = group_suspended(suspensions)
+
+      Enum.reduce(groups, {state, env}, fn {batch_key, group}, {acc_state, acc_env} ->
+        execute_and_resume(acc_state, acc_env, batch_key, group)
+      end)
+    end
+  end
+
+  # Execute a single batch group and resume its fibers with results
+  defp execute_and_resume(state, env, batch_key, group) do
+    batch_comp = execute_group(batch_key, group, env)
+
+    # Run the batch computation
+    case Comp.call(batch_comp, env, &Comp.identity_k/2) do
+      {%Throw{error: error}, new_env} ->
+        # Batch execution failed - resume all fibers with error
+        state =
+          Enum.reduce(group, state, fn {fiber_id, _suspend}, acc ->
+            resume_fiber_with_result(acc, fiber_id, {:error, error})
+          end)
+
+        {state, new_env}
+
+      {fiber_results, new_env} when is_list(fiber_results) ->
+        # Resume each fiber with its result
+        state =
+          Enum.reduce(fiber_results, state, fn {fiber_id, result}, acc ->
+            resume_fiber_with_result(acc, fiber_id, {:ok, result})
+          end)
+
+        {state, new_env}
+    end
+  end
+
+  # Resume a fiber with a batch result by enqueuing it with a wake marker
+  defp resume_fiber_with_result(state, fiber_id, result) do
+    case State.get_fiber(state, fiber_id) do
+      nil ->
+        state
+
+      _fiber ->
+        state = State.remove_batch_suspension(state, fiber_id)
+
+        wake_value = unwrap_batch_result(result)
+
+        state =
+          put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:batch_wake, wake_value})
+
+        State.enqueue(state, fiber_id)
+    end
+  end
+
+  defp unwrap_batch_result({:ok, value}), do: value
+
+  defp unwrap_batch_result({:error, reason}) do
+    %Throw{error: reason}
   end
 end
