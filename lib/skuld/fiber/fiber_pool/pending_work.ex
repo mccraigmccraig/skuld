@@ -8,7 +8,7 @@
 #
 # ## Lifecycle
 #
-# Unlike `EnvState` which is shared across all fibers, `PendingWork` is
+# Unlike `ChannelCoordinationState` which is shared across all fibers, `PendingWork` is
 # fiber-local. It's accumulated during fiber execution via effect handlers,
 # then extracted and cleared by Comp.run (via Main.drain_pending) and Scheduler:
 #

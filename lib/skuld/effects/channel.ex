@@ -58,7 +58,7 @@ defmodule Skuld.Effects.Channel do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
-  alias Skuld.Fiber.FiberPool.EnvState
+  alias Skuld.Fiber.FiberPool.ChannelCoordinationState, as: EnvState
   alias Skuld.Effects.Channel.State
 
   #############################################################################

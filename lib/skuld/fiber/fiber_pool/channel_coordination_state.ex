@@ -18,13 +18,13 @@
 # ## Key
 #
 # Use `env_key/0` to get the key under which this struct is stored in env.state.
-defmodule Skuld.Fiber.FiberPool.EnvState do
+defmodule Skuld.Fiber.FiberPool.ChannelCoordinationState do
   @moduledoc false
 
   alias Skuld.Effects.Channel
 
   @doc """
-  The key under which EnvState is stored in env.state.
+  The key under which ChannelCoordinationState is stored in env.state.
   """
   @spec env_key() :: module()
   def env_key, do: __MODULE__
@@ -42,7 +42,7 @@ defmodule Skuld.Fiber.FiberPool.EnvState do
             channel_states: %{}
 
   @doc """
-  Create a new empty EnvState.
+  Create a new empty ChannelCoordinationState.
   """
   @spec new() :: t()
   def new do

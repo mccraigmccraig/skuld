@@ -22,7 +22,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
   alias Skuld.Fiber
   alias Skuld.Fiber.FiberPool.SchedulerState
-  alias Skuld.Fiber.FiberPool.EnvState
+  alias Skuld.Fiber.FiberPool.ChannelCoordinationState, as: EnvState
   alias Skuld.Fiber.FiberPool.PendingWork
   alias Skuld.Comp.Types
   alias Skuld.Comp.Env
