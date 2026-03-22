@@ -209,7 +209,7 @@ defmodule Skuld.FiberTest do
   end
 
   describe "Fiber.cancel/1" do
-    test "cancels pending fiber" do
+    test "cancels pending fiber without leave_scope (no scopes entered)" do
       env = Env.new()
       fiber = Fiber.new(Comp.pure(42), env)
 
@@ -224,7 +224,126 @@ defmodule Skuld.FiberTest do
       assert cancelled.error == nil
     end
 
-    test "cancels suspended fiber" do
+    test "cancels suspended fiber and invokes leave_scope" do
+      test_pid = self()
+
+      comp =
+        Yield.yield(:waiting)
+        |> Comp.scoped(fn env ->
+          finally_k = fn result, e ->
+            send(test_pid, {:cleanup_called, result})
+            {result, e}
+          end
+
+          {env, finally_k}
+        end)
+        |> Yield.with_handler()
+
+      env = Env.new()
+      fiber = Fiber.new(comp, env)
+
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :suspended
+
+      cancelled = Fiber.cancel(fiber)
+
+      assert cancelled.status == :cancelled
+      assert cancelled.suspended_k == nil
+      assert cancelled.internal_suspend == nil
+      # env is preserved after leave_scope runs
+      assert cancelled.env != nil
+
+      # leave_scope was invoked with a Cancelled sentinel
+      assert_received {:cleanup_called, %Comp.Cancelled{reason: :cancelled}}
+    end
+
+    test "cancel with custom reason" do
+      test_pid = self()
+
+      comp =
+        Yield.yield(:waiting)
+        |> Comp.scoped(fn env ->
+          finally_k = fn result, e ->
+            send(test_pid, {:cleanup_reason, result})
+            {result, e}
+          end
+
+          {env, finally_k}
+        end)
+        |> Yield.with_handler()
+
+      env = Env.new()
+      fiber = Fiber.new(comp, env)
+
+      fiber = Fiber.run_until_suspend(fiber)
+      cancelled = Fiber.cancel(fiber, :timeout)
+
+      assert cancelled.status == :cancelled
+      assert_received {:cleanup_reason, %Comp.Cancelled{reason: :timeout}}
+    end
+
+    test "nested scopes all get cleanup on cancel" do
+      test_pid = self()
+
+      inner =
+        Yield.yield(:waiting)
+        |> Comp.scoped(fn env ->
+          finally_k = fn result, e ->
+            send(test_pid, {:inner_cleanup, result})
+            {result, e}
+          end
+
+          {env, finally_k}
+        end)
+
+      comp =
+        inner
+        |> Comp.scoped(fn env ->
+          finally_k = fn result, e ->
+            send(test_pid, {:outer_cleanup, result})
+            {result, e}
+          end
+
+          {env, finally_k}
+        end)
+        |> Yield.with_handler()
+
+      env = Env.new()
+      fiber = Fiber.new(comp, env)
+
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :suspended
+
+      _cancelled = Fiber.cancel(fiber, :shutdown)
+
+      # Both scopes cleaned up with the Cancelled sentinel
+      assert_received {:inner_cleanup, %Comp.Cancelled{reason: :shutdown}}
+      assert_received {:outer_cleanup, %Comp.Cancelled{reason: :shutdown}}
+    end
+
+    test "State handler cleans up on cancel" do
+      comp =
+        Comp.bind(State.put(42), fn _ ->
+          Yield.yield(:waiting)
+        end)
+        |> State.with_handler(0)
+        |> Yield.with_handler()
+
+      env = Env.new()
+      fiber = Fiber.new(comp, env)
+
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :suspended
+
+      cancelled = Fiber.cancel(fiber)
+
+      assert cancelled.status == :cancelled
+      # State handler's scoped cleanup should have removed its state key
+      state_key = {State, State}
+      assert Env.get_state(cancelled.env, state_key) == nil
+    end
+
+    test "cancel without leave_scope (simple suspend, no scoped effects)" do
       comp = Yield.yield(:value) |> Yield.with_handler()
       env = Env.new()
       fiber = Fiber.new(comp, env)
@@ -237,6 +356,55 @@ defmodule Skuld.FiberTest do
       assert cancelled.status == :cancelled
       assert cancelled.suspended_k == nil
       assert cancelled.internal_suspend == nil
+      # env is preserved (leave_scope identity ran successfully)
+      assert cancelled.env != nil
+    end
+
+    test "cancel is no-op on completed fiber" do
+      env = Env.new()
+      fiber = Fiber.new(Comp.pure(42), env)
+
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :completed
+      assert fiber.result == 42
+
+      same = Fiber.cancel(fiber)
+      assert same.status == :completed
+      assert same.result == 42
+      assert same == fiber
+    end
+
+    test "cancel is no-op on errored fiber" do
+      comp =
+        comp do
+          _ <- Throw.throw(:boom)
+          :unreachable
+        end
+        |> Throw.with_handler()
+
+      env = Env.new()
+      fiber = Fiber.new(comp, env)
+
+      fiber = Fiber.run_until_suspend(fiber)
+      assert fiber.status == :error
+      assert fiber.error == {:throw, :boom}
+
+      same = Fiber.cancel(fiber)
+      assert same.status == :error
+      assert same.error == {:throw, :boom}
+      assert same == fiber
+    end
+
+    test "cancel is no-op on already-cancelled fiber" do
+      env = Env.new()
+      fiber = Fiber.new(Comp.pure(42), env)
+
+      cancelled = Fiber.cancel(fiber)
+      assert cancelled.status == :cancelled
+
+      same = Fiber.cancel(cancelled, :different_reason)
+      assert same.status == :cancelled
+      assert same == cancelled
     end
   end
 

@@ -144,18 +144,57 @@ defmodule Skuld.Fiber do
   end
 
   @doc """
-  Cancel a fiber.
+  Cancel a fiber, invoking leave_scope cleanup for suspended fibers.
 
-  Marks the fiber as `:cancelled`. A cancelled fiber cannot be run or resumed.
-  The FiberPool scheduler uses this to clean up fibers when their scope exits.
+  For `:suspended` fibers, creates a `%Cancelled{}` sentinel and runs it
+  through the leave_scope chain in the fiber's env, giving scoped effects
+  an opportunity to clean up resources. The resulting env is preserved in
+  the cancelled fiber struct.
+
+  For `:pending` fibers, no scopes have been entered yet so no cleanup is
+  needed.
+
+  For already-terminal fibers (`:completed`, `:cancelled`, `:error`), cancel
+  is a no-op — the fiber is returned unchanged.
+
+  ## Parameters
+
+  - `fiber` - The fiber to cancel
+  - `reason` - The cancellation reason (default: `:cancelled`)
 
   ## Example
 
-      fiber = Fiber.cancel(fiber)
+      fiber = Fiber.cancel(fiber, :timeout)
       assert fiber.status == :cancelled
   """
-  @spec cancel(t()) :: t()
-  def cancel(%__MODULE__{} = fiber) do
+  @spec cancel(t(), term()) :: t()
+  def cancel(fiber, reason \\ :cancelled)
+
+  # Already terminal — no-op
+  def cancel(%__MODULE__{status: status} = fiber, _reason)
+      when status in [:completed, :cancelled, :error] do
+    fiber
+  end
+
+  # Suspended with env — run leave_scope cleanup
+  def cancel(%__MODULE__{status: :suspended, env: env} = fiber, reason) when env != nil do
+    cancelled = %Comp.Cancelled{reason: reason}
+    {_result, final_env} = env.leave_scope.(cancelled, env)
+
+    %{
+      fiber
+      | status: :cancelled,
+        computation: nil,
+        suspended_k: nil,
+        internal_suspend: nil,
+        env: final_env,
+        result: nil,
+        error: nil
+    }
+  end
+
+  # Pending or suspended without env — hard clear, no cleanup needed
+  def cancel(%__MODULE__{} = fiber, _reason) do
     %{
       fiber
       | status: :cancelled,
