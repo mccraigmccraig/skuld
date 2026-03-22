@@ -395,34 +395,27 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     end)
   end
 
-  # Store consume_ids in suspension for later cleanup
+  # Store consume_ids for later cleanup when the awaiting fiber is woken
   defp store_consume_ids(state, _fiber_id, []), do: state
 
   defp store_consume_ids(state, fiber_id, consume_ids) do
-    # Store in a special key in the state for retrieval when woken
-    key = {:consume_ids, fiber_id}
-    put_in(state, [Access.key(:completed), key], consume_ids)
+    put_in(state, [Access.key(:consume_ids), fiber_id], consume_ids)
   end
 
   # Pop and clean up consume_ids when a fiber is woken from await
   defp pop_and_cleanup_consume_ids(state, fiber_id) do
-    key = {:consume_ids, fiber_id}
-
-    case Map.pop(state.completed, key) do
+    case Map.pop(state.consume_ids, fiber_id) do
       {nil, _} ->
         state
 
-      {consume_ids, completed} ->
-        state = %{state | completed: completed}
+      {consume_ids, remaining} ->
+        state = %{state | consume_ids: remaining}
         cleanup_consumed_ids(state, consume_ids)
     end
   end
 
   defp collect_results(state) do
-    # Return completed results, filtering out wake markers
     state.completed
-    |> Enum.reject(fn {key, _} -> match?({:wake, _}, key) end)
-    |> Map.new()
   end
 
   # Resume a fiber that was waiting on a channel operation
@@ -433,7 +426,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
       # Store wake result wrapped in :channel_wake tuple and enqueue
       state =
-        put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:channel_wake, result})
+        put_in(state, [Access.key(:wake_signals), fiber_id], {:channel_wake, result})
 
       SchedulerState.enqueue(state, fiber_id)
     else

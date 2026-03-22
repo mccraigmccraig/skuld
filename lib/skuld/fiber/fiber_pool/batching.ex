@@ -180,7 +180,7 @@ defmodule Skuld.Fiber.FiberPool.Batching do
         wake_value = unwrap_batch_result(result)
 
         state =
-          put_in(state, [Access.key(:completed), {:wake, fiber_id}], {:batch_wake, wake_value})
+          put_in(state, [Access.key(:wake_signals), fiber_id], {:batch_wake, wake_value})
 
         SchedulerState.enqueue(state, fiber_id)
     end

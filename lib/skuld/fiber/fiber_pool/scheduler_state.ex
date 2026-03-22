@@ -9,6 +9,8 @@
 # - `run_queue` - FIFO queue of fiber_ids ready to run
 # - `suspended` - Map of fiber_id => suspension_info for awaiting fibers
 # - `completed` - Map of fiber_id => result for completed fibers
+# - `wake_signals` - Map of awaiter_id => resume_value for fibers ready to wake
+# - `consume_ids` - Map of fiber_id => [fiber_id] for deferred result cleanup
 # - `awaiting` - Map of fiber_id => [awaiter_fiber_id] reverse index for wake-up
 # - `tasks` - Map of task_ref => handle_id for running BEAM tasks
 # - `task_supervisor` - Task.Supervisor pid for spawning tasks
@@ -40,7 +42,9 @@ defmodule Skuld.Fiber.FiberPool.SchedulerState do
           fibers: %{fiber_id() => Fiber.t()},
           run_queue: :queue.queue(fiber_id()),
           suspended: %{awaiter_id() => suspension_info()},
-          completed: %{(fiber_id() | {:wake, awaiter_id()}) => result() | term()},
+          completed: %{fiber_id() => result()},
+          wake_signals: %{awaiter_id() => term()},
+          consume_ids: %{fiber_id() => [fiber_id()]},
           awaiting: %{fiber_id() => [fiber_id()]},
           tasks: %{task_ref() => fiber_id()},
           task_supervisor: pid() | nil,
@@ -56,6 +60,8 @@ defmodule Skuld.Fiber.FiberPool.SchedulerState do
     :run_queue,
     :suspended,
     :completed,
+    :wake_signals,
+    :consume_ids,
     :awaiting,
     :tasks,
     :task_supervisor,
@@ -83,6 +89,8 @@ defmodule Skuld.Fiber.FiberPool.SchedulerState do
       run_queue: :queue.new(),
       suspended: %{},
       completed: %{},
+      wake_signals: %{},
+      consume_ids: %{},
       awaiting: %{},
       tasks: %{},
       task_supervisor: Keyword.get(opts, :task_supervisor),
@@ -324,9 +332,8 @@ defmodule Skuld.Fiber.FiberPool.SchedulerState do
             # Wake the fiber
             state = remove_suspension(state, awaiter_fid)
 
-            # Store wake result for the fiber to retrieve
-            # We use a special key in completed to signal "ready to resume with this value"
-            state = put_in(state, [Access.key(:completed), {:wake, awaiter_fid}], wake_result)
+            # Store wake result for the fiber to retrieve when dequeued
+            state = put_in(state, [Access.key(:wake_signals), awaiter_fid], wake_result)
 
             # Enqueue the fiber
             enqueue(state, awaiter_fid)
@@ -372,11 +379,9 @@ defmodule Skuld.Fiber.FiberPool.SchedulerState do
   """
   @spec pop_wake_result(t(), awaiter_id()) :: {term() | nil, t()}
   def pop_wake_result(state, awaiter_id) do
-    key = {:wake, awaiter_id}
-
-    case Map.pop(state.completed, key) do
+    case Map.pop(state.wake_signals, awaiter_id) do
       {nil, _} -> {nil, state}
-      {result, completed} -> {result, %{state | completed: completed}}
+      {result, wake_signals} -> {result, %{state | wake_signals: wake_signals}}
     end
   end
 
