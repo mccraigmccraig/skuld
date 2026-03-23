@@ -92,6 +92,8 @@ defmodule Skuld.Fiber.FiberPool.Main do
   # Drain remaining fibers when the main computation has already completed.
   # Delegates to Scheduler.run and handles batch rounds.
   defp run_fibers_to_completion(state, env, result) do
+    snapshot = SchedulerState.progress_snapshot(state)
+
     case Scheduler.run(state, env) do
       {:done, _results, final_state} ->
         {result, %{env | state: SchedulerState.get_env_state(final_state)}}
@@ -105,7 +107,12 @@ defmodule Skuld.Fiber.FiberPool.Main do
 
       {:batch_ready, state} ->
         {state, env} = Batching.execute_pending_batches(state, env)
-        run_fibers_to_completion(state, env, result)
+
+        if SchedulerState.progressed?(snapshot, SchedulerState.progress_snapshot(state)) do
+          run_fibers_to_completion(state, env, result)
+        else
+          {{:error, {:deadlock, deadlock_diagnostic(state)}}, env}
+        end
     end
   end
 
@@ -147,14 +154,22 @@ defmodule Skuld.Fiber.FiberPool.Main do
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_until_await_satisfied(state, env, awaiter_id, resume, mode) do
     state = Scheduler.process_channel_wakes(state)
+    snapshot = SchedulerState.progress_snapshot(state)
 
     case Scheduler.step(state, env) do
       {:continue, state} ->
         {wake_result, state} = SchedulerState.pop_wake_result(state, awaiter_id)
 
         case wake_result do
-          nil -> run_until_await_satisfied(state, env, awaiter_id, resume, mode)
-          result -> handle_await_result(state, env, result, resume, mode)
+          nil ->
+            if SchedulerState.progressed?(snapshot, SchedulerState.progress_snapshot(state)) do
+              run_until_await_satisfied(state, env, awaiter_id, resume, mode)
+            else
+              {{:error, {:deadlock, deadlock_diagnostic(state)}}, env}
+            end
+
+          result ->
+            handle_await_result(state, env, result, resume, mode)
         end
 
       {:done, state} ->
@@ -247,6 +262,17 @@ defmodule Skuld.Fiber.FiberPool.Main do
       _ ->
         run_fibers_to_completion(state, new_env, new_result)
     end
+  end
+
+  # Build a diagnostic map for deadlock errors, describing what the scheduler
+  # was doing when no progress could be made.
+  defp deadlock_diagnostic(state) do
+    %{
+      counts: SchedulerState.counts(state),
+      suspended_awaiter_ids: Map.keys(state.suspended),
+      batch_suspended_fiber_ids: Map.keys(state.batch_suspended),
+      channel_suspended_fiber_ids: Map.keys(state.channel_suspended)
+    }
   end
 
   # Check if a result is an await suspension

@@ -199,4 +199,149 @@ defmodule Skuld.Fiber.FiberPool.SchedulerStateTest do
       assert counts.completed == 1
     end
   end
+
+  describe "progress_snapshot/1" do
+    test "captures sizes of all mutable collections" do
+      state = SchedulerState.new()
+      snapshot = SchedulerState.progress_snapshot(state)
+
+      assert snapshot == %{
+               fibers: 0,
+               run_queue: 0,
+               suspended: 0,
+               completed: 0,
+               wake_signals: 0,
+               tasks: 0,
+               batch_suspended: 0,
+               channel_suspended: 0
+             }
+    end
+
+    test "reflects added fibers and completions" do
+      state = SchedulerState.new()
+      fiber = Fiber.new(Comp.pure(42), Env.new())
+      {fid, state} = SchedulerState.add_fiber(state, fiber)
+      state = SchedulerState.record_completion(state, fid, {:ok, 42})
+
+      snapshot = SchedulerState.progress_snapshot(state)
+
+      assert snapshot.fibers == 1
+      assert snapshot.run_queue == 1
+      assert snapshot.completed == 1
+    end
+  end
+
+  describe "progressed?/2" do
+    test "returns false for identical snapshots" do
+      state = SchedulerState.new()
+      snapshot = SchedulerState.progress_snapshot(state)
+
+      refute SchedulerState.progressed?(snapshot, snapshot)
+    end
+
+    test "returns true when a fiber completes" do
+      state = SchedulerState.new()
+      fiber = Fiber.new(Comp.pure(42), Env.new())
+      {fid, state} = SchedulerState.add_fiber(state, fiber)
+
+      before = SchedulerState.progress_snapshot(state)
+      state = SchedulerState.record_completion(state, fid, {:ok, 42})
+      after_ = SchedulerState.progress_snapshot(state)
+
+      assert SchedulerState.progressed?(before, after_)
+    end
+
+    test "returns true when run queue changes" do
+      state = SchedulerState.new()
+
+      before = SchedulerState.progress_snapshot(state)
+
+      fiber = Fiber.new(Comp.pure(1), Env.new())
+      {_fid, state} = SchedulerState.add_fiber(state, fiber)
+      after_ = SchedulerState.progress_snapshot(state)
+
+      assert SchedulerState.progressed?(before, after_)
+    end
+
+    test "returns true when a suspension is added" do
+      state = SchedulerState.new()
+      fiber1 = Fiber.new(Comp.pure(1), Env.new())
+      fiber2 = Fiber.new(Comp.pure(2), Env.new())
+      {fid1, state} = SchedulerState.add_fiber(state, fiber1)
+      {fid2, state} = SchedulerState.add_fiber(state, fiber2)
+
+      before = SchedulerState.progress_snapshot(state)
+      {:suspended, state} = SchedulerState.suspend_awaiting(state, fid2, [fid1], :all)
+      after_ = SchedulerState.progress_snapshot(state)
+
+      assert SchedulerState.progressed?(before, after_)
+    end
+
+    test "returns true when a task is added" do
+      state = SchedulerState.new()
+
+      before = SchedulerState.progress_snapshot(state)
+      task_ref = make_ref()
+      fiber_id = make_ref()
+      state = SchedulerState.add_task(state, task_ref, fiber_id)
+      after_ = SchedulerState.progress_snapshot(state)
+
+      assert SchedulerState.progressed?(before, after_)
+    end
+
+    test "returns true when a batch suspension is added" do
+      state = SchedulerState.new()
+
+      before = SchedulerState.progress_snapshot(state)
+      fiber_id = make_ref()
+
+      state =
+        SchedulerState.add_batch_suspension(state, fiber_id, %Skuld.Comp.InternalSuspend{
+          resume: fn _, _ -> nil end,
+          payload: %Skuld.Comp.InternalSuspend.Batch{
+            batch_key: :test,
+            op: :req,
+            request_id: make_ref()
+          }
+        })
+
+      after_ = SchedulerState.progress_snapshot(state)
+
+      assert SchedulerState.progressed?(before, after_)
+    end
+
+    test "returns true when a channel suspension is added" do
+      state = SchedulerState.new()
+
+      before = SchedulerState.progress_snapshot(state)
+      fiber_id = make_ref()
+      state = SchedulerState.add_channel_suspension(state, fiber_id)
+      after_ = SchedulerState.progress_snapshot(state)
+
+      assert SchedulerState.progressed?(before, after_)
+    end
+
+    test "returns true when wake signals change" do
+      state = SchedulerState.new()
+      fiber1 = Fiber.new(Comp.pure(1), Env.new())
+      fiber2 = Fiber.new(Comp.pure(2), Env.new())
+      {fid1, state} = SchedulerState.add_fiber(state, fiber1)
+      {fid2, state} = SchedulerState.add_fiber(state, fiber2)
+
+      # Dequeue both to clear run queue
+      {:ok, ^fid1, state} = SchedulerState.dequeue(state)
+      {:ok, ^fid2, state} = SchedulerState.dequeue(state)
+
+      # Suspend fid2 awaiting fid1
+      {:suspended, state} = SchedulerState.suspend_awaiting(state, fid2, [fid1], :all)
+
+      before = SchedulerState.progress_snapshot(state)
+
+      # Complete fid1 — this wakes fid2, adding a wake signal and enqueueing it
+      state = SchedulerState.record_completion(state, fid1, {:ok, 42})
+      after_ = SchedulerState.progress_snapshot(state)
+
+      assert SchedulerState.progressed?(before, after_)
+    end
+  end
 end

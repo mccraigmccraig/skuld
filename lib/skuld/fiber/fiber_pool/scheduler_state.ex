@@ -562,6 +562,61 @@ defmodule Skuld.Fiber.FiberPool.SchedulerState do
   end
 
   #############################################################################
+  ## Progress Detection (Deadlock Detection Support)
+  #############################################################################
+
+  @typedoc """
+  A lightweight snapshot of scheduler state for progress detection.
+
+  Captures the sizes of all mutable collections so that `progressed?/2`
+  can cheaply determine whether a `Scheduler.step` made forward progress.
+  """
+  @type progress_snapshot :: %{
+          fibers: non_neg_integer(),
+          run_queue: non_neg_integer(),
+          suspended: non_neg_integer(),
+          completed: non_neg_integer(),
+          wake_signals: non_neg_integer(),
+          tasks: non_neg_integer(),
+          batch_suspended: non_neg_integer(),
+          channel_suspended: non_neg_integer()
+        }
+
+  @doc """
+  Take a lightweight snapshot of the scheduler state for progress detection.
+
+  Used before a `Scheduler.step` call — compare with a snapshot taken after
+  the step via `progressed?/2` to detect whether the step made meaningful
+  forward progress.
+  """
+  @spec progress_snapshot(t()) :: progress_snapshot()
+  def progress_snapshot(state) do
+    %{
+      fibers: map_size(state.fibers),
+      run_queue: :queue.len(state.run_queue),
+      suspended: map_size(state.suspended),
+      completed: map_size(state.completed),
+      wake_signals: map_size(state.wake_signals),
+      tasks: map_size(state.tasks),
+      batch_suspended: map_size(state.batch_suspended),
+      channel_suspended: map_size(state.channel_suspended)
+    }
+  end
+
+  @doc """
+  Determine whether the scheduler state evolved meaningfully between two snapshots.
+
+  Returns `true` if any of the tracked collection sizes changed, indicating
+  that a fiber completed, a suspension was added or resolved, a task finished,
+  etc. Returns `false` if the state is structurally identical — suggesting the
+  scheduler is stuck and no forward progress is being made.
+  """
+  @spec progressed?(progress_snapshot(), progress_snapshot()) :: boolean()
+  def progressed?(before, after_) do
+    before != after_
+  end
+
+  #############################################################################
   ## Shared Env State Management
   #############################################################################
 
