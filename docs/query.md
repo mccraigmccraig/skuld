@@ -66,7 +66,7 @@ end
 FiberPool.map(staging_rows, &process_row/1)
 |> Import.Queries.with_executor(Import.Queries.EctoExecutor)
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 # Result: 2 batched queries instead of 2,000 individual ones
 ```
 
@@ -108,7 +108,7 @@ end
 |> Import.Queries.with_executor(Import.Queries.EctoExecutor)
 |> Channel.with_handler()
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 ```
 
 With `concurrency: 10` and `chunk_size: 50`, at most ~500 rows are being
@@ -362,7 +362,7 @@ end
 |> Users.with_executor(Users.EctoExecutor)
 |> Orders.with_executor(Orders.EctoExecutor)
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 ```
 
 `with_executor/2` registers the executor for *all* fetches in the contract. Each
@@ -461,7 +461,7 @@ alias Skuld.Query.Cache, as: QueryCache
 my_comp
 |> QueryCache.with_executor(MyApp.Queries.Users, MyApp.Queries.Users.EctoExecutor)
 |> FiberPool.with_handler()
-|> FiberPool.run()
+|> Comp.run()
 
 # Multiple contracts (shared cache scope)
 my_comp
@@ -470,7 +470,7 @@ my_comp
   {MyApp.Queries.Orders, MyApp.Queries.Orders.EctoExecutor}
 ])
 |> FiberPool.with_handler()
-|> FiberPool.run()
+|> Comp.run()
 ```
 
 ### Cache Scope and Lifetime
@@ -537,7 +537,7 @@ manually using FiberPool primitives:
 FiberPool.map(["1", "2", "3"], &Users.get_user/1)
 |> Users.with_executor(Users.EctoExecutor)
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 # All 3 get_user calls batched into a single executor invocation
 
 # Using fiber/await for individual control
@@ -596,7 +596,7 @@ end
   end
 )
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 ```
 
 ## Comparison with Port.Contract

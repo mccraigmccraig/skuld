@@ -217,7 +217,7 @@ invocation:
 FiberPool.map(["1", "2", "3"], &MyApp.Queries.Users.get_user/1)
 |> MyApp.Queries.Users.with_executor(MyApp.Queries.Users.EctoExecutor)
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 # All 3 get_user calls batched into a single executor invocation
 ```
 
@@ -230,7 +230,7 @@ alias Skuld.Query.Cache, as: QueryCache
 FiberPool.map(["1", "2", "3"], &MyApp.Queries.Users.get_user/1)
 |> QueryCache.with_executor(MyApp.Queries.Users, MyApp.Queries.Users.EctoExecutor)
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 ```
 
 See **[Query documentation](query.md)** for the full API:

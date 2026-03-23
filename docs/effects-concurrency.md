@@ -253,7 +253,7 @@ comp do
   {r1, r2}
 end
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 #=> {:result_1, :result_2}
 ```
 
@@ -272,7 +272,7 @@ comp do
   results
 end
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 #=> [:first, :second]
 ```
 
@@ -309,7 +309,7 @@ end
 FiberPool.map([1, 2, 3], &UserQueries.get_user/1)
 |> UserQueries.with_executor(UserQueries.Impl)
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 # Prints: Executor called with 3 operations
 #=> [%{id: 1, name: "User 1"}, %{id: 2, name: "User 2"}, %{id: 3, name: "User 3"}]
 ```
@@ -332,7 +332,7 @@ comp do
   FiberPool.await(h)
 end
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 ```
 
 Operations: `fiber/1`, `fiber_all/1`, `spawn_await_all/1`, `map/2`, `task/1`, `await/1`, `await_all/1`, `await_any/1`, `cancel/1`
@@ -364,7 +364,7 @@ comp do
 end
 |> Channel.with_handler()
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 ```
 
 ### Backpressure
@@ -415,7 +415,7 @@ comp do
 end
 |> Channel.with_handler()
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 ```
 
 **How it works:**
@@ -455,7 +455,7 @@ comp do
 end
 |> Channel.with_handler()
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 #=> [4, 8, 12, 16, ...]
 ```
 
@@ -550,7 +550,7 @@ User.fetch_users_with_orders([1, 2, 3, 4, 5])
 |> Queries.with_executor(QueriesExecutor)
 |> Channel.with_handler()
 |> FiberPool.with_handler()
-|> FiberPool.run!()
+|> Comp.run!()
 # Prints:
 #    User fetch: 3 users batched
 #    Order fetch: 3 queries batched
