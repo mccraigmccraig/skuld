@@ -524,7 +524,7 @@ defmodule Skuld.Query.ContractTest do
 
       # Bang dispatches Throw inside the fiber, causing fiber failure.
       # Without a Throw handler in the fiber, the effect raises.
-      assert_raise RuntimeError, ~r/Fiber failed/, fn ->
+      assert_raise Skuld.Comp.ThrowError, fn ->
         comp do
           h <- FiberPool.fiber(OkErrorQueries.find_user!("1"))
           FiberPool.await!(h)
@@ -564,7 +564,7 @@ defmodule Skuld.Query.ContractTest do
 
       # nil → custom unwrap → {:error, :not_found} → Throw.throw
       # Since it's inside a fiber, the fiber will fail
-      assert_raise RuntimeError, ~r/Fiber failed/, fn ->
+      assert_raise Skuld.Comp.ThrowError, fn ->
         comp do
           h <- FiberPool.fiber(CustomBangQueries.find_user!("1"))
           FiberPool.await!(h)
@@ -578,14 +578,18 @@ defmodule Skuld.Query.ContractTest do
 
   describe "error cases" do
     test "missing executor raises error" do
-      assert_raise RuntimeError, ~r/no_batch_executor/, fn ->
-        comp do
-          h <- FiberPool.fiber(TestQueries.get_user("1"))
-          FiberPool.await!(h)
+      error =
+        assert_raise Skuld.Comp.ThrowError, fn ->
+          comp do
+            h <- FiberPool.fiber(TestQueries.get_user("1"))
+            FiberPool.await!(h)
+          end
+          |> FiberPool.with_handler()
+          |> Comp.run!()
         end
-        |> FiberPool.with_handler()
-        |> Comp.run!()
-      end
+
+      assert %Skuld.Effects.FiberPool.AwaitError{type: :throw, error: {:no_batch_executor, _}} =
+               error.error
     end
 
     test "invalid deffetch syntax raises CompileError" do

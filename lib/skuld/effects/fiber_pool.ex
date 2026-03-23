@@ -97,6 +97,67 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   #############################################################################
+  ## Result types for await errors
+  #############################################################################
+
+  defmodule AwaitError do
+    @moduledoc """
+    Structured error for a single fiber/task failure.
+
+    Thrown via `Throw.throw/1` when `await!/1` encounters a failed fiber.
+
+    ## Fields
+
+    - `:type` - The kind of failure: `:exception`, `:throw`, `:exit`, or `:cancelled`
+    - `:error` - The original error value (exception struct, throw value, exit reason, etc.)
+    - `:stacktrace` - The stacktrace if available, or `nil`
+    """
+    @type t :: %__MODULE__{
+            type: :exception | :throw | :exit | :cancelled,
+            error: term(),
+            stacktrace: list() | nil
+          }
+
+    @derive Jason.Encoder
+    defstruct [:type, :error, :stacktrace]
+  end
+
+  defmodule AwaitOk do
+    @moduledoc """
+    Successful result wrapper used only inside `AwaitAllResults.results`.
+
+    Not returned from single `await!/1` — only used to distinguish successes
+    from failures in a mixed-result `await_all!/1`.
+
+    ## Fields
+
+    - `:result` - The successful value
+    """
+    @type t :: %__MODULE__{result: term()}
+
+    @derive Jason.Encoder
+    defstruct [:result]
+  end
+
+  defmodule AwaitAllResults do
+    @moduledoc """
+    Mixed bag of results from `await_all!/1` when at least one fiber failed.
+
+    Thrown via `Throw.throw/1` when `await_all!/1` encounters any failures.
+    Contains the full list of results (both successes and failures) in the
+    same order as the input handles.
+
+    ## Fields
+
+    - `:results` - List of `AwaitOk.t()` | `AwaitError.t()` in handle order
+    """
+    @type t :: %__MODULE__{results: [AwaitOk.t() | AwaitError.t()]}
+
+    @derive Jason.Encoder
+    defstruct [:results]
+  end
+
+  #############################################################################
   ## Public API
   #############################################################################
 
@@ -553,8 +614,14 @@ defmodule Skuld.Effects.FiberPool do
     # Yield a FiberPool suspension for the scheduler to handle
     # Note: resume takes env as parameter to avoid capturing stale env with pending fibers
     resume = fn result, resume_env ->
-      value = if raising, do: unwrap_result(result), else: result
-      k.(value, resume_env)
+      if raising do
+        case unwrap_result(result) do
+          {:ok, value} -> k.(value, resume_env)
+          {:throw, sentinel} -> {sentinel, resume_env}
+        end
+      else
+        k.(result, resume_env)
+      end
     end
 
     suspend = InternalSuspend.await_one(handle, resume, consume: consume)
@@ -564,17 +631,29 @@ defmodule Skuld.Effects.FiberPool do
   defp handle(%AwaitAll{handles: handles, raising: raising}, env, k) do
     # Note: resume takes env as parameter to avoid capturing stale env with pending fibers
     resume = fn results, resume_env ->
-      # Results is a list of {:ok, val} | {:error, reason}
-      values =
-        if raising do
-          # Unwrap all, raising on first error
-          Enum.map(results, &unwrap_result/1)
-        else
-          # Return result tuples as-is
-          results
-        end
+      if raising do
+        unwrapped = Enum.map(results, &unwrap_result/1)
+        has_errors = Enum.any?(unwrapped, &match?({:throw, _}, &1))
 
-      k.(values, resume_env)
+        if has_errors do
+          # Build mixed bag of AwaitOk / AwaitError for all results
+          mixed =
+            Enum.map(unwrapped, fn
+              {:ok, value} -> %AwaitOk{result: value}
+              {:throw, %Comp.Throw{error: await_error}} -> await_error
+            end)
+
+          sentinel = %Comp.Throw{error: %AwaitAllResults{results: mixed}}
+          {sentinel, resume_env}
+        else
+          # All succeeded — unwrap values
+          values = Enum.map(unwrapped, fn {:ok, value} -> value end)
+          k.(values, resume_env)
+        end
+      else
+        # Return result tuples as-is
+        k.(results, resume_env)
+      end
     end
 
     suspend = InternalSuspend.await_all(handles, resume)
@@ -587,14 +666,14 @@ defmodule Skuld.Effects.FiberPool do
       # Find the handle that completed
       handle = Enum.find(handles, &(&1.id == fiber_id))
 
-      value =
-        if raising do
-          {handle, unwrap_result(result)}
-        else
-          {handle, result}
+      if raising do
+        case unwrap_result(result) do
+          {:ok, value} -> k.({handle, value}, resume_env)
+          {:throw, sentinel} -> {sentinel, resume_env}
         end
-
-      k.(value, resume_env)
+      else
+        k.({handle, result}, resume_env)
+      end
     end
 
     suspend = InternalSuspend.await_any(handles, resume)
@@ -736,10 +815,76 @@ defmodule Skuld.Effects.FiberPool do
     |> Map.put(:transform_suspend, &Comp.identity_k/2)
   end
 
-  # Unwrap a result, raising on error
-  defp unwrap_result({:ok, value}), do: value
+  # Unwrap a fiber result into {:ok, value} or {:throw, %Comp.Throw{error: %AwaitError{}}}
+  # The :throw variant is a Throw sentinel — resume lambdas return it directly
+  # (bypassing the continuation k) so it flows through the leave_scope chain
+  # where Throw.catch_error can intercept it.
+  defp unwrap_result({:ok, value}), do: {:ok, value}
 
-  defp unwrap_result({:error, reason}) do
-    raise "Fiber failed: #{inspect(reason)}"
+  # Raw Elixir exception caught by execute_and_handle's rescue clause
+  defp unwrap_result({:error, {:exception, exception, stacktrace}}) do
+    {:throw,
+     %Comp.Throw{
+       error: %AwaitError{type: :exception, error: exception, stacktrace: stacktrace}
+     }}
+  end
+
+  # Elixir exception caught by Comp.call and wrapped as a Comp.Throw —
+  # execute_and_handle stores these as {:throw, throw.error} where throw.error
+  # is %{kind: :error, payload: exception, stacktrace: stacktrace}
+  defp unwrap_result(
+         {:error, {:throw, %{kind: :error, payload: exception, stacktrace: stacktrace}}}
+       ) do
+    {:throw,
+     %Comp.Throw{
+       error: %AwaitError{type: :exception, error: exception, stacktrace: stacktrace}
+     }}
+  end
+
+  # Elixir throw caught by Comp.call and wrapped as a Comp.Throw
+  defp unwrap_result({:error, {:throw, %{kind: :throw, payload: value, stacktrace: stacktrace}}}) do
+    {:throw,
+     %Comp.Throw{
+       error: %AwaitError{type: :throw, error: value, stacktrace: stacktrace}
+     }}
+  end
+
+  # Elixir exit caught by Comp.call and wrapped as a Comp.Throw
+  defp unwrap_result({:error, {:throw, %{kind: :exit, payload: reason, stacktrace: stacktrace}}}) do
+    {:throw,
+     %Comp.Throw{
+       error: %AwaitError{type: :exit, error: reason, stacktrace: stacktrace}
+     }}
+  end
+
+  # Skuld Throw.throw (user-level throw, not Elixir exception) —
+  # the error is the user's throw value directly
+  defp unwrap_result({:error, {:throw, reason}}) do
+    {:throw, %Comp.Throw{error: %AwaitError{type: :throw, error: reason, stacktrace: nil}}}
+  end
+
+  # Raw Elixir exit caught by execute_and_handle's catch clause
+  defp unwrap_result({:error, {:exit, reason}}) do
+    {:throw, %Comp.Throw{error: %AwaitError{type: :exit, error: reason, stacktrace: nil}}}
+  end
+
+  # Task crash — task raised an exception in a separate BEAM process
+  defp unwrap_result({:error, {:task_crashed, {exception, stacktrace}}}) do
+    {:throw,
+     %Comp.Throw{
+       error: %AwaitError{type: :exception, error: exception, stacktrace: stacktrace}
+     }}
+  end
+
+  # Task crash — other forms (e.g. task was killed)
+  defp unwrap_result({:error, {:task_crashed, reason}}) do
+    {:throw,
+     %Comp.Throw{
+       error: %AwaitError{type: :exit, error: reason, stacktrace: nil}
+     }}
+  end
+
+  defp unwrap_result({:error, {:cancelled, reason}}) do
+    {:throw, %Comp.Throw{error: %AwaitError{type: :cancelled, error: reason, stacktrace: nil}}}
   end
 end

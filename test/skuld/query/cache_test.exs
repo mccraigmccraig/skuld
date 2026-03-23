@@ -505,7 +505,7 @@ defmodule Skuld.Query.CacheTest do
     test "executor failure does not populate cache — next request retries" do
       with_test_pid(fn ->
         # First call: executor fails
-        assert_raise RuntimeError, ~r/Fiber failed/, fn ->
+        assert_raise Skuld.Comp.ThrowError, fn ->
           comp do
             h <- FiberPool.fiber(TestQueries.get_user("1"))
             FiberPool.await!(h)

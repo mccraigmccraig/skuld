@@ -154,14 +154,26 @@ defmodule Skuld.Effects.FiberPoolTest do
         raise "fiber error"
       end
 
-      assert_raise RuntimeError, ~r/Fiber failed/, fn ->
-        comp do
-          h <- FiberPool.fiber(fiber_comp)
-          FiberPool.await!(h)
+      error =
+        assert_raise Skuld.Comp.ThrowError, fn ->
+          comp do
+            h <- FiberPool.fiber(fiber_comp)
+            FiberPool.await!(h)
+          end
+          |> FiberPool.with_handler()
+          |> Comp.run!()
         end
-        |> FiberPool.with_handler()
-        |> Comp.run!()
-      end
+
+      # The raise inside the fiber is caught by Comp.call and converted to a
+      # Comp.Throw, which execute_and_handle stores as {:throw, throw.error}.
+      # unwrap_result unwraps the Comp.Throw wrapper back to :exception type.
+      assert %Skuld.Effects.FiberPool.AwaitError{
+               type: :exception,
+               error: %RuntimeError{message: "fiber error"},
+               stacktrace: stacktrace
+             } = error.error
+
+      assert is_list(stacktrace) and stacktrace != []
     end
   end
 
@@ -450,15 +462,21 @@ defmodule Skuld.Effects.FiberPoolTest do
       import ExUnit.CaptureLog
 
       capture_log(fn ->
-        assert_raise RuntimeError, ~r/Fiber failed/, fn ->
-          comp do
-            h <- FiberPool.task(fn -> raise "task crashed!" end)
-            FiberPool.await!(h)
+        error =
+          assert_raise Skuld.Comp.ThrowError, fn ->
+            comp do
+              h <- FiberPool.task(fn -> raise "task crashed!" end)
+              FiberPool.await!(h)
+            end
+            |> FiberPool.with_handler()
+            |> FiberPool.with_task_supervisor()
+            |> Comp.run!()
           end
-          |> FiberPool.with_handler()
-          |> FiberPool.with_task_supervisor()
-          |> Comp.run!()
-        end
+
+        assert %Skuld.Effects.FiberPool.AwaitError{
+                 type: :exception,
+                 error: %RuntimeError{message: "task crashed!"}
+               } = error.error
       end)
     end
 
