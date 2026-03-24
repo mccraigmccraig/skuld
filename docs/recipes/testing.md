@@ -1,5 +1,9 @@
 # Testing Effectful Code
 
+<!-- nav:header:start -->
+[< Serializable Coroutines (EffectLogger)](../advanced/effect-logger.md) | [Index](../../README.md) | [Hexagonal Architecture >](hexagonal-architecture.md)
+<!-- nav:header:end -->
+
 Algebraic effects enable a powerful testing pattern: domain logic
 written with effects runs with real handlers in production and pure
 in-memory handlers in tests. This makes property-based testing with
@@ -189,3 +193,10 @@ end
   are reproducible
 - **Compose handler stacks in one place** - a `Run.execute/2` or
   similar function keeps test and production stacks aligned
+
+<!-- nav:footer:start -->
+
+---
+
+[< Serializable Coroutines (EffectLogger)](../advanced/effect-logger.md) | [Index](../../README.md) | [Hexagonal Architecture >](hexagonal-architecture.md)
+<!-- nav:footer:end -->

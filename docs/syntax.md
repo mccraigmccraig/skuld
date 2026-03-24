@@ -1,5 +1,9 @@
 # Syntax In Depth
 
+<!-- nav:header:start -->
+[< Getting Started](getting-started.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State & Environment >](effects/state-environment.md)
+<!-- nav:header:end -->
+
 The [Getting Started](getting-started.md) guide covered the basics: `comp`
 blocks, `<-` binds, auto-lifting, handlers, and `defcomp`. This page
 covers the full syntax in detail.
@@ -320,3 +324,10 @@ resources:
 chain, ensuring effects like database connections or locks are properly
 released. This is used internally by `AsyncComputation.cancel/1` and
 `Yield.run_with_driver/2`.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Getting Started](getting-started.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State & Environment >](effects/state-environment.md)
+<!-- nav:footer:end -->

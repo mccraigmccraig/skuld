@@ -1,5 +1,9 @@
 # What Are Algebraic Effects?
 
+<!-- nav:header:start -->
+[< Why Effects?](why.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Getting Started >](getting-started.md)
+<!-- nav:header:end -->
+
 The [previous section](why.md) identified the problem: domain
 orchestration code is full of business logic but can't be pure because it
 depends on databases, external services, and other side effects. The
@@ -164,3 +168,10 @@ choices are designed to feel natural in a dynamic language:
 
 The [Getting Started](getting-started.md) guide walks through writing
 your first computation.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Why Effects?](why.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Getting Started >](getting-started.md)
+<!-- nav:footer:end -->

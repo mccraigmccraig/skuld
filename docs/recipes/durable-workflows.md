@@ -1,5 +1,9 @@
 # Durable Workflows
 
+<!-- nav:header:start -->
+[< LiveView Integration](liveview.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Data Pipelines >](data-pipelines.md)
+<!-- nav:header:end -->
+
 EffectLogger turns computations into durable workflows that survive
 process restarts, server reboots, and code deployments. This is
 Temporal-style durable execution as a library primitive.
@@ -208,3 +212,10 @@ Skuld is much lighter-weight: no infrastructure, no RPC, and full
 algebraic effect composition. Temporal is more mature for production
 distributed workflows with built-in retry policies, visibility, and
 multi-language support.
+
+<!-- nav:footer:start -->
+
+---
+
+[< LiveView Integration](liveview.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Data Pipelines >](data-pipelines.md)
+<!-- nav:footer:end -->

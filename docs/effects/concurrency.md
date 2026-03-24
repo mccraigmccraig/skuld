@@ -1,5 +1,9 @@
 # Concurrency (Familiar Patterns)
 
+<!-- nav:header:start -->
+[< Collections](collections.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [Persistence & Data >](persistence.md)
+<!-- nav:header:end -->
+
 These concurrency effects wrap BEAM patterns you already know (tasks,
 agents) with effect-based interfaces, giving you testability and
 composition with the rest of the effect system.
@@ -226,3 +230,10 @@ end
 ### Operations
 
 `start/2`, `start_sync/2`, `resume/2`, `resume_sync/3`, `cancel/1`
+
+<!-- nav:footer:start -->
+
+---
+
+[< Collections](collections.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [Persistence & Data >](persistence.md)
+<!-- nav:footer:end -->

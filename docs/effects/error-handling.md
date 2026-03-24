@@ -1,5 +1,9 @@
 # Error Handling & Resources
 
+<!-- nav:header:start -->
+[< State & Environment](state-environment.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [Value Generation >](value-generation.md)
+<!-- nav:header:end -->
+
 ## Throw
 
 Typed error handling within computations. Throw is the primary way to
@@ -190,3 +194,10 @@ Different Elixir error types are handled consistently:
 
 Skuld's own `Throw.throw/1` produces `%ThrowError{}` when unhandled,
 which includes the thrown value for debugging.
+
+<!-- nav:footer:start -->
+
+---
+
+[< State & Environment](state-environment.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [Value Generation >](value-generation.md)
+<!-- nav:footer:end -->

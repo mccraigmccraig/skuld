@@ -1,5 +1,9 @@
 # Persistence & Data
 
+<!-- nav:header:start -->
+[< Concurrency (Familiar Patterns)](concurrency.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [External Integration >](external-integration.md)
+<!-- nav:header:end -->
+
 The DB, Command, and EventAccumulator effects handle database writes,
 mutation dispatch, and domain event collection. They work together to
 support patterns from simple CRUD through to event-sourced domain logic.
@@ -327,3 +331,10 @@ end
 # result is the order, events contains [%OrderPlaced{...}]
 # Publish events to your event bus, persist to an event store, etc.
 ```
+
+<!-- nav:footer:start -->
+
+---
+
+[< Concurrency (Familiar Patterns)](concurrency.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [External Integration >](external-integration.md)
+<!-- nav:footer:end -->

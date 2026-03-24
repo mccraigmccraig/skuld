@@ -1,5 +1,9 @@
 # Collections
 
+<!-- nav:header:start -->
+[< Value Generation](value-generation.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [Concurrency (Familiar Patterns) >](concurrency.md)
+<!-- nav:header:end -->
+
 Effectful iteration over lists. When you need to map over a collection
 and each iteration uses effects (reading state, writing logs, etc.),
 use FxList or FxFasterList.
@@ -60,3 +64,10 @@ end
 | Yield/Suspend | Full support | Limited |
 | Throw | Full support | Full support |
 | Use when | You need Yield, or list is small | Performance matters, Throw-only errors |
+
+<!-- nav:footer:start -->
+
+---
+
+[< Value Generation](value-generation.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [Concurrency (Familiar Patterns) >](concurrency.md)
+<!-- nav:footer:end -->

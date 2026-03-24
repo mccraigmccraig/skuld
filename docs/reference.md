@@ -1,5 +1,9 @@
 # Reference
 
+<!-- nav:header:start -->
+[< How It Works](internals.md) | [Up: Internals](internals.md) | [Index](../README.md)
+<!-- nav:header:end -->
+
 Quick-reference material for Skuld. For narrative explanations, start
 with [Why Effects?](why.md) or [Getting Started](getting-started.md).
 
@@ -313,3 +317,10 @@ no `Eff '[State, Reader, Throw] a` to track.
 | 7 | [Batch Loading](recipes/batch-loading.md) | Query contracts, FiberPool |
 | 8 | [How It Works](internals.md) | Implementation, CPS, custom effects |
 | 9 | Reference (this page) | Quick-reference tables, glossary |
+
+<!-- nav:footer:start -->
+
+---
+
+[< How It Works](internals.md) | [Up: Internals](internals.md) | [Index](../README.md)
+<!-- nav:footer:end -->

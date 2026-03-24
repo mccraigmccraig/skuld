@@ -1,5 +1,9 @@
 # Why Effects?
 
+<!-- nav:header:start -->
+[< Skuld](../README.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [What Are Algebraic Effects? >](what.md)
+<!-- nav:header:end -->
+
 Most Elixir applications follow good practices: separate your data
 structures from your persistence layer, push side effects to the edges,
 keep business logic pure. This works well - until it doesn't.
@@ -202,3 +206,10 @@ Traditional:               With effects:
 
 This is what algebraic effects provide. The [next section](what.md)
 explains how.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Skuld](../README.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [What Are Algebraic Effects? >](what.md)
+<!-- nav:footer:end -->

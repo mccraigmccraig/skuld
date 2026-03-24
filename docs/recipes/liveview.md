@@ -1,5 +1,9 @@
 # LiveView Integration
 
+<!-- nav:header:start -->
+[< Handler Stacks](handler-stacks.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Durable Workflows >](durable-workflows.md)
+<!-- nav:header:end -->
+
 AsyncComputation bridges effectful computations into Phoenix LiveView,
 enabling multi-step wizards, long-running operations, and interactive
 workflows where a computation yields for user input.
@@ -149,3 +153,10 @@ When the computation suspends, extract and persist the log from
 `Suspend.data[EffectLogger]`. On page reload, cold-resume from the
 persisted log. See [Durable Workflows](durable-workflows.md) for the
 full pattern.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Handler Stacks](handler-stacks.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Durable Workflows >](durable-workflows.md)
+<!-- nav:footer:end -->

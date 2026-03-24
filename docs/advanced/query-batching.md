@@ -1,5 +1,9 @@
 # Query & Batching
 
+<!-- nav:header:start -->
+[< Cooperative Fibers & Concurrency](fibers-concurrency.md) | [Up: Advanced Effects](yield.md) | [Index](../../README.md) | [Serializable Coroutines (EffectLogger) >](effect-logger.md)
+<!-- nav:header:end -->
+
 Skuld's query system solves the N+1 problem with automatic batching.
 You write simple per-record fetch calls; the runtime batches concurrent
 calls of the same type into a single executor invocation. The `query`
@@ -380,3 +384,10 @@ my_query
 Use Port.Contract for external calls that don't benefit from batching
 (HTTP APIs, service calls). Use Query.Contract when multiple concurrent
 fibers are likely to make the same type of query.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Cooperative Fibers & Concurrency](fibers-concurrency.md) | [Up: Advanced Effects](yield.md) | [Index](../../README.md) | [Serializable Coroutines (EffectLogger) >](effect-logger.md)
+<!-- nav:footer:end -->

@@ -1,5 +1,9 @@
 # Getting Started
 
+<!-- nav:header:start -->
+[< What Are Algebraic Effects?](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Syntax In Depth >](syntax.md)
+<!-- nav:header:end -->
+
 This guide walks you through writing and running your first Skuld
 computation. By the end, you'll understand the basic workflow: define a
 computation, install handlers, and run it.
@@ -298,3 +302,10 @@ needs using effects.
   Reader, Writer, error handling, persistence, and more
 - **[Advanced Effects](advanced/yield.md)** - Coroutines, fibers,
   streaming, and serializable computations
+
+<!-- nav:footer:start -->
+
+---
+
+[< What Are Algebraic Effects?](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Syntax In Depth >](syntax.md)
+<!-- nav:footer:end -->

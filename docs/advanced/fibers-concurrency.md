@@ -1,5 +1,9 @@
 # Cooperative Fibers & Concurrency
 
+<!-- nav:header:start -->
+[< Yield (Coroutines)](yield.md) | [Up: Advanced Effects](yield.md) | [Index](../../README.md) | [Query & Batching >](query-batching.md)
+<!-- nav:header:end -->
+
 FiberPool, Channel, and Brook provide cooperative fiber-based concurrency
 within a single BEAM process. They enable patterns that are difficult or
 impossible with standard BEAM concurrency: automatic I/O batching across
@@ -366,3 +370,10 @@ for small inputs) due to zero message-passing overhead and chunked
 processing. GenStage catches up and wins when stage count exceeds ~15-20
 for trivial transforms, because its parallel process execution has
 constant overhead regardless of stage count.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Yield (Coroutines)](yield.md) | [Up: Advanced Effects](yield.md) | [Index](../../README.md) | [Query & Batching >](query-batching.md)
+<!-- nav:footer:end -->

@@ -1,5 +1,9 @@
 # The Decider Pattern
 
+<!-- nav:header:start -->
+[< Hexagonal Architecture](hexagonal-architecture.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Handler Stacks >](handler-stacks.md)
+<!-- nav:header:end -->
+
 The [Decider pattern](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider)
 is a functional approach to event-sourced domain logic. It separates
 domain behaviour into three pure functions:
@@ -225,3 +229,10 @@ The Decider pattern is a good fit when:
 - You want to test domain logic without persistence
 
 It's overkill for simple CRUD - use DB effects directly for that.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Hexagonal Architecture](hexagonal-architecture.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Handler Stacks >](handler-stacks.md)
+<!-- nav:footer:end -->

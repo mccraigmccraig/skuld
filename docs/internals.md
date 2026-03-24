@@ -1,5 +1,9 @@
 # How It Works
 
+<!-- nav:header:start -->
+[< Batch Data Loading](recipes/batch-loading.md) | [Index](../README.md) | [Reference >](reference.md)
+<!-- nav:header:end -->
+
 This section explains Skuld's implementation. You don't need it to use
 Skuld, but it helps with debugging surprising behaviour, writing custom
 effects, and contributing.
@@ -972,3 +976,10 @@ fixed or recorded values instead of real state.
   Read the actual implementation
 - [Freyja](https://github.com/mccraigmccraig/freyja) - The earlier
   Freer-monad implementation, for comparison
+
+<!-- nav:footer:start -->
+
+---
+
+[< Batch Data Loading](recipes/batch-loading.md) | [Index](../README.md) | [Reference >](reference.md)
+<!-- nav:footer:end -->

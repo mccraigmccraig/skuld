@@ -1,5 +1,9 @@
 # Batch Data Loading
 
+<!-- nav:header:start -->
+[< Data Pipelines](data-pipelines.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [How It Works >](../internals.md)
+<!-- nav:header:end -->
+
 Skuld's query system eliminates N+1 queries by automatically batching
 concurrent fetch calls. You write simple per-record code; the runtime
 combines concurrent calls of the same type into a single query.
@@ -171,3 +175,10 @@ It's less useful for:
 - Single queries (nothing to batch with)
 - Queries that can't be combined (complex joins, aggregations)
 - CPU-bound computation (no I/O to batch)
+
+<!-- nav:footer:start -->
+
+---
+
+[< Data Pipelines](data-pipelines.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [How It Works >](../internals.md)
+<!-- nav:footer:end -->

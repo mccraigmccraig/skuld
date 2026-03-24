@@ -1,5 +1,9 @@
 # Serializable Coroutines (EffectLogger)
 
+<!-- nav:header:start -->
+[< Query & Batching](query-batching.md) | [Up: Advanced Effects](yield.md) | [Index](../../README.md) | [Testing Effectful Code >](../recipes/testing.md)
+<!-- nav:header:end -->
+
 EffectLogger enables **serializable coroutines** - computations that can
 suspend, have their state serialized to JSON, be persisted to a database,
 and later be cold-resumed from the serialized state on a different
@@ -223,3 +227,10 @@ effect composition.
 
 See [Durable Workflows](../recipes/durable-workflows.md) for practical
 patterns using EffectLogger.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Query & Batching](query-batching.md) | [Up: Advanced Effects](yield.md) | [Index](../../README.md) | [Testing Effectful Code >](../recipes/testing.md)
+<!-- nav:footer:end -->

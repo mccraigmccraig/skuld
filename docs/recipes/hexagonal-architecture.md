@@ -1,5 +1,9 @@
 # Hexagonal Architecture
 
+<!-- nav:header:start -->
+[< Testing Effectful Code](testing.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [The Decider Pattern >](decider-pattern.md)
+<!-- nav:header:end -->
+
 Hexagonal architecture (ports and adapters) separates domain logic from
 infrastructure by defining ports - interfaces that the domain uses to
 communicate with the outside world. Skuld's Port.Contract and
@@ -239,3 +243,10 @@ calls a plain Elixir function and gets a plain Elixir value back.
 - Provider adapters are where you compose the full handler stack
 - Put the Throw handler last (outermost) in the stack so it catches
   throws from all inner handlers
+
+<!-- nav:footer:start -->
+
+---
+
+[< Testing Effectful Code](testing.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [The Decider Pattern >](decider-pattern.md)
+<!-- nav:footer:end -->

@@ -1,5 +1,9 @@
 # Yield (Coroutines)
 
+<!-- nav:header:start -->
+[< External Integration](../effects/external-integration.md) | [Index](../../README.md) | [Cooperative Fibers & Concurrency >](fibers-concurrency.md)
+<!-- nav:header:end -->
+
 Yield enables coroutine-style suspension and resumption. A computation
 can yield a value and pause, waiting for the caller to provide a
 response before continuing. This is the foundation for all of Skuld's
@@ -193,3 +197,10 @@ are grouped, and each module switch creates a new interceptor layer
 - **Serializable workflows** - combined with EffectLogger, yields
   become serialization points where a computation can be persisted
   and cold-resumed later (see [EffectLogger](effect-logger.md))
+
+<!-- nav:footer:start -->
+
+---
+
+[< External Integration](../effects/external-integration.md) | [Index](../../README.md) | [Cooperative Fibers & Concurrency >](fibers-concurrency.md)
+<!-- nav:footer:end -->

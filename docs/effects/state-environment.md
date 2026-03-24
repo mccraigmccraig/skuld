@@ -1,5 +1,9 @@
 # State & Environment
 
+<!-- nav:header:start -->
+[< Syntax In Depth](../syntax.md) | [Index](../../README.md) | [Error Handling & Resources >](error-handling.md)
+<!-- nav:header:end -->
+
 The State, Reader, and Writer effects provide managed state and
 environment within computations. They replace common patterns like
 process dictionaries, configuration modules, and logging accumulators
@@ -186,3 +190,10 @@ Multiple handlers with `:suspend` options compose - inner handlers
 decorate first, outer handlers can further modify the result. This
 mechanism is used by EffectLogger and AsyncComputation to expose state
 across suspension boundaries.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Syntax In Depth](../syntax.md) | [Index](../../README.md) | [Error Handling & Resources >](error-handling.md)
+<!-- nav:footer:end -->

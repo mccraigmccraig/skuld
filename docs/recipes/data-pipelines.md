@@ -1,5 +1,9 @@
 # Data Pipelines
 
+<!-- nav:header:start -->
+[< Durable Workflows](durable-workflows.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Batch Data Loading >](batch-loading.md)
+<!-- nav:header:end -->
+
 Brook provides streaming data pipelines with backpressure, concurrent
 transforms, and automatic I/O batching. It runs within a single BEAM
 process using cooperative fibers, making it lightweight and fast for
@@ -169,3 +173,10 @@ end)
 Brook shines when your pipeline spends most of its time waiting on
 I/O (database queries, API calls) and can benefit from batching those
 calls across concurrent items.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Durable Workflows](durable-workflows.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Batch Data Loading >](batch-loading.md)
+<!-- nav:footer:end -->

@@ -1,5 +1,9 @@
 # Value Generation
 
+<!-- nav:header:start -->
+[< Error Handling & Resources](error-handling.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [Collections >](collections.md)
+<!-- nav:header:end -->
+
 The Fresh and Random effects replace non-deterministic operations (UUID
 generation, random values) with effects that can be made deterministic
 in tests.
@@ -99,3 +103,10 @@ cases (e.g., testing behaviour at probability boundaries).
 - `Random.random_int(min, max)` - integer in range
 - `Random.random_element(list)` - random element from list
 - `Random.shuffle(list)` - shuffle a list
+
+<!-- nav:footer:start -->
+
+---
+
+[< Error Handling & Resources](error-handling.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [Collections >](collections.md)
+<!-- nav:footer:end -->

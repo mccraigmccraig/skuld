@@ -1,5 +1,9 @@
 # External Integration
 
+<!-- nav:header:start -->
+[< Persistence & Data](persistence.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [Yield (Coroutines) >](../advanced/yield.md)
+<!-- nav:header:end -->
+
 The Port system abstracts calls to external code - database reads, HTTP
 APIs, file I/O, or any side-effecting function - behind a dispatch layer
 with pluggable backends. This makes external dependencies trivially
@@ -389,3 +393,10 @@ test "effectful impl uses DB effect" do
   assert {:ok, %User{}} = result
 end
 ```
+
+<!-- nav:footer:start -->
+
+---
+
+[< Persistence & Data](persistence.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [Yield (Coroutines) >](../advanced/yield.md)
+<!-- nav:footer:end -->

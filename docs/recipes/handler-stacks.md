@@ -1,5 +1,9 @@
 # Handler Stacks
 
+<!-- nav:header:start -->
+[< The Decider Pattern](decider-pattern.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [LiveView Integration >](liveview.md)
+<!-- nav:header:end -->
+
 Handler stacks are the composition point where you wire effects to
 implementations. A well-structured stack makes it easy to switch
 between production, test, and development configurations.
@@ -194,3 +198,10 @@ comp
 - Use `defp` helpers for logical groupings (persistence, generation, etc.)
 - Test stacks should be as close to production stacks as possible -
   only swap the implementations that touch infrastructure
+
+<!-- nav:footer:start -->
+
+---
+
+[< The Decider Pattern](decider-pattern.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [LiveView Integration >](liveview.md)
+<!-- nav:footer:end -->
