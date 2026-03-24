@@ -117,8 +117,8 @@ State.with_handler("", tag: :name)
 ### leave_scope: the cleanup chain
 
 When scoped handlers are installed, they add cleanup functions to
-`leave_scope`. These compose - inner handlers clean up before outer
-ones:
+`leave_scope`. These compose into a chain - each handler's cleanup
+runs and then delegates to the previously installed cleanup:
 
 ```elixir
 # Initial: identity function
@@ -153,8 +153,9 @@ transform_suspend = fn suspend, env ->
 end
 ```
 
-Multiple handlers can add suspend decorations. They compose - inner
-handlers decorate first, outer handlers decorate last.
+Multiple handlers can add suspend decorations. They compose into a
+chain - each handler's decoration is applied in sequence when the
+computation suspends.
 
 ## Sequencing: the monadic core
 

@@ -336,8 +336,8 @@ end
 
 > **Note:** If the effectful implementation can throw (via Throw), the
 > stack function **must** include `Throw.with_handler/1`. Without it,
-> `Comp.run!/1` raises `ThrowError`. Place Throw last (outermost) so it
-> catches throws from all inner handlers.
+> `Comp.run!/1` raises `ThrowError`. The position of Throw in the
+> handler pipeline doesn't matter - it just needs to be installed.
 
 ### Hexagonal architecture
 

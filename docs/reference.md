@@ -149,7 +149,7 @@ wrapped in `Comp.pure/1`. The final expression, bare `if` without
 
 | Effect | Module | Key Operations | Handler | Notes |
 |--------|--------|---------------|---------|-------|
-| **EffectLogger** | `Skuld.Effects.EffectLogger` | `mark_loop/1` | `with_logging(comp, opts)` (fresh), `with_logging(comp, log, opts)` (replay), `with_resume(comp, log, value, opts)` (cold resume) | Must be innermost handler. Decorates Suspend with log. |
+| **EffectLogger** | `Skuld.Effects.EffectLogger` | `mark_loop/1` | `with_logging(comp, opts)` (fresh), `with_logging(comp, log, opts)` (replay), `with_resume(comp, log, value, opts)` (cold resume) | Install before handlers it wraps (it intercepts their effects). Decorates Suspend with log. |
 
 ## Handler installation via `catch` clause
 

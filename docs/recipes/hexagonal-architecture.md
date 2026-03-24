@@ -241,8 +241,8 @@ calls a plain Elixir function and gets a plain Elixir value back.
 - Keep Consumer implementations thin - just infrastructure calls
 - The in-memory implementation is your test double - no mocks needed
 - Provider adapters are where you compose the full handler stack
-- Put the Throw handler last (outermost) in the stack so it catches
-  throws from all inner handlers
+- Include `Throw.with_handler/1` in the stack if computations can
+  throw - without it, `Comp.run!/1` raises `ThrowError`
 
 <!-- nav:footer:start -->
 
