@@ -19,20 +19,69 @@ defmodule Skuld.MixProject do
         main: "readme",
         extras: [
           "README.md",
+          "docs/why.md",
+          "docs/what.md",
+          "docs/getting-started.md",
           "docs/syntax.md",
-          "docs/debugging.md",
-          "docs/effects-state-environment.md",
-          "docs/effects-control-flow.md",
-          "docs/effects-collections.md",
-          "docs/effects-value-generation.md",
-          "docs/effects-concurrency.md",
-          "docs/effects-persistence.md",
-          "docs/query.md",
-          "docs/effects-port.md",
-          "docs/effect-logger.md",
-          "docs/testing.md",
-          "docs/architecture.md",
-          "docs/performance.md"
+          "docs/effects/state-environment.md",
+          "docs/effects/error-handling.md",
+          "docs/effects/value-generation.md",
+          "docs/effects/collections.md",
+          "docs/effects/concurrency.md",
+          "docs/effects/persistence.md",
+          "docs/effects/external-integration.md",
+          "docs/advanced/yield.md",
+          "docs/advanced/fibers-concurrency.md",
+          "docs/advanced/query-batching.md",
+          "docs/advanced/effect-logger.md",
+          "docs/recipes/testing.md",
+          "docs/recipes/hexagonal-architecture.md",
+          "docs/recipes/decider-pattern.md",
+          "docs/recipes/handler-stacks.md",
+          "docs/recipes/liveview.md",
+          "docs/recipes/durable-workflows.md",
+          "docs/recipes/data-pipelines.md",
+          "docs/recipes/batch-loading.md",
+          "docs/internals.md",
+          "docs/reference.md"
+        ],
+        groups_for_extras: [
+          Introduction: [
+            "README.md",
+            "docs/why.md",
+            "docs/what.md",
+            "docs/getting-started.md",
+            "docs/syntax.md"
+          ],
+          "Foundational Effects": [
+            "docs/effects/state-environment.md",
+            "docs/effects/error-handling.md",
+            "docs/effects/value-generation.md",
+            "docs/effects/collections.md",
+            "docs/effects/concurrency.md",
+            "docs/effects/persistence.md",
+            "docs/effects/external-integration.md"
+          ],
+          "Advanced Effects": [
+            "docs/advanced/yield.md",
+            "docs/advanced/fibers-concurrency.md",
+            "docs/advanced/query-batching.md",
+            "docs/advanced/effect-logger.md"
+          ],
+          "Patterns & Recipes": [
+            "docs/recipes/testing.md",
+            "docs/recipes/hexagonal-architecture.md",
+            "docs/recipes/decider-pattern.md",
+            "docs/recipes/handler-stacks.md",
+            "docs/recipes/liveview.md",
+            "docs/recipes/durable-workflows.md",
+            "docs/recipes/data-pipelines.md",
+            "docs/recipes/batch-loading.md"
+          ],
+          Internals: [
+            "docs/internals.md",
+            "docs/reference.md"
+          ]
         ],
         groups_for_modules: [
           Core: [
