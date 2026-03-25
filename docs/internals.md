@@ -323,26 +323,36 @@ the runtime what happened.
 This is where CPS really shines:
 
 ```elixir
-def yield(value) do
-  fn env, k ->
-    # Package k into the Suspend struct for later use
-    resume_fn = fn input ->
-      k.(input, env)
+# Yield's handler - k is CAPTURED, not called now
+def handle(%Yield{value: value}, env, k) do
+  captured_resume = fn input ->
+    {result, final_env} = k.(input, env)
+
+    case result do
+      %ExternalSuspend{} ->
+        # Another suspend - leave_scope runs when that one resolves
+        {result, final_env}
+      _ ->
+        # Computation finished - invoke leave_scope chain
+        final_env.leave_scope.(result, final_env)
     end
-    {%Suspend{value: value, resume: resume_fn, data: nil}, env}
   end
+
+  {%ExternalSuspend{value: value, resume: captured_resume}, env}
 end
 ```
 
-When `yield` executes:
+When the Yield handler receives an effect:
 
 1. It receives the current continuation `k` (everything after the
    yield point)
-2. It wraps `k` in `resume_fn` which closes over `env`
-3. It returns a `Suspend` struct containing the yielded value and
-   `resume_fn`
-4. The caller can later invoke `resume_fn.(input)` to continue from
-   where the computation left off
+2. It wraps `k` in `captured_resume` which closes over `env`
+3. It returns an `ExternalSuspend` struct containing the yielded value
+   and `captured_resume`
+4. The caller can later invoke `captured_resume.(input)` to continue
+   from where the computation left off
+5. On resumption, if the computation completes (rather than suspending
+   again), `leave_scope` is invoked to run cleanup
 
 ### Catch: wrap `k`
 
