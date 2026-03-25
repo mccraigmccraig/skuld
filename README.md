@@ -30,15 +30,15 @@ testable.
 
 ## What Skuld solves
 
-| Pain point | What Skuld does | More |
-|---|---|---|
-| Orchestration code is untestable | Swap handlers: same code runs in-memory with no DB, no network | [Testing](docs/pain-points.md#testing-orchestration-code) |
-| Mox boilerplate for multiple stubs | Handler scoping replaces Mox - five stubs compose as cleanly as one | [No more Mox](docs/pain-points.md#no-more-mox-boilerplate) |
-| Non-deterministic UUIDs / randomness | Fresh and Random have deterministic test handlers - same test, same values | [Determinism](docs/pain-points.md#deterministic-uuids-randomness-and-time) |
-| N+1 queries | `deffetch` + `query` batch independent loads automatically | [Batching](docs/pain-points.md#automatic-query-batching) |
-| Long-running workflows across restarts | EffectLogger serialises progress; resume from where you left off | [Durable workflows](docs/pain-points.md#long-running-computations) |
-| LiveView multi-step operations | AsyncComputation bridges effects into LiveView's process model | [LiveView](docs/pain-points.md#liveview-multi-step-operations) |
-| Hexagonal architecture plumbing | Port.Contract / Port.Provider - typed boundaries, no parameter threading | [Hex arch](docs/pain-points.md#clean-architecture-boundaries) |
+| Pain point                             | What Skuld does                                                            | More                                                                       |
+|----------------------------------------|----------------------------------------------------------------------------|----------------------------------------------------------------------------|
+| Orchestration code is untestable       | Swap handlers: same code runs in-memory with no DB, no network             | [Testing](docs/pain-points.md#testing-orchestration-code)                  |
+| Mox boilerplate for multiple stubs     | Handler scoping replaces Mox - five stubs compose as cleanly as one        | [No more Mox](docs/pain-points.md#no-more-mox-boilerplate)                 |
+| Non-deterministic UUIDs / randomness   | Fresh and Random have deterministic test handlers - same test, same values | [Determinism](docs/pain-points.md#deterministic-uuids-randomness-and-time) |
+| N+1 queries                            | `deffetch` + `query` batch independent loads automatically                 | [Batching](docs/pain-points.md#automatic-query-batching)                   |
+| Long-running workflows across restarts | EffectLogger serialises progress; resume from where you left off           | [Durable workflows](docs/pain-points.md#long-running-computations)         |
+| LiveView multi-step operations         | AsyncComputation bridges effects into LiveView's process model             | [LiveView](docs/pain-points.md#liveview-multi-step-operations)             |
+| Hexagonal architecture plumbing        | Port.Contract / Port.Provider - typed boundaries, no parameter threading   | [Hex arch](docs/pain-points.md#clean-architecture-boundaries)              |
 
 See [What Skuld Solves](docs/pain-points.md) for worked examples of each.
 

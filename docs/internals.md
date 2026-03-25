@@ -293,18 +293,16 @@ end
 ### Throw: discard `k`
 
 ```elixir
-def throw(error) do
-  fn env, _k ->
-    # k is NEVER called - computation stops here
-    {%Throw{error: error}, env}
-  end
+# Throw's handler - k is NEVER called, computation stops here
+def handle(%Throw{error: error}, env, _k) do
+  {%Comp.Throw{error: error}, env}
 end
 ```
 
-The continuation `k` represents "what would have happened next." By not
-calling it, Throw short-circuits the entire rest of the computation.
-The `%Throw{}` struct is a sentinel value that tells the runtime what
-happened.
+The continuation `_k` represents "what would have happened next." By
+not calling it, Throw short-circuits the entire rest of the
+computation. The `%Comp.Throw{}` struct is a sentinel value that tells
+the runtime what happened.
 
 ### Yield: capture `k`
 
