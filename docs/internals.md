@@ -907,19 +907,49 @@ code paths, always use `MIX_ENV=prod` to get production-representative
 numbers. You can also set `consolidate_protocols: true` in your
 `mix.exs` project config temporarily for benchmarking in dev mode.
 
+### Where the overhead comes from
+
+A [progressive benchmark](../bench/overhead_progressive.exs) starts
+from the flat evidence-passing CPS baseline and adds one Skuld feature
+at a time, measuring the marginal cost of each. At N=10000:
+
+| Step | Feature added                | us/op | vs baseline |
+|------|------------------------------|-------|-------------|
+| S0   | evf_cps baseline             | 0.072 | 1.0x        |
+| S1   | + first catch frame (`call`) | 0.163 | **2.3x**    |
+| S2   | + catch in `bind`            | 0.165 | 2.3x        |
+| S3   | + catch on handler dispatch  | 0.204 | 2.8x        |
+| S4   | + `is_function` guard        | 0.206 | 2.9x        |
+| S5   | + struct env (`%Env{}`)      | 0.211 | 2.9x        |
+| S6   | + struct args (`%Get{}`/`%Put{}`) | 0.274 | **3.8x** |
+| S7   | + accessor functions         | 0.278 | 3.9x        |
+| S8   | + `%Change{}` struct on put  | 0.296 | 4.1x        |
+| S9   | + `{Mod, tag}` state keys    | 0.342 | 4.8x        |
+| S10  | Full Skuld                   | 0.479 | **6.7x**    |
+
+Key findings:
+
+1. **The first catch frame dominates** (S0→S1: 2.3x). The BEAM sets up
+   exception handling per-process; once one catch frame exists,
+   additional nested catches add minimal cost (S1→S2 ≈ 0).
+2. **Struct allocation matters** — operation arg structs (S6: +0.9x)
+   and `{Mod, tag}` tuple keys (S9: +0.9x) each add measurable cost.
+3. **Guards, accessors, and struct env** are nearly free.
+4. **Remaining gap** (S9→S10: 4.8x → 6.7x) comes from Skuld features
+   not in the progressive series: the `scoped` wrapper's `normal_k`
+   continuation, the 4-field `%Env{}` struct (larger copies on state
+   update), `FiberPool.Main.drain_pending`, and `ISentinel` dispatch.
+
 ### Key takeaways
 
-1. **CPS overhead is minimal** - evidence-passing with CPS matches
+1. **CPS overhead is minimal** — evidence-passing with CPS matches
    direct-style evidence-passing
-2. **Skuld's overhead** (~6x vs flat evidence-passing) is not yet
-   precisely attributed. The flat baseline uses direct function calls
-   and direct map access. Skuld's hot path adds per-effect: 3-4
-   `try/catch` frames (in `call`, `bind`, and `call_handler`), struct
-   allocation for operation args, and accessor function overhead for
-   `Env.get_state`/`Env.put_state`. Profiling is needed to quantify
-   each contributor — see issue `skuld-dxs`
-3. **Skuld vs Freyja**: ~5x faster
-4. **Real-world perspective**: per-effect overhead of ~0.1-0.2 us is
+2. **Exception handling is the largest single cost** — the first
+   `try/catch` frame accounts for ~2.3x of the total overhead
+3. **Struct allocation is the second largest** — operation arg structs
+   and tuple state keys together account for ~1.8x
+4. **Skuld vs Freyja**: ~5x faster
+5. **Real-world perspective**: per-effect overhead of ~0.2-0.5 us is
    negligible compared to IO (database queries: 100-10000 us, HTTP
    calls: 1000-100000 us). The overhead matters only in tight loops
    with many effect calls and no IO
