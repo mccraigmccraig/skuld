@@ -30,22 +30,36 @@ environment:
 
 The continuation `k` is "what to do next" - it receives the result of
 this computation step and the current environment, and produces the
-final result.
+final result. A top-level computation starts with an identity
+continuation that simply returns the result unchanged:
+
+```elixir
+identity_k = fn result, env -> {result, env} end
+```
+
+As handlers and `bind` calls wrap the computation, they build up `k`
+by replacing it with a new function that may (or may not) call the
+previous continuation. This is where the real power of CPS arises:
+a computation transformation can construct a *new* continuation that
+controls what happens *after* a particular effect has been processed.
+The handler receives `k` explicitly, and decides whether to call it,
+when to call it, or whether to substitute something else entirely.
 
 ### Why continuation-passing style?
 
-CPS gives us the ability to manipulate control flow. What a handler
-does with the continuation determines what kind of effect it is:
+CPS gives us the ability to manipulate control flow. Because each
+handler receives `k` as an explicit parameter, it can:
 
-- **Normal effects**: handler computes a value and calls `k` once
-- **Throw**: handler discards `k` entirely (computation stops)
-- **Yield**: handler captures `k` and returns it for later resumption
-- **Catch**: handler wraps `k` to intercept errors
+- **Call `k` once** (normal effects) - process the effect and continue
+- **Discard `k`** (Throw) - stop the computation entirely
+- **Capture `k`** (Yield) - return it for later resumption
+- **Wrap `k`** (Catch) - intercept errors from downstream code
+- **Call `k` multiple times** (non-determinism) - fork execution
 
-Direct-style (non-CPS) can handle normal effects, but control effects
-require the ability to decide *whether*, *when*, and *how* to invoke
-the continuation. This is what makes algebraic effects more powerful
-than simple dependency injection.
+Direct-style (non-CPS) can handle the first case, but every other case
+requires the ability to decide *whether*, *when*, and *how many times*
+to invoke the continuation. This is what makes algebraic effects more
+powerful than simple dependency injection.
 
 ### Why functions instead of data structures?
 
