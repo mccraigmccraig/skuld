@@ -1,7 +1,7 @@
 # Getting Started
 
 <!-- nav:header:start -->
-[< What Are Algebraic Effects?](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Syntax In Depth >](syntax.md)
+[< What Skuld Solves](pain-points.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Syntax In Depth >](syntax.md)
 <!-- nav:header:end -->
 
 This guide walks you through writing and running your first Skuld
@@ -307,5 +307,5 @@ needs using effects.
 
 ---
 
-[< What Are Algebraic Effects?](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Syntax In Depth >](syntax.md)
+[< What Skuld Solves](pain-points.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Syntax In Depth >](syntax.md)
 <!-- nav:footer:end -->

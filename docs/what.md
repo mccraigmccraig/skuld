@@ -1,7 +1,7 @@
 # What Are Algebraic Effects?
 
 <!-- nav:header:start -->
-[< Why Effects?](why.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Getting Started >](getting-started.md)
+[< Why Effects?](why.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [What Skuld Solves >](pain-points.md)
 <!-- nav:header:end -->
 
 The [previous section](why.md) identified the problem: domain
@@ -173,5 +173,5 @@ your first computation.
 
 ---
 
-[< Why Effects?](why.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Getting Started >](getting-started.md)
+[< Why Effects?](why.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [What Skuld Solves >](pain-points.md)
 <!-- nav:footer:end -->

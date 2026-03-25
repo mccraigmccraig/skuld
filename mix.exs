@@ -22,6 +22,7 @@ defmodule Skuld.MixProject do
           "README.md",
           "docs/why.md",
           "docs/what.md",
+          "docs/pain-points.md",
           "docs/getting-started.md",
           "docs/syntax.md",
           "docs/effects/state-environment.md",
@@ -51,6 +52,7 @@ defmodule Skuld.MixProject do
             "README.md",
             "docs/why.md",
             "docs/what.md",
+            "docs/pain-points.md",
             "docs/getting-started.md",
             "docs/syntax.md"
           ],
