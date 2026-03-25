@@ -911,8 +911,13 @@ numbers. You can also set `consolidate_protocols: true` in your
 
 1. **CPS overhead is minimal** - evidence-passing with CPS matches
    direct-style evidence-passing
-2. **Skuld's overhead** (~6x vs flat evidence-passing) comes from scoped
-   handlers, exception handling, and auto-lifting
+2. **Skuld's overhead** (~6x vs flat evidence-passing) is not yet
+   precisely attributed. The flat baseline uses direct function calls
+   and direct map access. Skuld's hot path adds per-effect: 3-4
+   `try/catch` frames (in `call`, `bind`, and `call_handler`), struct
+   allocation for operation args, and accessor function overhead for
+   `Env.get_state`/`Env.put_state`. Profiling is needed to quantify
+   each contributor — see issue `skuld-dxs`
 3. **Skuld vs Freyja**: ~5x faster
 4. **Real-world perspective**: per-effect overhead of ~0.1-0.2 us is
    negligible compared to IO (database queries: 100-10000 us, HTTP
