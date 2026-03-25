@@ -55,11 +55,11 @@ differences we'll get to shortly.
 
 With effects, your code has three layers instead of two:
 
-| Layer | Description | Example |
-|---|---|---|
-| **Pure functions** | Take data, return data. No effects. | `Pricing.calculate_total/2` |
-| **Effectful functions** | Request effects but don't perform them. Pure. | `renew_subscription/1` using effects |
-| **Handlers** | Actually perform IO. The only side-effecting code. | A handler that calls `Repo.get!/2` |
+| Layer                   | Description                                        | Example                              |
+|-------------------------|----------------------------------------------------|--------------------------------------|
+| **Pure functions**      | Take data, return data. No effects.                | `Pricing.calculate_total/2`          |
+| **Effectful functions** | Request effects but don't perform them. Pure.      | `renew_subscription/1` using effects |
+| **Handlers**            | Actually perform IO. The only side-effecting code. | A handler that calls `Repo.get!/2`   |
 
 The effectful middle layer is the key insight. Your orchestration code
 moves here - it's still pure (no side effects), but it can express
@@ -76,12 +76,12 @@ container.
 
 Handlers are installed by wrapping the computation:
 
-```
+```elixir
 computation
-|> with State handler (initial value: 0)
-|> with Reader handler (config: %{timeout: 5000})
-|> with DB handler (repo: MyApp.Repo)
-|> run!
+|> State.with_handler(0)
+|> Reader.with_handler(%{timeout: 5000})
+|> DB.Ecto.with_handler(MyApp.Repo)
+|> Comp.run!()
 ```
 
 Each handler manages its own concern. Adding a new effect to your code
