@@ -302,7 +302,7 @@ defmodule SkuldBenchmark do
   def time_skuld_yield(target) do
     wrapped = skuld_yield_wrapped(0)
 
-    driver = fn _yielded_value ->
+    driver = fn _yielded_value, _data ->
       remaining = Process.get(:yield_iterations)
 
       if remaining > 1 do
@@ -310,7 +310,7 @@ defmodule SkuldBenchmark do
         {:continue, :ok}
       else
         Process.delete(:yield_iterations)
-        {:stop, :done}
+        {:cancel, :done}
       end
     end
 

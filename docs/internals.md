@@ -864,43 +864,52 @@ Each effect invocation involves:
 ### Benchmarks
 
 A loop incrementing a counter via `State.get()`/`State.put(n + 1)` at
-N=1000:
+N=1000 (run with `MIX_ENV=prod` for consolidated protocols):
 
-| Approach                | Time     | Per-op   |
-|------------------------|----------|----------|
-| Pure tail recursion     | 28 us    | 0.028 us |
-| Simple state monad      | 55 us    | 0.055 us |
-| Evidence-passing (flat) | 56 us    | 0.056 us |
-| Evidence-passing + CPS  | 58 us    | 0.058 us |
-| Skuld (nested bind)     | 255 us   | 0.255 us |
-| Skuld (FxFasterList)    | 97 us    | 0.097 us |
-| Freyja                  | ~1000 us | ~1 us    |
+| Approach                | Time    | Per-op    |
+|-------------------------|---------|-----------|
+| Pure tail recursion     | 21 us   | 0.021 us  |
+| Simple state monad      | 17 us   | 0.017 us  |
+| Evidence-passing (flat) | 32 us   | 0.032 us  |
+| Evidence-passing + CPS  | 32 us   | 0.032 us  |
+| Skuld (nested bind)     | 186 us  | 0.186 us  |
+| Skuld (FxFasterList)    | 113 us  | 0.113 us  |
+| Freyja                  | ~1000 us| ~1 us     |
 
 ### Iteration strategies
 
 At N=1000:
 
-| Strategy       | Time   | Per-op   | Notes                                    |
-|---------------|--------|----------|------------------------------------------|
-| FxFasterList   | 97 us  | 0.10 us  | Fastest; no Yield/Suspend support        |
-| Yield          | 147 us | 0.15 us  | Use when you need interruptible iteration|
-| FxList         | 200 us | 0.20 us  | Full Yield/Suspend support               |
+| Strategy     | Time   | Per-op   | Notes                                     |
+|--------------|--------|----------|-------------------------------------------|
+| FxFasterList | 113 us | 0.11 us  | Fastest; no Yield/Suspend support         |
+| Yield        | 144 us | 0.14 us  | Use when you need interruptible iteration |
+| FxList       | 227 us | 0.23 us  | Full Yield/Suspend support                |
 
 All three maintain constant per-operation cost as N grows.
 
+### Protocol consolidation
+
+Elixir only consolidates protocols in `:prod` - in `:dev` and `:test`,
+protocol dispatch uses a slower dynamic lookup. Skuld dispatches the
+`ISentinel` protocol in `Comp.run/1` (once per top-level run, not per
+effect), so unconsolidated protocols add a small fixed cost per run
+rather than a per-effect overhead. For accurate benchmarking, run with
+`MIX_ENV=prod mix run bench/skuld_benchmark.exs`.
+
 ### Key takeaways
 
-1. **CPS overhead is minimal** - evidence-passing with CPS is only ~1.1x
-   slower than without
-2. **Skuld's overhead** (~5x vs flat evidence-passing) comes from scoped
+1. **CPS overhead is minimal** - evidence-passing with CPS matches
+   direct-style evidence-passing
+2. **Skuld's overhead** (~6x vs flat evidence-passing) comes from scoped
    handlers, exception handling, and auto-lifting
-3. **Skuld vs Freyja**: ~4x faster
-4. **Real-world perspective**: per-effect overhead of ~0.1-0.25 us is
+3. **Skuld vs Freyja**: ~5x faster
+4. **Real-world perspective**: per-effect overhead of ~0.1-0.2 us is
    negligible compared to IO (database queries: 100-10000 us, HTTP
    calls: 1000-100000 us). The overhead matters only in tight loops
    with many effect calls and no IO
 
-Run benchmarks yourself: `mix run bench/skuld_benchmark.exs`
+Run benchmarks yourself: `MIX_ENV=prod mix run bench/skuld_benchmark.exs`
 
 ## Comparison with Freyja
 
