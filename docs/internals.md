@@ -256,6 +256,99 @@ This is remarkably simple:
 
 Handlers have the signature: `(args, env, k) -> {result, env}`
 
+### Operation definition macros
+
+Skuld provides three macros for defining effect operations. All three
+generate constructor functions that call `Comp.effect/2` — they differ
+in how the operation is represented and whether the effect supports
+tagging.
+
+#### `def_op` — simple (untagged) operations
+
+For effects that have a single handler instance (no tag). Generates
+compact atom/tuple operations:
+
+```elixir
+defmodule Skuld.Effects.Transaction do
+  use Skuld.Comp.DefOp
+
+  def_op transact(comp)
+  def_op rollback(reason)
+
+  # Generates (approximately):
+  #   def transact(comp), do: Comp.effect(Transaction, {Transaction.Transact, comp})
+  #   def rollback(reason), do: Comp.effect(Transaction, {Transaction.Rollback, reason})
+end
+```
+
+- 0-arg ops → bare atom: `Comp.effect(Mod, Mod.OpName)` (zero alloc)
+- N-arg ops → tagged tuple: `Comp.effect(Mod, {Mod.OpName, arg1, ...})`
+- Op atoms are computed at compile time via module attributes
+- `use Skuld.Comp.DefOp` also generates `sig/0` and `sig/1` via
+  `EffectSig`
+
+#### `def_tagged_op` — tagged operations
+
+For effects that support multiple independent instances via tags (e.g.
+two separate State counters). Like `def_op` but prepends a `tag`
+argument with default `__MODULE__`:
+
+```elixir
+defmodule Skuld.Effects.State do
+  use Skuld.Comp.DefTaggedOp
+
+  def_tagged_op get()
+  def_tagged_op put(value)
+
+  # Generates (approximately):
+  #   def get(tag \\ __MODULE__), do: Comp.effect(sig(tag), get_op(tag))
+  #   def put(tag \\ __MODULE__, value), do: Comp.effect(sig(tag), {put_op(tag), value})
+end
+```
+
+The tag is folded into the effect signature using `sig(tag)`:
+- `get()` → `Comp.effect(State, State.Get)` (default tag)
+- `get(:counter)` → `Comp.effect(State.Counter, State.Counter.Get)`
+
+This gives O(1) atom-keyed lookup in the evidence map — each tag gets
+its own handler slot.
+
+#### `def_op_struct` — serializable struct operations
+
+For operations that need JSON serialization (e.g. for EffectLogger
+replay). Generates a struct module with `Jason.Encoder` and
+`SerializableStruct` support:
+
+```elixir
+defmodule MyEffect do
+  import Skuld.Comp.DefOpStruct
+
+  @sig __MODULE__
+
+  def_op_struct Ping
+  def_op_struct Greet, [:name]
+  def_op_struct Tagged, [:tag, :value], atom_fields: [:tag]
+
+  def ping, do: Comp.effect(@sig, %Ping{})
+  def greet(name), do: Comp.effect(@sig, %Greet{name: name})
+end
+```
+
+- Creates nested struct modules (e.g. `MyEffect.Ping`, `MyEffect.Greet`)
+- Implements `Jason.Encoder` via `SerializableStruct.encode/1`
+- Optional `atom_fields:` generates a `from_json/1` callback that
+  converts string keys back to atoms during deserialization
+- More allocation than `def_op` (struct per call), so prefer `def_op`
+  unless serialization is needed
+
+#### Choosing between them
+
+| Macro            | Tag support | Serializable | Allocation    | Use when                            |
+|------------------|-------------|-------------|---------------|--------------------------------------|
+| `def_op`         | No          | No          | 0 words (atom) or 2+ words (tuple) | Most effects                         |
+| `def_tagged_op`  | Yes         | No          | Same as `def_op`  | Multiple instances (State, Writer)   |
+| `def_op_struct`  | No          | Yes (JSON)  | ~10+ words (struct) | EffectLogger / durable workflows     |
+
 ### State: the canonical example
 
 State is the simplest stateful effect. Operations are defined using the
