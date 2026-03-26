@@ -20,7 +20,7 @@ defmodule Skuld.Comp.SerializableStruct do
   @moduledoc false
 
   #############################################################################
-  ## Struct encoding (legacy — used by def_op_struct)
+  ## Struct encoding (used by def_op_struct)
   #############################################################################
 
   @doc """
