@@ -25,6 +25,8 @@ defmodule Skuld.Comp.EffectSig do
     tag_var = Macro.var(:tag, nil)
 
     quote do
+      @__sig__ __MODULE__
+
       @doc false
       def sig, do: __MODULE__
 
