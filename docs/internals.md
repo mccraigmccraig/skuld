@@ -114,18 +114,18 @@ on data structures.
 
 ### State: scoped storage
 
-The `state` map holds effect state. Keys are typically effect module
-atoms, or tuples like `{EffectModule, tag}` to support multiple
-instances of the same effect:
+The `state` map holds effect state. Keys are module-atom sigs derived
+from the effect module and tag. The `sig/1` function converts tags to
+CamelCase module atoms via `Module.concat`:
 
 ```elixir
 # Two independent State handlers:
 State.with_handler(0, tag: :counter)
 State.with_handler("", tag: :name)
 
-# Creates state keys:
-# {State, :counter} => 0
-# {State, :name} => ""
+# Creates state keys (module-atom sigs):
+# Skuld.Effects.State.Counter => 0
+# Skuld.Effects.State.Name => ""
 ```
 
 ### leave_scope: the cleanup chain
@@ -258,36 +258,55 @@ Handlers have the signature: `(args, env, k) -> {result, env}`
 
 ### State: the canonical example
 
-State is the simplest stateful effect. Its operations are defined as
-structs, and the handler interprets them by accessing `env.state`:
+State is the simplest stateful effect. Operations are defined using the
+`def_tagged_op` macro, which generates constructor functions that emit
+compact atom/tuple operations instead of structs. The tag is folded
+into the effect signature using module-atom construction, so the
+handler knows which tag it serves at installation time:
 
 ```elixir
 defmodule Skuld.Effects.State do
-  @sig __MODULE__
+  use Skuld.Comp.DefTaggedOp
 
-  # Operations create effect requests
-  def get(tag \\ @sig), do: Comp.effect(@sig, %Get{tag: tag})
-  def put(tag \\ @sig, value), do: Comp.effect(@sig, %Put{tag: tag, value: value})
+  # def_tagged_op generates constructor functions:
+  #   get()        => Comp.effect(State, State.Get)        (bare atom, zero alloc)
+  #   get(:counter) => Comp.effect(State.Counter, State.Counter.Get)
+  #   put(42)      => Comp.effect(State, {State.Put, 42})  (2-tuple)
+  def_tagged_op get()
+  def_tagged_op put(value)
 
-  # Handler interprets operations
-  def handle(%Get{tag: tag}, env, k) do
-    value = Env.get_state(env, state_key(tag))
-    k.(value, env)
-  end
+  # Handler is built as a closure in with_handler, closing over
+  # the precomputed state_key and op atoms for the specific tag:
+  def with_handler(comp, initial, opts \\ []) do
+    tag = Keyword.get(opts, :tag, __MODULE__)
+    state_key = sig(tag)
+    get_op = get_op(tag)
+    put_op = put_op(tag)
 
-  def handle(%Put{tag: tag, value: value}, env, k) do
-    old_value = Env.get_state(env, state_key(tag))
-    new_env = Env.put_state(env, state_key(tag), value)
-    k.(%Change{old: old_value, new: value}, new_env)
+    handler = fn op, env, k ->
+      case op do
+        ^get_op ->
+          k.(Env.get_state!(env, state_key), env)
+
+        {^put_op, value} ->
+          old = Env.get_state!(env, state_key)
+          k.(%Change{old: old, new: value}, Env.put_state(env, state_key, value))
+      end
+    end
+
+    Comp.with_scoped_state(comp, state_key, initial, handler: handler, sig: sig(tag))
   end
 end
 ```
 
 Key points:
-- `Get` reads from `env.state` and calls `k` with the value
-- `Put` updates `env.state` and calls `k` with a change record
-- Both always call `k` exactly once - these are normal (non-control)
-  effects
+- `get` is a bare atom op (zero allocation)
+- `put` is a `{PutOp, value}` tuple (2 words)
+- The tag is encoded in the sig atom (`State.Counter`), not carried
+  in every operation — the handler closes over the precomputed
+  `state_key` and op atoms at installation time
+- Both operations always call `k` exactly once - these are normal
+  (non-control) effects
 
 ## Control effects: CPS in action
 
@@ -298,19 +317,17 @@ continuation `k` determines the character of the effect.
 
 ```elixir
 # State.get just reads and continues
-def handle(%Get{tag: tag}, env, k) do
-  value = Env.get_state(env, state_key(tag))
-  k.(value, env)  # Always called exactly once
-end
+# (inside the handler closure that closes over get_op and state_key)
+^get_op ->
+  k.(Env.get_state!(env, state_key), env)  # Always called exactly once
 ```
 
 ### Throw: discard `k`
 
 ```elixir
 # Throw's handler - k is NEVER called, computation stops here
-def handle(%Throw{error: error}, env, _k) do
+{^throw_op, error} ->
   {%Comp.Throw{error: error}, env}
-end
 ```
 
 The continuation `_k` represents "what would have happened next." By
@@ -857,9 +874,12 @@ Final result: `{{:my_config, 0}, {:final, 1}}`
 
 Each effect invocation involves:
 
-- Handler lookup: O(1) map access
+- Handler lookup: O(1) map access by atom key
 - Closure creation for the continuation
 - Function call overhead
+
+Operations use compact representations — bare atoms for 0-arg ops,
+small tuples for ops with args. No struct allocation on the hot path.
 
 ### Benchmarks
 
@@ -872,8 +892,7 @@ N=1000 (run with `MIX_ENV=prod` for consolidated protocols):
 | Simple state monad      | 17 us   | 0.017 us  |
 | Evidence-passing (flat) | 32 us   | 0.032 us  |
 | Evidence-passing + CPS  | 32 us   | 0.032 us  |
-| Skuld (nested bind)     | 186 us  | 0.186 us  |
-| Skuld (FxFasterList)    | 113 us  | 0.113 us  |
+| Skuld                   | 143 us  | 0.143 us  |
 | Freyja                  | ~1000 us| ~1 us     |
 
 ### Iteration strategies
@@ -911,63 +930,75 @@ numbers. You can also set `consolidate_protocols: true` in your
 
 A [progressive benchmark](../bench/overhead_progressive.exs) starts
 from the flat evidence-passing CPS baseline and adds one Skuld feature
-at a time, measuring the marginal cost of each. At N=10000:
+at a time, measuring the marginal cost of each. At N=1000 (median of
+7 runs, `MIX_ENV=prod`):
 
-| Step | Feature added                     | us/op | vs prev   | vs baseline |
-|------|-----------------------------------|-------|-----------|-------------|
-| S0   | evf_cps baseline                  | 0.072 | —         | 1.0x        |
-| S1   | + first catch frame (`call`)      | 0.163 | **2.26x** | **2.3x**    |
-| S2   | + catch in `bind`                 | 0.165 | 1.01x     | 2.3x        |
-| S3   | + catch on handler dispatch       | 0.204 | **1.24x** | 2.8x        |
-| S4   | + `is_function` guard             | 0.206 | 1.01x     | 2.9x        |
-| S5   | + struct env (`%Env{}`)           | 0.211 | 1.02x     | 2.9x        |
-| S6   | + struct args (`%Get{}`/`%Put{}`) | 0.274 | **1.30x** | **3.8x**    |
-| S7   | + accessor functions              | 0.278 | 1.01x     | 3.9x        |
-| S8   | + `%Change{}` struct on put       | 0.296 | 1.06x     | 4.1x        |
-| S9   | + `{Mod, tag}` state keys         | 0.342 | **1.16x** | 4.8x        |
-| S10  | Full Skuld                        | ~0.18 | **~1.0x** | **~5.5x**   |
+| Step | Feature added                     | us/op | vs baseline | vs catch baseline |
+|------|-----------------------------------|-------|-------------|-------------------|
+| S0   | evf_cps baseline                  | 0.049 | 1.0x        | —                 |
+| S1   | + first catch frame (`call`)      | 0.078 | 1.6x        | 1.0x              |
+| S2   | + catch in `bind`                 | 0.103 | 2.1x        | 1.3x              |
+| S3   | + catch on handler dispatch       | 0.113 | 2.3x        | 1.4x              |
+| S5   | + struct env (`%Env{}`)           | 0.113 | 2.3x        | 1.4x              |
+| S9   | + struct args + state keys (sim)  | 0.205 | 4.2x        | 2.6x              |
+| S10  | Full Skuld                        | 0.143 | **2.9x**    | **1.8x**          |
 
-Steps S0–S9 were measured before inlining. S10 was re-measured after
-adding `@compile {:inline, ...}` to hot-path wrapper functions
-(`Env.get_state!`, `Env.put_state`, `Change.new`, `State.state_key`).
-The S9→S10 gap completely disappeared — full Skuld is now
-indistinguishable from the progressive simulation. See the
+**S10 is faster than S9**: Full Skuld beats the progressive simulation
+at S9 because the per-tag module-atom sig approach (compact tuple ops,
+precomputed state keys, no Change struct) eliminates the overhead that
+S6-S9 still simulate with structs and tuple keys.
+
+Three rounds of optimisation brought Skuld from ~6.7x to ~2.9x vs
+the flat CPS baseline:
+
+1. **Inlining** (`@compile {:inline, ...}`) on `Env`, `Change`, and
+   `State` hot-path wrappers — closed the 1.40x S9→S10 gap entirely
+2. **Per-tag module-atom sigs** — fold the tag into the effect
+   signature, eliminating redundant tag fields from operations and
+   precomputing state keys at handler installation time
+3. **Compact tuple ops** (`def_op`/`def_tagged_op`) — replace struct
+   operation args with bare atoms (0-arg) or small tuples (N-arg),
+   cutting per-operation heap allocation from ~10+ words to 0-4 words
+
+See the
 [performance investigation](research/performance-investigation.md)
-for the full analysis.
+for the full analysis including BEAM catch-frame mechanics.
 
 Key findings:
 
-1. **The first catch frame dominates** (S0→S1: **2.26x** step). The BEAM
-   sets up exception handling per-process; once one catch frame exists,
-   additional nested catches are nearly free (S1→S2: 1.01x). The third
-   catch frame is not quite free though (S2→S3: 1.24x).
-2. **Struct allocation matters** — operation arg structs add a 1.30x
-   step (S6), and `{Mod, tag}` tuple keys add 1.16x (S9).
+1. **The first catch frame dominates** (S0→S1: **1.6x** step). The
+   BEAM sets up exception handling per-process; once one catch frame
+   exists, additional nested catches are relatively cheap.
+2. **Struct allocation was the next largest cost** — now eliminated
+   by compact tuple operations. Full Skuld (S10) is faster than the
+   simulation that still uses structs (S9).
 3. **Guards, accessors, and struct env** are nearly free (1.01-1.02x).
-4. **The first catch frame is not Skuld-specific** — any Elixir code
+4. **The catch frames are not Skuld-specific** — any Elixir code
    with error handling pays this cost. Relative to code that already
-   has a catch frame, Skuld's overhead is ~2.1–2.3x, not 5.5x.
+   has a catch frame, Skuld's overhead is **~1.8x**.
 
 ### Key takeaways
 
 1. **CPS overhead is minimal** — evidence-passing with CPS matches
    direct-style evidence-passing
 2. **Exception handling is the largest single cost** — but it is a
-   BEAM-wide tax, not Skuld-specific. The first `try/catch` frame
-   accounts for ~2.3x; see "Why the first catch is expensive" in the
+   BEAM-wide tax, not Skuld-specific. See "Why the first catch is
+   expensive" in the
    [performance investigation](research/performance-investigation.md)
-3. **Struct allocation is the next largest** — operation arg structs
-   and tuple state keys together account for ~1.5x
+3. **Struct allocation eliminated** — compact tuple operations and
+   per-tag module-atom sigs removed the struct allocation overhead
+   entirely. Full Skuld is now faster than the progressive simulation
+   steps that still use structs
 4. **Inlining closed the full-Skuld gap** — `@compile {:inline, ...}`
    on `Env`, `Change`, and `State` wrapper functions eliminated the
    1.40x overhead from function call indirection
-5. **Skuld vs Freyja**: ~5x faster
-6. **Real-world perspective**: per-effect overhead of ~0.2 us is
+5. **Skuld vs Freyja**: ~7x faster
+6. **Real-world perspective**: per-effect overhead of ~0.14 us is
    negligible compared to IO (database queries: 100-10000 us, HTTP
    calls: 1000-100000 us). The overhead matters only in tight loops
    with many effect calls and no IO
 
-Run benchmarks yourself: `MIX_ENV=prod mix run bench/skuld_benchmark.exs`
+Run benchmarks yourself: `MIX_ENV=prod mix run bench/overhead_progressive.exs`
 
 ## Comparison with Freyja
 
@@ -991,11 +1022,12 @@ allocation, continuation queue management, and linear handler search.
 
 To create your own effect, you need:
 
-1. **A signature** - a unique atom identifying your effect
-2. **Operation structs** - data describing what each operation needs
-3. **A handler function** - interprets operations
-4. **A `with_handler` function** - installs the handler with appropriate
-   scoping
+1. **A module using `DefOp`** — the macro generates compact operation
+   constructors (bare atoms for 0-arg ops, tuples for N-arg ops)
+2. **A handler function** — interprets operations by pattern-matching
+   on the generated op atoms
+3. **A `with_handler` function** — installs the handler with
+   appropriate scoping
 
 Here's a minimal custom effect:
 
@@ -1003,39 +1035,36 @@ Here's a minimal custom effect:
 defmodule MyApp.Effects.Counter do
   @moduledoc "A simple counter effect."
 
+  use Skuld.Comp.DefOp
+
   alias Skuld.Comp
   alias Skuld.Comp.Env
 
-  @sig __MODULE__
+  # def_op generates constructor functions that emit compact operations:
+  #   read()         => Comp.effect(Counter, Counter.Read)           (bare atom)
+  #   increment(5)   => Comp.effect(Counter, {Counter.Increment, 5}) (2-tuple)
+  def_op read()
+  def_op increment(amount)
 
-  # Operation structs
-  defmodule Increment do
-    defstruct [:amount]
-  end
-
-  defmodule Read do
-    defstruct []
-  end
-
-  # Public API - these return computations, not values
-  def increment(amount \\ 1), do: Comp.effect(@sig, %Increment{amount: amount})
-  def read(), do: Comp.effect(@sig, %Read{})
+  # Op atom aliases for handler pattern matching
+  @read_op @__read_op__
+  @increment_op @__increment_op__
 
   # Handler - interprets operations using env.state
-  def handle(%Increment{amount: amount}, env, k) do
-    current = Env.get_state(env, @sig)
-    new_env = Env.put_state(env, @sig, current + amount)
-    k.(current + amount, new_env)
+  def handle(@read_op, env, k) do
+    k.(Env.get_state!(env, @__sig__), env)
   end
 
-  def handle(%Read{}, env, k) do
-    k.(Env.get_state(env, @sig), env)
+  def handle({@increment_op, amount}, env, k) do
+    current = Env.get_state!(env, @__sig__)
+    new_env = Env.put_state(env, @__sig__, current + amount)
+    k.(current + amount, new_env)
   end
 
   # Install handler with scoped state
   def with_handler(comp, initial \\ 0, opts \\ []) do
-    Comp.with_scoped_state(comp, @sig, initial,
-      Keyword.merge([handler: &handle/3, sig: @sig], opts))
+    Comp.with_scoped_state(comp, @__sig__, initial,
+      Keyword.merge([handler: &handle/3, sig: @__sig__], opts))
   end
 end
 ```

@@ -524,25 +524,58 @@ every real application already pays in multiple layers. Skuld's
 algebraic effects are effectively free relative to hand-written
 evidence-passing CPS. This is an excellent result.
 
-### Remaining work
+### Remaining work (completed)
 
-- **JSON serialisation**: 4 tests excluded. Need a Protocol-based
-  encoding for the new operation format before EffectLogger can
-  serialise State operations.
-- **Other effects**: Only State has been ported. The same approach
-  could be applied to other effects that carry redundant tag/key
-  information in their operation args.
-- **`def_op` macro revision**: Generalise the per-tag module-atom
-  sig approach into the `def_op` macro itself, so it generates
+All items from this investigation have been implemented:
+
+- **JSON serialisation**: Implemented generic term encoding in
+  `SerializableStruct` using tagged wrapper maps (`__atom__`,
+  `__tuple__`, `__struct__`). All 4 previously-excluded tests are
+  now passing. No per-op protocol implementations needed.
+- **All effects ported**: All 10 non-DB effects ported to compact
+  tuple ops via `def_op` (simple/untagged) and `def_tagged_op`
+  (tagged). DB intentionally left with `def_op_struct` pending
+  evaluation of replacement with Port contracts (skuld-gga).
+- **`def_op` macro revised**: `def_simple_op` renamed to `def_op`,
+  old `def_op` renamed to `def_op_struct`. The macros generate
   constructor functions emitting `Comp.effect(sig, op_atom)` /
-  `Comp.effect(sig, {op_atom, args...})` instead of struct modules.
-  This would port all 11 effects automatically.
-- **IHandle behaviour**: The `handle/3` implementation on State is
-  now vestigial — the handler closure in `with_handler` is used
-  directly. The behaviour contract may need revisiting.
-- **`def_tagged_op` cleanup**: The macro was written for the initial
-  tagged-tuple approach and is now unused. Should be removed or
-  repurposed.
+  `Comp.effect(sig, {op_atom, args...})`.
+- **`def_tagged_op` in active use**: Used by State, Reader, Writer,
+  and AtomicState for per-tag module-atom sigs.
+
+## Final benchmark results
+
+After implementing all optimisations (inlining, per-tag module-atom
+sigs, compact tuple ops across all effects, unified state keys), the
+progressive benchmark at N=1000 (median of 7 runs, `MIX_ENV=prod`)
+shows:
+
+| Step | Feature                    | us/op | vs baseline | vs catch baseline |
+|------|----------------------------|-------|-------------|-------------------|
+| S0   | evf_cps baseline           | 0.049 | 1.0x        | —                 |
+| S1   | + first catch frame        | 0.078 | 1.6x        | 1.0x              |
+| S5   | + struct env (all catches) | 0.113 | 2.3x        | 1.4x              |
+| S5c  | + per-tag sig (benchmark)  | 0.124 | 2.5x        | 1.6x              |
+| S9   | + struct args + state keys | 0.205 | 4.2x        | 2.6x              |
+| S10  | Full Skuld                 | 0.143 | 2.9x        | 1.8x              |
+
+**S10 < S9**: Full Skuld is faster than the progressive simulation
+at S9 because the per-tag sig approach eliminates struct args, Change
+allocation, and state_key computation simultaneously — all of which
+the S6-S9 simulation steps still pay.
+
+**Key result**: Skuld is **~1.8x vs catch baseline** (down from ~2.9x
+before optimisation). The remaining 1.8x is composed of:
+
+- Additional catch frames (~1.4x): irreducible BEAM tax
+- Env struct access + evidence map lookup (~1.1x): minimal struct/map
+  overhead
+- Scoped continuation chains (~1.15x): `normal_k`, `leave_scope`,
+  `drain_pending`
+
+Discounting catch tax, Skuld's effect system machinery adds roughly
+**~1.3x** over hand-written evidence-passing CPS. This is near the
+irreducible floor.
 
 <!-- nav:footer:start -->
 
