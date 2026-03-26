@@ -67,6 +67,8 @@ defmodule Skuld.Comp.DefOp do
 
     effect_call = build_effect_call(op_attr, arg_vars)
 
+    arity = length(arg_vars)
+
     quote do
       Module.put_attribute(
         __MODULE__,
@@ -74,6 +76,7 @@ defmodule Skuld.Comp.DefOp do
         Module.concat(__MODULE__, unquote(op_camel))
       )
 
+      @compile {:inline, [{unquote(fun_name), unquote(arity)}]}
       @doc false
       def unquote(fun_name)(unquote_splicing(arg_vars)) do
         unquote(effect_call)

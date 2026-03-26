@@ -74,6 +74,11 @@ defmodule Skuld.Comp.DefTaggedOp do
     effect_call = build_effect_call(op_attr, arg_vars)
     tag_var = Macro.var(:tag, nil)
 
+    # Default arg generates two heads: arity N (without tag) and N+1 (with tag)
+    base_arity = length(arg_vars)
+    arity_without_tag = base_arity
+    arity_with_tag = base_arity + 1
+
     quote do
       Module.put_attribute(
         __MODULE__,
@@ -81,6 +86,11 @@ defmodule Skuld.Comp.DefTaggedOp do
         Module.concat(__MODULE__, unquote(op_camel))
       )
 
+      @compile {:inline,
+                [
+                  {unquote(fun_name), unquote(arity_without_tag)},
+                  {unquote(fun_name), unquote(arity_with_tag)}
+                ]}
       @doc false
       def unquote(fun_name)(unquote(tag_var) \\ __MODULE__, unquote_splicing(arg_vars)) do
         unquote(effect_call)
