@@ -338,8 +338,6 @@ defmodule Skuld.Effects.EffectLoggerTest do
   end
 
   describe "JSON serialization" do
-    # Tagged tuples (from def_tagged_op) don't yet have Jason.Encoder — deferred until spike validates perf gains
-    @tag :pending_json_serialization
     test "log survives JSON round-trip" do
       computation =
         comp do
@@ -362,7 +360,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
       decoded = Jason.decode!(json)
       restored_log = Log.from_json(decoded)
 
-      # Verify structure preserved (skip root mark which has atom value :ok -> "ok")
+      # Verify structure preserved (user entries only, root mark is internal)
       original_entries = user_entries(log)
       restored_entries = user_entries(restored_log)
 
@@ -377,7 +375,6 @@ defmodule Skuld.Effects.EffectLoggerTest do
       end)
     end
 
-    @tag :pending_json_serialization
     test "replay works with deserialized log" do
       computation =
         comp do
@@ -627,7 +624,6 @@ defmodule Skuld.Effects.EffectLoggerTest do
       assert resume_count == 2
     end
 
-    @tag :pending_json_serialization
     test "with_resume from JSON-deserialized log (true cold resume)" do
       computation =
         comp do

@@ -143,21 +143,9 @@ defmodule Skuld.Effects.EffectLogger.EffectLogEntry do
     String.to_existing_atom(sig)
   end
 
-  defp decode_data(nil), do: nil
-  defp decode_data(map) when is_map(map), do: SerializableStruct.decode(map)
-  defp decode_data(data), do: data
+  defp decode_data(value), do: SerializableStruct.decode_term(value)
 
-  defp decode_value(nil), do: nil
-
-  defp decode_value(map) when is_map(map) do
-    if Map.has_key?(map, "__struct__") do
-      SerializableStruct.decode(map)
-    else
-      map
-    end
-  end
-
-  defp decode_value(value), do: value
+  defp decode_value(value), do: SerializableStruct.decode_term(value)
 
   defp decode_state(nil), do: :started
   defp decode_state("started"), do: :started
@@ -166,33 +154,15 @@ defmodule Skuld.Effects.EffectLogger.EffectLogEntry do
 end
 
 defimpl Jason.Encoder, for: Skuld.Effects.EffectLogger.EffectLogEntry do
+  alias Skuld.Comp.SerializableStruct
+
   def encode(value, opts) do
-    # Validate that effect data is serializable
-    if value.data != nil do
-      try do
-        _ = Jason.encode!(value.data)
-      rescue
-        e in [Jason.EncodeError, Protocol.UndefinedError] ->
-          reraise """
-                  Effect data is not JSON serializable.
-
-                  Effect sig: #{inspect(value.sig)}
-                  Effect data: #{inspect(value.data, pretty: true)}
-
-                  Effects used with EffectLogger must have serializable data.
-
-                  Original error: #{Exception.message(e)}
-                  """,
-                  __STACKTRACE__
-      end
-    end
-
     Jason.Encode.map(
       %{
         id: value.id,
         sig: value.sig,
-        data: value.data,
-        value: value.value,
+        data: SerializableStruct.encode_term(value.data),
+        value: SerializableStruct.encode_term(value.value),
         state: value.state
       },
       opts
