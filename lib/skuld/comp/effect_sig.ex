@@ -1,6 +1,6 @@
 # Shared sig/0 and sig/1 generation for effect modules.
 #
-# Both `DefSimpleOp` and `DefTaggedOp` inject the same sig functions
+# Both `DefOp` and `DefTaggedOp` inject the same sig functions
 # via their `__using__` callback. This module provides the generation
 # logic so it's defined once.
 #
@@ -21,7 +21,7 @@ defmodule Skuld.Comp.EffectSig do
   @doc """
   Returns quoted code that defines sig/0 and sig/1 in the caller module.
 
-  Called once from `__using__` in DefSimpleOp / DefTaggedOp, so no
+  Called once from `__using__` in DefOp / DefTaggedOp, so no
   guard against redefinition is needed.
   """
   def generate do

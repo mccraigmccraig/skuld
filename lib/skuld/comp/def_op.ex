@@ -6,11 +6,11 @@
 # ## Example
 #
 #     defmodule Skuld.Effects.Random do
-#       use Skuld.Comp.DefSimpleOp
+#       use Skuld.Comp.DefOp
 #
-#       def_simple_op random_float()
-#       def_simple_op random_int(min, max)
-#       def_simple_op shuffle(list)
+#       def_op random_float()
+#       def_op random_int(min, max)
+#       def_op shuffle(list)
 #
 #       # Generates (approximately):
 #       #
@@ -34,14 +34,14 @@
 # - N-arg ops: tagged tuple `{Module.Op, arg1, arg2, ...}`
 #
 # This eliminates struct allocation on every operation call.
-defmodule Skuld.Comp.DefSimpleOp do
+defmodule Skuld.Comp.DefOp do
   @moduledoc false
 
   defmacro __using__(_opts) do
     sig_ast = Skuld.Comp.EffectSig.generate()
 
     quote do
-      import Skuld.Comp.DefSimpleOp
+      import Skuld.Comp.DefOp
       unquote(sig_ast)
     end
   end
@@ -49,7 +49,7 @@ defmodule Skuld.Comp.DefSimpleOp do
   @doc """
   Define a simple (untagged) effect constructor function.
 
-  The macro accepts a function call form: `def_simple_op name(arg1, arg2, ...)`
+  The macro accepts a function call form: `def_op name(arg1, arg2, ...)`
 
   Generates a public function that calls `Comp.effect(__MODULE__, op)` where
   `op` is a bare atom for 0-arg ops or a tagged tuple for N-arg ops.
@@ -57,7 +57,7 @@ defmodule Skuld.Comp.DefSimpleOp do
   The operation atom is computed at compile time via a module attribute,
   so there is zero runtime overhead for the atom construction.
   """
-  defmacro def_simple_op(call) do
+  defmacro def_op(call) do
     {fun_name, args} = decompose_call(call)
     op_camel = fun_name_to_op_camel(fun_name)
     op_attr = :"__#{fun_name}_op__"

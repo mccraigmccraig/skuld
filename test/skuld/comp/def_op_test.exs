@@ -1,18 +1,18 @@
-defmodule Skuld.Comp.DefSimpleOpTest do
+defmodule Skuld.Comp.DefOpTest do
   use ExUnit.Case, async: true
 
   alias Skuld.Comp
 
-  # Test effect module using def_simple_op
+  # Test effect module using def_op
   defmodule SimpleEffect do
-    use Skuld.Comp.DefSimpleOp
+    use Skuld.Comp.DefOp
 
-    def_simple_op ping()
-    def_simple_op add(a, b)
-    def_simple_op greet(name)
+    def_op(ping())
+    def_op(add(a, b))
+    def_op(greet(name))
   end
 
-  describe "def_simple_op with 0 args" do
+  describe "def_op with 0 args" do
     test "generates a function that returns a computation" do
       comp = SimpleEffect.ping()
       assert is_function(comp, 2)
@@ -34,7 +34,7 @@ defmodule Skuld.Comp.DefSimpleOpTest do
     end
   end
 
-  describe "def_simple_op with args" do
+  describe "def_op with args" do
     test "generates a function that accepts args and returns a computation" do
       comp = SimpleEffect.add(1, 2)
       assert is_function(comp, 2)
