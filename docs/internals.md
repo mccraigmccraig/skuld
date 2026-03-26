@@ -933,26 +933,21 @@ from the flat evidence-passing CPS baseline and adds one Skuld feature
 at a time, measuring the marginal cost of each. At N=1000 (median of
 7 runs, `MIX_ENV=prod`):
 
-| Step | Feature added                     | us/op | vs baseline | vs catch baseline |
-|------|-----------------------------------|-------|-------------|-------------------|
-| S0   | evf_cps baseline                  | 0.049 | 1.0x        | —                 |
-| S1   | + first catch frame (`call`)      | 0.078 | 1.6x        | 1.0x              |
-| S2   | + catch in `bind`                 | 0.103 | 2.1x        | 1.3x              |
-| S3   | + catch on handler dispatch       | 0.113 | 2.3x        | 1.4x              |
-| S5   | + struct env (`%Env{}`)           | 0.113 | 2.3x        | 1.4x              |
-| S9   | + struct args + state keys (sim)  | 0.205 | 4.2x        | 2.6x              |
-| S10  | Full Skuld                        | 0.143 | **2.9x**    | **1.8x**          |
-
-**S10 is faster than S9**: Full Skuld beats the progressive simulation
-at S9 because the per-tag module-atom sig approach (compact tuple ops,
-precomputed state keys, no Change struct) eliminates the overhead that
-S6-S9 still simulate with structs and tuple keys.
+| Step | Feature added                    | us/op | vs baseline | vs catch baseline |
+|------|----------------------------------|-------|-------------|-------------------|
+| S0   | evf_cps baseline                 | 0.049 | 1.0x        | —                 |
+| S1   | + first catch frame (`call`)     | 0.078 | 1.6x        | 1.0x              |
+| S2   | + catch in `bind`                | 0.103 | 2.1x        | 1.3x              |
+| S3   | + catch on handler dispatch      | 0.113 | 2.3x        | 1.4x              |
+| S5   | + struct env (`%Env{}`)          | 0.113 | 2.3x        | 1.4x              |
+| S10  | Full Skuld                       | 0.143 | **2.9x**    | **1.8x**          |
 
 Three rounds of optimisation brought Skuld from ~6.7x to ~2.9x vs
 the flat CPS baseline:
 
 1. **Inlining** (`@compile {:inline, ...}`) on `Env`, `Change`, and
-   `State` hot-path wrappers — closed the 1.40x S9→S10 gap entirely
+   `State` hot-path wrappers — eliminated function-call indirection
+   overhead on the hot path
 2. **Per-tag module-atom sigs** — fold the tag into the effect
    signature, eliminating redundant tag fields from operations and
    precomputing state keys at handler installation time
@@ -970,8 +965,8 @@ Key findings:
    BEAM sets up exception handling per-process; once one catch frame
    exists, additional nested catches are relatively cheap.
 2. **Struct allocation was the next largest cost** — now eliminated
-   by compact tuple operations. Full Skuld (S10) is faster than the
-   simulation that still uses structs (S9).
+   by compact tuple operations (bare atoms for 0-arg ops, small tuples
+   for N-arg ops).
 3. **Guards, accessors, and struct env** are nearly free (1.01-1.02x).
 4. **The catch frames are not Skuld-specific** — any Elixir code
    with error handling pays this cost. Relative to code that already
@@ -987,8 +982,7 @@ Key findings:
    [performance investigation](research/performance-investigation.md)
 3. **Struct allocation eliminated** — compact tuple operations and
    per-tag module-atom sigs removed the struct allocation overhead
-   entirely. Full Skuld is now faster than the progressive simulation
-   steps that still use structs
+   entirely
 4. **Inlining closed the full-Skuld gap** — `@compile {:inline, ...}`
    on `Env`, `Change`, and `State` wrapper functions eliminated the
    1.40x overhead from function call indirection
@@ -1006,14 +1000,14 @@ Skuld was built after Freyja proved to have significant limitations.
 Skuld's user-facing API is similar, but the implementation is
 fundamentally different:
 
-| Aspect              | Freyja                       | Skuld                |
-|--------------------|------------------------------|----------------------|
+| Aspect                | Freyja                       | Skuld                |
+|-----------------------|------------------------------|----------------------|
 | Effect representation | Freer monad + Hefty algebras | Evidence-passing CPS |
-| Computation types   | `Freer` + `Hefty`            | Single `computation` |
-| Control effects     | Hefty (higher-order)         | Direct CPS           |
-| Handler lookup      | Linear search through list   | O(1) map lookup      |
-| Macro system        | `con` + `hefty`              | Single `comp`        |
-| Performance         | ~1 us/op                     | ~0.1-0.25 us/op      |
+| Computation types     | `Freer` + `Hefty`            | Single `computation` |
+| Control effects       | Hefty (higher-order)         | Direct CPS           |
+| Handler lookup        | Linear search through list   | O(1) map lookup      |
+| Macro system          | `con` + `hefty`              | Single `comp`        |
+| Performance           | ~1 us/op                     | ~0.1-0.25 us/op      |
 
 Skuld's performance advantage comes from avoiding Freer monad object
 allocation, continuation queue management, and linear handler search.
