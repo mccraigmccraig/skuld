@@ -1,101 +1,126 @@
-# Macro for defining tagged-tuple operation types.
+# Macro for defining tagged effect constructor functions.
 #
-# Alternative to `def_op` that uses tagged tuples instead of structs
-# for operation arguments, trading JSON serialization support for
-# lower allocation cost on the hot path.
+# Generates a public function that constructs a `Comp.effect/2` call
+# with a per-tag module-atom sig and compact atom/tuple operation
+# representations instead of structs.
 #
 # ## Example
 #
-#     defmodule Skuld.Effects.State do
+#     defmodule Skuld.Effects.AtomicState do
 #       import Skuld.Comp.DefTaggedOp
 #
-#       def_tagged_op Get, [:tag]
-#       def_tagged_op Put, [:tag, :value]
+#       def_tagged_op get()
+#       def_tagged_op put(value)
+#       def_tagged_op modify(fun)
 #
-#       # Creates:
-#       # - Skuld.Effects.State.Get module with new/1 constructor
-#       # - Skuld.Effects.State.Put module with new/2 constructor
+#       # Generates (approximately):
 #       #
-#       # Tagged tuple representation:
-#       # - {Skuld.Effects.State.Get, tag}
-#       # - {Skuld.Effects.State.Put, tag, value}
+#       #   def get(tag \\ __MODULE__) do
+#       #     Comp.effect(sig(tag), Skuld.Effects.AtomicState.Get)
+#       #   end
+#       #
+#       #   def put(tag \\ __MODULE__, value) do
+#       #     Comp.effect(sig(tag), {Skuld.Effects.AtomicState.Put, value})
+#       #   end
+#       #
+#       # where sig(tag) returns __MODULE__ when tag == __MODULE__,
+#       # or Module.concat(__MODULE__, tag) otherwise.
 #     end
 #
-# The tagged tuples can then be used as effect arguments:
+# The first argument is always `tag` with default `__MODULE__`.
+# The sig is an atom: `__MODULE__` for the default tag, or
+# `Module.concat(__MODULE__, tag)` for explicit tags.
 #
-#     def get(tag), do: Skuld.Comp.effect(@sig, {Get, tag})
-#     def put(tag, value), do: Skuld.Comp.effect(@sig, {Put, tag, value})
+# ## Operation Representation
 #
-# And pattern matched in handlers:
+# - 0-arg ops (after tag): bare atom `Module.Op`
+# - N-arg ops (after tag): tagged tuple `{Module.Op, arg1, arg2, ...}`
 #
-#     def handle({Get, tag}, env, k) -> ...
-#     def handle({Put, tag, value}, env, k) -> ...
+# ## Sig Computation
 #
-# ## Why tagged tuples?
-#
-# A 2-tuple costs 3 heap words vs a struct/map which requires header +
-# __struct__ key + field keys + values. Pattern matching is a direct
-# element comparison vs map key lookup.
-#
-# ## JSON serialization
-#
-# Not yet supported — this macro is for benchmarking the performance
-# impact of the struct-to-tuple migration. JSON serialization support
-# will be added if the performance gains justify the migration.
+# Per-tag module-atom sigs give O(1) atom-keyed map lookup in the
+# evidence map, cheaper than tuple-keyed lookups.
 defmodule Skuld.Comp.DefTaggedOp do
   @moduledoc false
 
   @doc """
-  Define a tagged-tuple operation type.
+  Define a tagged effect constructor function.
 
-  ## Arguments
+  The macro accepts a function call form: `def_tagged_op name(arg1, arg2, ...)`
 
-  - `mod` - the module name (will be nested under the calling module)
-  - `fields` - list of fields (default: [])
+  Generates a public function with a prepended `tag` argument (default
+  `__MODULE__`) that calls `Comp.effect(sig(tag), op)` where `op` is a
+  bare atom for 0-arg ops or a tagged tuple for N-arg ops.
 
-  ## Generated code
+  Also generates a `sig/1` helper (guarded to avoid redefinition) that
+  maps tags to per-tag module-atom sigs.
 
-  Creates a module with:
-  - A `new/N` function that constructs the tagged tuple
-  - A `tag/0` function that returns the module atom (for pattern matching)
-
-  The tagged tuple format is `{Module, field1, field2, ...}` where
-  `Module` is the fully-qualified module atom.
+  The operation atom is computed at compile time via a module attribute.
   """
-  defmacro def_tagged_op(mod, fields \\ []) do
-    field_count = length(fields)
+  defmacro def_tagged_op(call) do
+    {fun_name, args} = decompose_call(call)
+    op_camel = fun_name_to_op_camel(fun_name)
+    op_attr = :"__#{fun_name}_op__"
 
-    # Generate new/N function args as vars
-    new_args =
-      Enum.map(fields, fn field ->
-        Macro.var(field, nil)
-      end)
+    arg_vars =
+      Enum.map(args, fn {name, _, _} -> Macro.var(name, nil) end)
 
-    # Generate the tuple construction: {__MODULE__, arg1, arg2, ...}
-    tuple_elements =
-      [quote(do: __MODULE__) | new_args]
+    effect_call = build_effect_call(op_attr, arg_vars)
+    tag_var = Macro.var(:tag, nil)
 
+    quote do
+      # Generate sig/1 helper once per module
+      unless Module.get_attribute(__MODULE__, :__tagged_op_sig_defined__) do
+        Module.put_attribute(__MODULE__, :__tagged_op_sig_defined__, true)
+
+        @doc false
+        def sig(unquote(tag_var)) when unquote(tag_var) == __MODULE__, do: __MODULE__
+        def sig(unquote(tag_var)), do: Module.concat(__MODULE__, unquote(tag_var))
+      end
+
+      Module.put_attribute(
+        __MODULE__,
+        unquote(op_attr),
+        Module.concat(__MODULE__, unquote(op_camel))
+      )
+
+      @doc false
+      def unquote(fun_name)(unquote(tag_var) \\ __MODULE__, unquote_splicing(arg_vars)) do
+        unquote(effect_call)
+      end
+    end
+  end
+
+  # Decompose `name(arg1, arg2)` call form into {name, args}
+  defp decompose_call({fun_name, _, nil}) when is_atom(fun_name), do: {fun_name, []}
+  defp decompose_call({fun_name, _, args}) when is_atom(fun_name), do: {fun_name, args}
+
+  # Convert snake_case function name to CamelCase atom
+  defp fun_name_to_op_camel(fun_name) do
+    fun_name
+    |> Atom.to_string()
+    |> Macro.camelize()
+    |> String.to_atom()
+  end
+
+  # Build the Comp.effect call with sig(tag) and appropriate op representation
+  defp build_effect_call(op_attr, []) do
+    op_ref = {:@, [], [{op_attr, [], nil}]}
+    tag_var = Macro.var(:tag, nil)
+
+    quote do
+      Skuld.Comp.effect(sig(unquote(tag_var)), unquote(op_ref))
+    end
+  end
+
+  defp build_effect_call(op_attr, arg_vars) do
+    op_ref = {:@, [], [{op_attr, [], nil}]}
+    tag_var = Macro.var(:tag, nil)
+    tuple_elements = [op_ref | arg_vars]
     tuple_expr = {:{}, [], tuple_elements}
 
     quote do
-      defmodule unquote(mod) do
-        @moduledoc false
-
-        @doc """
-        Construct a tagged tuple for this operation.
-
-        Returns `{#{inspect(__MODULE__)}.#{unquote(mod)}, #{unquote(fields) |> Enum.join(", ")}}`.
-        """
-        def new(unquote_splicing(new_args)) do
-          unquote(tuple_expr)
-        end
-
-        @doc "Returns the tag atom for this operation (the module itself)."
-        def tag, do: __MODULE__
-
-        @doc "Returns the number of fields (excluding the tag)."
-        def field_count, do: unquote(field_count)
-      end
+      Skuld.Comp.effect(sig(unquote(tag_var)), unquote(tuple_expr))
     end
   end
 end
