@@ -210,7 +210,7 @@ defmodule Skuld.Effects.Throw do
   """
   @spec with_handler(Types.computation()) :: Types.computation()
   def with_handler(comp) do
-    Comp.with_handler(comp, sig(), &__MODULE__.handle/3)
+    Comp.with_handler(comp, @__sig__, &__MODULE__.handle/3)
   end
 
   @doc """
