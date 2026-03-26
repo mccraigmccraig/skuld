@@ -50,10 +50,10 @@ defmodule Skuld.Comp.DefTaggedOpTest do
   end
 
   describe "def_tagged_op with explicit tag" do
-    test "explicit tag uses Module.concat sig" do
+    test "explicit tag uses camelized Module.concat sig" do
       comp = TaggedEffect.get(:counter)
 
-      expected_sig = Module.concat(TaggedEffect, :counter)
+      expected_sig = TaggedEffect.sig(:counter)
 
       result =
         comp
@@ -76,8 +76,8 @@ defmodule Skuld.Comp.DefTaggedOpTest do
           return({a, b})
         end
 
-      alpha_sig = Module.concat(TaggedEffect, :alpha)
-      beta_sig = Module.concat(TaggedEffect, :beta)
+      alpha_sig = TaggedEffect.sig(:alpha)
+      beta_sig = TaggedEffect.sig(:beta)
 
       result =
         computation
@@ -91,7 +91,7 @@ defmodule Skuld.Comp.DefTaggedOpTest do
     test "multi-arg op with explicit tag" do
       comp = TaggedEffect.put(:cache, %{key: "value"})
 
-      expected_sig = Module.concat(TaggedEffect, :cache)
+      expected_sig = TaggedEffect.sig(:cache)
 
       result =
         comp
@@ -110,8 +110,9 @@ defmodule Skuld.Comp.DefTaggedOpTest do
       assert TaggedEffect.sig(TaggedEffect) == TaggedEffect
     end
 
-    test "sig(tag) returns Module.concat(__MODULE__, tag)" do
-      assert TaggedEffect.sig(:counter) == Module.concat(TaggedEffect, :counter)
+    test "sig(tag) returns camelized Module.concat(__MODULE__, tag)" do
+      assert TaggedEffect.sig(:counter) == Module.concat(TaggedEffect, :Counter)
+      assert TaggedEffect.sig(:my_tag) == Module.concat(TaggedEffect, :MyTag)
     end
   end
 

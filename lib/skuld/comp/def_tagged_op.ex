@@ -75,7 +75,16 @@ defmodule Skuld.Comp.DefTaggedOp do
 
         @doc false
         def sig(unquote(tag_var)) when unquote(tag_var) == __MODULE__, do: __MODULE__
-        def sig(unquote(tag_var)), do: Module.concat(__MODULE__, unquote(tag_var))
+
+        def sig(unquote(tag_var)) do
+          camelized =
+            unquote(tag_var)
+            |> Atom.to_string()
+            |> Macro.camelize()
+            |> String.to_atom()
+
+          Module.concat(__MODULE__, camelized)
+        end
       end
 
       Module.put_attribute(
