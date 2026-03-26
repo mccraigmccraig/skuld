@@ -195,17 +195,59 @@ installation.
 
 ### Replace struct args with tagged tuples
 
-Replace `%Get{tag: tag}` / `%Put{tag: tag, value: v}` with
-`{:get, tag}` / `{:put, tag, value}`. A 2-tuple is 3 words on the
-heap; a struct is a map (header + `__struct__` key + field keys +
-values).
+Replace `%Get{tag: tag}` / `%Put{tag: tag, value: v}` with tagged
+tuples using module-style atom tags:
 
-**Expected impact**: S6 added a 1.30x step. Tagged tuples might
-recover 50–70% of that, bringing the step to ~1.10–1.15x.
+```elixir
+# Current (struct)
+Comp.effect(@sig, %Get{tag: tag})
 
-**Trade-off**: loses pattern-match clarity in handler definitions,
-loses automatic `Jason.Encoder` from `def_op`, and requires a
-different serialisation path for `EffectLogger`.
+# handler pattern match
+def handle(%Get{tag: tag}, env, k) do ...
+def handle(%Put{tag: tag, value: value}, env, k) do ...
+
+# Proposed (tagged tuple with module-atom tag)
+Comp.effect(@sig, {State.Get, tag})
+
+# handler pattern match
+def handle({State.Get, tag}, env, k) do ...
+def handle({State.Put, tag, value}, env, k) do ...
+```
+
+Module-atom tags like `State.Get` (which is really just the atom
+`Elixir.Skuld.Effects.State.Get`) give proper namespacing at zero
+additional cost vs plain atoms. The `def_op` macro already knows
+the module and operation name, so it can derive the tag automatically.
+
+**Heap cost**: a 2-tuple is 3 words; a 3-tuple is 4 words. A struct
+is a map (header + `__struct__` key + field keys + values) — 
+considerably more. Tuple pattern matching is also faster than map
+pattern matching on the BEAM (direct element comparison vs map key
+lookup).
+
+**JSON serialisation via Protocol**: the current `def_op` macro
+generates `Jason.Encoder` implementations for each struct. For tagged
+tuples, we can use a Protocol-based encoding mechanism:
+
+- Define a protocol (e.g. `Skuld.Comp.OpEncoding`) for
+  encoding/decoding tagged tuples to/from JSON
+- `def_op` registers a protocol implementation for the specific
+  module-atom tag, mapping tuple positions to named fields
+- This gives straightforward JSON encoding and decoding without
+  requiring structs on the hot path
+
+The Protocol dispatch only happens in `EffectLogger` (which is
+already off the hot path), so it adds no overhead to normal effect
+dispatch.
+
+**Expected impact**: S6 added a 1.30x step. Tagged tuples should
+recover 50–70% of that, bringing the step to ~1.05–1.15x.
+
+**Trade-off**: handler `def handle(...)` clauses use tuple patterns
+instead of struct patterns — slightly less self-documenting, but
+the module-atom tag (`State.Get`) makes the intent clear. The
+`def_op` macro can generate named constructor functions to preserve
+the ergonomic API (`State.get(tag)` still works unchanged).
 
 ### Replace `{Mod, tag}` tuple state keys
 
@@ -233,19 +275,19 @@ remain:
 | S3   | 3rd catch     | 1.24x   | 1.24x      | Irreducible (unless merging `call`/`call_handler`)     |
 | S4   | guard         | 1.01x   | 1.01x      | Irreducible                                            |
 | S5   | struct env    | 1.02x   | 1.02x      | Irreducible (still need a struct)                      |
-| S6   | struct args   | 1.30x   | **~1.10x** | Tagged tuple allocation still costs something          |
+| S6   | struct args   | 1.30x   | **~1.05–1.10x** | Tagged tuple allocation (3–4 words vs map)          |
 | S7   | accessors     | 1.01x   | 1.01x      | Inlined away but underlying work remains               |
 | S8   | Change struct | 1.06x   | **~1.03x** | Still return old/new pair, but lighter                 |
 | S9   | tuple keys    | 1.16x   | **~1.04x** | Precomputed key eliminates per-call allocation         |
 | S10  | full Skuld    | 1.40x   | **~1.15x** | `scoped` continuations, `leave_scope`, `drain_pending` |
 
 **Optimistic projection** (all optimisations succeed well):
-1.01 × 1.24 × 1.01 × 1.02 × 1.10 × 1.01 × 1.03 × 1.04 × 1.15
-= **~1.74x** vs catch baseline
+1.01 × 1.24 × 1.01 × 1.02 × 1.05 × 1.01 × 1.03 × 1.04 × 1.15
+= **~1.67x** vs catch baseline
 
 **Conservative projection** (partial success on each):
-1.01 × 1.24 × 1.01 × 1.02 × 1.15 × 1.01 × 1.04 × 1.06 × 1.20
-= **~1.92x** vs catch baseline
+1.01 × 1.24 × 1.01 × 1.02 × 1.12 × 1.01 × 1.04 × 1.06 × 1.20
+= **~1.87x** vs catch baseline
 
 The **irreducible floor** — even with perfect optimisation of
 everything except the catch frames — is the 1.25x from the extra
@@ -262,7 +304,7 @@ After applying all optimisations, the ~1.7–1.9x would be composed of:
 | Component                            | Multiplier      | Nature                                           |
 |--------------------------------------|-----------------|--------------------------------------------------|
 | 2 extra catch frames                 | **1.25x**       | Irreducible (merging would be a semantic change) |
-| Tagged tuple args (was struct)       | **1.10–1.15x**  | Residual heap allocation                         |
+| Tagged tuple args (was struct)       | **1.05–1.10x**  | Residual heap allocation (3–4 words per op)      |
 | Precomputed keys (was tuple)         | **1.03–1.06x**  | Residual map lookup cost                         |
 | Scoped continuation chains           | **~1.10–1.15x** | `normal_k`, `leave_scope`, `drain_pending`       |
 | Noise (guard, env struct, accessors) | **~1.05x**      | Effectively irreducible                          |
@@ -273,7 +315,7 @@ After applying all optimisations, the ~1.7–1.9x would be composed of:
 |----------------------------------------|------------|-------------------------------------------------|
 | First catch frame                      | 2.26x      | No — BEAM tax, not Skuld-specific               |
 | Additional catches (×2)                | 1.25x      | Partially — could merge `call`/`call_handler`   |
-| Struct args (`%Get{}`/`%Put{}`)        | 1.30x      | Yes — tagged tuples → ~1.10x                    |
+| Struct args (`%Get{}`/`%Put{}`)        | 1.30x      | Yes — tagged tuples with module-atom tags → ~1.05–1.10x |
 | Change struct + accessors + tuple keys | 1.23x      | Partially — inlining, precomputed keys → ~1.08x |
 | Full-Skuld machinery                   | 1.40x      | Partially — inlining, smaller Env → ~1.15x      |
 
@@ -281,6 +323,8 @@ After applying all optimisations, the ~1.7–1.9x would be composed of:
 optimisations applied, this could realistically come down to
 **~1.7–1.9x**. Per-effect cost would drop from ~0.3–0.5 µs to
 ~0.2–0.3 µs — negligible compared to any IO operation.
+
+Tracked as epic `skuld-6ki`. The tagged-tuple spike is `skuld-wax`.
 
 ## Experiment: inlining hot-path wrappers
 
