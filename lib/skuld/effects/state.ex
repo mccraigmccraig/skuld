@@ -46,7 +46,7 @@ defmodule Skuld.Effects.State do
   @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall
 
-  import Skuld.Comp.DefTaggedOp
+  use Skuld.Comp.DefTaggedOp
 
   alias Skuld.Comp
   alias Skuld.Comp.Env

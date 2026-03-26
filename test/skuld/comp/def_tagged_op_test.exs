@@ -5,7 +5,7 @@ defmodule Skuld.Comp.DefTaggedOpTest do
 
   # Test effect module using def_tagged_op
   defmodule TaggedEffect do
-    import Skuld.Comp.DefTaggedOp
+    use Skuld.Comp.DefTaggedOp
 
     def_tagged_op get()
     def_tagged_op put(value)
@@ -102,6 +102,12 @@ defmodule Skuld.Comp.DefTaggedOpTest do
         |> Comp.run!()
 
       assert result == :stored
+    end
+  end
+
+  describe "sig/0" do
+    test "returns __MODULE__ of the defining module" do
+      assert TaggedEffect.sig() == TaggedEffect
     end
   end
 

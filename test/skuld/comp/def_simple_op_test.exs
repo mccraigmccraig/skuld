@@ -5,7 +5,7 @@ defmodule Skuld.Comp.DefSimpleOpTest do
 
   # Test effect module using def_simple_op
   defmodule SimpleEffect do
-    import Skuld.Comp.DefSimpleOp
+    use Skuld.Comp.DefSimpleOp
 
     def_simple_op ping()
     def_simple_op add(a, b)
@@ -82,7 +82,24 @@ defmodule Skuld.Comp.DefSimpleOpTest do
     end
   end
 
-  describe "sig" do
+  describe "sig/0" do
+    test "returns __MODULE__ of the defining module" do
+      assert SimpleEffect.sig() == SimpleEffect
+    end
+  end
+
+  describe "sig/1" do
+    test "sig(__MODULE__) returns __MODULE__ directly" do
+      assert SimpleEffect.sig(SimpleEffect) == SimpleEffect
+    end
+
+    test "sig(tag) returns camelized Module.concat(__MODULE__, tag)" do
+      assert SimpleEffect.sig(:counter) == Module.concat(SimpleEffect, :Counter)
+      assert SimpleEffect.sig(:my_tag) == Module.concat(SimpleEffect, :MyTag)
+    end
+  end
+
+  describe "handler dispatch" do
     test "sig is always __MODULE__ of the defining module" do
       # Verify by checking the handler key used
       comp = SimpleEffect.ping()

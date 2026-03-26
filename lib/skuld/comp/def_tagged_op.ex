@@ -7,7 +7,7 @@
 # ## Example
 #
 #     defmodule Skuld.Effects.AtomicState do
-#       import Skuld.Comp.DefTaggedOp
+#       use Skuld.Comp.DefTaggedOp
 #
 #       def_tagged_op get()
 #       def_tagged_op put(value)
@@ -43,6 +43,15 @@
 defmodule Skuld.Comp.DefTaggedOp do
   @moduledoc false
 
+  defmacro __using__(_opts) do
+    sig_ast = Skuld.Comp.EffectSig.generate()
+
+    quote do
+      import Skuld.Comp.DefTaggedOp
+      unquote(sig_ast)
+    end
+  end
+
   @doc """
   Define a tagged effect constructor function.
 
@@ -51,9 +60,6 @@ defmodule Skuld.Comp.DefTaggedOp do
   Generates a public function with a prepended `tag` argument (default
   `__MODULE__`) that calls `Comp.effect(sig(tag), op)` where `op` is a
   bare atom for 0-arg ops or a tagged tuple for N-arg ops.
-
-  Also generates a `sig/1` helper (guarded to avoid redefinition) that
-  maps tags to per-tag module-atom sigs.
 
   The operation atom is computed at compile time via a module attribute.
   """
@@ -69,24 +75,6 @@ defmodule Skuld.Comp.DefTaggedOp do
     tag_var = Macro.var(:tag, nil)
 
     quote do
-      # Generate sig/1 helper once per module
-      unless Module.get_attribute(__MODULE__, :__tagged_op_sig_defined__) do
-        Module.put_attribute(__MODULE__, :__tagged_op_sig_defined__, true)
-
-        @doc false
-        def sig(unquote(tag_var)) when unquote(tag_var) == __MODULE__, do: __MODULE__
-
-        def sig(unquote(tag_var)) do
-          camelized =
-            unquote(tag_var)
-            |> Atom.to_string()
-            |> Macro.camelize()
-            |> String.to_atom()
-
-          Module.concat(__MODULE__, camelized)
-        end
-      end
-
       Module.put_attribute(
         __MODULE__,
         unquote(op_attr),

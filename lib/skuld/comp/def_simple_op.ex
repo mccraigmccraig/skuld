@@ -6,7 +6,7 @@
 # ## Example
 #
 #     defmodule Skuld.Effects.Random do
-#       import Skuld.Comp.DefSimpleOp
+#       use Skuld.Comp.DefSimpleOp
 #
 #       def_simple_op random_float()
 #       def_simple_op random_int(min, max)
@@ -36,6 +36,15 @@
 # This eliminates struct allocation on every operation call.
 defmodule Skuld.Comp.DefSimpleOp do
   @moduledoc false
+
+  defmacro __using__(_opts) do
+    sig_ast = Skuld.Comp.EffectSig.generate()
+
+    quote do
+      import Skuld.Comp.DefSimpleOp
+      unquote(sig_ast)
+    end
+  end
 
   @doc """
   Define a simple (untagged) effect constructor function.
