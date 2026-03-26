@@ -913,29 +913,30 @@ A [progressive benchmark](../bench/overhead_progressive.exs) starts
 from the flat evidence-passing CPS baseline and adds one Skuld feature
 at a time, measuring the marginal cost of each. At N=10000:
 
-| Step | Feature added                | us/op | vs baseline |
-|------|------------------------------|-------|-------------|
-| S0   | evf_cps baseline             | 0.072 | 1.0x        |
-| S1   | + first catch frame (`call`) | 0.163 | **2.3x**    |
-| S2   | + catch in `bind`            | 0.165 | 2.3x        |
-| S3   | + catch on handler dispatch  | 0.204 | 2.8x        |
-| S4   | + `is_function` guard        | 0.206 | 2.9x        |
-| S5   | + struct env (`%Env{}`)      | 0.211 | 2.9x        |
-| S6   | + struct args (`%Get{}`/`%Put{}`) | 0.274 | **3.8x** |
-| S7   | + accessor functions         | 0.278 | 3.9x        |
-| S8   | + `%Change{}` struct on put  | 0.296 | 4.1x        |
-| S9   | + `{Mod, tag}` state keys    | 0.342 | 4.8x        |
-| S10  | Full Skuld                   | 0.479 | **6.7x**    |
+| Step | Feature added                     | us/op | vs prev   | vs baseline |
+|------|-----------------------------------|-------|-----------|-------------|
+| S0   | evf_cps baseline                  | 0.072 | —         | 1.0x        |
+| S1   | + first catch frame (`call`)      | 0.163 | **2.26x** | **2.3x**    |
+| S2   | + catch in `bind`                 | 0.165 | 1.01x     | 2.3x        |
+| S3   | + catch on handler dispatch       | 0.204 | **1.24x** | 2.8x        |
+| S4   | + `is_function` guard             | 0.206 | 1.01x     | 2.9x        |
+| S5   | + struct env (`%Env{}`)           | 0.211 | 1.02x     | 2.9x        |
+| S6   | + struct args (`%Get{}`/`%Put{}`) | 0.274 | **1.30x** | **3.8x**    |
+| S7   | + accessor functions              | 0.278 | 1.01x     | 3.9x        |
+| S8   | + `%Change{}` struct on put       | 0.296 | 1.06x     | 4.1x        |
+| S9   | + `{Mod, tag}` state keys         | 0.342 | **1.16x** | 4.8x        |
+| S10  | Full Skuld                        | 0.479 | **1.40x** | **6.7x**    |
 
 Key findings:
 
-1. **The first catch frame dominates** (S0→S1: 2.3x). The BEAM sets up
-   exception handling per-process; once one catch frame exists,
-   additional nested catches add minimal cost (S1→S2 ≈ 0).
-2. **Struct allocation matters** — operation arg structs (S6: +0.9x)
-   and `{Mod, tag}` tuple keys (S9: +0.9x) each add measurable cost.
-3. **Guards, accessors, and struct env** are nearly free.
-4. **Remaining gap** (S9→S10: 4.8x → 6.7x) comes from Skuld features
+1. **The first catch frame dominates** (S0→S1: **2.26x** step). The BEAM
+   sets up exception handling per-process; once one catch frame exists,
+   additional nested catches are nearly free (S1→S2: 1.01x). The third
+   catch frame is not quite free though (S2→S3: 1.24x).
+2. **Struct allocation matters** — operation arg structs add a 1.30x
+   step (S6), and `{Mod, tag}` tuple keys add 1.16x (S9).
+3. **Guards, accessors, and struct env** are nearly free (1.01-1.02x).
+4. **Remaining gap** (S9→S10: 1.40x step) comes from Skuld features
    not in the progressive series: the `scoped` wrapper's `normal_k`
    continuation, the 4-field `%Env{}` struct (larger copies on state
    update), `FiberPool.Main.drain_pending`, and `ISentinel` dispatch.

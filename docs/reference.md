@@ -1,7 +1,7 @@
 # Reference
 
 <!-- nav:header:start -->
-[< How It Works](internals.md) | [Up: Internals](internals.md) | [Index](../README.md)
+[< How It Works](internals.md) | [Up: Internals](internals.md) | [Index](../README.md) | [Performance Investigation >](research/performance-investigation.md)
 <!-- nav:header:end -->
 
 Quick-reference material for Skuld. For narrative explanations, start
@@ -322,5 +322,5 @@ no `Eff '[State, Reader, Throw] a` to track.
 
 ---
 
-[< How It Works](internals.md) | [Up: Internals](internals.md) | [Index](../README.md)
+[< How It Works](internals.md) | [Up: Internals](internals.md) | [Index](../README.md) | [Performance Investigation >](research/performance-investigation.md)
 <!-- nav:footer:end -->

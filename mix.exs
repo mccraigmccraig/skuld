@@ -45,7 +45,8 @@ defmodule Skuld.MixProject do
           "docs/recipes/data-pipelines.md",
           "docs/recipes/batch-loading.md",
           "docs/internals.md",
-          "docs/reference.md"
+          "docs/reference.md",
+          "docs/research/performance-investigation.md"
         ],
         groups_for_extras: [
           Introduction: [
@@ -84,6 +85,9 @@ defmodule Skuld.MixProject do
           Internals: [
             "docs/internals.md",
             "docs/reference.md"
+          ],
+          Research: [
+            "docs/research/performance-investigation.md"
           ]
         ],
         groups_for_modules: [
