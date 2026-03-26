@@ -110,7 +110,7 @@ if Code.ensure_loaded?(Ecto) do
     For batched database reads using FiberPool, see `Skuld.Query.Contract`.
     """
 
-    import Skuld.Comp.DefOp
+    import Skuld.Comp.DefOpStruct
 
     alias Skuld.Comp
     alias Skuld.Comp.Types
@@ -125,21 +125,21 @@ if Code.ensure_loaded?(Ecto) do
     ## Operation Structs — Writes
     #############################################################################
 
-    def_op(Insert, [:input, :opts])
-    def_op(Update, [:input, :opts])
-    def_op(Upsert, [:input, :opts])
-    def_op(Delete, [:input, :opts])
-    def_op(InsertAll, [:schema, :entries, :opts])
-    def_op(UpdateAll, [:schema, :entries, :opts])
-    def_op(UpsertAll, [:schema, :entries, :opts])
-    def_op(DeleteAll, [:schema, :entries, :opts])
+    def_op_struct(Insert, [:input, :opts])
+    def_op_struct(Update, [:input, :opts])
+    def_op_struct(Upsert, [:input, :opts])
+    def_op_struct(Delete, [:input, :opts])
+    def_op_struct(InsertAll, [:schema, :entries, :opts])
+    def_op_struct(UpdateAll, [:schema, :entries, :opts])
+    def_op_struct(UpsertAll, [:schema, :entries, :opts])
+    def_op_struct(DeleteAll, [:schema, :entries, :opts])
 
     #############################################################################
     ## Operation Structs — Transactions
     #############################################################################
 
-    def_op(Transact, [:comp])
-    def_op(Rollback, [:reason])
+    def_op_struct(Transact, [:comp])
+    def_op_struct(Rollback, [:reason])
 
     #############################################################################
     ## Single Operations

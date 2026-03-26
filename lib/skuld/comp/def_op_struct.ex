@@ -6,10 +6,10 @@
 # ## Example
 #
 #     defmodule Skuld.Effects.State do
-#       import Skuld.Comp.DefOp
+#       import Skuld.Comp.DefOpStruct
 #
-#       def_op Get
-#       def_op Put, [:value]
+#       def_op_struct Get
+#       def_op_struct Put, [:value]
 #
 #       # Creates:
 #       # - Skuld.Effects.State.Get with defstruct []
@@ -32,11 +32,11 @@
 # Some fields may contain atoms (like tags) that need to be converted back
 # from strings during JSON deserialization. Use the `atom_fields` option:
 #
-#     def_op Get, [:tag], atom_fields: [:tag]
+#     def_op_struct Get, [:tag], atom_fields: [:tag]
 #
 # This generates a `from_json/1` callback that converts the specified fields
 # from strings to existing atoms.
-defmodule Skuld.Comp.DefOp do
+defmodule Skuld.Comp.DefOpStruct do
   @moduledoc false
 
   @doc """
@@ -50,7 +50,7 @@ defmodule Skuld.Comp.DefOp do
     - `atom_fields` - list of fields that should be converted from strings to atoms
       during deserialization
   """
-  defmacro def_op(mod, fields \\ [], opts \\ []) do
+  defmacro def_op_struct(mod, fields \\ [], opts \\ []) do
     atom_fields = Keyword.get(opts, :atom_fields, [])
     from_json_fn = build_from_json_fn(fields, atom_fields)
 
