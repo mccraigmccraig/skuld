@@ -120,6 +120,14 @@ defmodule Skuld.Comp.DefTaggedOpTest do
       assert TaggedEffect.sig(:counter) == Module.concat(TaggedEffect, :Counter)
       assert TaggedEffect.sig(:my_tag) == Module.concat(TaggedEffect, :MyTag)
     end
+
+    test "sig(list) concatenates multiple camelized segments" do
+      assert TaggedEffect.sig([:agent, :counter]) ==
+               Module.concat(TaggedEffect, :"Agent.Counter")
+
+      assert TaggedEffect.sig([:state, :my_tag]) ==
+               Module.concat(TaggedEffect, :"State.MyTag")
+    end
   end
 
   describe "op atom naming" do

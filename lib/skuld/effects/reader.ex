@@ -46,7 +46,7 @@ defmodule Skuld.Effects.Reader do
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
 
-  @compile {:inline, state_key: 1, sig: 1}
+  @compile {:inline, sig: 1}
 
   @default_tag __MODULE__
 
@@ -99,12 +99,12 @@ defmodule Skuld.Effects.Reader do
 
   @spec local(atom(), (term() -> term()), Types.computation()) :: Types.computation()
   def local(tag, modify, comp) when is_atom(tag) and is_function(modify, 1) do
-    state_key = state_key(tag)
+    sk = sig(tag)
 
     Comp.scoped(comp, fn env ->
-      current = Env.get_state!(env, state_key)
-      modified_env = Env.put_state(env, state_key, modify.(current))
-      finally_k = fn value, e -> {value, Env.put_state(e, state_key, current)} end
+      current = Env.get_state!(env, sk)
+      modified_env = Env.put_state(env, sk, modify.(current))
+      finally_k = fn value, e -> {value, Env.put_state(e, sk, current)} end
       {modified_env, finally_k}
     end)
   end
@@ -156,8 +156,7 @@ defmodule Skuld.Effects.Reader do
     tag = Keyword.get(opts, :tag, @default_tag)
     output = Keyword.get(opts, :output)
     suspend = Keyword.get(opts, :suspend)
-    handler_sig = sig(tag)
-    sk = state_key(tag)
+    sk = sig(tag)
 
     scoped_opts =
       []
@@ -177,7 +176,7 @@ defmodule Skuld.Effects.Reader do
 
     comp
     |> Comp.with_scoped_state(sk, value, scoped_opts)
-    |> Comp.with_handler(handler_sig, handler)
+    |> Comp.with_handler(sk, handler)
   end
 
   @doc """
@@ -196,7 +195,7 @@ defmodule Skuld.Effects.Reader do
   @doc "Extract the context value for the given tag from an env"
   @spec get_context(Types.env(), atom()) :: term()
   def get_context(env, tag \\ @default_tag) do
-    Env.get_state(env, state_key(tag))
+    Env.get_state(env, sig(tag))
   end
 
   #############################################################################
@@ -209,7 +208,7 @@ defmodule Skuld.Effects.Reader do
       @ask_op ->
         # Default-tag handler (used by with_handler when no tag given
         # and handler_sig == __MODULE__)
-        value = Env.get_state!(env, state_key(@default_tag))
+        value = Env.get_state!(env, @__sig__)
         k.(value, env)
     end
   end
@@ -234,6 +233,6 @@ defmodule Skuld.Effects.Reader do
         Reader.state_key(:api)
       ])
   """
-  @spec state_key(atom()) :: {module(), atom()}
-  def state_key(tag), do: {__MODULE__, tag}
+  @spec state_key(atom()) :: atom()
+  def state_key(tag), do: sig(tag)
 end

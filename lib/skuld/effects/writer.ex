@@ -62,7 +62,7 @@ defmodule Skuld.Effects.Writer do
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
 
-  @compile {:inline, state_key: 1, sig: 1}
+  @compile {:inline, sig: 1}
 
   @default_tag __MODULE__
 
@@ -246,8 +246,7 @@ defmodule Skuld.Effects.Writer do
     tag = Keyword.get(opts, :tag, @default_tag)
     output = Keyword.get(opts, :output)
     suspend = Keyword.get(opts, :suspend)
-    handler_sig = sig(tag)
-    sk = state_key(tag)
+    sk = sig(tag)
 
     scoped_opts =
       [default: []]
@@ -279,7 +278,7 @@ defmodule Skuld.Effects.Writer do
 
     comp
     |> Comp.with_scoped_state(sk, initial, scoped_opts)
-    |> Comp.with_handler(handler_sig, handler)
+    |> Comp.with_handler(sk, handler)
   end
 
   @doc """
@@ -307,7 +306,7 @@ defmodule Skuld.Effects.Writer do
   """
   @spec get_log(Types.env(), atom()) :: [term()]
   def get_log(env, tag \\ @default_tag) do
-    Env.get_state(env, state_key(tag), [])
+    Env.get_state(env, sig(tag), [])
   end
 
   #############################################################################
@@ -318,18 +317,17 @@ defmodule Skuld.Effects.Writer do
   def handle(op, env, k) do
     case op do
       {@tell_op, msg} ->
-        sk = state_key(@default_tag)
-        current = Env.get_state!(env, sk)
+        current = Env.get_state!(env, @__sig__)
         updated = [msg | current]
-        new_env = Env.put_state(env, sk, updated)
+        new_env = Env.put_state(env, @__sig__, updated)
         k.(updated, new_env)
 
       @peek_op ->
-        current = Env.get_state!(env, state_key(@default_tag))
+        current = Env.get_state!(env, @__sig__)
         k.(current, env)
 
       {@set_log_op, new_log} ->
-        new_env = Env.put_state(env, state_key(@default_tag), new_log)
+        new_env = Env.put_state(env, @__sig__, new_log)
         k.(:ok, new_env)
     end
   end
@@ -389,6 +387,6 @@ defmodule Skuld.Effects.Writer do
         Writer.state_key(:metrics)
       ])
   """
-  @spec state_key(atom()) :: {module(), atom()}
-  def state_key(tag), do: {__MODULE__, tag}
+  @spec state_key(atom()) :: atom()
+  def state_key(tag), do: sig(tag)
 end

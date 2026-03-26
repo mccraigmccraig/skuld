@@ -316,10 +316,10 @@ if Code.ensure_loaded?(Ecto) do
 
     defp record_call(call, env) do
       # Directly update Writer state (same as Writer.tell handler does)
-      state_key = {Writer, @writer_tag}
-      current = Env.get_state(env, state_key, [])
+      sk = Writer.state_key(@writer_tag)
+      current = Env.get_state(env, sk, [])
       updated = [call | current]
-      Env.put_state(env, state_key, updated)
+      Env.put_state(env, sk, updated)
     end
 
     # Normalize input to extract changeset from ChangeEvent

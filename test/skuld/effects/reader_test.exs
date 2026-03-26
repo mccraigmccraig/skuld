@@ -233,8 +233,8 @@ defmodule Skuld.Effects.ReaderTest do
       assert {:done, :config} = result
       # Handler should be removed
       assert Env.get_handler(final_env, Reader) == nil
-      # State should be removed
-      assert Env.get_state(final_env, {Reader, Reader}) == nil
+      # State should be removed (state_key is sig(Reader) == Reader)
+      assert Env.get_state(final_env, Reader) == nil
     end
 
     test "local still works inside handle" do
@@ -318,8 +318,8 @@ defmodule Skuld.Effects.ReaderTest do
       {result, final_env} = Comp.run(comp)
 
       assert {:done, :config} = result
-      # State for tag should be removed
-      assert Env.get_state(final_env, {Reader, :ctx}) == nil
+      # State for tag should be removed (state_key is sig(:ctx) == Reader.Ctx)
+      assert Env.get_state(final_env, Reader.Ctx) == nil
     end
   end
 

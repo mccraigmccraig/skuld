@@ -33,9 +33,14 @@ defmodule Skuld.Effects.AtomicState.Agent do
   alias Skuld.Comp.Types
   alias Skuld.Effects.AtomicState
 
-  @sig AtomicState
+  @default_tag AtomicState
 
-  defp sig(tag), do: {@sig, tag}
+  # Op atoms from parent effect
+  @get_op AtomicState.get_op()
+  @put_op AtomicState.put_op()
+  @modify_op AtomicState.modify_op()
+  @atomic_state_op AtomicState.atomic_state_op()
+  @cas_op AtomicState.cas_op()
 
   #############################################################################
   ## Handler Installation
@@ -50,8 +55,66 @@ defmodule Skuld.Effects.AtomicState.Agent do
   """
   @spec with_handler(Types.computation(), term(), keyword()) :: Types.computation()
   def with_handler(comp, initial, opts \\ []) do
-    tag = Keyword.get(opts, :tag, @sig)
+    tag = Keyword.get(opts, :tag, @default_tag)
     agent_key = AtomicState.agent_key(tag)
+    handler_sig = AtomicState.sig(tag)
+
+    # Op atoms captured for handler closure
+    get_op = @get_op
+    put_op = @put_op
+    modify_op = @modify_op
+    atomic_state_op = @atomic_state_op
+    cas_op = @cas_op
+
+    handler = fn args, env, k ->
+      case args do
+        ^get_op ->
+          agent = Env.get_state!(env, agent_key)
+          value = Agent.get(agent, & &1)
+          k.(value, env)
+
+        {^put_op, value} ->
+          agent = Env.get_state!(env, agent_key)
+          Agent.update(agent, fn _ -> value end)
+          k.(:ok, env)
+
+        {^modify_op, fun} ->
+          agent = Env.get_state!(env, agent_key)
+
+          new_value =
+            Agent.get_and_update(agent, fn v ->
+              result = fun.(v)
+              {result, result}
+            end)
+
+          k.(new_value, env)
+
+        {^atomic_state_op, fun} ->
+          agent = Env.get_state!(env, agent_key)
+
+          result =
+            Agent.get_and_update(agent, fn v ->
+              {result, new_state} = fun.(v)
+              {result, new_state}
+            end)
+
+          k.(result, env)
+
+        {^cas_op, expected, new} ->
+          agent = Env.get_state!(env, agent_key)
+
+          result =
+            Agent.get_and_update(agent, fn current ->
+              if current == expected do
+                {:ok, new}
+              else
+                {{:conflict, current}, current}
+              end
+            end)
+
+          k.(result, env)
+      end
+    end
 
     comp
     |> Comp.scoped(fn env ->
@@ -72,7 +135,7 @@ defmodule Skuld.Effects.AtomicState.Agent do
 
       {modified, finally_k}
     end)
-    |> Comp.with_handler(sig(tag), &__MODULE__.handle/3)
+    |> Comp.with_handler(handler_sig, handler)
   end
 
   #############################################################################
@@ -91,62 +154,59 @@ defmodule Skuld.Effects.AtomicState.Agent do
   def __handle__(comp, initial), do: with_handler(comp, initial)
 
   #############################################################################
-  ## IHandle Implementation
+  ## IHandle Implementation (default-tag fallback)
   #############################################################################
 
   @impl Skuld.Comp.IHandle
-  def handle(%AtomicState.Get{tag: tag}, env, k) do
-    agent = Env.get_state!(env, AtomicState.agent_key(tag))
-    value = Agent.get(agent, & &1)
-    k.(value, env)
-  end
+  def handle(op, env, k) do
+    agent_key = AtomicState.agent_key(@default_tag)
 
-  @impl Skuld.Comp.IHandle
-  def handle(%AtomicState.Put{tag: tag, value: value}, env, k) do
-    agent = Env.get_state!(env, AtomicState.agent_key(tag))
-    Agent.update(agent, fn _ -> value end)
-    k.(:ok, env)
-  end
+    case op do
+      @get_op ->
+        agent = Env.get_state!(env, agent_key)
+        value = Agent.get(agent, & &1)
+        k.(value, env)
 
-  @impl Skuld.Comp.IHandle
-  def handle(%AtomicState.Modify{tag: tag, fun: fun}, env, k) do
-    agent = Env.get_state!(env, AtomicState.agent_key(tag))
+      {@put_op, value} ->
+        agent = Env.get_state!(env, agent_key)
+        Agent.update(agent, fn _ -> value end)
+        k.(:ok, env)
 
-    new_value =
-      Agent.get_and_update(agent, fn v ->
-        result = fun.(v)
-        {result, result}
-      end)
+      {@modify_op, fun} ->
+        agent = Env.get_state!(env, agent_key)
 
-    k.(new_value, env)
-  end
+        new_value =
+          Agent.get_and_update(agent, fn v ->
+            result = fun.(v)
+            {result, result}
+          end)
 
-  @impl Skuld.Comp.IHandle
-  def handle(%AtomicState.AtomicState{tag: tag, fun: fun}, env, k) do
-    agent = Env.get_state!(env, AtomicState.agent_key(tag))
+        k.(new_value, env)
 
-    result =
-      Agent.get_and_update(agent, fn v ->
-        {result, new_state} = fun.(v)
-        {result, new_state}
-      end)
+      {@atomic_state_op, fun} ->
+        agent = Env.get_state!(env, agent_key)
 
-    k.(result, env)
-  end
+        result =
+          Agent.get_and_update(agent, fn v ->
+            {result, new_state} = fun.(v)
+            {result, new_state}
+          end)
 
-  @impl Skuld.Comp.IHandle
-  def handle(%AtomicState.Cas{tag: tag, expected: expected, new: new}, env, k) do
-    agent = Env.get_state!(env, AtomicState.agent_key(tag))
+        k.(result, env)
 
-    result =
-      Agent.get_and_update(agent, fn current ->
-        if current == expected do
-          {:ok, new}
-        else
-          {{:conflict, current}, current}
-        end
-      end)
+      {@cas_op, expected, new} ->
+        agent = Env.get_state!(env, agent_key)
 
-    k.(result, env)
+        result =
+          Agent.get_and_update(agent, fn current ->
+            if current == expected do
+              {:ok, new}
+            else
+              {{:conflict, current}, current}
+            end
+          end)
+
+        k.(result, env)
+    end
   end
 end
