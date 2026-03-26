@@ -221,30 +221,115 @@ avoid the allocation entirely.
 to either split handlers per-tag or pass the key through a different
 path.
 
-### Theoretical best case
+### Projected impact per optimisation
 
-If all optimisations above succeeded fully, the combined improvement
-would bring the overhead from ~2.9x (vs catch baseline) down to
-roughly ~1.8–2.2x. The remaining irreducible overhead would be:
+The current 2.94x (vs catch baseline) is composed of multiplicative
+steps. Here is what each optimisation targets and what we expect to
+remain:
 
-- 2 additional catch frames in `bind` and `call_handler` (1.25x)
-- The `scoped/2` continuation chain and leave_scope machinery
-- Protocol dispatch and drain_pending (negligible at scale)
+| Step | Feature       | Current | After opt  | What remains                                           |
+|------|---------------|---------|------------|--------------------------------------------------------|
+| S2   | 2nd catch     | 1.01x   | 1.01x      | Irreducible                                            |
+| S3   | 3rd catch     | 1.24x   | 1.24x      | Irreducible (unless merging `call`/`call_handler`)     |
+| S4   | guard         | 1.01x   | 1.01x      | Irreducible                                            |
+| S5   | struct env    | 1.02x   | 1.02x      | Irreducible (still need a struct)                      |
+| S6   | struct args   | 1.30x   | **~1.10x** | Tagged tuple allocation still costs something          |
+| S7   | accessors     | 1.01x   | 1.01x      | Inlined away but underlying work remains               |
+| S8   | Change struct | 1.06x   | **~1.03x** | Still return old/new pair, but lighter                 |
+| S9   | tuple keys    | 1.16x   | **~1.04x** | Precomputed key eliminates per-call allocation         |
+| S10  | full Skuld    | 1.40x   | **~1.15x** | `scoped` continuations, `leave_scope`, `drain_pending` |
+
+**Optimistic projection** (all optimisations succeed well):
+1.01 × 1.24 × 1.01 × 1.02 × 1.10 × 1.01 × 1.03 × 1.04 × 1.15
+= **~1.74x** vs catch baseline
+
+**Conservative projection** (partial success on each):
+1.01 × 1.24 × 1.01 × 1.02 × 1.15 × 1.01 × 1.04 × 1.06 × 1.20
+= **~1.92x** vs catch baseline
+
+The **irreducible floor** — even with perfect optimisation of
+everything except the catch frames — is the 1.25x from the extra
+catches plus whatever the `scoped` machinery costs. That puts the
+floor at roughly **~1.5x** vs catch baseline.
+
+If we also merged the `call` and `call_handler` catch frames (bringing
+1.25x down to ~1.10x), the floor drops to **~1.3–1.4x**.
+
+### Composition of the optimised overhead
+
+After applying all optimisations, the ~1.7–1.9x would be composed of:
+
+| Component                            | Multiplier      | Nature                                           |
+|--------------------------------------|-----------------|--------------------------------------------------|
+| 2 extra catch frames                 | **1.25x**       | Irreducible (merging would be a semantic change) |
+| Tagged tuple args (was struct)       | **1.10–1.15x**  | Residual heap allocation                         |
+| Precomputed keys (was tuple)         | **1.03–1.06x**  | Residual map lookup cost                         |
+| Scoped continuation chains           | **~1.10–1.15x** | `normal_k`, `leave_scope`, `drain_pending`       |
+| Noise (guard, env struct, accessors) | **~1.05x**      | Effectively irreducible                          |
 
 ## Summary
 
-| Category                               | Multiplier | Reducible?                                         |
-|----------------------------------------|------------|----------------------------------------------------|
-| First catch frame                      | 2.26x      | No — BEAM tax, not Skuld-specific                  |
-| Additional catches (×2)                | 1.25x      | Partially — could merge `call`/`call_handler`      |
-| Struct args (`%Get{}`/`%Put{}`)        | 1.30x      | Yes — tagged tuples                                |
-| Change struct + accessors + tuple keys | 1.23x      | Partially — inlining, precomputed keys             |
-| Full-Skuld machinery                   | 1.40x      | Partially — inlining, smaller Env, combined scoped |
+| Category                               | Multiplier | Reducible?                                      |
+|----------------------------------------|------------|-------------------------------------------------|
+| First catch frame                      | 2.26x      | No — BEAM tax, not Skuld-specific               |
+| Additional catches (×2)                | 1.25x      | Partially — could merge `call`/`call_handler`   |
+| Struct args (`%Get{}`/`%Put{}`)        | 1.30x      | Yes — tagged tuples → ~1.10x                    |
+| Change struct + accessors + tuple keys | 1.23x      | Partially — inlining, precomputed keys → ~1.08x |
+| Full-Skuld machinery                   | 1.40x      | Partially — inlining, smaller Env → ~1.15x      |
 
-**Skuld's actual overhead vs catch-baseline code: ~2.9x.** With the
-low-hanging-fruit optimisations (inlining), this could realistically
-come down to ~2.2–2.5x. Per-effect cost of ~0.3–0.5 µs remains
-negligible compared to any IO operation.
+**Skuld's actual overhead vs catch-baseline code: ~2.9x.** With all
+optimisations applied, this could realistically come down to
+**~1.7–1.9x**. Per-effect cost would drop from ~0.3–0.5 µs to
+~0.2–0.3 µs — negligible compared to any IO operation.
+
+## Experiment: inlining hot-path wrappers
+
+We added `@compile {:inline, ...}` to the hot-path wrapper functions:
+
+- **`Skuld.Comp.Env`**: `get_state!/2`, `get_state/2`, `get_state/3`,
+  `put_state/3`, `get_handler!/2`, `get_handler/2`, `with_handler/3`,
+  `delete_handler/2`, `with_leave_scope/2`
+- **`Skuld.Data.Change`**: `new/2`
+- **`Skuld.Effects.State`**: `state_key/1`
+
+### Results
+
+The S9→S10 gap **completely disappeared**. Across multiple benchmark
+runs at N=10000 with `MIX_ENV=prod`:
+
+| Metric                 | Before inlining | After inlining |
+|------------------------|-----------------|----------------|
+| S10 (Full Skuld) us/op | 0.479           | ~0.176–0.184   |
+| S10 vs S0 baseline     | 6.7x            | ~5.3–5.9x      |
+| S10 vs S9 (gap)        | **1.40x**       | **~1.0x**      |
+
+The full-Skuld step is now indistinguishable from the progressive
+simulation — the function-call overhead from wrapper functions was
+the entire S9→S10 gap.
+
+Note: the individual step numbers (S1–S9) are noisier after inlining,
+with the progressive benchmark's median-of-7 methodology showing
+some step reordering between runs. The benchmark needs more iterations
+for precise intermediate step measurements. But the headline result —
+S10 ≈ S9 — is consistent across all runs.
+
+### Impact on the overall picture
+
+With inlining applied, the vs-catch-baseline overhead drops from
+~2.9x to roughly **~2.1–2.3x** (S10/S1). The remaining overhead
+is composed of:
+
+- Additional catch frames (~1.25x)
+- Struct args and Change allocation (~1.30x)
+- Tuple state keys (~1.16x)
+- Env struct size and scoped machinery (now negligible)
+
+The inlining change is low-risk (all 984 tests pass) and provides a
+meaningful performance improvement with zero semantic changes.
+
+The effect is visible beyond microbenchmarks: the full test suite
+(984 tests) dropped from ~0.8s to ~0.6s — a ~25% wall-clock
+improvement from inlining alone.
 
 <!-- nav:footer:start -->
 

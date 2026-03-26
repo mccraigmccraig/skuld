@@ -925,7 +925,15 @@ at a time, measuring the marginal cost of each. At N=10000:
 | S7   | + accessor functions              | 0.278 | 1.01x     | 3.9x        |
 | S8   | + `%Change{}` struct on put       | 0.296 | 1.06x     | 4.1x        |
 | S9   | + `{Mod, tag}` state keys         | 0.342 | **1.16x** | 4.8x        |
-| S10  | Full Skuld                        | 0.479 | **1.40x** | **6.7x**    |
+| S10  | Full Skuld                        | ~0.18 | **~1.0x** | **~5.5x**   |
+
+Steps S0–S9 were measured before inlining. S10 was re-measured after
+adding `@compile {:inline, ...}` to hot-path wrapper functions
+(`Env.get_state!`, `Env.put_state`, `Change.new`, `State.state_key`).
+The S9→S10 gap completely disappeared — full Skuld is now
+indistinguishable from the progressive simulation. See the
+[performance investigation](research/performance-investigation.md)
+for the full analysis.
 
 Key findings:
 
@@ -936,21 +944,25 @@ Key findings:
 2. **Struct allocation matters** — operation arg structs add a 1.30x
    step (S6), and `{Mod, tag}` tuple keys add 1.16x (S9).
 3. **Guards, accessors, and struct env** are nearly free (1.01-1.02x).
-4. **Remaining gap** (S9→S10: 1.40x step) comes from Skuld features
-   not in the progressive series: the `scoped` wrapper's `normal_k`
-   continuation, the 4-field `%Env{}` struct (larger copies on state
-   update), `FiberPool.Main.drain_pending`, and `ISentinel` dispatch.
+4. **The first catch frame is not Skuld-specific** — any Elixir code
+   with error handling pays this cost. Relative to code that already
+   has a catch frame, Skuld's overhead is ~2.1–2.3x, not 5.5x.
 
 ### Key takeaways
 
 1. **CPS overhead is minimal** — evidence-passing with CPS matches
    direct-style evidence-passing
-2. **Exception handling is the largest single cost** — the first
-   `try/catch` frame accounts for ~2.3x of the total overhead
-3. **Struct allocation is the second largest** — operation arg structs
-   and tuple state keys together account for ~1.8x
-4. **Skuld vs Freyja**: ~5x faster
-5. **Real-world perspective**: per-effect overhead of ~0.2-0.5 us is
+2. **Exception handling is the largest single cost** — but it is a
+   BEAM-wide tax, not Skuld-specific. The first `try/catch` frame
+   accounts for ~2.3x; see "Why the first catch is expensive" in the
+   [performance investigation](research/performance-investigation.md)
+3. **Struct allocation is the next largest** — operation arg structs
+   and tuple state keys together account for ~1.5x
+4. **Inlining closed the full-Skuld gap** — `@compile {:inline, ...}`
+   on `Env`, `Change`, and `State` wrapper functions eliminated the
+   1.40x overhead from function call indirection
+5. **Skuld vs Freyja**: ~5x faster
+6. **Real-world perspective**: per-effect overhead of ~0.2 us is
    negligible compared to IO (database queries: 100-10000 us, HTTP
    calls: 1000-100000 us). The overhead matters only in tight loops
    with many effect calls and no IO

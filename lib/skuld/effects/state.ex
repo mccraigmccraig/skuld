@@ -44,6 +44,8 @@ defmodule Skuld.Effects.State do
   alias Skuld.Comp.Types
   alias Skuld.Data.Change
 
+  @compile {:inline, state_key: 1}
+
   @sig __MODULE__
 
   #############################################################################

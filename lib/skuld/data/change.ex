@@ -10,6 +10,8 @@ defmodule Skuld.Data.Change do
       %Change{old: 0, new: 42}
   """
 
+  @compile {:inline, new: 2}
+
   @enforce_keys [:old, :new]
   defstruct [:old, :new]
 

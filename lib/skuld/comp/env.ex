@@ -8,6 +8,17 @@ defmodule Skuld.Comp.Env do
 
   alias Skuld.Comp.Types
 
+  @compile {:inline,
+            get_state!: 2,
+            get_state: 2,
+            get_state: 3,
+            put_state: 3,
+            get_handler!: 2,
+            get_handler: 2,
+            with_handler: 3,
+            delete_handler: 2,
+            with_leave_scope: 2}
+
   @typedoc """
   The environment struct. Supports extension fields beyond the core struct keys
   (structs are maps, so `Map.put(env, :custom_key, value)` works).
