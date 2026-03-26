@@ -515,6 +515,95 @@ defmodule OverheadBenchmark do
   def s6(target), do: s6_with_state(0, s6_loop(target))
 
   # ============================================================
+  # Step 6t: tagged-tuple args ({GetTag, tag} / {PutTag, tag, value})
+  # Same as S6 but uses tagged tuples instead of structs
+  # ============================================================
+
+  defmodule GetTag do
+  end
+
+  defmodule PutTag do
+  end
+
+  def s6t_call(comp, env, k) when is_function(comp, 2) do
+    comp.(env, k)
+  catch
+    kind, payload -> handle_error(kind, payload, env)
+  end
+
+  def s6t_call(value, env, k) do
+    k.(value, env)
+  catch
+    kind, payload -> handle_error(kind, payload, env)
+  end
+
+  def s6t_call_handler(handler, args, env, k) when is_function(handler, 3) do
+    handler.(args, env, k)
+  catch
+    kind, payload -> handle_error(kind, payload, env)
+  end
+
+  def s6t_pure(value), do: fn env, k -> k.(value, env) end
+
+  def s6t_bind(ma, f) do
+    fn env, k ->
+      s6t_call(ma, env, fn a, env2 ->
+        try do
+          result = f.(a)
+          s6t_call(result, env2, k)
+        catch
+          kind, payload -> handle_error(kind, payload, env2)
+        end
+      end)
+    end
+  end
+
+  def s6t_run(ma, env), do: ma.(env, fn v, e -> {v, e} end)
+
+  def s6t_effect(sig, args) do
+    fn env, k ->
+      handler = env.evidence[sig]
+      s6t_call_handler(handler, args, env, k)
+    end
+  end
+
+  def s6t_get(tag \\ :default), do: s6t_effect(:state_handler, {GetTag, tag})
+
+  def s6t_put(tag \\ :default, value),
+    do: s6t_effect(:state_handler, {PutTag, tag, value})
+
+  def s6t_with_state(initial, comp) do
+    fn env, k ->
+      handler = fn args, inner_env, k ->
+        case args do
+          {GetTag, _tag} -> k.(inner_env.state, inner_env)
+          {PutTag, _tag, v} -> k.(:ok, %{inner_env | state: v})
+        end
+      end
+
+      inner = %S5Env{evidence: Map.put(env.evidence, :state_handler, handler), state: initial}
+
+      comp.(inner, fn result, _final ->
+        k.(result, env)
+      end)
+    end
+  end
+
+  def s6t_loop(target) do
+    s6t_get()
+    |> s6t_bind(fn n ->
+      if n >= target do
+        s6t_pure(n)
+      else
+        s6t_put(:default, n + 1)
+        |> s6t_bind(fn _ -> s6t_loop(target) end)
+      end
+    end)
+  end
+
+  def s6t(target), do: s6t_with_state(0, s6t_loop(target))
+
+  # ============================================================
   # Step 7: + accessor functions (Env.get_state!/put_state style)
   # Nested map access: env.state is a map keyed by state_key
   # ============================================================
@@ -876,6 +965,7 @@ defmodule OverheadBenchmark do
         _ = time(fn -> s4_run(s4(target), %{}) end)
         _ = time(fn -> s5_run(s5(target), %S5Env{}) end)
         _ = time(fn -> s6_run(s6(target), %S5Env{}) end)
+        _ = time(fn -> s6t_run(s6t(target), %S5Env{}) end)
         _ = time(fn -> s7_run(s7(target), %S7Env{}) end)
         _ = time(fn -> s8_run(s8(target), %S7Env{}) end)
         _ = time(fn -> s9_run(s9(target), %S7Env{}) end)
@@ -893,6 +983,7 @@ defmodule OverheadBenchmark do
       {"S4: + guard", fn t -> s4_run(s4(t), %{}) end},
       {"S5: + struct env", fn t -> s5_run(s5(t), %S5Env{}) end},
       {"S6: + struct args", fn t -> s6_run(s6(t), %S5Env{}) end},
+      {"S6t: + tagged-tuple args", fn t -> s6t_run(s6t(t), %S5Env{}) end},
       {"S7: + accessors", fn t -> s7_run(s7(t), %S7Env{}) end},
       {"S8: + Change struct", fn t -> s8_run(s8(t), %S7Env{}) end},
       {"S9: + state_key tuple", fn t -> s9_run(s9(t), %S7Env{}) end},

@@ -37,7 +37,7 @@ defmodule Skuld.Effects.State do
   @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall
 
-  import Skuld.Comp.DefOp
+  import Skuld.Comp.DefTaggedOp
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
@@ -49,11 +49,11 @@ defmodule Skuld.Effects.State do
   @sig __MODULE__
 
   #############################################################################
-  ## Operation Structs
+  ## Operation Types (tagged tuples)
   #############################################################################
 
-  def_op(Get, [:tag], atom_fields: [:tag])
-  def_op(Put, [:tag, :value], atom_fields: [:tag])
+  def_tagged_op(Get, [:tag])
+  def_tagged_op(Put, [:tag, :value])
 
   #############################################################################
   ## Operations
@@ -69,7 +69,7 @@ defmodule Skuld.Effects.State do
   """
   @spec get(atom()) :: Types.computation()
   def get(tag \\ @sig) do
-    Comp.effect(@sig, %Get{tag: tag})
+    Comp.effect(@sig, {Get, tag})
   end
 
   @doc """
@@ -82,12 +82,12 @@ defmodule Skuld.Effects.State do
   """
   @spec put(term()) :: Types.computation()
   def put(value) do
-    Comp.effect(@sig, %Put{tag: @sig, value: value})
+    Comp.effect(@sig, {Put, @sig, value})
   end
 
   @spec put(atom(), term()) :: Types.computation()
   def put(tag, value) when is_atom(tag) do
-    Comp.effect(@sig, %Put{tag: tag, value: value})
+    Comp.effect(@sig, {Put, tag, value})
   end
 
   @doc """
@@ -226,13 +226,13 @@ defmodule Skuld.Effects.State do
   #############################################################################
 
   @impl Skuld.Comp.IHandle
-  def handle(%Get{tag: tag}, env, k) do
+  def handle({Get, tag}, env, k) do
     value = Env.get_state!(env, state_key(tag))
     k.(value, env)
   end
 
   @impl Skuld.Comp.IHandle
-  def handle(%Put{tag: tag, value: value}, env, k) do
+  def handle({Put, tag, value}, env, k) do
     key = state_key(tag)
     old_value = Env.get_state!(env, key)
     new_env = Env.put_state(env, key, value)
