@@ -961,12 +961,12 @@ for the full analysis including BEAM catch-frame mechanics.
 
 Key findings:
 
-1. **Almost all the overhead is catch frames** (S0→S1: **1.6x**).
-   The BEAM sets up exception handling per-process; once one catch
-   frame exists, additional nested catches are relatively cheap.
-   Everything else Skuld adds — the struct env, handler dispatch,
-   guards, accessors — contributes only **1.8x** on top of the
-   catch baseline.
+1. **Almost all the overhead is catch frames.** The first catch frame
+   is the most expensive (S0→S1: **1.6x**), but the additional catch
+   frames in `bind` and handler dispatch (S1→S3: 1.0x→1.4x) account
+   for most of the remaining cost too. From S3 to full Skuld (S10),
+   everything else — struct env, guards, accessors, compact ops —
+   adds only 0.113→0.143 us.
 2. **Real-world applications already pay the catch cost.** Any code
    with `try`/`rescue`/`with` has catch frames. When porting such
    code to Skuld, the catch overhead is not new — it is already
