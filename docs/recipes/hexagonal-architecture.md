@@ -157,24 +157,17 @@ defmodule MyApp.UserService.Effectful do
   @behaviour MyApp.UserService.Provider
 
   defcomp find_user(id) do
-    user <- DB.get(User, id)
-    case user do
-      nil -> {:error, :not_found}
-      u -> {:ok, u}
-    end
+    UserQueries.get_user(id)
   end
 
   defcomp create_user(params) do
-    changeset = User.changeset(%User{}, params)
-    user <- DB.insert(changeset)
+    user <- UserRepo.insert_user!(params)
     _ <- EventAccumulator.emit(%UserCreated{user_id: user.id})
     {:ok, user}
   end
 
   defcomp list_users(opts) do
-    # Use Port for the query (reads go through Port)
-    users <- Port.request!(Queries, :list_users, [opts])
-    {:ok, users}
+    UserQueries.list_users(opts)
   end
 end
 ```
@@ -188,8 +181,10 @@ defmodule MyApp.UserService.Adapter do
     impl: MyApp.UserService.Effectful,
     stack: fn comp ->
       comp
-      |> DB.Ecto.with_handler(MyApp.Repo)
-      |> Port.with_handler(%{Queries => Queries.Ecto})
+      |> Port.with_handler(%{
+        UserQueries => UserQueries.Ecto,
+        UserRepo => UserRepo.Ecto
+      })
       |> EventAccumulator.with_handler(
         output: fn r, events ->
           MyApp.EventBus.publish(events)

@@ -12,7 +12,7 @@ normally require a database.
 
 ## The pattern
 
-1. Write domain logic with effects (Port, DB, Reader, Fresh, etc.)
+1. Write domain logic with effects (Port, Transaction, Reader, Fresh, etc.)
 2. Run production code with real handlers (Ecto, HTTP clients, etc.)
 3. Run tests with pure/stub handlers (in-memory maps, deterministic
    values, recorded calls)
@@ -31,8 +31,7 @@ defmodule Todos.Handlers do
   defcomp handle(%ToggleTodo{id: id}) do
     ctx <- Reader.ask(CommandContext)
     todo <- Repository.get_todo!(ctx.tenant_id, id)
-    changeset = Todo.changeset(todo, %{completed: not todo.completed})
-    updated <- DB.update(changeset)
+    updated <- Repository.update_todo!(ctx.tenant_id, Todo.changeset(todo, %{completed: not todo.completed}))
     {:ok, updated}
   end
 end
@@ -55,7 +54,6 @@ defmodule Run do
     comp
     |> Reader.with_handler(%CommandContext{tenant_id: tenant_id}, tag: CommandContext)
     |> Port.with_handler(%{Repository => Repository.Ecto})
-    |> DB.Ecto.with_handler(MyApp.Repo)
     |> Fresh.with_uuid7_handler()
     |> Throw.with_handler()
   end
@@ -83,11 +81,9 @@ test "toggle marks incomplete todo as complete" do
     Todos.Handlers.handle(%ToggleTodo{id: "1"})
     |> Reader.with_handler(%CommandContext{tenant_id: "t1"}, tag: CommandContext)
     |> Port.with_test_handler(%{
-      Repository.key(:get_todo, "t1", "1") => {:ok, todo}
+      Repository.key(:get_todo, "t1", "1") => {:ok, todo},
+      Repository.key(:update_todo, "t1", _) => {:ok, %Todo{todo | completed: true}}
     })
-    |> DB.Test.with_handler(fn
-      %DB.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
-    end)
     |> Throw.with_handler()
     |> Comp.run!()
 
@@ -139,8 +135,7 @@ Skuld provides test handlers for common effects:
 |--------|-------------|--------------|
 | Port   | `Port.with_test_handler/1` | Exact-match stub map |
 | Port   | `Port.with_fn_handler/1` | Pattern-matching function |
-| DB     | `DB.Test.with_handler/1` | Records ops, returns stubs |
-| DB     | `DB.Noop.with_handler/0` | Transactions only, raises on writes |
+| Transaction | `Transaction.Noop.with_handler/0` | Env state rollback, no database |
 | Fresh  | `Fresh.with_test_handler/0` | Deterministic UUIDs (UUID5) |
 | Random | `Random.with_handler/1` | Fixed sequence or seeded |
 | State  | (standard handler) | In-memory, no persistence |
@@ -187,8 +182,8 @@ end
   not the effect calls in isolation
 - **Use `Port.with_fn_handler`** for property tests where exact values
   aren't known upfront
-- **DB.Test records calls** - assert on the `calls` list to verify
-  operations happened in the right order
+- **Port test handlers record calls** - use `Port.with_test_handler`
+   or `Port.with_fn_handler` to stub persistence operations
 - **Fresh.with_test_handler** produces deterministic UUIDs - tests
   are reproducible
 - **Compose handler stacks in one place** - a `Run.execute/2` or

@@ -109,7 +109,7 @@ wrapped in `Comp.pure/1`. The final expression, bare `if` without
 
 | Effect | Module | Key Operations | Handler | Test Approach |
 |--------|--------|---------------|---------|---------------|
-| **DB** | `Skuld.Effects.DB` | `insert/2` `update/2` `upsert/2` `delete/2` `transact/1` `rollback/1` + `_all` bulk variants | `DB.Ecto.with_handler(comp, repo, opts)` | `DB.Test.with_handler(comp, handler_fn_or_opts)` - captures calls, returns `{result, calls}` |
+| **Transaction** | `Skuld.Effects.Transaction` | `transact/1` `rollback/1` `try_transact/1` | `Transaction.Ecto.with_handler(comp, repo, opts)` | `Transaction.Noop.with_handler(comp, opts)` - env state rollback without database |
 | **Command** | `Skuld.Effects.Command` | `execute/1` | `with_handler(comp, handler_fn)` - fn receives command, returns computation | Provide test handler function |
 | **EventAccumulator** | `Skuld.Effects.EventAccumulator` | `emit/1` | `with_handler(comp, opts)` opts: `output:` | `output: &{&1, &2}` to capture events |
 
@@ -301,7 +301,7 @@ no `Eff '[State, Reader, Throw] a` to track.
 | 5 | [Value Generation](effects/value-generation.md) | Fresh, Random |
 | 5 | [Collections](effects/collections.md) | FxList, FxFasterList |
 | 5 | [Concurrency](effects/concurrency.md) | Parallel, AtomicState, AsyncComputation |
-| 5 | [Persistence](effects/persistence.md) | DB, Command, EventAccumulator |
+| 5 | [Persistence](effects/persistence.md) | Transaction, Command, EventAccumulator |
 | 5 | [External Integration](effects/external-integration.md) | Port, Port.Contract, Port.Provider |
 | 6 | [Yield](advanced/yield.md) | Coroutines, suspend/resume |
 | 6 | [Fibers & Concurrency](advanced/fibers-concurrency.md) | FiberPool, Channel, Brook |

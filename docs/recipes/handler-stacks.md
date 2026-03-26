@@ -21,7 +21,6 @@ my_computation
 |> State.with_handler(initial_state)
 |> Reader.with_handler(config)
 |> Port.with_handler(%{Repo => Repo.Ecto})
-|> DB.Ecto.with_handler(MyApp.Repo)
 |> Fresh.with_uuid7_handler()
 |> Throw.with_handler()
 |> Comp.run!()
@@ -47,13 +46,13 @@ defmodule MyApp.Stacks do
   defp with_persistence(comp, :production) do
     comp
     |> Port.with_handler(%{Repo => Repo.Ecto})
-    |> DB.Ecto.with_handler(MyApp.Repo)
+    |> Transaction.Ecto.with_handler(MyApp.Repo)
   end
 
   defp with_persistence(comp, :test) do
     comp
     |> Port.with_handler(%{Repo => Repo.InMemory})
-    |> DB.Noop.with_handler()
+    |> Transaction.Noop.with_handler()
   end
 
   defp with_generation(comp, :production) do
@@ -200,7 +199,7 @@ comp
 |> State.with_handler(initial)    # EffectLogger wraps this handler
 |> Reader.with_handler(config)    # and this one
 |> Port.with_handler(port_map)
-|> DB.Ecto.with_handler(Repo)
+|> Transaction.Ecto.with_handler(Repo)
 |> Throw.with_handler()
 |> Comp.run!()
 ```

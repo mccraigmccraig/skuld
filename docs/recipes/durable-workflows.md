@@ -204,7 +204,7 @@ cold_log = "workflows/#{id}.json"
 | Language | Elixir only | Multi-language SDKs |
 | Serialization | JSON log of effects | Protobuf event history |
 | Resume mechanism | Source replay + log | Worker polling + replay |
-| Activities | Effects (Port, DB, etc.) | RPC-dispatched activities |
+| Activities | Effects (Port, Transaction, etc.) | RPC-dispatched activities |
 | Composition | Algebraic effect stacking | Workflow/activity split |
 | Deployment | Your app process | Separate service |
 

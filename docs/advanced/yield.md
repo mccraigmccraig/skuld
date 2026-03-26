@@ -11,7 +11,7 @@ advanced control-flow capabilities - FiberPool, Channel, Brook,
 EffectLogger, and AsyncComputation all build on Yield.
 
 > **Note:** You don't need Yield for most applications. The foundational
-> effects (State, Reader, Throw, DB, Port, etc.) cover common patterns
+> effects (State, Reader, Throw, Port, Transaction, etc.) cover common patterns
 > without coroutines. Yield is for when you need cooperative scheduling,
 > interactive protocols, or serializable workflows.
 

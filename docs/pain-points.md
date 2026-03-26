@@ -29,7 +29,7 @@ defcomp process_order(order_params) do
   user <- UserRepo.fetch_user!(order_params.user_id)
   id <- Fresh.fresh_uuid()
   price <- PricingService.calculate!(user, order_params.items)
-  _ <- DB.insert(%Order{id: id, user_id: user.id, total: price})
+  _ <- OrderRepo.create_order!(%{id: id, user_id: user.id, total: price})
   _ <- EventAccumulator.emit(%OrderPlaced{order_id: id, total: price})
   {:ok, id}
 end
@@ -66,7 +66,6 @@ process_order(%{user_id: "u1", items: items})
   PricingService.key(:calculate, {test_user, items}) => {:ok, 99_00}
 })
 |> Fresh.with_test_handler()
-|> DB.Test.with_handler()
 |> EventAccumulator.with_handler(output: &{&1, &2})
 |> Throw.with_handler()
 |> Comp.run!()

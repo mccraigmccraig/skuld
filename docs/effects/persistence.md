@@ -4,191 +4,159 @@
 [< Concurrency (Familiar Patterns)](concurrency.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [External Integration >](external-integration.md)
 <!-- nav:header:end -->
 
-The DB, Command, and EventAccumulator effects handle database writes,
-mutation dispatch, and domain event collection. They work together to
-support patterns from simple CRUD through to event-sourced domain logic.
+The Transaction, Command, and EventAccumulator effects handle
+transactions, mutation dispatch, and domain event collection. They work
+together to support patterns from simple CRUD through to event-sourced
+domain logic.
+
+Database persistence is handled via domain-specific
+[Port.Contract](external-integration.md) modules (e.g. `UserRepo`,
+`OrderRepo`), which provide typed boundaries and swappable handlers.
+Transaction is orthogonal — it wraps any computation in transactional
+semantics, rolling back env state on failure with optional database
+transaction support.
 
 For read queries and external service calls, see
 [External Integration](external-integration.md). For batchable queries
 with automatic N+1 prevention, see
 [Query & Batching](../advanced/query-batching.md).
 
-## DB
+## Transaction
 
-Unified database writes and transactions as effects. DB wraps Ecto
-operations (insert, update, upsert, delete and their bulk variants)
-behind a single effect with swappable handlers: Ecto for production,
-Test for stubbing, Noop for transaction-only tests.
+Transactional semantics for computations: on normal completion the
+transaction commits (env state preserved); on explicit rollback or
+sentinel (Throw, Suspend, etc.) the transaction rolls back env state to
+pre-transaction values.
+
+Transaction is orthogonal to persistence. A computation may need
+transactional env state rollback without any database involvement (e.g.
+rolling back Writer accumulations on error), or it may combine
+transactions with domain-specific persistence Ports.
 
 ### Basic usage
 
 ```elixir
 comp do
-  user <- DB.insert(User.changeset(%User{}, %{name: "Alice"}))
-  order <- DB.insert(Order.changeset(%Order{}, %{user_id: user.id}))
-  {user, order}
+  result <- Transaction.transact(comp do
+    user <- UserRepo.create_user!(params)
+    order <- OrderRepo.create_order!(%{user_id: user.id, items: items})
+    {user, order}
+  end)
+  result
 end
-|> DB.Ecto.with_handler(MyApp.Repo)
+|> Transaction.Ecto.with_handler(MyApp.Repo)
+|> Port.with_handler(%{UserRepo => UserRepo.Ecto, OrderRepo => OrderRepo.Ecto})
 |> Comp.run!()
 ```
 
 ### Operations
 
-Single-record operations:
+- `Transaction.transact(comp)` — wrap a computation in a transaction
+- `Transaction.rollback(reason)` — explicitly roll back the current
+  transaction
 
-- `DB.insert(changeset)` - insert a record
-- `DB.update(changeset)` - update a record
-- `DB.upsert(changeset, opts)` - insert or update (pass `conflict_target:`)
-- `DB.delete(struct)` - delete a record
-
-All accept an Ecto changeset (or a `ChangeEvent` struct wrapping one).
-
-Bulk operations:
-
-- `DB.insert_all(schema, entries, opts)` - bulk insert
-- `DB.update_all(schema, entries, opts)` - bulk update
-- `DB.upsert_all(schema, entries, opts)` - bulk upsert
-- `DB.delete_all(schema, entries, opts)` - bulk delete
-
-Bulk operations return `{count, nil | [struct]}`. Pass `returning: true`
-to get the inserted/updated records back.
+### Explicit rollback
 
 ```elixir
 comp do
-  {count, users} <- DB.insert_all(User, changesets, returning: true)
-  {count, users}
-end
-|> DB.Ecto.with_handler(MyApp.Repo)
-|> Comp.run!()
-```
-
-### Transactions
-
-Wrap a computation in a transaction. Normal completion commits;
-`DB.rollback/1` or a Throw inside the block triggers rollback.
-
-```elixir
-comp do
-  result <- DB.transact(comp do
-    user <- DB.insert(user_changeset)
-    order <- DB.insert(order_changeset)
-    {user, order}
-  end)
-  result
-end
-|> DB.Ecto.with_handler(MyApp.Repo)
-|> Comp.run!()
-```
-
-Explicit rollback:
-
-```elixir
-comp do
-  result <- DB.transact(comp do
-    _ <- DB.rollback(:validation_failed)
+  result <- Transaction.transact(comp do
+    _ <- Transaction.rollback(:validation_failed)
     :never_reached
   end)
   result
 end
-|> DB.Noop.with_handler()
+|> Transaction.Noop.with_handler()
 |> Comp.run!()
 #=> {:rolled_back, :validation_failed}
 ```
 
-Throws inside a transaction automatically trigger rollback:
+### try_transact
+
+A convenience that wraps the outcome in `{:ok, result}` or
+`{:rolled_back, reason}` for easy pattern matching:
 
 ```elixir
 comp do
-  result <- DB.transact(comp do
+  case Transaction.try_transact(inner_comp) do
+    {:ok, value} -> handle_success(value)
+    {:rolled_back, reason} -> handle_rollback(reason)
+  end
+end
+```
+
+### Throws inside transactions
+
+Throws automatically trigger rollback:
+
+```elixir
+comp do
+  result <- Transaction.transact(comp do
     _ <- Throw.throw(:something_went_wrong)
     :never_reached
   end)
   result
 end
-|> DB.Ecto.with_handler(MyApp.Repo)
+|> Transaction.Ecto.with_handler(MyApp.Repo)
 |> Throw.with_handler()
 |> Comp.run!()
 # Transaction is rolled back, throw propagates
 ```
 
+### Nested transactions
+
+Nested `transact` calls create savepoints (Ecto handler) or
+independent rollback scopes (Noop handler):
+
+```elixir
+comp do
+  result <- Transaction.transact(comp do
+    _ <- do_outer_work()
+
+    inner <- Transaction.transact(comp do
+      _ <- do_inner_work()
+      :inner_done
+    end)
+
+    {:outer_done, inner}
+  end)
+  result
+end
+```
+
 ### Handlers
 
-**`DB.Ecto.with_handler(repo)`** - Production handler. Dispatches to
-Ecto's `Repo.insert/2`, `Repo.update/2`, etc. Transactions use
-`Repo.transaction/2`.
+**`Transaction.Ecto.with_handler(repo, opts)`** — Production handler.
+Wraps the computation in `Repo.transaction/2` with env state rollback
+on failure. Nested transactions use savepoints.
 
-**`DB.Noop.with_handler()`** - No-op handler. Supports transactions
-(tracks commit/rollback) but raises on actual write operations. Useful
-for testing code that only uses transactions without writes.
+Options:
+- `:preserve_state_on_rollback` — list of state keys to keep on
+  rollback (e.g. metrics, error counters)
 
-**`DB.Test.with_handler(handler_fn)`** - Test handler. Records all
-operations via Writer and returns stubbed results. The handler function
-receives operation structs and returns the result to use.
+**`Transaction.Noop.with_handler(opts)`** — No-op handler. Env state
+rollback without any database. Useful for testing code that needs
+transactional semantics without a database connection.
 
-### Testing patterns
+Options:
+- `:preserve_state_on_rollback` — same as Ecto handler
 
-The test handler records operations and returns controlled results:
+### Testing
 
-```elixir
-{result, calls} =
-  comp do
-    user <- DB.insert(User.changeset(%User{}, %{name: "Alice"}))
-    user
-  end
-  |> DB.Test.with_handler(&DB.Test.default_handler/1)
-  |> Comp.run!()
-#=> {%User{name: "Alice"}, [{:insert, %Ecto.Changeset{...}}]}
-```
-
-Custom handler for specific test scenarios:
+For tests that don't need a real database, use the Noop handler:
 
 ```elixir
-{result, calls} =
-  comp do
-    user <- DB.insert(changeset)
+comp do
+  result <- Transaction.transact(comp do
+    # Port calls are stubbed via Port.with_test_handler
+    user <- UserRepo.create_user!(params)
     user
-  end
-  |> DB.Test.with_handler(fn
-    %DB.Insert{input: _cs} -> %User{id: "test-id", name: "Stubbed"}
-    %DB.Update{input: cs} -> Ecto.Changeset.apply_changes(cs)
   end)
-  |> Comp.run!()
-#=> {%User{id: "test-id", name: "Stubbed"}, [{:insert, %Ecto.Changeset{...}}]}
-```
-
-The `calls` list lets you assert that the right operations happened in
-the right order without touching a database.
-
-### Same code, three handlers
-
-The same domain logic works unchanged across environments:
-
-```elixir
-create_order = fn user_id, items ->
-  comp do
-    result <- DB.transact(comp do
-      order <- DB.insert(Order.changeset(%Order{}, %{
-        user_id: user_id, items: items
-      }))
-      order
-    end)
-    result
-  end
+  result
 end
-
-# Production: real Ecto transactions
-create_order.(123, [:item_a])
-|> DB.Ecto.with_handler(MyApp.Repo)
-|> Comp.run!()
-
-# Test: no-op transactions (raises on writes)
-create_order.(123, [:item_a])
-|> DB.Noop.with_handler()
-|> Comp.run!()
-
-# Test: stub writes and record calls
-create_order.(123, [:item_a])
-|> DB.Test.with_handler(&DB.Test.default_handler/1)
+|> Transaction.Noop.with_handler()
+|> Port.with_test_handler(%{
+  UserRepo.key(:create_user, params) => %User{id: "test-id", name: "Alice"}
+})
 |> Comp.run!()
 ```
 
@@ -250,7 +218,7 @@ Command.with_handler(handler_fn)
 
 The handler function receives a command struct and returns a
 computation. This means commands can use other effects internally -
-Fresh for IDs, DB for persistence, EventAccumulator for domain events.
+Fresh for IDs, Port contracts for persistence, EventAccumulator for domain events.
 
 ### Why Command?
 
@@ -295,9 +263,9 @@ Options:
 - `:output` - `fn result, events -> transformed_result end` to extract
   the accumulated events alongside the computation result
 
-### Combining with Command and DB
+### Combining with Command and Port
 
-The three effects compose naturally for domain workflows:
+All three effects compose naturally for domain workflows:
 
 ```elixir
 defmodule PlaceOrderHandler do
@@ -305,9 +273,9 @@ defmodule PlaceOrderHandler do
 
   def handle(%PlaceOrder{user_id: uid, items: items}) do
     comp do
-      order <- DB.insert(Order.changeset(%Order{}, %{
+      order <- OrderRepo.create_order!(%{
         user_id: uid, items: items, status: :placed
-      }))
+      })
       _ <- EventAccumulator.emit(%OrderPlaced{
         order_id: order.id, user_id: uid, items: items
       })
@@ -325,7 +293,7 @@ end
   end
   |> Command.with_handler(&PlaceOrderHandler.handle/1)
   |> EventAccumulator.with_handler(output: fn r, evts -> {r, evts} end)
-  |> DB.Ecto.with_handler(MyApp.Repo)
+  |> Port.with_handler(%{OrderRepo => OrderRepo.Ecto})
   |> Comp.run!()
 
 # result is the order, events contains [%OrderPlaced{...}]

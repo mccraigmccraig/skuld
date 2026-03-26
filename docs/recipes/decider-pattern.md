@@ -228,7 +228,7 @@ The Decider pattern is a good fit when:
 - Multiple projections (read models) are derived from the same events
 - You want to test domain logic without persistence
 
-It's overkill for simple CRUD - use DB effects directly for that.
+It's overkill for simple CRUD - use Port contracts directly for that.
 
 <!-- nav:footer:start -->
 

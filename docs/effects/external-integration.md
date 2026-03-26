@@ -277,13 +277,11 @@ defmodule MyApp.UserService.Effectful do
   @behaviour MyApp.UserService.Provider
 
   defcomp find_user(id) do
-    user <- DB.get(User, id)
-    {:ok, user}
+    UserQueries.get_user(id)
   end
 
   defcomp list_users(opts) do
-    users <- DB.all(User, opts)
-    {:ok, users}
+    UserQueries.list_users(opts)
   end
 end
 
@@ -294,7 +292,7 @@ defmodule MyApp.UserService.Adapter do
     impl: MyApp.UserService.Effectful,
     stack: fn comp ->
       comp
-      |> DB.Ecto.with_handler(MyApp.Repo)
+      |> Port.with_handler(%{UserQueries => UserQueries.Ecto})
       |> Throw.with_handler()
     end
 end
@@ -329,7 +327,7 @@ stack: &Throw.with_handler/1
 stack: fn comp ->
   comp
   |> State.with_handler(initial_state)
-  |> DB.Ecto.with_handler(MyApp.Repo)
+  |> Port.with_handler(%{MyRepo => MyRepo.Ecto})
   |> Throw.with_handler()
 end
 ```
@@ -383,10 +381,12 @@ To test the effectful implementation in isolation, use standard effect
 testing patterns:
 
 ```elixir
-test "effectful impl uses DB effect" do
+test "effectful impl uses Port effect" do
   result =
     MyApp.UserService.Effectful.find_user("user-123")
-    |> DB.Test.with_handler(...)
+    |> Port.with_test_handler(%{
+      UserQueries.key(:get_user, "user-123") => {:ok, %User{id: "user-123"}}
+    })
     |> Throw.with_handler()
     |> Comp.run!()
 

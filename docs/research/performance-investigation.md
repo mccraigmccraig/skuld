@@ -532,10 +532,10 @@ All items from this investigation have been implemented:
   `SerializableStruct` using tagged wrapper maps (`__atom__`,
   `__tuple__`, `__struct__`). All 4 previously-excluded tests are
   now passing. No per-op protocol implementations needed.
-- **All effects ported**: All 10 non-DB effects ported to compact
-  tuple ops via `def_op` (simple/untagged) and `def_tagged_op`
-  (tagged). DB intentionally left with `def_op_struct` pending
-  evaluation of replacement with Port contracts (skuld-gga).
+- **All effects ported**: All effects ported to compact tuple ops via
+  `def_op` (simple/untagged) and `def_tagged_op` (tagged). The DB
+  effect was subsequently removed and replaced with domain-specific
+  Port contracts + a standalone Transaction effect (skuld-gga).
 - **`def_op` macro revised**: `def_simple_op` renamed to `def_op`,
   old `def_op` renamed to `def_op_struct`. The macros generate
   constructor functions emitting `Comp.effect(sig, op_atom)` /

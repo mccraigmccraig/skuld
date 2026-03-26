@@ -218,7 +218,7 @@ The pattern is always:
 3. Map results back to `%{ref => result}`
 
 Executor callbacks return computations, so they can use any Skuld
-effect (Reader, State, DB, Port, etc.).
+effect (Reader, State, Port, Transaction, etc.).
 
 ### Wiring
 

@@ -80,7 +80,7 @@ Handlers are installed by wrapping the computation:
 computation
 |> State.with_handler(0)
 |> Reader.with_handler(%{timeout: 5000})
-|> DB.Ecto.with_handler(MyApp.Repo)
+|> Port.with_handler(%{UserRepo => UserRepo.Ecto})
 |> Comp.run!()
 ```
 

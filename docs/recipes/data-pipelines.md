@@ -59,12 +59,12 @@ comp do
 
   Brook.each(source, fn item ->
     comp do
-      _ <- DB.insert(Record.changeset(%Record{}, item))
+      _ <- RecordRepo.insert_record!(item)
       :ok
     end
   end)
 end
-|> DB.Ecto.with_handler(MyApp.Repo)
+|> Port.with_handler(%{RecordRepo => RecordRepo.Ecto})
 |> Channel.with_handler()
 |> FiberPool.with_handler()
 |> Comp.run!()
@@ -106,13 +106,13 @@ comp do
   # Persist
   Brook.each(valid, fn order ->
     comp do
-      _ <- DB.insert(EnrichedOrder.changeset(%EnrichedOrder{}, order))
+      _ <- OrderRepo.insert_enriched_order!(order)
       :ok
     end
   end)
 end
 |> ETL.Queries.with_executor(ETL.Queries.EctoExecutor)
-|> DB.Ecto.with_handler(MyApp.Repo)
+|> Port.with_handler(%{OrderRepo => OrderRepo.Ecto})
 |> Channel.with_handler()
 |> FiberPool.with_handler()
 |> Comp.run!()
@@ -156,7 +156,7 @@ Use `Brook.run` when you need to consume items with a callback:
 ```elixir
 Brook.run(stream, fn item ->
   comp do
-    _ <- DB.insert(changeset_for(item))
+    _ <- ItemRepo.insert_item!(item)
     :ok
   end
 end)

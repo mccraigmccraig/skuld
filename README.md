@@ -121,7 +121,7 @@ like well-structured Elixir code with better testability.
 | Process dictionary / state      | State, Writer                |
 | Random values                   | Random                       |
 | Generating IDs (UUIDs)          | Fresh                        |
-| DB writes & transactions        | DB                           |
+| Transactions                    | Transaction                  |
 | Blocking calls to external code | Port, Port.Contract          |
 | Effectful code from plain code  | Port.Provider                |
 | Mutation dispatch               | Command                      |
@@ -171,7 +171,7 @@ get value from Skuld - the foundational effects stand on their own.
 |   | [Value Generation](docs/effects/value-generation.md) | Fresh, Random |
 |   | [Collections](docs/effects/collections.md) | FxList, FxFasterList |
 |   | [Concurrency](docs/effects/concurrency.md) | Parallel, AtomicState, AsyncComputation |
-|   | [Persistence](docs/effects/persistence.md) | DB, Command, EventAccumulator |
+|   | [Persistence](docs/effects/persistence.md) | Transaction, Command, EventAccumulator |
 |   | [External Integration](docs/effects/external-integration.md) | Port, Port.Contract, Port.Provider |
 | 6 | **Advanced Effects** | |
 |   | [Yield](docs/advanced/yield.md) | Coroutines |
