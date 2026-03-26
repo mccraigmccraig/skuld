@@ -71,8 +71,8 @@ defmodule Skuld.Effects.State do
   ##   sig(:counter)  => Skuld.Effects.State.Counter
   #############################################################################
 
-  def_tagged_op(get())
-  def_tagged_op(put(value))
+  def_tagged_op get()
+  def_tagged_op put(value)
 
   # Op atoms as module attributes for use in handlers
   @get_op @__get_op__

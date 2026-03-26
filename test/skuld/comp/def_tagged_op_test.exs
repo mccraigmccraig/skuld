@@ -7,9 +7,9 @@ defmodule Skuld.Comp.DefTaggedOpTest do
   defmodule TaggedEffect do
     import Skuld.Comp.DefTaggedOp
 
-    def_tagged_op(get())
-    def_tagged_op(put(value))
-    def_tagged_op(modify(fun))
+    def_tagged_op get()
+    def_tagged_op put(value)
+    def_tagged_op modify(fun)
   end
 
   describe "def_tagged_op with default tag" do

@@ -7,9 +7,9 @@ defmodule Skuld.Comp.DefSimpleOpTest do
   defmodule SimpleEffect do
     import Skuld.Comp.DefSimpleOp
 
-    def_simple_op(ping())
-    def_simple_op(add(a, b))
-    def_simple_op(greet(name))
+    def_simple_op ping()
+    def_simple_op add(a, b)
+    def_simple_op greet(name)
   end
 
   describe "def_simple_op with 0 args" do
