@@ -21,9 +21,10 @@ defmodule Skuld.Effects.Fresh.UUID7 do
   @behaviour Skuld.Comp.IInstall
 
   alias Skuld.Comp
-  alias Skuld.Effects.Fresh.FreshUUID
+  alias Skuld.Effects.Fresh
 
-  @sig Skuld.Effects.Fresh
+  @sig Fresh.sig()
+  @fresh_uuid_op Fresh.fresh_uuid_op()
 
   @doc """
   Install a v7 UUID handler for production use.
@@ -49,7 +50,7 @@ defmodule Skuld.Effects.Fresh.UUID7 do
   def __handle__(comp, _config), do: with_handler(comp)
 
   @impl Skuld.Comp.IHandle
-  def handle(%FreshUUID{}, env, k) do
+  def handle(@fresh_uuid_op, env, k) do
     uuid = Uniq.UUID.uuid7()
     k.(uuid, env)
   end
