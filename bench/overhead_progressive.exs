@@ -427,6 +427,121 @@ defmodule OverheadBenchmark do
   def s5(target), do: s5_with_state(0, s5_loop(target))
 
   # ============================================================
+  # Step 5c: compact ops with per-tag module-atom sig
+  # Like S5 but handler is installed per-tag using module-atom sigs
+  # (e.g. State.Counter) — still just atoms, so evidence lookup is
+  # atom-keyed. Operations use module-atom ops for dispatch:
+  #   get: Comp.effect(State.Counter, State.Counter.Get)
+  #   put: Comp.effect(State.Counter, {State.Counter.Put, value})
+  # Handler closes over state_key — no tag in args.
+  # ============================================================
+
+  # Simulate module-atom construction: these are just atoms, no defmodule needed
+  defmodule S5cState do
+    # Tag-specific sig atom (like State.Default)
+    defmodule Default do
+      # Op atoms (like State.Default.Get / State.Default.Put)
+      defmodule Get do
+      end
+
+      defmodule Put do
+      end
+    end
+  end
+
+  @s5c_sig S5cState.Default
+  @s5c_get_op S5cState.Default.Get
+  @s5c_put_op S5cState.Default.Put
+
+  def s5c_call(comp, env, k) when is_function(comp, 2) do
+    comp.(env, k)
+  catch
+    kind, payload -> handle_error(kind, payload, env)
+  end
+
+  def s5c_call(value, env, k) do
+    k.(value, env)
+  catch
+    kind, payload -> handle_error(kind, payload, env)
+  end
+
+  def s5c_call_handler(handler, args, env, k) when is_function(handler, 3) do
+    handler.(args, env, k)
+  catch
+    kind, payload -> handle_error(kind, payload, env)
+  end
+
+  def s5c_pure(value), do: fn env, k -> k.(value, env) end
+
+  def s5c_bind(ma, f) do
+    fn env, k ->
+      s5c_call(ma, env, fn a, env2 ->
+        try do
+          result = f.(a)
+          s5c_call(result, env2, k)
+        catch
+          kind, payload -> handle_error(kind, payload, env2)
+        end
+      end)
+    end
+  end
+
+  def s5c_run(ma, env), do: ma.(env, fn v, e -> {v, e} end)
+
+  def s5c_effect(sig, args) do
+    fn env, k ->
+      handler = env.evidence[sig]
+      s5c_call_handler(handler, args, env, k)
+    end
+  end
+
+  # Operations: sig is an atom, get op is a bare atom, put op is {atom, value}
+  def s5c_get(), do: s5c_effect(@s5c_sig, @s5c_get_op)
+  def s5c_put(value), do: s5c_effect(@s5c_sig, {@s5c_put_op, value})
+
+  def s5c_with_state(initial, comp) do
+    fn env, k ->
+      state_key = @s5c_sig
+
+      # Handler closes over state_key — dispatches on op atoms
+      handler = fn args, inner_env, k ->
+        case args do
+          @s5c_get_op ->
+            value = Map.fetch!(inner_env.state, state_key)
+            k.(value, inner_env)
+
+          {@s5c_put_op, value} ->
+            new_env = %{inner_env | state: Map.put(inner_env.state, state_key, value)}
+            k.(:ok, new_env)
+        end
+      end
+
+      inner = %S5Env{
+        evidence: Map.put(env.evidence, @s5c_sig, handler),
+        state: Map.put(%{}, state_key, initial)
+      }
+
+      comp.(inner, fn result, _final ->
+        k.(result, env)
+      end)
+    end
+  end
+
+  def s5c_loop(target) do
+    s5c_get()
+    |> s5c_bind(fn n ->
+      if n >= target do
+        s5c_pure(n)
+      else
+        s5c_put(n + 1)
+        |> s5c_bind(fn _ -> s5c_loop(target) end)
+      end
+    end)
+  end
+
+  def s5c(target), do: s5c_with_state(0, s5c_loop(target))
+
+  # ============================================================
   # Step 6: + struct args (%Get{} / %Put{} instead of atoms/tuples)
   # ============================================================
 
@@ -964,6 +1079,7 @@ defmodule OverheadBenchmark do
         _ = time(fn -> s3_run(s3(target), %{}) end)
         _ = time(fn -> s4_run(s4(target), %{}) end)
         _ = time(fn -> s5_run(s5(target), %S5Env{}) end)
+        _ = time(fn -> s5c_run(s5c(target), %S5Env{}) end)
         _ = time(fn -> s6_run(s6(target), %S5Env{}) end)
         _ = time(fn -> s6t_run(s6t(target), %S5Env{}) end)
         _ = time(fn -> s7_run(s7(target), %S7Env{}) end)
@@ -982,6 +1098,7 @@ defmodule OverheadBenchmark do
       {"S3: + catch/handler", fn t -> s3_run(s3(t), %{}) end},
       {"S4: + guard", fn t -> s4_run(s4(t), %{}) end},
       {"S5: + struct env", fn t -> s5_run(s5(t), %S5Env{}) end},
+      {"S5c: + per-tag sig", fn t -> s5c_run(s5c(t), %S5Env{}) end},
       {"S6: + struct args", fn t -> s6_run(s6(t), %S5Env{}) end},
       {"S6t: + tagged-tuple args", fn t -> s6t_run(s6t(t), %S5Env{}) end},
       {"S7: + accessors", fn t -> s7_run(s7(t), %S7Env{}) end},

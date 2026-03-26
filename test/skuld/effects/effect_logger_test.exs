@@ -35,7 +35,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
       [entry] = entries
       assert entry.sig == State
-      assert {State.Get, _} = entry.data
+      assert entry.data == State.get_op()
       assert entry.value == 0
       assert entry.state == :executed
     end
@@ -63,17 +63,18 @@ defmodule Skuld.Effects.EffectLoggerTest do
       [get1, put, get2] = entries
 
       assert get1.sig == State
-      assert {State.Get, _} = get1.data
+      assert get1.data == State.get_op()
       assert get1.value == 0
       assert get1.state == :executed
 
       assert put.sig == State
-      assert {State.Put, _, 1} = put.data
+      assert {put_op, 1} = put.data
+      assert put_op == State.put_op()
       assert put.value == %Change{old: 0, new: 1}
       assert put.state == :executed
 
       assert get2.sig == State
-      assert {State.Get, _} = get2.data
+      assert get2.data == State.get_op()
       assert get2.value == 1
       assert get2.state == :executed
     end
@@ -411,7 +412,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
   describe "EffectLogEntry" do
     test "new creates entry in started state" do
-      entry = EffectLogEntry.new("test-id", State, State.Get.new(nil))
+      entry = EffectLogEntry.new("test-id", State, State.get_op())
 
       assert entry.id == "test-id"
       assert entry.sig == State
@@ -421,7 +422,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
     test "set_executed transitions to executed with value" do
       entry =
-        EffectLogEntry.new("test-id", State, State.Get.new(nil))
+        EffectLogEntry.new("test-id", State, State.get_op())
         |> EffectLogEntry.set_executed(42)
 
       assert entry.state == :executed
@@ -430,7 +431,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
     test "set_discarded transitions to discarded" do
       entry =
-        EffectLogEntry.new("test-id", State, State.Get.new(nil))
+        EffectLogEntry.new("test-id", State, State.get_op())
         |> EffectLogEntry.set_discarded()
 
       assert entry.state == :discarded
@@ -438,7 +439,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
     test "can_short_circuit? returns true for executed" do
       entry =
-        EffectLogEntry.new("test-id", State, State.Get.new(nil))
+        EffectLogEntry.new("test-id", State, State.get_op())
         |> EffectLogEntry.set_executed(42)
 
       assert EffectLogEntry.can_short_circuit?(entry)
@@ -446,14 +447,14 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
     test "can_short_circuit? returns false for discarded" do
       entry =
-        EffectLogEntry.new("test-id", State, State.Get.new(nil))
+        EffectLogEntry.new("test-id", State, State.get_op())
         |> EffectLogEntry.set_discarded()
 
       refute EffectLogEntry.can_short_circuit?(entry)
     end
 
     test "can_short_circuit? returns false for started" do
-      entry = EffectLogEntry.new("test-id", State, State.Get.new(nil))
+      entry = EffectLogEntry.new("test-id", State, State.get_op())
 
       refute EffectLogEntry.can_short_circuit?(entry)
     end
@@ -462,7 +463,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
   describe "Log" do
     test "push_entry adds to stack" do
       log = Log.new()
-      entry = EffectLogEntry.new("id1", State, State.Get.new(nil))
+      entry = EffectLogEntry.new("id1", State, State.get_op())
 
       updated = Log.push_entry(log, entry)
 
@@ -471,8 +472,8 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
     test "finalize moves stack to queue in execution order" do
       log = Log.new()
-      entry1 = EffectLogEntry.new("id1", State, State.Get.new(nil))
-      entry2 = EffectLogEntry.new("id2", State, State.Put.new(nil, 1))
+      entry1 = EffectLogEntry.new("id1", State, State.get_op())
+      entry2 = EffectLogEntry.new("id2", State, {State.put_op(), 1})
 
       updated =
         log
@@ -486,8 +487,8 @@ defmodule Skuld.Effects.EffectLoggerTest do
     end
 
     test "mark_discarded updates entry by id" do
-      entry1 = EffectLogEntry.new("id1", State, State.Get.new(nil))
-      entry2 = EffectLogEntry.new("id2", State, State.Put.new(nil, 1))
+      entry1 = EffectLogEntry.new("id1", State, State.get_op())
+      entry2 = EffectLogEntry.new("id2", State, {State.put_op(), 1})
 
       log =
         Log.new()
@@ -502,8 +503,8 @@ defmodule Skuld.Effects.EffectLoggerTest do
     end
 
     test "pop_queue returns entry and updated log" do
-      entry1 = EffectLogEntry.new("id1", State, State.Get.new(nil))
-      entry2 = EffectLogEntry.new("id2", State, State.Put.new(nil, 1))
+      entry1 = EffectLogEntry.new("id1", State, State.get_op())
+      entry2 = EffectLogEntry.new("id2", State, {State.put_op(), 1})
 
       log = Log.new([entry1, entry2])
 
@@ -810,7 +811,8 @@ defmodule Skuld.Effects.EffectLoggerTest do
       entries = user_entries(data[EffectLogger])
       state_entries = Enum.filter(entries, &(&1.sig == State))
       assert length(state_entries) == 1
-      assert {State.Put, _, 42} = hd(state_entries).data
+      assert {put_op, 42} = hd(state_entries).data
+      assert put_op == State.put_op()
     end
 
     test "decorate_suspend: false disables decoration" do

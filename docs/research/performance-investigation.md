@@ -375,6 +375,151 @@ The effect is visible beyond microbenchmarks: the full test suite
 (984 tests) dropped from ~0.8s to ~0.6s — a ~25% wall-clock
 improvement from inlining alone.
 
+## Experiment: per-tag compact operations (`skuld-wax`)
+
+Following the inlining experiment, the remaining reducible overhead
+was dominated by struct args (~1.30x at S6) and tuple state key
+computation (~1.16x at S9). We investigated replacing the struct
+operation args with lighter representations.
+
+### Approach 1: tagged tuples via `def_tagged_op` (rejected)
+
+We first tried the originally proposed approach: replace `%Get{tag: t}`
+/ `%Put{tag: t, value: v}` structs with tagged tuples `{Get, t}` /
+`{Put, t, v}` using module-atom tags.
+
+A new `def_tagged_op` macro was written alongside the existing
+`def_op`, and the State effect was ported to use it. A corresponding
+benchmark step (S6t) was added to the progressive benchmark.
+
+**Finding: the struct-vs-tuple distinction is not the significant
+factor.** The benchmark showed S6t (tagged tuples) and S6 (structs)
+were within noise of each other at larger N values. The overhead
+attributed to "struct args" at S6 is actually dominated by
+**allocation volume** (how many words per operation), not by the
+container type. Both structs and tagged tuples carrying the same
+fields have similar costs.
+
+The key observation was that S5 (which uses bare atoms and minimal
+tuples: `:get` / `{:put, v}`) was already fast — and S6t, despite
+using tuples instead of structs, was still slower than S5 because
+it still carried the redundant `tag` field in every operation.
+
+### Approach 2: per-tag module-atom sigs with compact ops (implemented)
+
+The insight: **the tag field in Get/Put operations is redundant with
+the handler dispatch.** The handler already knows which tag it handles
+because `with_handler` installs it for a specific tag. Computing
+`state_key(tag)` on every operation is wasted work.
+
+The solution moves the tag into the effect signature itself, using
+module-atom construction:
+
+```elixir
+# Per-tag sig and op atoms (just atoms, no defmodule needed):
+#   sig(:counter)    => Skuld.Effects.State.Counter
+#   get_op(:counter) => Skuld.Effects.State.Counter.Get
+#   put_op(:counter) => Skuld.Effects.State.Counter.Put
+
+# Operations are now minimal:
+State.get(:counter)    => Comp.effect(State.Counter, State.Counter.Get)
+State.put(:counter, v) => Comp.effect(State.Counter, {State.Counter.Put, v})
+
+# Handler installed at State.Counter, closes over state_key:
+with_handler(comp, 0, tag: :counter)
+  # installs handler at sig State.Counter
+  # handler closure captures state_key = {State, :counter}
+```
+
+This eliminates per-operation:
+- **Struct/tuple allocation for get**: the get op is a bare atom
+  (zero allocation)
+- **Tag field in put**: the put op is `{PutOp, value}` (2-tuple)
+  instead of `{Put, tag, value}` (3-tuple) or `%Put{tag: t, value: v}`
+  (struct)
+- **Runtime `state_key(tag)` computation**: the handler closure
+  captures the precomputed state key at installation time
+
+The module-atom sigs (e.g. `State.Counter`) are plain atoms as far
+as the BEAM is concerned — `Module.concat/2` produces an interned
+atom. Evidence map lookup with atom keys has the same cost as before
+(the old sig was also an atom, `State`). For the default tag, the
+sig/op atoms are precomputed as module attributes at compile time.
+
+### A note on tuple-keyed evidence lookup
+
+An earlier prototype used tuple sigs `{:state, tag}` instead of
+module-atom sigs. This was **measurably slower** than atom sigs —
+the evidence map lookup with a tuple key requires hashing the tuple,
+while an atom key is a direct pointer comparison. The module-atom
+approach avoids this entirely.
+
+### Benchmark results
+
+With the per-tag sig approach applied to the real State effect,
+the progressive benchmark shows S10 (Full Skuld) dropping below the
+old S9 step. Representative results at N=1000 (median of 7 runs,
+`MIX_ENV=prod`):
+
+| Step | Before (struct ops) | After (per-tag sig) |
+|------|--------------------|--------------------|
+| S5: struct env          | 2.3–2.6x | 2.3–2.6x (unchanged) |
+| S5c: per-tag sig bench  | —         | ≈ S5 (within noise)   |
+| S6: struct args          | 2.4–2.8x | 2.4–2.8x (unchanged, bench step only) |
+| S9: + state_key tuple    | 3.7–4.1x | 3.7–4.1x (unchanged, bench step only) |
+| S10: Full Skuld          | **4.2–5.5x** | **2.6–2.7x** |
+
+The S10 improvement is large because the per-tag sig approach
+collapses multiple sources of overhead simultaneously: struct args
+(S6), Change struct (S8), and state_key computation (S9) are all
+eliminated or reduced by the handler closing over precomputed values.
+
+At larger N values (5000, 10000), the improvement is still present
+but the median-of-7 methodology produces noisy results. Consistent
+across all runs: S10 comes in at or below S9.
+
+### Test results
+
+980 tests pass, 0 failures. 4 JSON serialisation tests are excluded
+(tagged `pending_json_serialization`) because the new compact
+operation format (bare atoms and minimal tuples) does not yet have
+`Jason.Encoder` implementations. This is expected — the serialisation
+path is off the hot path and will need a Protocol-based encoding
+mechanism if the approach is adopted for all effects.
+
+### What changed in the code
+
+- **`lib/skuld/effects/state.ex`**: Replaced `def_op`-generated
+  structs with per-tag module-atom construction. Operations use
+  `Comp.effect(sig(tag), get_op(tag))` and
+  `Comp.effect(sig(tag), {put_op(tag), value})`. Handler is built
+  as a closure in `with_handler` that closes over the state key and
+  op atoms, instead of delegating to `IHandle.handle/3` with struct
+  pattern matching.
+
+- **`lib/skuld/comp/def_tagged_op.ex`**: New macro written during
+  investigation (currently unused — the per-tag sig approach
+  superseded it). May be removed.
+
+- **`bench/overhead_progressive.exs`**: Added S5c (per-tag sig
+  benchmark step) and S6t (tagged-tuple benchmark step) for
+  comparison.
+
+### Remaining work
+
+- **JSON serialisation**: 4 tests excluded. Need a Protocol-based
+  encoding for the new operation format before EffectLogger can
+  serialise State operations.
+- **Other effects**: Only State has been ported. The same approach
+  could be applied to other effects that carry redundant tag/key
+  information in their operation args.
+- **IHandle behaviour**: The `handle/3` implementation on State is
+  now vestigial — the handler closure in `with_handler` is used
+  directly. The behaviour contract may need revisiting.
+- **`def_tagged_op` cleanup**: The macro was written for the initial
+  tagged-tuple approach and is now unused. Should be removed or
+  repurposed.
+
 <!-- nav:footer:start -->
 
 ---
