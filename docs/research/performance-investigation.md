@@ -125,12 +125,12 @@ remaining 1.40x:
 
 ### Per-iteration overhead (on every get/put cycle)
 
-| Source | Extra work | Count per iter |
-|--------|-----------|----------------|
-| `Env.get_state!/2` wrapper fn call | 1 function call frame | 2 (get + put) |
-| `Env.put_state/3` wrapper fn call  | 1 function call frame | 1 (put only)  |
-| `Change.new/2` fn call vs literal  | 1 function call frame | 1 (put only)  |
-| 4-field `%Env{}` struct copy vs 2-field | ~67% more map entries to copy | 1 (put only) |
+| Source                                  | Extra work                    | Count per iter |
+|-----------------------------------------|-------------------------------|----------------|
+| `Env.get_state!/2` wrapper fn call      | 1 function call frame         | 2 (get + put)  |
+| `Env.put_state/3` wrapper fn call       | 1 function call frame         | 1 (put only)   |
+| `Change.new/2` fn call vs literal       | 1 function call frame         | 1 (put only)   |
+| 4-field `%Env{}` struct copy vs 2-field | ~67% more map entries to copy | 1 (put only)   |
 
 The Env struct has 4 fields (`evidence`, `state`, `leave_scope`,
 `transform_suspend`) → 5-entry backing map including `__struct__`.
@@ -140,14 +140,14 @@ state mutation.
 
 ### Per-run overhead (amortised setup/teardown)
 
-| Source | Work |
-|--------|------|
-| `Env.new()` | struct + 2 anonymous fn allocations (`leave_scope`, `transform_suspend`) |
-| 2× `scoped/2` setup | 6 closure allocations + 4 struct updates + 4 map operations |
-| 2× `scoped/2` teardown | 2 `call_k` catch frames + 2 `finally_k` calls + 4 struct updates + 2 `Map.delete` + 2 `%Throw{}` pattern matches |
-| `FiberPool.Main.drain_pending` | `Map.get` + `PendingWork.new()` alloc + destructure + 3 comparisons + `await_suspend?` pattern match |
-| `ISentinel.run/2` | protocol dispatch + `leave_scope` chain call |
-| `State.with_handler` opts | 2× `then/2` + 3× `Keyword.get` (all no-ops) |
+| Source                         | Work                                                                                                             |
+|--------------------------------|------------------------------------------------------------------------------------------------------------------|
+| `Env.new()`                    | struct + 2 anonymous fn allocations (`leave_scope`, `transform_suspend`)                                         |
+| 2× `scoped/2` setup            | 6 closure allocations + 4 struct updates + 4 map operations                                                      |
+| 2× `scoped/2` teardown         | 2 `call_k` catch frames + 2 `finally_k` calls + 4 struct updates + 2 `Map.delete` + 2 `%Throw{}` pattern matches |
+| `FiberPool.Main.drain_pending` | `Map.get` + `PendingWork.new()` alloc + destructure + 3 comparisons + `await_suspend?` pattern match             |
+| `ISentinel.run/2`              | protocol dispatch + `leave_scope` chain call                                                                     |
+| `State.with_handler` opts      | 2× `then/2` + 3× `Keyword.get` (all no-ops)                                                                      |
 
 At N=10 000 the per-run overhead is amortised to ~0.003 us/op. It is
 measurable at small N but negligible in the benchmark.
@@ -233,13 +233,13 @@ roughly ~1.8–2.2x. The remaining irreducible overhead would be:
 
 ## Summary
 
-| Category | Multiplier | Reducible? |
-|----------|-----------|------------|
-| First catch frame | 2.26x | No — BEAM tax, not Skuld-specific |
-| Additional catches (×2) | 1.25x | Partially — could merge `call`/`call_handler` |
-| Struct args (`%Get{}`/`%Put{}`) | 1.30x | Yes — tagged tuples |
-| Change struct + accessors + tuple keys | 1.23x | Partially — inlining, precomputed keys |
-| Full-Skuld machinery | 1.40x | Partially — inlining, smaller Env, combined scoped |
+| Category                               | Multiplier | Reducible?                                         |
+|----------------------------------------|------------|----------------------------------------------------|
+| First catch frame                      | 2.26x      | No — BEAM tax, not Skuld-specific                  |
+| Additional catches (×2)                | 1.25x      | Partially — could merge `call`/`call_handler`      |
+| Struct args (`%Get{}`/`%Put{}`)        | 1.30x      | Yes — tagged tuples                                |
+| Change struct + accessors + tuple keys | 1.23x      | Partially — inlining, precomputed keys             |
+| Full-Skuld machinery                   | 1.40x      | Partially — inlining, smaller Env, combined scoped |
 
 **Skuld's actual overhead vs catch-baseline code: ~2.9x.** With the
 low-hanging-fruit optimisations (inlining), this could realistically
