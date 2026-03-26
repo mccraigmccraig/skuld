@@ -192,8 +192,7 @@ defmodule Skuld.Comp.CancelledTest do
 
       # State handler should have cleaned up its state key
       # (The scoped state is removed when scope exits)
-      state_key = {State, State}
-      assert Env.get_state(final_env, state_key) == nil
+      assert Env.get_state(final_env, State.state_key(State)) == nil
     end
   end
 end

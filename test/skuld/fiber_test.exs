@@ -339,8 +339,7 @@ defmodule Skuld.FiberTest do
 
       assert cancelled.status == :cancelled
       # State handler's scoped cleanup should have removed its state key
-      state_key = {State, State}
-      assert Env.get_state(cancelled.env, state_key) == nil
+      assert Env.get_state(cancelled.env, State.state_key(State)) == nil
     end
 
     test "cancel without leave_scope (simple suspend, no scoped effects)" do

@@ -485,7 +485,7 @@ defmodule Skuld.Effects.EffectLogger do
   - `:state_keys` - List of env.state keys to include in `EnvStateSnapshot` captures.
     Default `:all` includes everything. Use this to filter out constant Reader state:
 
-        state_keys: [{Skuld.Effects.State, MyApp.Counter}]
+        state_keys: [Skuld.Effects.State.state_key(MyApp.Counter)]
 
     This only captures the specified State keys, excluding Reader/other constant state.
   - `:decorate_suspend` - If true (default), attach the current finalized log to

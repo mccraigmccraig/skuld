@@ -306,8 +306,8 @@ defmodule Skuld.CompTest do
     alias Skuld.Effects.State
 
     # Helper to create a state-scoping setup function
-    # State now uses {State, tag} as key, with default tag being State module
-    @state_key {State, State}
+    # State uses sig(tag) as key — an atom, not a tuple
+    @state_key State.state_key(State)
 
     defp state_scope(initial) do
       fn env ->
@@ -444,7 +444,7 @@ defmodule Skuld.CompTest do
     alias Skuld.Effects.State
     alias Skuld.Effects.Yield
 
-    @state_key {State, State}
+    @state_key State.state_key(State)
 
     test "suspend option decorates Suspend.data when yielding" do
       comp =

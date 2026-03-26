@@ -259,8 +259,8 @@ defmodule Skuld.Effects.StateTest do
       assert {:done, 10} = result
       # Handler should be removed
       assert Env.get_handler(final_env, State) == nil
-      # State should be removed (default tag key)
-      assert Env.get_state(final_env, {State, State}) == nil
+      # State should be removed (default tag key = sig(State) = State)
+      assert Env.get_state(final_env, State.state_key(State)) == nil
     end
 
     test "composable - pipe multiple scoped handlers" do
@@ -410,7 +410,7 @@ defmodule Skuld.Effects.StateTest do
 
       assert {:done, 10} = result
       # State for tag should be removed
-      assert Env.get_state(final_env, {State, :s}) == nil
+      assert Env.get_state(final_env, State.state_key(:s)) == nil
     end
 
     test "composable - pipe multiple tagged handlers" do
