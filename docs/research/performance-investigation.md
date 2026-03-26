@@ -461,13 +461,13 @@ the progressive benchmark shows S10 (Full Skuld) dropping below the
 old S9 step. Representative results at N=1000 (median of 7 runs,
 `MIX_ENV=prod`):
 
-| Step | Before (struct ops) | After (per-tag sig) |
-|------|--------------------|--------------------|
-| S5: struct env          | 2.3–2.6x | 2.3–2.6x (unchanged) |
-| S5c: per-tag sig bench  | —         | ≈ S5 (within noise)   |
-| S6: struct args          | 2.4–2.8x | 2.4–2.8x (unchanged, bench step only) |
-| S9: + state_key tuple    | 3.7–4.1x | 3.7–4.1x (unchanged, bench step only) |
-| S10: Full Skuld          | **4.2–5.5x** | **2.6–2.7x** |
+| Step                   | Before (struct ops) | After (per-tag sig)                   |
+|------------------------|---------------------|---------------------------------------|
+| S5: struct env         | 2.3–2.6x            | 2.3–2.6x (unchanged)                  |
+| S5c: per-tag sig bench | —                   | ≈ S5 (within noise)                   |
+| S6: struct args        | 2.4–2.8x            | 2.4–2.8x (unchanged, bench step only) |
+| S9: + state_key tuple  | 3.7–4.1x            | 3.7–4.1x (unchanged, bench step only) |
+| S10: Full Skuld        | **4.2–5.5x**        | **2.6–2.7x**                          |
 
 The S10 improvement is large because the per-tag sig approach
 collapses multiple sources of overhead simultaneously: struct args
