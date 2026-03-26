@@ -124,7 +124,7 @@ defmodule Skuld.MixProject do
             Skuld.Fiber
           ],
           "Persistence & Data": [
-            Skuld.Effects.DB,
+            Skuld.Effects.Transaction,
             Skuld.Query.Contract,
             Skuld.Effects.Port,
             Skuld.Effects.Command,
@@ -162,7 +162,8 @@ defmodule Skuld.MixProject do
         ],
         nest_modules_by_prefix: [
           Skuld.Effects.EffectLogger,
-          Skuld.Effects.EventAccumulator
+          Skuld.Effects.EventAccumulator,
+          Skuld.Effects.Transaction
         ]
       ]
     ]

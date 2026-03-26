@@ -25,7 +25,7 @@ defmodule Skuld.Effects.Port.Provider do
       defmodule MyApp.UserService.Effectful do
         @behaviour MyApp.UserService.Provider
         defcomp find_user(id) do
-          user <- DB.get(User, id)
+          user <- MyApp.UserRepo.get(id)
           {:ok, user}
         end
       end
@@ -89,7 +89,7 @@ defmodule Skuld.Effects.Port.Provider do
       stack: fn comp ->
         comp
         |> State.with_handler(initial_state)
-        |> DB.Ecto.with_handler(MyApp.Repo)
+        |> Transaction.Ecto.with_handler(MyApp.Repo)
         |> Throw.with_handler()
       end
 
@@ -106,10 +106,10 @@ defmodule Skuld.Effects.Port.Provider do
   To test the effectful implementation in isolation (without the adapter), use
   the standard effect testing patterns — install handlers and run the computation:
 
-      test "effectful impl uses DB effect" do
+      test "effectful impl with handlers" do
         comp =
           MyApp.UserService.Effectful.find_user("user-123")
-          |> DB.with_test_handler(...)
+          |> MyApp.UserRepo.with_test_handler(...)
           |> Throw.with_handler()
 
         {result, _env} = Comp.run(comp)

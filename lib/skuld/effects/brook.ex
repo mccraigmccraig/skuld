@@ -590,7 +590,7 @@ defmodule Skuld.Effects.Brook do
 
       comp do
         source <- Brook.from_enum(records)
-        Brook.run(source, fn record -> DB.insert(record) end)
+        Brook.run(source, fn record -> process_record(record) end)
       end
   """
   @spec run(Channel.Handle.t(), (term() -> term() | Comp.Types.computation())) ::

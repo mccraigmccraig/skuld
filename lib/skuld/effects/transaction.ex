@@ -12,8 +12,7 @@ defmodule Skuld.Effects.Transaction do
   Transactions are orthogonal to persistence. A computation may need
   transactional env state rollback without any database involvement (e.g.
   rolling back Writer accumulations on error), or it may combine transactions
-  with domain-specific persistence Ports that have nothing to do with a
-  generic DB effect.
+  with domain-specific persistence Ports.
 
   ## Operations
 
