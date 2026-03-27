@@ -116,13 +116,16 @@ defmodule Skuld.Effects.Port do
   @typedoc """
   Registry entry for dispatching requests.
 
-    * `:direct` – call `apply(mod, name, args)`
+    * `:direct` – call `apply(mod, name, args)`, result is a plain value
+    * `{:effectful, module}` – call `apply(module, name, args)`, result is a
+      computation that gets inlined into the current effect context
     * `function` (arity 3) – `fun.(mod, name, args)`
     * `{module, function}` – invokes `apply(module, function, [mod, name, args])`
     * `module` – invokes `apply(module, name, args)` (implementation module)
   """
   @type resolver ::
           :direct
+          | {:effectful, module()}
           | (port_module(), port_name(), args() -> term())
           | {module(), atom()}
           | module()
@@ -276,21 +279,34 @@ defmodule Skuld.Effects.Port do
   Pass a registry map keyed by module to control how requests are
   dispatched. Each entry can be one of:
 
-    * `:direct` – call `apply(mod, name, args)`
+    * `:direct` – call `apply(mod, name, args)`, returns a plain value
+    * `{:effectful, module}` – call `apply(module, name, args)`, returns a
+      computation that is inlined into the current effect context. The
+      effectful impl's effects are handled by the consumer's handler stack.
     * `function` (arity 3) – `fun.(mod, name, args)`
     * `{module, function}` – invokes `apply(module, function, [mod, name, args])`
     * `module` – invokes `apply(module, name, args)` (implementation module)
 
-  Handlers may return any value. To signal errors, raise or use
-  `Skuld.Effects.Throw.throw/1`.
+  Plain resolvers (`:direct`, function, `{mod, fun}`, module) return values
+  that are passed directly to the continuation. The `:effectful` resolver
+  returns a computation that participates in the surrounding effect context.
 
   ## Example
 
+      # Plain implementations
       my_comp
       |> Port.with_handler(%{
         MyApp.UserQueries => :direct,
         MyApp.Repository => MyApp.Repository.Ecto
       })
+      |> Comp.run!()
+
+      # Effectful implementation — computation inlined into consumer's stack
+      my_comp
+      |> Port.with_handler(%{
+        MyApp.Repository => {:effectful, MyApp.Repository.EffectfulImpl}
+      })
+      |> Throw.with_handler()
       |> Comp.run!()
   """
   @spec with_handler(Types.computation(), registry(), keyword()) :: Types.computation()
@@ -486,7 +502,11 @@ defmodule Skuld.Effects.Port do
 
   defp handle_runtime(registry, mod, name, args, env, k) do
     case dispatch(registry, mod, name, args) do
-      {:ok, result} ->
+      {:ok, {:computation, comp}} ->
+        # Effectful resolver: inline the computation into the current effect context
+        Comp.call(comp, env, k)
+
+      {:ok, {:value, result}} ->
         k.(result, env)
 
       {:error, reason} ->
@@ -545,18 +565,22 @@ defmodule Skuld.Effects.Port do
   end
 
   defp invoke(:direct, mod, name, args) do
-    apply(mod, name, args)
+    {:value, apply(mod, name, args)}
+  end
+
+  defp invoke({:effectful, module}, _mod, name, args) when is_atom(module) do
+    {:computation, apply(module, name, args)}
   end
 
   defp invoke(fun, mod, name, args) when is_function(fun, 3) do
-    fun.(mod, name, args)
+    {:value, fun.(mod, name, args)}
   end
 
   defp invoke({module, function}, mod, name, args) do
-    apply(module, function, [mod, name, args])
+    {:value, apply(module, function, [mod, name, args])}
   end
 
   defp invoke(module, _mod, name, args) when is_atom(module) do
-    apply(module, name, args)
+    {:value, apply(module, name, args)}
   end
 end

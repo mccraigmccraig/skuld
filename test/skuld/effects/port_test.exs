@@ -624,4 +624,145 @@ defmodule Skuld.Effects.PortTest do
       assert {:ok, {:error, :invalid_id}} = result2
     end
   end
+
+  # ---------------------------------------------------------------
+  # Effectful resolver tests
+  # ---------------------------------------------------------------
+
+  # Effectful impl — returns computations, not plain values
+  defmodule EffectfulImpl do
+    def find_user(id) do
+      Comp.pure({:ok, %{id: id, name: "Effectful #{id}"}})
+    end
+
+    def find_user_or_error(id) when id < 0 do
+      Comp.pure({:error, {:not_found, :user, id}})
+    end
+
+    def find_user_or_error(id) do
+      Comp.pure({:ok, %{id: id, name: "Effectful #{id}"}})
+    end
+
+    def no_args do
+      Comp.pure({:ok, :healthy})
+    end
+  end
+
+  # Effectful impl that uses effects internally
+  defmodule StatefulEffectfulImpl do
+    alias Skuld.Effects.State
+
+    def find_user(id) do
+      Comp.bind(State.get(), fn count ->
+        Comp.bind(State.put(count + 1), fn _ ->
+          Comp.pure({:ok, %{id: id, name: "Stateful #{id}", call_count: count + 1}})
+        end)
+      end)
+    end
+  end
+
+  # Effectful impl that throws
+  defmodule ThrowingEffectfulImpl do
+    def find_user(_id) do
+      Throw.throw(:something_went_wrong)
+    end
+  end
+
+  describe "effectful resolver" do
+    test "inlines computation from effectful impl" do
+      comp =
+        Port.request(TestQueries, :find_user, [42])
+        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+
+      {result, _} = Comp.run(comp)
+      assert {:ok, %{id: 42, name: "Effectful 42"}} = result
+    end
+
+    test "works with request!/3 unwrapping" do
+      comp =
+        Port.request!(TestQueries, :find_user, [42])
+        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+        |> Throw.with_handler()
+
+      {result, _} = Comp.run(comp)
+      assert %{id: 42, name: "Effectful 42"} = result
+    end
+
+    test "request!/3 throws on error from effectful impl" do
+      comp =
+        Port.request!(TestQueries, :find_user_or_error, [-1])
+        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+        |> Throw.try_catch()
+        |> Throw.with_handler()
+
+      {result, _} = Comp.run(comp)
+      assert {:error, {:not_found, :user, -1}} = result
+    end
+
+    test "effectful impl participates in consumer's effect context (State)" do
+      alias Skuld.Effects.State
+
+      comp =
+        Port.request(TestQueries, :find_user, [1])
+        |> Comp.bind(fn first_result ->
+          Comp.bind(Port.request(TestQueries, :find_user, [2]), fn second_result ->
+            Comp.pure({first_result, second_result})
+          end)
+        end)
+        |> Port.with_handler(%{TestQueries => {:effectful, StatefulEffectfulImpl}})
+        |> State.with_handler(0)
+
+      {result, _} = Comp.run(comp)
+
+      assert {{:ok, %{id: 1, call_count: 1}}, {:ok, %{id: 2, call_count: 2}}} = result
+    end
+
+    test "effectful impl's throws handled by consumer's Throw handler" do
+      comp =
+        Port.request(TestQueries, :find_user, [42])
+        |> Port.with_handler(%{TestQueries => {:effectful, ThrowingEffectfulImpl}})
+        |> Throw.try_catch()
+        |> Throw.with_handler()
+
+      {result, _} = Comp.run(comp)
+      assert {:error, :something_went_wrong} = result
+    end
+
+    test "zero-arg effectful operation" do
+      comp =
+        Port.request(TestQueries, :no_args, [])
+        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+
+      {result, _} = Comp.run(comp)
+      assert {:ok, :healthy} = result
+    end
+
+    test "mixed registry with plain and effectful resolvers" do
+      comp =
+        Comp.bind(Port.request(TestQueries, :find_user, [1]), fn plain_result ->
+          Comp.bind(Port.request(TestImplModule, :find_user, [2]), fn effectful_result ->
+            Comp.pure({plain_result, effectful_result})
+          end)
+        end)
+        |> Port.with_handler(%{
+          TestQueries => :direct,
+          TestImplModule => {:effectful, EffectfulImpl}
+        })
+
+      {result, _} = Comp.run(comp)
+
+      assert {{:ok, %{id: 1, name: "User 1"}}, {:ok, %{id: 2, name: "Effectful 2"}}} = result
+    end
+
+    test "unknown module still errors" do
+      comp =
+        Port.request(UnknownModule, :find_user, [42])
+        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+        |> Throw.try_catch()
+        |> Throw.with_handler()
+
+      {result, _} = Comp.run(comp)
+      assert {:error, {:unknown_port_module, UnknownModule}} = result
+    end
+  end
 end
