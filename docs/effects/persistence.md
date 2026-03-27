@@ -12,6 +12,10 @@ domain logic.
 Database persistence is handled via domain-specific
 [Port.Contract](external-integration.md) modules (e.g. `UserRepo`,
 `OrderRepo`), which provide typed boundaries and swappable handlers.
+For common Ecto Repo operations (insert, update, delete, get, etc.),
+Skuld provides a built-in [Port.Repo](#portrepo) contract so you don't
+need to redeclare identical boilerplate in every domain.
+
 Transaction is orthogonal — it wraps any computation in transactional
 semantics, rolling back env state on failure with optional database
 transaction support.
@@ -20,6 +24,149 @@ For read queries and external service calls, see
 [External Integration](external-integration.md). For batchable queries
 with automatic N+1 prevention, see
 [Query & Batching](../advanced/query-batching.md).
+
+## Port.Repo
+
+A built-in Port contract providing standard Ecto Repo operations. Use
+it when your effectful code needs generic persistence (insert, update,
+delete, get, all, etc.) without defining a domain-specific contract for
+each operation.
+
+### Operations
+
+**Writes** — return `{:ok, struct()} | {:error, Ecto.Changeset.t()}`
+with auto-generated bang variants:
+
+- `insert(changeset)` / `insert!(changeset)`
+- `update(changeset)` / `update!(changeset)`
+- `delete(record)` / `delete!(record)`
+
+**Bulk** — return `{count, nil | list}`:
+
+- `update_all(queryable, updates, opts)`
+- `delete_all(queryable, opts)`
+
+**Reads** — follow Ecto's conventions:
+
+- `get(queryable, id)` / `get!(queryable, id)`
+- `get_by(queryable, clauses)` / `get_by!(queryable, clauses)`
+- `one(queryable)` / `one!(queryable)`
+- `all(queryable)`
+- `exists?(queryable)`
+- `aggregate(queryable, aggregate, field)`
+
+### Usage in computations
+
+```elixir
+alias Skuld.Effects.Port.Repo
+
+defcomp create_and_fetch(attrs) do
+  changeset = User.changeset(%User{}, attrs)
+  user <- Repo.insert!(changeset)
+  all_users <- Repo.all(User)
+  {user, all_users}
+end
+```
+
+### Production handler (Port.Repo.Ecto)
+
+Generate a Plain implementation that delegates to your Ecto Repo:
+
+```elixir
+defmodule MyApp.Repo.Port do
+  use Skuld.Effects.Port.Repo.Ecto, repo: MyApp.Repo
+end
+```
+
+Wire it into the handler stack:
+
+```elixir
+create_and_fetch(attrs)
+|> Transaction.transact()
+|> Transaction.Ecto.with_handler(MyApp.Repo)
+|> Port.with_handler(%{Port.Repo => MyApp.Repo.Port})
+|> Throw.with_handler()
+|> Comp.run!()
+```
+
+### Test handler (Port.Repo.Test)
+
+An effectful test executor that applies changeset changes (without
+touching a database) and records every operation via Writer. Each log
+entry is a `{op_name, args, return_value}` tuple:
+
+```elixir
+alias Skuld.Effects.Port.Repo
+
+cs = User.changeset(%User{}, %{name: "Alice"})
+
+{result, log} =
+  comp do
+    user <- Repo.insert!(cs)
+    _ <- Repo.get(User, 42)
+    user
+  end
+  |> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
+  |> Throw.with_handler()
+  |> Comp.run!()
+
+assert %User{name: "Alice"} = result
+assert [
+  {:insert, [^cs], {:ok, %User{name: "Alice"}}},
+  {:get, [User, 42], nil}
+] = log
+```
+
+`Repo.Test.with_handler/2` wires three effects in one call:
+
+- **Port** — registers the test executor as an effectful resolver
+- **Writer** — captures the operation log
+- **Reader** — passes the Writer tag to the executor
+
+Options:
+
+- `:output` — `fn result, log -> transformed end` to capture the log
+- `:tag` — Writer tag (default: `Skuld.Effects.Port.Repo`)
+- `:registry` — additional Port entries to merge (since Port handlers
+  shadow rather than merge):
+
+```elixir
+Repo.Test.with_handler(comp,
+  registry: %{MyApp.Queries => MyApp.Queries.TestImpl},
+  output: fn r, log -> {r, log} end
+)
+```
+
+### Combining with domain-specific contracts
+
+Port.Repo handles generic persistence. Domain-specific operations
+(complex queries, business logic wrapped in persistence) should still
+use their own Port.Contract:
+
+```elixir
+defmodule MyApp.Orders do
+  use Skuld.Effects.Port.Contract
+
+  defport place_order(params :: map()) ::
+            {:ok, Order.t()} | {:error, term()}
+end
+
+defcomp checkout(params) do
+  order <- MyApp.Orders.place_order!(params)
+  audit_cs = AuditLog.changeset(%AuditLog{}, %{action: "checkout", order_id: order.id})
+  _ <- Repo.insert!(audit_cs)
+  order
+end
+```
+
+### When to use Port.Repo vs a domain contract
+
+| Situation                         | Use                  |
+|-----------------------------------|----------------------|
+| Generic insert/update/delete/get  | `Port.Repo`          |
+| Domain-specific queries           | Domain Port.Contract |
+| Business logic in persistence     | Domain Port.Contract |
+| Audit logs, simple CRUD           | `Port.Repo`          |
 
 ## Transaction
 

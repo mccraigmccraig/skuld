@@ -361,6 +361,10 @@ assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
 - Use `Adapter.Effectful` when you want encapsulated effect execution
 - Include `Throw.with_handler/1` in any stack where computations can
   throw — without it, `Comp.run!/1` raises `ThrowError`
+- For generic Ecto Repo operations (insert, update, delete, get, etc.),
+  use the built-in `Port.Repo` contract instead of redeclaring them in
+  every domain contract. See
+  [Persistence & Data](../effects/persistence.md#portrepo)
 
 <!-- nav:footer:start -->
 
