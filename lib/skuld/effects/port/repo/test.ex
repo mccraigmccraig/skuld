@@ -59,6 +59,9 @@ if Code.ensure_loaded?(Ecto) do
       * `:output` — Transform function `(result, log) -> output` passed to
         `Writer.with_handler/3`. Use `fn r, log -> {r, log} end` to capture
         the log alongside the result.
+      * `:tag` — Writer tag for the log. Defaults to `Skuld.Effects.Port.Repo`.
+        Use this when you need to distinguish multiple Repo logs or avoid
+        collisions with other Writer tags.
       * `:registry` — Additional `Port` registry entries to merge alongside
         the `Port.Repo` entry. Use this when the computation also uses other
         Port contracts. Example:
@@ -73,11 +76,23 @@ if Code.ensure_loaded?(Ecto) do
 
     alias Skuld.Effects.Port
     alias Skuld.Effects.Port.Repo
+    alias Skuld.Effects.Reader
     alias Skuld.Effects.Writer
 
     @behaviour Repo.Effectful
 
     @default_tag Repo
+    @reader_tag __MODULE__
+
+    # -----------------------------------------------------------------
+    # Internal: read the Writer tag from Reader, log an operation
+    # -----------------------------------------------------------------
+
+    defcompp log(op, args, result) do
+      tag <- Reader.ask(@reader_tag)
+      _ <- Writer.tell(tag, {op, args, result})
+      result
+    end
 
     # -----------------------------------------------------------------
     # Write Operations
@@ -87,7 +102,7 @@ if Code.ensure_loaded?(Ecto) do
     def insert(changeset) do
       comp do
         result = {:ok, safe_apply_changes(changeset)}
-        _ <- Writer.tell(@default_tag, {:insert, [changeset], result})
+        _ <- log(:insert, [changeset], result)
         result
       end
     end
@@ -96,7 +111,7 @@ if Code.ensure_loaded?(Ecto) do
     def update(changeset) do
       comp do
         result = {:ok, safe_apply_changes(changeset)}
-        _ <- Writer.tell(@default_tag, {:update, [changeset], result})
+        _ <- log(:update, [changeset], result)
         result
       end
     end
@@ -105,7 +120,7 @@ if Code.ensure_loaded?(Ecto) do
     def delete(record) do
       comp do
         result = {:ok, record}
-        _ <- Writer.tell(@default_tag, {:delete, [record], result})
+        _ <- log(:delete, [record], result)
         result
       end
     end
@@ -118,7 +133,7 @@ if Code.ensure_loaded?(Ecto) do
     def update_all(queryable, updates, opts) do
       comp do
         result = {0, nil}
-        _ <- Writer.tell(@default_tag, {:update_all, [queryable, updates, opts], result})
+        _ <- log(:update_all, [queryable, updates, opts], result)
         result
       end
     end
@@ -127,7 +142,7 @@ if Code.ensure_loaded?(Ecto) do
     def delete_all(queryable, opts) do
       comp do
         result = {0, nil}
-        _ <- Writer.tell(@default_tag, {:delete_all, [queryable, opts], result})
+        _ <- log(:delete_all, [queryable, opts], result)
         result
       end
     end
@@ -139,81 +154,72 @@ if Code.ensure_loaded?(Ecto) do
     @impl true
     def get(queryable, id) do
       comp do
-        result = nil
-        _ <- Writer.tell(@default_tag, {:get, [queryable, id], result})
-        result
+        _ <- log(:get, [queryable, id], nil)
+        nil
       end
     end
 
     @impl true
     def get!(queryable, id) do
       comp do
-        result = nil
-        _ <- Writer.tell(@default_tag, {:get!, [queryable, id], result})
-        result
+        _ <- log(:get!, [queryable, id], nil)
+        nil
       end
     end
 
     @impl true
     def get_by(queryable, clauses) do
       comp do
-        result = nil
-        _ <- Writer.tell(@default_tag, {:get_by, [queryable, clauses], result})
-        result
+        _ <- log(:get_by, [queryable, clauses], nil)
+        nil
       end
     end
 
     @impl true
     def get_by!(queryable, clauses) do
       comp do
-        result = nil
-        _ <- Writer.tell(@default_tag, {:get_by!, [queryable, clauses], result})
-        result
+        _ <- log(:get_by!, [queryable, clauses], nil)
+        nil
       end
     end
 
     @impl true
     def one(queryable) do
       comp do
-        result = nil
-        _ <- Writer.tell(@default_tag, {:one, [queryable], result})
-        result
+        _ <- log(:one, [queryable], nil)
+        nil
       end
     end
 
     @impl true
     def one!(queryable) do
       comp do
-        result = nil
-        _ <- Writer.tell(@default_tag, {:one!, [queryable], result})
-        result
+        _ <- log(:one!, [queryable], nil)
+        nil
       end
     end
 
     @impl true
     def all(queryable) do
       comp do
-        result = []
-        _ <- Writer.tell(@default_tag, {:all, [queryable], result})
-        result
+        _ <- log(:all, [queryable], [])
+        []
       end
     end
 
     @impl true
     def exists?(queryable) do
       comp do
-        result = false
-        _ <- Writer.tell(@default_tag, {:exists?, [queryable], result})
-        result
+        _ <- log(:exists?, [queryable], false)
+        false
       end
     end
 
     @impl true
-    def aggregate(queryable, aggregate, field) do
+    def aggregate(queryable, aggregate_fn, field) do
       comp do
-        result = nil
-        _ <- Writer.tell(@default_tag, {:aggregate, [queryable, aggregate, field], result})
-        result
+        _ <- log(:aggregate, [queryable, aggregate_fn, field], nil)
+        nil
       end
     end
 
@@ -222,16 +228,20 @@ if Code.ensure_loaded?(Ecto) do
     # -----------------------------------------------------------------
 
     @doc """
-    Install a test handler that wires both `Port` and `Writer` effects.
+    Install a test handler that wires `Port`, `Writer`, and `Reader` effects.
 
-    Registers this module as the effectful executor for `Port.Repo` and
-    installs a `Writer` handler to capture the operation log.
+    Registers this module as the effectful executor for `Port.Repo`,
+    installs a `Writer` handler to capture the operation log, and a
+    `Reader` to configure the Writer tag.
 
     ## Options
 
       * `:output` — Transform function `(result, log) -> output` passed
         through to `Writer.with_handler/3`. Without this, the log is
         discarded and only the computation result is returned.
+      * `:tag` — Writer tag for the log. Defaults to `Skuld.Effects.Port.Repo`.
+        Use this when you need to distinguish multiple Repo logs or avoid
+        collisions with other Writer tags.
       * `:registry` — Additional `Port` registry entries to merge alongside
         the `Port.Repo` entry. Since `Port.with_handler/2` scopes shadow
         each other, use this when the computation uses other Port contracts:
@@ -254,6 +264,7 @@ if Code.ensure_loaded?(Ecto) do
     @spec with_handler(Skuld.Comp.Types.computation(), keyword()) ::
             Skuld.Comp.Types.computation()
     def with_handler(comp, opts \\ []) do
+      tag = Keyword.get(opts, :tag, @default_tag)
       output = Keyword.get(opts, :output)
       extra_registry = Keyword.get(opts, :registry, %{})
 
@@ -268,12 +279,13 @@ if Code.ensure_loaded?(Ecto) do
         end
 
       writer_opts =
-        [tag: @default_tag]
+        [tag: tag]
         |> then(fn o -> if writer_output, do: Keyword.put(o, :output, writer_output), else: o end)
 
       comp
       |> Port.with_handler(registry)
       |> Writer.with_handler([], writer_opts)
+      |> Reader.with_handler(tag, tag: @reader_tag)
     end
 
     # -----------------------------------------------------------------

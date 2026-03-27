@@ -379,6 +379,20 @@ defmodule Skuld.Effects.Port.RepoTest do
              ] = log
     end
 
+    test "custom tag option routes log to specified Writer tag" do
+      cs = TestUser.changeset(%{name: "Alice"})
+
+      {_result, log} =
+        comp do
+          _ <- Repo.insert(cs)
+          :ok
+        end
+        |> Repo.Test.with_handler(tag: :my_repo_log, output: fn r, log -> {r, log} end)
+        |> Comp.run!()
+
+      assert [{:insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
+    end
+
     test "without output option, log is discarded" do
       cs = TestUser.changeset(%{name: "Alice"})
 
