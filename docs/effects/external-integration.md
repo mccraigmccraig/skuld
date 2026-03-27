@@ -14,7 +14,7 @@ Port has three layers:
 - **Port** - low-level dispatch via `Port.request/3`
 - **Port.Contract** - typed contracts via `defport`, with Dialyzer support
   and generated behaviours
-- **Port.Provider** - bridges plain Elixir code into effectful
+- **Port.Adapter.Effectful** - bridges plain Elixir code into effectful
   implementations (the inbound side of hexagonal architecture)
 
 Most applications should use Port.Contract. The low-level Port API is
@@ -135,24 +135,24 @@ Each `defport` generates:
 - **Key helper** - `key(:get_todo, tenant_id, id)` for test stubs
 - **Introspection** - `__port_operations__/0`
 
-### Consumer and Provider behaviours
+### Plain and Effectful behaviours
 
 Each contract generates two behaviour submodules:
 
-- **`MyApp.Repository.Consumer`** - plain Elixir callbacks. Implementations
+- **`MyApp.Repository.Plain`** - plain Elixir callbacks. Implementations
   receive and return ordinary values. Use for non-effectful implementations
   called via `Port.with_handler/2`.
-- **`MyApp.Repository.Provider`** - computation-returning callbacks.
+- **`MyApp.Repository.Effectful`** - computation-returning callbacks.
   Implementations return computations. Use for effectful implementations
-  wrapped with `Port.Provider`.
+  wrapped with `Port.Adapter.Effectful`.
 
 ```elixir
-# Consumer behaviour (generated)
-MyApp.Repository.Consumer
+# Plain behaviour (generated)
+MyApp.Repository.Plain
 @callback get_todo(String.t(), String.t()) :: {:ok, Todo.t()} | {:error, term()}
 
-# Provider behaviour (generated)
-MyApp.Repository.Provider
+# Effectful behaviour (generated)
+MyApp.Repository.Effectful
 @callback get_todo(String.t(), String.t()) :: computation({:ok, Todo.t()} | {:error, term()})
 ```
 
@@ -192,14 +192,14 @@ end
 This makes Contract easy to fit to existing implementation code
 regardless of its return convention.
 
-### Writing a Consumer implementation
+### Writing a Plain implementation
 
-Consumer implementations satisfy the `.Consumer` behaviour with plain
+Plain implementations satisfy the `.Plain` behaviour with plain
 Elixir functions:
 
 ```elixir
 defmodule MyApp.Repository.Ecto do
-  @behaviour MyApp.Repository.Consumer
+  @behaviour MyApp.Repository.Plain
 
   @impl true
   def get_todo(tenant_id, id) do
@@ -247,16 +247,16 @@ my_comp
 - `key/N` helpers replace verbose `Port.key(Module, :name, [args...])` calls
 - Bang generation adapts to any return convention via `bang:` option
 
-## Port.Provider
+## Port.Adapter.Effectful
 
-Port.Provider enables the **provider side** of hexagonal architecture:
+Port.Adapter.Effectful enables the **provider side** of hexagonal architecture:
 plain Elixir code calling into effectful implementations. It generates a
-module that satisfies the Consumer behaviour by wrapping a Provider
+module that satisfies the Plain behaviour by wrapping an Effectful
 implementation with a handler stack and `Comp.run!/1`.
 
-### When to use Port.Provider
+### When to use Port.Adapter.Effectful
 
-Use Port.Provider when non-effectful code (a Phoenix controller, a
+Use Port.Adapter.Effectful when non-effectful code (a Phoenix controller, a
 GenServer, a CLI) needs to call into logic that's written with effects.
 The adapter handles the effect machinery so callers don't need to know
 about it.
@@ -271,10 +271,10 @@ defmodule MyApp.UserService do
   defport list_users(opts :: map()) :: {:ok, [User.t()]} | {:error, term()}
 end
 
-# 2. Effectful implementation satisfies Provider behaviour
+# 2. Effectful implementation satisfies Effectful behaviour
 defmodule MyApp.UserService.Effectful do
   use Skuld.Syntax
-  @behaviour MyApp.UserService.Provider
+  @behaviour MyApp.UserService.Effectful
 
   defcomp find_user(id) do
     UserQueries.get_user(id)
@@ -285,9 +285,9 @@ defmodule MyApp.UserService.Effectful do
   end
 end
 
-# 3. Provider adapter bridges effectful impl to plain Elixir
+# 3. Effectful adapter bridges effectful impl to plain Elixir
 defmodule MyApp.UserService.Adapter do
-  use Skuld.Effects.Port.Provider,
+  use Skuld.Effects.Port.Adapter.Effectful,
     contract: MyApp.UserService,
     impl: MyApp.UserService.Effectful,
     stack: fn comp ->
@@ -346,28 +346,28 @@ through the same contract:
                     Contract
                    (defport)
                   /          \
-    Consumer side              Provider side
+    Plain side              Effectful side
     (outbound/driven)          (inbound/driving)
          |                          |
     Effectful code             Plain Elixir code
     calls out to               calls in to
     plain Elixir impl          effectful impl
          |                          |
-    Port.with_handler          Port.Provider
-    → Consumer impl            → Provider impl
+    Port.with_handler          Port.Adapter.Effectful
+    → Plain impl            → Effectful impl
                                  → stack
                                  → Comp.run!()
 ```
 
-- **Consumer (outbound)** - effectful code emits Port effects, resolved
-  by `Port.with_handler/2` dispatching to a Consumer implementation
-- **Provider (inbound)** - `Port.Provider` wraps a Provider
+- **Plain (outbound)** - effectful code emits Port effects, resolved
+  by `Port.with_handler/2` dispatching to a Plain implementation
+- **Effectful (inbound)** - `Port.Adapter.Effectful` wraps a Provider
   implementation with a handler stack and `Comp.run!/1`, producing a
-  Consumer-compatible module that plain code calls directly
+  Plain-compatible module that plain code calls directly
 
 ### Testing provider adapters
 
-Provider adapters produce plain Elixir values, so they test like
+Effectful adapters produce plain Elixir values, so they test like
 ordinary Elixir code:
 
 ```elixir

@@ -230,7 +230,7 @@ config. It works but it's tedious, and the plumbing obscures the
 domain logic.
 
 **What Skuld does**: Port.Contract defines typed boundaries between
-your domain and infrastructure. Port.Provider bridges the other
+your domain and infrastructure. Port.Adapter.Effectful bridges the other
 direction - letting plain Elixir code call into effectful
 implementations. The domain logic uses effects; the adapters are thin
 modules that implement a behaviour:
@@ -246,13 +246,13 @@ end
 
 # Production adapter
 defmodule PaymentGateway.Stripe do
-  @behaviour PaymentGateway.Consumer
+  @behaviour PaymentGateway.Plain
   def charge(amount, card), do: Stripe.API.create_charge(amount, card)
 end
 
 # Test adapter
 defmodule PaymentGateway.InMemory do
-  @behaviour PaymentGateway.Consumer
+  @behaviour PaymentGateway.Plain
   def charge(amount, _card), do: {:ok, %Charge{amount: amount, id: "ch_test"}}
 end
 ```

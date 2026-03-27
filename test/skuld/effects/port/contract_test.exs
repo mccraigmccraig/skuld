@@ -74,7 +74,7 @@ defmodule Skuld.Effects.Port.ContractTest do
 
   # Implementation module for dispatch tests
   defmodule TestImpl do
-    @behaviour TestContract.Consumer
+    @behaviour TestContract.Plain
 
     @impl true
     def get_todo(tenant_id, id) do
@@ -93,90 +93,90 @@ defmodule Skuld.Effects.Port.ContractTest do
   end
 
   # ---------------------------------------------------------------
-  # Consumer/Provider Behaviour Submodule Tests
+  # Plain/Effectful Behaviour Submodule Tests
   # ---------------------------------------------------------------
 
-  describe "Consumer submodule generation" do
-    test "Consumer submodule exists for each contract" do
-      assert Code.ensure_loaded?(TestContract.Consumer)
-      assert Code.ensure_loaded?(NoBangContract.Consumer)
-      assert Code.ensure_loaded?(ForceBangContract.Consumer)
-      assert Code.ensure_loaded?(CustomBangContract.Consumer)
-      assert Code.ensure_loaded?(BareReturnContract.Consumer)
+  describe "Plain submodule generation" do
+    test "Plain submodule exists for each contract" do
+      assert Code.ensure_loaded?(TestContract.Plain)
+      assert Code.ensure_loaded?(NoBangContract.Plain)
+      assert Code.ensure_loaded?(ForceBangContract.Plain)
+      assert Code.ensure_loaded?(CustomBangContract.Plain)
+      assert Code.ensure_loaded?(BareReturnContract.Plain)
     end
 
-    test "Consumer has callbacks with correct arities" do
-      callbacks = TestContract.Consumer.behaviour_info(:callbacks)
+    test "Plain has callbacks with correct arities" do
+      callbacks = TestContract.Plain.behaviour_info(:callbacks)
       assert {:get_todo, 2} in callbacks
       assert {:list_todos, 1} in callbacks
       assert {:health_check, 0} in callbacks
     end
 
-    test "Consumer callbacks match all contract operations" do
+    test "Plain callbacks match all contract operations" do
       ops = TestContract.__port_operations__()
-      callbacks = TestContract.Consumer.behaviour_info(:callbacks)
+      callbacks = TestContract.Plain.behaviour_info(:callbacks)
 
       for op <- ops do
         assert {op.name, op.arity} in callbacks,
-               "Expected Consumer callback #{op.name}/#{op.arity}"
+               "Expected Plain callback #{op.name}/#{op.arity}"
       end
 
       assert length(callbacks) == length(ops)
     end
 
-    test "implementation module satisfies Consumer behaviour" do
-      # TestImpl declares @behaviour TestContract.Consumer and compiles without warnings
+    test "implementation module satisfies Plain behaviour" do
+      # TestImpl declares @behaviour TestContract.Plain and compiles without warnings
       # Verify it implements all required callbacks
-      callbacks = TestContract.Consumer.behaviour_info(:callbacks)
+      callbacks = TestContract.Plain.behaviour_info(:callbacks)
 
       for {name, arity} <- callbacks do
         assert function_exported?(TestImpl, name, arity),
-               "TestImpl should export #{name}/#{arity} for Consumer behaviour"
+               "TestImpl should export #{name}/#{arity} for Plain behaviour"
       end
     end
   end
 
-  describe "Provider submodule generation" do
-    test "Provider submodule exists for each contract" do
-      assert Code.ensure_loaded?(TestContract.Provider)
-      assert Code.ensure_loaded?(NoBangContract.Provider)
-      assert Code.ensure_loaded?(ForceBangContract.Provider)
-      assert Code.ensure_loaded?(CustomBangContract.Provider)
-      assert Code.ensure_loaded?(BareReturnContract.Provider)
+  describe "Effectful submodule generation" do
+    test "Effectful submodule exists for each contract" do
+      assert Code.ensure_loaded?(TestContract.Effectful)
+      assert Code.ensure_loaded?(NoBangContract.Effectful)
+      assert Code.ensure_loaded?(ForceBangContract.Effectful)
+      assert Code.ensure_loaded?(CustomBangContract.Effectful)
+      assert Code.ensure_loaded?(BareReturnContract.Effectful)
     end
 
-    test "Provider has callbacks with correct arities" do
-      callbacks = TestContract.Provider.behaviour_info(:callbacks)
+    test "Effectful has callbacks with correct arities" do
+      callbacks = TestContract.Effectful.behaviour_info(:callbacks)
       assert {:get_todo, 2} in callbacks
       assert {:list_todos, 1} in callbacks
       assert {:health_check, 0} in callbacks
     end
 
-    test "Provider callbacks match all contract operations" do
+    test "Effectful callbacks match all contract operations" do
       ops = TestContract.__port_operations__()
-      callbacks = TestContract.Provider.behaviour_info(:callbacks)
+      callbacks = TestContract.Effectful.behaviour_info(:callbacks)
 
       for op <- ops do
         assert {op.name, op.arity} in callbacks,
-               "Expected Provider callback #{op.name}/#{op.arity}"
+               "Expected Effectful callback #{op.name}/#{op.arity}"
       end
 
       assert length(callbacks) == length(ops)
     end
 
-    test "contract module's caller functions satisfy Provider behaviour" do
+    test "contract module's caller functions satisfy Effectful behaviour" do
       # The contract module's generated caller functions have the same names/arities
-      # as the Provider callbacks, so they satisfy the behaviour structurally
-      callbacks = TestContract.Provider.behaviour_info(:callbacks)
+      # as the Effectful callbacks, so they satisfy the behaviour structurally
+      callbacks = TestContract.Effectful.behaviour_info(:callbacks)
 
       for {name, arity} <- callbacks do
         assert function_exported?(TestContract, name, arity),
-               "Contract module should export #{name}/#{arity} to satisfy Provider behaviour"
+               "Contract module should export #{name}/#{arity} to satisfy Effectful behaviour"
       end
     end
 
-    test "contract callers return computations (matching Provider's computation return type)" do
-      # Provider behaviour expects computation(return_type) — verify callers return functions
+    test "contract callers return computations (matching Effectful's computation return type)" do
+      # Effectful behaviour expects computation(return_type) — verify callers return functions
       comp = TestContract.get_todo("t1", "id1")
       assert is_function(comp, 2), "Caller should return a computation (2-arity function)"
 
@@ -188,7 +188,7 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
   end
 
-  describe "Consumer and Provider submodule documentation" do
+  describe "Plain and Effectful submodule documentation" do
     defp fetch_all_docs(source) do
       Code.put_compiler_option(:docs, true)
       compiled = Code.compile_string(source)
@@ -208,7 +208,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
     end
 
-    test "Consumer and Provider submodules have @moduledoc" do
+    test "Plain and Effectful submodules have @moduledoc" do
       docs =
         fetch_all_docs("""
         defmodule DocSubmoduleContract do
@@ -218,13 +218,13 @@ defmodule Skuld.Effects.Port.ContractTest do
         end
         """)
 
-      {:docs_v1, _, _, _, consumer_doc, _, _} = docs[DocSubmoduleContract.Consumer]
+      {:docs_v1, _, _, _, consumer_doc, _, _} = docs[DocSubmoduleContract.Plain]
       assert %{"en" => cdoc} = consumer_doc
-      assert cdoc =~ "Consumer behaviour"
+      assert cdoc =~ "Plain behaviour"
 
-      {:docs_v1, _, _, _, provider_doc, _, _} = docs[DocSubmoduleContract.Provider]
+      {:docs_v1, _, _, _, provider_doc, _, _} = docs[DocSubmoduleContract.Effectful]
       assert %{"en" => pdoc} = provider_doc
-      assert pdoc =~ "Provider behaviour"
+      assert pdoc =~ "Effectful behaviour"
     end
   end
 
@@ -454,13 +454,13 @@ defmodule Skuld.Effects.Port.ContractTest do
       compiled = Code.compile_string(source)
       dir = System.tmp_dir!()
 
-      # Find the contract module (not Consumer or Provider submodule)
+      # Find the contract module (not Plain or Effectful submodule)
       {mod, beam} =
         Enum.find(compiled, fn {mod, _beam} ->
           mod_name = inspect(mod)
 
-          not String.ends_with?(mod_name, ".Consumer") and
-            not String.ends_with?(mod_name, ".Provider")
+          not String.ends_with?(mod_name, ".Plain") and
+            not String.ends_with?(mod_name, ".Effectful")
         end)
 
       path = Path.join(dir, "Elixir.#{inspect(mod)}.beam")
@@ -751,7 +751,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       defmodule OtherImpl do
-        @behaviour OtherContract.Consumer
+        @behaviour OtherContract.Plain
 
         @impl true
         def lookup(key) do

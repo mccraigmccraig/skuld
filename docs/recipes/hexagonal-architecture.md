@@ -7,15 +7,15 @@
 Hexagonal architecture (ports and adapters) separates domain logic from
 infrastructure by defining ports - interfaces that the domain uses to
 communicate with the outside world. Skuld's Port.Contract and
-Port.Provider map directly to the two directions of hexagonal ports.
+Port.Adapter.Effectful map directly to the two directions of hexagonal ports.
 
 ## The two directions
 
-**Consumer (outbound/driven)** - domain logic calls out to
+**Plain (outbound/driven)** - domain logic calls out to
 infrastructure. "I need to fetch a user" becomes a Port effect that
 gets resolved by whichever implementation is installed.
 
-**Provider (inbound/driving)** - external code calls into domain logic.
+**Effectful (inbound/driving)** - external code calls into domain logic.
 A Phoenix controller or GenServer invokes effectful domain logic through
 an adapter that handles the effect machinery.
 
@@ -36,10 +36,10 @@ defmodule MyApp.UserService do
 end
 ```
 
-This generates Consumer and Provider behaviours, caller functions, bang
+This generates Plain and Effectful behaviours, caller functions, bang
 variants, and key helpers.
 
-## Consumer side (outbound)
+## Plain side (outbound)
 
 Domain logic uses the port as an effect. The implementation is pluggable.
 
@@ -60,11 +60,11 @@ defmodule MyApp.Onboarding do
 end
 ```
 
-### Consumer implementation (Ecto)
+### Plain implementation (Ecto)
 
 ```elixir
 defmodule MyApp.UserService.Ecto do
-  @behaviour MyApp.UserService.Consumer
+  @behaviour MyApp.UserService.Plain
 
   @impl true
   def find_user(id) do
@@ -88,11 +88,11 @@ defmodule MyApp.UserService.Ecto do
 end
 ```
 
-### Consumer implementation (in-memory, for tests)
+### Plain implementation (in-memory, for tests)
 
 ```elixir
 defmodule MyApp.UserService.InMemory do
-  @behaviour MyApp.UserService.Consumer
+  @behaviour MyApp.UserService.Plain
 
   # Backed by an Agent or ETS for test isolation
   use Agent
@@ -144,17 +144,17 @@ MyApp.Onboarding.register(params)
 |> Comp.run!()
 ```
 
-## Provider side (inbound)
+## Effectful adapter side (inbound)
 
 When plain Elixir code (a Phoenix controller, a GenServer, a CLI)
-needs to call effectful domain logic, Port.Provider bridges the gap.
+needs to call effectful domain logic, Port.Adapter.Effectful bridges the gap.
 
 ### Effectful implementation
 
 ```elixir
 defmodule MyApp.UserService.Effectful do
   use Skuld.Syntax
-  @behaviour MyApp.UserService.Provider
+  @behaviour MyApp.UserService.Effectful
 
   defcomp find_user(id) do
     UserQueries.get_user(id)
@@ -172,11 +172,11 @@ defmodule MyApp.UserService.Effectful do
 end
 ```
 
-### Provider adapter
+### Effectful adapter
 
 ```elixir
 defmodule MyApp.UserService.Adapter do
-  use Skuld.Effects.Port.Provider,
+  use Skuld.Effects.Port.Adapter.Effectful,
     contract: MyApp.UserService,
     impl: MyApp.UserService.Effectful,
     stack: fn comp ->
@@ -217,13 +217,13 @@ calls a plain Elixir function and gets a plain Elixir value back.
                     UserService
                     (defport)
                    /          \
-     Consumer side              Provider side
+     Plain side              Effectful side
      (outbound)                 (inbound)
           |                          |
      Domain computations        Phoenix controllers
      call UserService.*         call Adapter.*
           |                          |
-     Port.with_handler          Port.Provider
+     Port.with_handler          Port.Adapter.Effectful
      → Ecto impl (prod)        → Effectful impl
      → InMemory impl (test)      → handler stack
                                    → Comp.run!()
@@ -233,9 +233,9 @@ calls a plain Elixir function and gets a plain Elixir value back.
 
 - Define one contract per bounded context or aggregate (UserService,
   OrderService, etc.)
-- Keep Consumer implementations thin - just infrastructure calls
+- Keep Plain implementations thin - just infrastructure calls
 - The in-memory implementation is your test double - no mocks needed
-- Provider adapters are where you compose the full handler stack
+- Effectful adapters are where you compose the full handler stack
 - Include `Throw.with_handler/1` in the stack if computations can
   throw - without it, `Comp.run!/1` raises `ThrowError`
 

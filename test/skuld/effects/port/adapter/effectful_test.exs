@@ -1,4 +1,4 @@
-defmodule Skuld.Effects.Port.ProviderTest do
+defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
   use ExUnit.Case, async: true
 
   alias Skuld.Comp
@@ -25,9 +25,9 @@ defmodule Skuld.Effects.Port.ProviderTest do
     defport(health_check() :: :ok)
   end
 
-  # Effectful implementation — returns computations (satisfies Provider behaviour)
+  # Effectful implementation — returns computations (satisfies Effectful behaviour)
   defmodule EffectfulImpl do
-    @behaviour TestContract.Provider
+    @behaviour TestContract.Effectful
 
     def get_todo(tenant_id, id) do
       Comp.pure({:ok, %{tenant_id: tenant_id, id: id, source: :effectful}})
@@ -42,9 +42,9 @@ defmodule Skuld.Effects.Port.ProviderTest do
     end
   end
 
-  # Provider adapter — bridges effectful impl to Consumer interface
+  # Effectful adapter — bridges effectful impl to Plain interface
   defmodule TestAdapter do
-    use Skuld.Effects.Port.Provider,
+    use Skuld.Effects.Port.Adapter.Effectful,
       contract: TestContract,
       impl: EffectfulImpl,
       stack: &Function.identity/1
@@ -55,7 +55,7 @@ defmodule Skuld.Effects.Port.ProviderTest do
   # ---------------------------------------------------------------
 
   defmodule StatefulImpl do
-    @behaviour TestContract.Provider
+    @behaviour TestContract.Effectful
 
     def get_todo(tenant_id, id) do
       Comp.bind(State.get(), fn count ->
@@ -79,7 +79,7 @@ defmodule Skuld.Effects.Port.ProviderTest do
   end
 
   defmodule StatefulAdapter do
-    use Skuld.Effects.Port.Provider,
+    use Skuld.Effects.Port.Adapter.Effectful,
       contract: TestContract,
       impl: StatefulImpl,
       stack: &State.with_handler(&1, 0)
@@ -90,7 +90,7 @@ defmodule Skuld.Effects.Port.ProviderTest do
   # ---------------------------------------------------------------
 
   defmodule ThrowingImpl do
-    @behaviour TestContract.Provider
+    @behaviour TestContract.Effectful
 
     def get_todo(_tenant_id, "bad_id") do
       Throw.throw(:not_found)
@@ -110,19 +110,19 @@ defmodule Skuld.Effects.Port.ProviderTest do
   end
 
   defmodule ThrowingAdapter do
-    use Skuld.Effects.Port.Provider,
+    use Skuld.Effects.Port.Adapter.Effectful,
       contract: TestContract,
       impl: ThrowingImpl,
       stack: &Throw.with_handler/1
   end
 
   # ---------------------------------------------------------------
-  # Basic Provider Adapter Tests
+  # Basic Effectful Adapter Tests
   # ---------------------------------------------------------------
 
-  describe "generated module satisfies Consumer behaviour" do
-    test "adapter implements all Consumer callbacks" do
-      callbacks = TestContract.Consumer.behaviour_info(:callbacks)
+  describe "generated module satisfies Plain behaviour" do
+    test "adapter implements all Plain callbacks" do
+      callbacks = TestContract.Plain.behaviour_info(:callbacks)
 
       for {name, arity} <- callbacks do
         assert function_exported?(TestAdapter, name, arity),
@@ -130,8 +130,8 @@ defmodule Skuld.Effects.Port.ProviderTest do
       end
     end
 
-    test "adapter for stateful impl implements all Consumer callbacks" do
-      callbacks = TestContract.Consumer.behaviour_info(:callbacks)
+    test "adapter for stateful impl implements all Plain callbacks" do
+      callbacks = TestContract.Plain.behaviour_info(:callbacks)
 
       for {name, arity} <- callbacks do
         assert function_exported?(StatefulAdapter, name, arity)
@@ -220,8 +220,8 @@ defmodule Skuld.Effects.Port.ProviderTest do
           def some_function, do: :ok
         end
 
-        defmodule BadProviderAdapter do
-          use Skuld.Effects.Port.Provider,
+        defmodule BadEffectfulAdapter do
+          use Skuld.Effects.Port.Adapter.Effectful,
             contract: NotAContract,
             impl: NotAContract,
             stack: &Function.identity/1
@@ -234,7 +234,7 @@ defmodule Skuld.Effects.Port.ProviderTest do
       assert_raise KeyError, ~r/key :contract not found/, fn ->
         Code.compile_string("""
         defmodule MissingContractAdapter do
-          use Skuld.Effects.Port.Provider,
+          use Skuld.Effects.Port.Adapter.Effectful,
             impl: SomeModule,
             stack: &Function.identity/1
         end
@@ -250,7 +250,7 @@ defmodule Skuld.Effects.Port.ProviderTest do
   describe "integration: full round-trip with real effects" do
     # A more complex effectful implementation that uses multiple effects
     defmodule CountingImpl do
-      @behaviour TestContract.Provider
+      @behaviour TestContract.Effectful
 
       def get_todo(tenant_id, id) do
         Comp.bind(State.get(), fn calls ->
@@ -274,7 +274,7 @@ defmodule Skuld.Effects.Port.ProviderTest do
     end
 
     defmodule CountingAdapter do
-      use Skuld.Effects.Port.Provider,
+      use Skuld.Effects.Port.Adapter.Effectful,
         contract: TestContract,
         impl: CountingImpl,
         stack: &State.with_handler(&1, [])
@@ -303,7 +303,7 @@ defmodule Skuld.Effects.Port.ProviderTest do
   describe "integration: multi-effect stack" do
     # Effectful impl that uses both State and Throw
     defmodule MultiEffectImpl do
-      @behaviour TestContract.Provider
+      @behaviour TestContract.Effectful
 
       def get_todo(tenant_id, "fail") do
         Throw.throw({:not_found, tenant_id})
@@ -325,7 +325,7 @@ defmodule Skuld.Effects.Port.ProviderTest do
     end
 
     defmodule MultiEffectAdapter do
-      use Skuld.Effects.Port.Provider,
+      use Skuld.Effects.Port.Adapter.Effectful,
         contract: TestContract,
         impl: MultiEffectImpl,
         stack: fn comp ->
