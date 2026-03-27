@@ -1,16 +1,23 @@
 # Skuld Performance Benchmark
 #
-# Run with: mix run bench/skuld_benchmark.exs
+# Run with: MIX_ENV=prod mix run bench/skuld_benchmark.exs
 #
-# Compares Skuld against pure baselines and simple effect implementations:
+# Compares Skuld against pure baselines and simple effect implementations.
+# Each approach has a "+catches" variant that adds catch frames matching
+# Skuld's structure (call, bind, handler dispatch), showing the cost of
+# error handling that real-world Elixir code already pays.
 #
-# 1. Pure/Recurse  - Non-effectful baseline using recursion
-# 2. Monad/Nested  - Simple state monad (no effects library)
-# 3. Evf/Nested    - Flat evidence-passing, direct-style (no CPS)
-# 4. Evf/CPS       - Flat evidence-passing with CPS (isolates CPS overhead)
-# 5. Skuld/Nested  - Skuld with nested binds
-# 6. Skuld/FxFL    - Skuld with FxFasterList iteration
-# 7. Skuld/Yield   - Skuld with coroutine-style iteration
+# 1. Pure/Recurse            - Non-effectful baseline using recursion
+# 2. Pure/Recurse + catches  - Same with catch frames
+# 3. Monad/Nested            - Simple state monad (no effects library)
+# 4. Monad/Nested + catches  - Same with catch frames
+# 5. Evf/Nested              - Flat evidence-passing, direct-style (no CPS)
+# 6. Evf/Nested + catches    - Same with catch frames
+# 7. Evf/CPS                 - Flat evidence-passing with CPS (isolates CPS overhead)
+# 8. Evf/CPS + catches       - Same with catch frames
+# 9. Skuld/Nested            - Skuld with nested binds
+# 10. Skuld/FxFL             - Skuld with FxFasterList iteration
+# 11. Skuld/Yield            - Skuld with coroutine-style iteration
 
 alias Skuld.Comp
 alias Skuld.Effects.State, as: SkuldState
@@ -86,6 +93,240 @@ defmodule SkuldBenchmark do
         monad_put(n + 1)
         |> monad_bind(fn _ ->
           monad_nested_loop(target)
+        end)
+      end
+    end)
+  end
+
+  # ============================================================
+  # Pure baseline + catches - same as pure_recurse but with
+  # catch frames matching Skuld's structure (call + bind + handler)
+  # ============================================================
+
+  defp catch_handle_error(_kind, _payload, state) do
+    # Never hit on happy path, but catch frame setup cost is real
+    {:throw, state}
+  end
+
+  def pure_recurse_catches(target) do
+    initial_state = %{counter: 0}
+    {result, _final_state} = pure_recurse_catches_loop(target, initial_state)
+    result
+  end
+
+  defp pure_recurse_catches_loop(target, state) do
+    # Simulates the same catch-frame density as the monad/evf/cps catches
+    # variants. In Skuld, each get+put cycle passes through ~6 catch frames
+    # (call + bind + handler for each of get and put). We match this by
+    # wrapping each "phase" of the loop in a catch.
+
+    # Phase 1: read state (like call + handler for get)
+    {n, state} =
+      try do
+        {Map.get(state, :counter), state}
+      catch
+        kind, payload -> catch_handle_error(kind, payload, state)
+      end
+
+    if n >= target do
+      # Phase 2: return (like bind continuation for get)
+      try do
+        {n, state}
+      catch
+        kind, payload -> catch_handle_error(kind, payload, state)
+      end
+    else
+      # Phase 2: compute new value (like bind continuation for get)
+      new_value =
+        try do
+          n + 1
+        catch
+          kind, payload -> catch_handle_error(kind, payload, state)
+        end
+
+      # Phase 3: write state (like call + handler for put)
+      new_state =
+        try do
+          Map.put(state, :counter, new_value)
+        catch
+          kind, payload -> catch_handle_error(kind, payload, state)
+        end
+
+      # Phase 4: continue (like bind continuation for put)
+      try do
+        pure_recurse_catches_loop(target, new_state)
+      catch
+        kind, payload -> catch_handle_error(kind, payload, new_state)
+      end
+    end
+  end
+
+  # ============================================================
+  # Simple State Monad + catches - same state monad with
+  # catch frames matching Skuld's structure
+  # ============================================================
+
+  def monad_catches_bind(ma, f) do
+    fn state ->
+      {a, state2} =
+        try do
+          ma.(state)
+        catch
+          kind, payload -> catch_handle_error(kind, payload, state)
+        end
+
+      mb =
+        try do
+          f.(a)
+        catch
+          kind, payload -> catch_handle_error(kind, payload, state2)
+        end
+
+      try do
+        mb.(state2)
+      catch
+        kind, payload -> catch_handle_error(kind, payload, state2)
+      end
+    end
+  end
+
+  def monad_catches_nested(target), do: monad_catches_nested_loop(target)
+
+  defp monad_catches_nested_loop(target) do
+    monad_get()
+    |> monad_catches_bind(fn n ->
+      if n >= target do
+        monad_pure(n)
+      else
+        monad_put(n + 1)
+        |> monad_catches_bind(fn _ ->
+          monad_catches_nested_loop(target)
+        end)
+      end
+    end)
+  end
+
+  # ============================================================
+  # Flat evidence-passing + catches - evidence-passing with
+  # catch frames matching Skuld's structure
+  # ============================================================
+
+  def evf_catches_bind(ma, f) do
+    fn env ->
+      {a, env2} =
+        try do
+          ma.(env)
+        catch
+          kind, payload -> catch_handle_error(kind, payload, env)
+        end
+
+      mb =
+        try do
+          f.(a)
+        catch
+          kind, payload -> catch_handle_error(kind, payload, env2)
+        end
+
+      try do
+        mb.(env2)
+      catch
+        kind, payload -> catch_handle_error(kind, payload, env2)
+      end
+    end
+  end
+
+  def evf_catches_nested(target), do: evf_with_state(0, evf_catches_nested_loop(target))
+
+  defp evf_catches_nested_loop(target) do
+    evf_state_get()
+    |> evf_catches_bind(fn n ->
+      if n >= target do
+        evf_pure(n)
+      else
+        evf_state_put(n + 1)
+        |> evf_catches_bind(fn _ ->
+          evf_catches_nested_loop(target)
+        end)
+      end
+    end)
+  end
+
+  # ============================================================
+  # Flat evidence-passing + CPS + catches - evidence-passing CPS
+  # with catch frames matching Skuld's structure
+  # ============================================================
+
+  def evf_cps_catches_call(comp, env, k) do
+    comp.(env, k)
+  catch
+    kind, payload -> catch_handle_error(kind, payload, env)
+  end
+
+  def evf_cps_catches_call_handler(handler, args, env, k) do
+    handler.(args, env, k)
+  catch
+    kind, payload -> catch_handle_error(kind, payload, env)
+  end
+
+  def evf_cps_catches_bind(ma, f) do
+    fn env, k ->
+      evf_cps_catches_call(ma, env, fn a, env2 ->
+        try do
+          result = f.(a)
+          evf_cps_catches_call(result, env2, k)
+        catch
+          kind, payload -> catch_handle_error(kind, payload, env2)
+        end
+      end)
+    end
+  end
+
+  def evf_cps_catches_state_get() do
+    fn env, k ->
+      handler = env.state_get
+      evf_cps_catches_call_handler(handler, :get, env, k)
+    end
+  end
+
+  def evf_cps_catches_state_put(value) do
+    fn env, k ->
+      handler = env.state_put_handler
+      evf_cps_catches_call_handler(handler, {:put, value}, env, k)
+    end
+  end
+
+  def evf_cps_catches_with_state(initial_state, computation) do
+    fn env, k ->
+      state_get_handler = fn :get, inner_env, k -> k.(inner_env.state, inner_env) end
+
+      state_put_handler = fn {:put, new_state}, inner_env, k ->
+        k.(:ok, %{inner_env | state: new_state})
+      end
+
+      inner_env =
+        env
+        |> Map.put(:state, initial_state)
+        |> Map.put(:state_get, state_get_handler)
+        |> Map.put(:state_put_handler, state_put_handler)
+
+      computation.(inner_env, fn result, final_env ->
+        k.(result, Map.drop(final_env, [:state, :state_get, :state_put_handler]))
+      end)
+    end
+  end
+
+  def evf_cps_catches_nested(target),
+    do: evf_cps_catches_with_state(0, evf_cps_catches_nested_loop(target))
+
+  defp evf_cps_catches_nested_loop(target) do
+    evf_cps_catches_state_get()
+    |> evf_cps_catches_bind(fn n ->
+      if n >= target do
+        evf_cps_pure(n)
+      else
+        evf_cps_catches_state_put(n + 1)
+        |> evf_cps_catches_bind(fn _ ->
+          evf_cps_catches_nested_loop(target)
         end)
       end
     end)
@@ -338,9 +579,13 @@ defmodule SkuldBenchmark do
     for _ <- 1..3 do
       _ = time_pure(fn -> pure_reduce(100) end)
       _ = time_pure(fn -> pure_recurse(100) end)
+      _ = time_pure(fn -> pure_recurse_catches(100) end)
       _ = time_monad(monad_nested(100), 0)
+      _ = time_monad(monad_catches_nested(100), 0)
       _ = time_evf(evf_nested(100))
+      _ = time_evf(evf_catches_nested(100))
       _ = time_evf_cps(evf_cps_nested(100))
+      _ = time_evf_cps(evf_cps_catches_nested(100))
       _ = time_skuld_wrapped(skuld_wrap(skuld_nested(100), 0))
       _ = time_skuld_wrapped(skuld_wrap(skuld_chained(100), 0))
       _ = time_skuld_wrapped(skuld_wrap(skuld_fxfasterlist(100), 0))
@@ -349,48 +594,64 @@ defmodule SkuldBenchmark do
 
     IO.puts("")
 
-    iterations = 5
+    iterations = 7
 
     IO.puts(
       String.pad_trailing("Target", 8) <>
         String.pad_trailing("Pure/Rec", 12) <>
+        String.pad_trailing("+catches", 12) <>
         String.pad_trailing("Monad", 12) <>
+        String.pad_trailing("+catches", 12) <>
         String.pad_trailing("Evf", 12) <>
+        String.pad_trailing("+catches", 12) <>
         String.pad_trailing("Evf/CPS", 12) <>
-        String.pad_trailing("Skuld/Nest", 12) <>
-        String.pad_trailing("Skuld/FxFL", 12)
+        String.pad_trailing("+catches", 12) <>
+        String.pad_trailing("Skuld", 12)
     )
 
-    IO.puts(String.duplicate("-", 80))
+    IO.puts(String.duplicate("-", 116))
 
     for target <- targets do
       monad_nested_comp = monad_nested(target)
+      monad_catches_comp = monad_catches_nested(target)
       evf_nested_comp = evf_nested(target)
+      evf_catches_comp = evf_catches_nested(target)
       evf_cps_nested_comp = evf_cps_nested(target)
+      evf_cps_catches_comp = evf_cps_catches_nested(target)
       skuld_nested_wrapped = skuld_wrap(skuld_nested(target), 0)
-      skuld_fxfasterlist_wrapped = skuld_wrap(skuld_fxfasterlist(target), 0)
 
       pure_recurse_time =
         median_time(iterations, fn -> time_pure(fn -> pure_recurse(target) end) end)
 
+      pure_recurse_catches_time =
+        median_time(iterations, fn -> time_pure(fn -> pure_recurse_catches(target) end) end)
+
       monad_nested_time = median_time(iterations, fn -> time_monad(monad_nested_comp, 0) end)
+
+      monad_catches_time =
+        median_time(iterations, fn -> time_monad(monad_catches_comp, 0) end)
+
       evf_nested_time = median_time(iterations, fn -> time_evf(evf_nested_comp) end)
+      evf_catches_time = median_time(iterations, fn -> time_evf(evf_catches_comp) end)
       evf_cps_nested_time = median_time(iterations, fn -> time_evf_cps(evf_cps_nested_comp) end)
+
+      evf_cps_catches_time =
+        median_time(iterations, fn -> time_evf_cps(evf_cps_catches_comp) end)
 
       skuld_nested_time =
         median_time(iterations, fn -> time_skuld_wrapped(skuld_nested_wrapped) end)
 
-      skuld_fxfasterlist_time =
-        median_time(iterations, fn -> time_skuld_wrapped(skuld_fxfasterlist_wrapped) end)
-
       IO.puts(
         String.pad_trailing("#{target}", 8) <>
           String.pad_trailing(format_time(pure_recurse_time), 12) <>
+          String.pad_trailing(format_time(pure_recurse_catches_time), 12) <>
           String.pad_trailing(format_time(monad_nested_time), 12) <>
+          String.pad_trailing(format_time(monad_catches_time), 12) <>
           String.pad_trailing(format_time(evf_nested_time), 12) <>
+          String.pad_trailing(format_time(evf_catches_time), 12) <>
           String.pad_trailing(format_time(evf_cps_nested_time), 12) <>
-          String.pad_trailing(format_time(skuld_nested_time), 12) <>
-          String.pad_trailing(format_time(skuld_fxfasterlist_time), 12)
+          String.pad_trailing(format_time(evf_cps_catches_time), 12) <>
+          String.pad_trailing(format_time(skuld_nested_time), 12)
       )
     end
 
@@ -398,11 +659,16 @@ defmodule SkuldBenchmark do
     IO.puts("Analysis:")
     IO.puts("---------")
     IO.puts("- Pure/Rec: Non-effectful baseline (recursive function with map state)")
+    IO.puts("- +catches: Same approach with catch frames matching Skuld's structure")
     IO.puts("- Monad: Simple state monad (fn state -> {val, state} end)")
     IO.puts("- Evf: Flat evidence-passing, direct-style (no CPS)")
     IO.puts("- Evf/CPS: Flat evidence-passing with CPS (isolates CPS overhead)")
-    IO.puts("- Skuld/Nest: Skuld with nested binds (typical usage)")
-    IO.puts("- Skuld/FxFL: Skuld with FxFasterList iteration")
+    IO.puts("- Skuld: Skuld with nested binds (typical usage)")
+    IO.puts("")
+    IO.puts("The +catches columns show what each approach costs when you add")
+    IO.puts("the same catch frames that Skuld uses for error handling.")
+    IO.puts("This is the apples-to-apples comparison — real-world code with")
+    IO.puts("try/rescue/with already pays this catch-frame cost.")
 
     # ============================================================
     # Yield Benchmark

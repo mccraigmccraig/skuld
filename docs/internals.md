@@ -977,26 +977,40 @@ small tuples for ops with args. No struct allocation on the hot path.
 ### Benchmarks
 
 A loop incrementing a counter via `State.get()`/`State.put(n + 1)` at
-N=1000 (run with `MIX_ENV=prod` for consolidated protocols):
+N=1000 (run with `MIX_ENV=prod` for consolidated protocols). The
+"+catches" variants add the same catch frames Skuld uses for error
+handling — this is the cost real-world Elixir code with `try`/`rescue`
+already pays:
 
-| Approach                | Time    | Per-op    |
-|-------------------------|---------|-----------|
-| Pure tail recursion     | 21 us   | 0.021 us  |
-| Simple state monad      | 17 us   | 0.017 us  |
-| Evidence-passing (flat) | 32 us   | 0.032 us  |
-| Evidence-passing + CPS  | 32 us   | 0.032 us  |
-| Skuld                   | 143 us  | 0.143 us  |
-| Freyja                  | ~1000 us| ~1 us     |
+| Approach                          | Time     | Per-op   |
+|-----------------------------------|----------|----------|
+| Pure tail recursion               | 14 us    | 0.014 us |
+| Pure tail recursion + catches     | 32 us    | 0.032 us |
+| Simple state monad                | 23 us    | 0.023 us |
+| Simple state monad + catches      | 44 us    | 0.044 us |
+| Evidence-passing (flat)           | 42 us    | 0.042 us |
+| Evidence-passing (flat) + catches | 100 us   | 0.100 us |
+| Evidence-passing + CPS            | 45 us    | 0.045 us |
+| Evidence-passing + CPS + catches  | 178 us   | 0.178 us |
+| **Skuld**                         | 228 us   | 0.228 us |
+| Freyja                            | ~1000 us | ~1 us    |
+
+The headline number "Skuld is 5x slower than flat evidence-passing"
+becomes **1.3x** when you compare against evidence-passing + CPS that
+already has catch frames (the apples-to-apples comparison).  The
+remaining 1.3x covers struct env, scoped cleanup (`leave_scope`),
+accessor functions, and the `Change` struct — all of the features
+that make Skuld a practical effects library rather than a toy.
 
 ### Iteration strategies
 
 At N=1000:
 
-| Strategy     | Time   | Per-op   | Notes                                     |
-|--------------|--------|----------|-------------------------------------------|
-| FxFasterList | 113 us | 0.11 us  | Fastest; no Yield/Suspend support         |
-| Yield        | 144 us | 0.14 us  | Use when you need interruptible iteration |
-| FxList       | 227 us | 0.23 us  | Full Yield/Suspend support                |
+| Strategy     | Time   | Per-op  | Notes                                     |
+|--------------|--------|---------|-------------------------------------------|
+| FxFasterList | 113 us | 0.11 us | Fastest; no Yield/Suspend support         |
+| Yield        | 144 us | 0.14 us | Use when you need interruptible iteration |
+| FxList       | 227 us | 0.23 us | Full Yield/Suspend support                |
 
 All three maintain constant per-operation cost as N grows.
 
@@ -1026,14 +1040,14 @@ from the flat evidence-passing CPS baseline and adds one Skuld feature
 at a time, measuring the marginal cost of each. At N=1000 (median of
 7 runs, `MIX_ENV=prod`):
 
-| Step | Feature added                    | us/op | vs baseline | vs catch baseline |
-|------|----------------------------------|-------|-------------|-------------------|
-| S0   | evf_cps baseline                 | 0.049 | 1.0x        | —                 |
-| S1   | + first catch frame (`call`)     | 0.078 | 1.6x        | 1.0x              |
-| S2   | + catch in `bind`                | 0.103 | 2.1x        | 1.3x              |
-| S3   | + catch on handler dispatch      | 0.113 | 2.3x        | 1.4x              |
-| S5   | + struct env (`%Env{}`)          | 0.113 | 2.3x        | 1.4x              |
-| S10  | Full Skuld                       | 0.143 | **2.9x**    | **1.8x**          |
+| Step | Feature added                | us/op | vs baseline | vs catch baseline |
+|------|------------------------------|-------|-------------|-------------------|
+| S0   | evf_cps baseline             | 0.067 | 1.0x        | —                 |
+| S1   | + first catch frame (`call`) | 0.104 | 1.6x        | 1.0x              |
+| S2   | + catch in `bind`            | 0.157 | 2.3x        | 1.5x              |
+| S3   | + catch on handler dispatch  | 0.159 | 2.4x        | 1.5x              |
+| S5   | + struct env (`%Env{}`)      | 0.171 | 2.6x        | 1.6x              |
+| S10  | Full Skuld                   | 0.195 | **2.9x**    | **1.9x**          |
 
 Three rounds of optimisation brought Skuld from ~6.7x to ~2.9x vs
 the flat CPS baseline:
@@ -1056,17 +1070,17 @@ Key findings:
 
 1. **Almost all the overhead is catch frames.** The first catch frame
    is the most expensive (S0→S1: **1.6x**), but the additional catch
-   frames in `bind` and handler dispatch (S1→S3: 1.0x→1.4x) account
+   frames in `bind` and handler dispatch (S1→S3: 1.0x→1.5x) account
    for most of the remaining cost too. From S3 to full Skuld (S10),
    everything else — struct env, guards, accessors, compact ops —
-   adds only 0.113→0.143 us.
+   adds only 0.159→0.195 us/op.
 2. **Real-world applications already pay the catch cost.** Any code
-   with `try`/`rescue`/`with` has catch frames. When porting such
-   code to Skuld, the catch overhead is not new — it is already
-   present. The observable overhead of adopting Skuld in a real
-   application may be significantly less than the 2.9x headline
-   number suggests, closer to the **1.8x** "vs catch baseline"
-   column.
+   with `try`/`rescue`/`with` has catch frames. The
+   [approach comparison](#benchmarks) confirms this: adding Skuld's
+   catch frames to evidence-passing + CPS costs 0.178 us/op, and
+   full Skuld costs 0.228 us/op — only **1.3x** more than the
+   CPS-with-catches baseline. Most of the "5x vs flat CPS" headline
+   is catch frames that real-world code already has.
 3. **Struct allocation was the next largest cost** — now eliminated
    by compact tuple operations (bare atoms for 0-arg ops, small tuples
    for N-arg ops).
@@ -1082,19 +1096,27 @@ Key findings:
    unlikely to be observable when porting to Skuld. See "Why the
    first catch is expensive" in the
    [performance investigation](research/performance-investigation.md)
-3. **Struct allocation eliminated** — compact tuple operations and
+3. **The apples-to-apples comparison is ~1.3x.** When you compare
+   Skuld against evidence-passing + CPS that already has catch frames
+   (the "+catches" column in the [approach comparison](#benchmarks)),
+   Skuld adds only ~1.3x overhead. The remaining cost covers struct
+   env, scoped cleanup, accessor functions, and the `Change` struct —
+   the features that make Skuld practical rather than a toy
+4. **Struct allocation eliminated** — compact tuple operations and
    per-tag module-atom sigs removed the struct allocation overhead
    entirely
-4. **Inlining closed the full-Skuld gap** — `@compile {:inline, ...}`
+5. **Inlining closed the full-Skuld gap** — `@compile {:inline, ...}`
    on `Env`, `Change`, and `State` wrapper functions eliminated the
    1.40x overhead from function call indirection
-5. **Skuld vs Freyja**: ~7x faster
-6. **Real-world perspective**: per-effect overhead of ~0.14 us is
+6. **Skuld vs Freyja**: ~4x faster
+7. **Real-world perspective**: per-effect overhead of ~0.23 us is
    negligible compared to IO (database queries: 100-10000 us, HTTP
    calls: 1000-100000 us). The overhead matters only in tight loops
    with many effect calls and no IO
 
-Run benchmarks yourself: `MIX_ENV=prod mix run bench/overhead_progressive.exs`
+Run benchmarks yourself:
+- `MIX_ENV=prod mix run bench/skuld_benchmark.exs` (approach comparison)
+- `MIX_ENV=prod mix run bench/overhead_progressive.exs` (progressive overhead)
 
 ## Comparison with Freyja
 
