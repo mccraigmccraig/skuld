@@ -892,4 +892,151 @@ defmodule Skuld.Effects.PortTest do
       assert {{:ok, {:a, 1}}, {:ok, %{id: 42, name: "Effectful 42"}}} = result
     end
   end
+
+  # ---------------------------------------------------------------
+  # Mixed handler mode tests
+  # ---------------------------------------------------------------
+
+  describe "mixed handler modes" do
+    test "with_handler and with_test_handler compose for different modules" do
+      responses = %{
+        Port.key(ModuleB, :do_b, [99]) => {:ok, {:stubbed_b, 99}}
+      }
+
+      comp =
+        Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
+          Comp.bind(Port.request(ModuleB, :do_b, [99]), fn b_result ->
+            Comp.pure({a_result, b_result})
+          end)
+        end)
+        |> Port.with_test_handler(responses)
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      {result, _} = Comp.run(comp)
+      # ModuleA dispatched via :direct, ModuleB via test stub
+      assert {{:ok, {:a, 1}}, {:ok, {:stubbed_b, 99}}} = result
+    end
+
+    test "with_handler and with_fn_handler compose for different modules" do
+      handler = fn
+        ModuleB, :do_b, [x] -> {:ok, {:fn_b, x}}
+      end
+
+      comp =
+        Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
+          Comp.bind(Port.request(ModuleB, :do_b, [42]), fn b_result ->
+            Comp.pure({a_result, b_result})
+          end)
+        end)
+        |> Port.with_fn_handler(handler)
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      {result, _} = Comp.run(comp)
+      # ModuleA dispatched via :direct, ModuleB via fn handler
+      assert {{:ok, {:a, 1}}, {:ok, {:fn_b, 42}}} = result
+    end
+
+    test "module-specific entry overrides default test stub" do
+      responses = %{
+        Port.key(ModuleA, :do_a, [1]) => {:ok, {:stubbed_a, 1}},
+        Port.key(ModuleB, :do_b, [2]) => {:ok, {:stubbed_b, 2}}
+      }
+
+      comp =
+        Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
+          Comp.bind(Port.request(ModuleB, :do_b, [2]), fn b_result ->
+            Comp.pure({a_result, b_result})
+          end)
+        end)
+        |> Port.with_test_handler(responses)
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      {result, _} = Comp.run(comp)
+      # ModuleA goes to :direct (overrides stub), ModuleB goes to test stub
+      assert {{:ok, {:a, 1}}, {:ok, {:stubbed_b, 2}}} = result
+    end
+
+    test "module-specific entry overrides default fn handler" do
+      handler = fn
+        _mod, :do_a, [x] -> {:ok, {:fn_a, x}}
+        _mod, :do_b, [x] -> {:ok, {:fn_b, x}}
+      end
+
+      comp =
+        Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
+          Comp.bind(Port.request(ModuleB, :do_b, [2]), fn b_result ->
+            Comp.pure({a_result, b_result})
+          end)
+        end)
+        |> Port.with_fn_handler(handler)
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      {result, _} = Comp.run(comp)
+      # ModuleA goes to :direct (overrides fn), ModuleB goes to fn handler
+      assert {{:ok, {:a, 1}}, {:ok, {:fn_b, 2}}} = result
+    end
+
+    test "test_stub and fn_handler: inner default overrides outer default" do
+      responses = %{
+        Port.key(ModuleA, :do_a, [1]) => {:ok, {:stubbed, 1}}
+      }
+
+      fn_handler = fn
+        _mod, _name, [x] -> {:ok, {:fn_result, x}}
+      end
+
+      comp =
+        Port.request(ModuleA, :do_a, [1])
+        |> Port.with_test_handler(responses)
+        |> Port.with_fn_handler(fn_handler)
+
+      {result, _} = Comp.run(comp)
+      # Inner test_stub overrides outer fn_handler for :__default__
+      assert {:ok, {:stubbed, 1}} = result
+    end
+
+    test "effectful resolver with test stub default for other modules" do
+      responses = %{
+        Port.key(ModuleB, :do_b, [5]) => {:ok, {:stubbed_b, 5}}
+      }
+
+      comp =
+        Comp.bind(Port.request(TestQueries, :find_user, [42]), fn q_result ->
+          Comp.bind(Port.request(ModuleB, :do_b, [5]), fn b_result ->
+            Comp.pure({q_result, b_result})
+          end)
+        end)
+        |> Port.with_test_handler(responses)
+        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+
+      {result, _} = Comp.run(comp)
+      assert {{:ok, %{id: 42, name: "Effectful 42"}}, {:ok, {:stubbed_b, 5}}} = result
+    end
+
+    test "test handler fallback works for unknown modules when mixed with runtime" do
+      responses = %{
+        Port.key(ModuleB, :do_b, [1]) => {:ok, {:exact_b, 1}}
+      }
+
+      fallback = fn
+        mod, name, args -> {:ok, {:fallback, mod, name, args}}
+      end
+
+      comp =
+        Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
+          Comp.bind(Port.request(ModuleB, :do_b, [1]), fn b_exact ->
+            Comp.bind(Port.request(ModuleB, :do_b, [999]), fn b_fallback ->
+              Comp.pure({a_result, b_exact, b_fallback})
+            end)
+          end)
+        end)
+        |> Port.with_test_handler(responses, fallback: fallback)
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      {result, _} = Comp.run(comp)
+      # ModuleA: :direct, ModuleB[1]: exact stub, ModuleB[999]: fallback
+      assert {{:ok, {:a, 1}}, {:ok, {:exact_b, 1}}, {:ok, {:fallback, ModuleB, :do_b, [999]}}} =
+               result
+    end
+  end
 end

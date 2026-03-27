@@ -116,12 +116,20 @@ defmodule Skuld.Effects.Port do
   @typedoc """
   Registry entry for dispatching requests.
 
+  ## Runtime resolvers (used with `with_handler/3`)
+
     * `:direct` – call `apply(mod, name, args)`, result is a plain value
     * `{:effectful, module}` – call `apply(module, name, args)`, result is a
       computation that gets inlined into the current effect context
     * `function` (arity 3) – `fun.(mod, name, args)`
     * `{module, function}` – invokes `apply(module, function, [mod, name, args])`
     * `module` – invokes `apply(module, name, args)` (implementation module)
+
+  ## Default resolvers (used as `:__default__` catch-all)
+
+    * `{:test_stub, responses}` – map-based test stubs keyed by `Port.key/3`
+    * `{:test_stub, responses, fallback}` – test stubs with fallback function
+    * `{:fn_dispatch, handler_fn}` – function-based dispatch via `fn(mod, name, args)`
   """
   @type resolver ::
           :direct
@@ -129,12 +137,18 @@ defmodule Skuld.Effects.Port do
           | (port_module(), port_name(), args() -> term())
           | {module(), atom()}
           | module()
+          | {:test_stub, map()}
+          | {:test_stub, map(), fn_handler()}
+          | {:fn_dispatch, fn_handler()}
 
-  @typedoc "Registry mapping port modules to resolvers"
-  @type registry :: %{port_module() => resolver()}
+  @typedoc "Registry mapping port modules (or `:__default__`) to resolvers"
+  @type registry :: %{(port_module() | :__default__) => resolver()}
 
   @typedoc "Function handler for test scenarios - receives (mod, name, args)"
   @type fn_handler :: (port_module(), port_name(), args() -> term())
+
+  # Sentinel registry key for catch-all resolvers (test stubs, fn handlers)
+  @default_key :__default__
 
   #############################################################################
   ## Operations
@@ -327,68 +341,7 @@ defmodule Skuld.Effects.Port do
   """
   @spec with_handler(Types.computation(), registry(), keyword()) :: Types.computation()
   def with_handler(comp, registry \\ %{}, opts \\ []) do
-    output = Keyword.get(opts, :output)
-    suspend = Keyword.get(opts, :suspend)
-    state_key = @state_key
-
-    comp
-    |> Comp.scoped(fn env ->
-      previous_state = Env.get_state(env, state_key)
-
-      # Merge with any existing runtime registry so nested with_handler
-      # calls accumulate registrations rather than shadowing them.
-      merged_registry =
-        case previous_state do
-          {:runtime, outer_registry} -> Map.merge(outer_registry, registry)
-          _ -> registry
-        end
-
-      env_with_state = Env.put_state(env, state_key, {:runtime, merged_registry})
-
-      # If :suspend option provided, compose into transform_suspend
-      {modified_env, previous_transform} =
-        if suspend do
-          old_transform = Env.get_transform_suspend(env_with_state)
-
-          new_transform = fn susp, e ->
-            {susp1, e1} = old_transform.(susp, e)
-            suspend.(susp1, e1)
-          end
-
-          {Env.with_transform_suspend(env_with_state, new_transform), old_transform}
-        else
-          {env_with_state, nil}
-        end
-
-      finally_k = fn value, e ->
-        # Restore previous state
-        restored_env =
-          case previous_state do
-            nil -> %{e | state: Map.delete(e.state, state_key)}
-            val -> Env.put_state(e, state_key, val)
-          end
-
-        # Restore previous transform_suspend if we modified it
-        restored_env =
-          if previous_transform do
-            Env.with_transform_suspend(restored_env, previous_transform)
-          else
-            restored_env
-          end
-
-        transformed_value =
-          if output do
-            output.(value, Env.get_state(e, state_key))
-          else
-            value
-          end
-
-        {transformed_value, restored_env}
-      end
-
-      {modified_env, finally_k}
-    end)
-    |> Comp.with_handler(@__sig__, &__MODULE__.handle/3)
+    install_registry(comp, registry, opts)
   end
 
   @doc """
@@ -448,24 +401,15 @@ defmodule Skuld.Effects.Port do
   @spec with_test_handler(Types.computation(), map(), keyword()) :: Types.computation()
   def with_test_handler(comp, responses, opts \\ []) when is_map(responses) do
     fallback = Keyword.get(opts, :fallback)
-    output = Keyword.get(opts, :output)
-    suspend = Keyword.get(opts, :suspend)
 
-    scoped_opts =
-      []
-      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
-      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
-
-    state =
+    resolver =
       if fallback do
-        {:test, responses, fallback}
+        {:test_stub, responses, fallback}
       else
-        {:test, responses}
+        {:test_stub, responses}
       end
 
-    comp
-    |> Comp.with_scoped_state(@state_key, state, scoped_opts)
-    |> Comp.with_handler(@__sig__, &__MODULE__.handle/3)
+    install_registry(comp, %{@default_key => resolver}, opts)
   end
 
   #############################################################################
@@ -533,16 +477,75 @@ defmodule Skuld.Effects.Port do
   """
   @spec with_fn_handler(Types.computation(), fn_handler(), keyword()) :: Types.computation()
   def with_fn_handler(comp, handler_fn, opts \\ []) when is_function(handler_fn, 3) do
+    install_registry(comp, %{@default_key => {:fn_dispatch, handler_fn}}, opts)
+  end
+
+  #############################################################################
+  ## Shared Registry Installation
+  #############################################################################
+
+  defp install_registry(comp, registry, opts) do
     output = Keyword.get(opts, :output)
     suspend = Keyword.get(opts, :suspend)
-
-    scoped_opts =
-      []
-      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
-      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
+    state_key = @state_key
 
     comp
-    |> Comp.with_scoped_state(@state_key, {:fn_handler, handler_fn}, scoped_opts)
+    |> Comp.scoped(fn env ->
+      previous_state = Env.get_state(env, state_key)
+
+      # Merge with any existing registry so nested handler installations
+      # accumulate registrations rather than shadowing them.
+      merged_registry =
+        case previous_state do
+          {:registry, outer_registry} -> Map.merge(outer_registry, registry)
+          _ -> registry
+        end
+
+      env_with_state = Env.put_state(env, state_key, {:registry, merged_registry})
+
+      # If :suspend option provided, compose into transform_suspend
+      {modified_env, previous_transform} =
+        if suspend do
+          old_transform = Env.get_transform_suspend(env_with_state)
+
+          new_transform = fn susp, e ->
+            {susp1, e1} = old_transform.(susp, e)
+            suspend.(susp1, e1)
+          end
+
+          {Env.with_transform_suspend(env_with_state, new_transform), old_transform}
+        else
+          {env_with_state, nil}
+        end
+
+      finally_k = fn value, e ->
+        # Restore previous state
+        restored_env =
+          case previous_state do
+            nil -> %{e | state: Map.delete(e.state, state_key)}
+            val -> Env.put_state(e, state_key, val)
+          end
+
+        # Restore previous transform_suspend if we modified it
+        restored_env =
+          if previous_transform do
+            Env.with_transform_suspend(restored_env, previous_transform)
+          else
+            restored_env
+          end
+
+        transformed_value =
+          if output do
+            output.(value, Env.get_state(e, state_key))
+          else
+            value
+          end
+
+        {transformed_value, restored_env}
+      end
+
+      {modified_env, finally_k}
+    end)
     |> Comp.with_handler(@__sig__, &__MODULE__.handle/3)
   end
 
@@ -552,37 +555,52 @@ defmodule Skuld.Effects.Port do
 
   @impl Skuld.Comp.IHandle
   def handle({@request_op, mod, name, args}, env, k) do
-    case Env.get_state!(env, @state_key) do
-      {:runtime, registry} ->
-        handle_runtime(registry, mod, name, args, env, k)
+    {:registry, registry} = Env.get_state!(env, @state_key)
 
-      {:test, responses} ->
-        handle_test(responses, nil, mod, name, args, env, k)
+    # Look up module-specific resolver, fall back to :__default__, then error
+    resolver =
+      case Map.fetch(registry, mod) do
+        {:ok, r} -> {:ok, r}
+        :error -> Map.fetch(registry, @default_key)
+      end
 
-      {:test, responses, fallback} ->
-        handle_test(responses, fallback, mod, name, args, env, k)
+    case resolver do
+      {:ok, {:test_stub, responses}} ->
+        dispatch_test_stub(responses, nil, mod, name, args, env, k)
 
-      {:fn_handler, handler_fn} ->
-        handle_fn(handler_fn, mod, name, args, env, k)
+      {:ok, {:test_stub, responses, fallback}} ->
+        dispatch_test_stub(responses, fallback, mod, name, args, env, k)
+
+      {:ok, {:fn_dispatch, handler_fn}} ->
+        dispatch_fn(handler_fn, mod, name, args, env, k)
+
+      {:ok, runtime_resolver} ->
+        dispatch_runtime(runtime_resolver, mod, name, args, env, k)
+
+      :error ->
+        {%ThrowResult{error: {:unknown_port_module, mod}}, env}
     end
   end
 
-  defp handle_runtime(registry, mod, name, args, env, k) do
-    case dispatch(registry, mod, name, args) do
-      {:ok, {:computation, comp}} ->
+  #############################################################################
+  ## Dispatch Logic
+  #############################################################################
+
+  defp dispatch_runtime(resolver, mod, name, args, env, k) do
+    case invoke(resolver, mod, name, args) do
+      {:computation, comp} ->
         # Effectful resolver: inline the computation into the current effect context
         Comp.call(comp, env, k)
 
-      {:ok, {:value, result}} ->
+      {:value, result} ->
         k.(result, env)
-
-      {:error, reason} ->
-        # Return Throw sentinel directly - it will be handled by leave_scope chain
-        {%ThrowResult{error: reason}, env}
     end
+  rescue
+    exception ->
+      {%ThrowResult{error: {:port_failed, mod, name, exception}}, env}
   end
 
-  defp handle_test(responses, fallback, mod, name, args, env, k) do
+  defp dispatch_test_stub(responses, fallback, mod, name, args, env, k) do
     request_key = key(mod, name, args)
 
     case Map.fetch(responses, request_key) do
@@ -591,7 +609,7 @@ defmodule Skuld.Effects.Port do
 
       :error when is_function(fallback, 3) ->
         # Try fallback function
-        handle_fn(fallback, mod, name, args, env, k)
+        dispatch_fn(fallback, mod, name, args, env, k)
 
       :error ->
         # No match and no fallback
@@ -599,7 +617,7 @@ defmodule Skuld.Effects.Port do
     end
   end
 
-  defp handle_fn(handler_fn, mod, name, args, env, k) do
+  defp dispatch_fn(handler_fn, mod, name, args, env, k) do
     result = handler_fn.(mod, name, args)
     k.(result, env)
   rescue
@@ -610,25 +628,6 @@ defmodule Skuld.Effects.Port do
     e ->
       # Other error in handler
       {%ThrowResult{error: {:port_handler_error, mod, name, e}}, env}
-  end
-
-  #############################################################################
-  ## Dispatch Logic
-  #############################################################################
-
-  defp dispatch(registry, mod, name, args) when is_map(registry) do
-    case Map.fetch(registry, mod) do
-      {:ok, resolver} ->
-        try do
-          {:ok, invoke(resolver, mod, name, args)}
-        rescue
-          exception ->
-            {:error, {:port_failed, mod, name, exception}}
-        end
-
-      :error ->
-        {:error, {:unknown_port_module, mod}}
-    end
   end
 
   defp invoke(:direct, mod, name, args) do
