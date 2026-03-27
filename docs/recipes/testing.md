@@ -184,6 +184,19 @@ end
   aren't known upfront
 - **Port test handlers record calls** - use `Port.with_test_handler`
    or `Port.with_fn_handler` to stub persistence operations
+- **Mix handler modes** - `with_handler`, `with_test_handler`, and
+  `with_fn_handler` all merge into a unified registry. Use runtime
+  dispatch for contracts you want to exercise and test stubs for
+  contracts you want to isolate:
+
+  ```elixir
+  comp
+  |> Port.with_test_handler(%{Notifications.key(:send, msg) => :ok})
+  |> Port.with_handler(%{Repository => {:effectful, Repo.Test}})
+  |> Throw.with_handler()
+  |> Comp.run!()
+  ```
+
 - **Fresh.with_test_handler** produces deterministic UUIDs - tests
   are reproducible
 - **Compose handler stacks in one place** - a `Run.execute/2` or

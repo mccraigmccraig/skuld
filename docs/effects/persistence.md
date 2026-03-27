@@ -127,14 +127,22 @@ Options:
 
 - `:output` — `fn result, log -> transformed end` to capture the log
 - `:tag` — Writer tag (default: `Skuld.Effects.Port.Repo`)
-- `:registry` — additional Port entries to merge (since Port handlers
-  shadow rather than merge):
+- `:registry` — additional Port entries to merge alongside the
+  `Port.Repo` entry. Since nested `Port.with_handler` calls merge
+  registries, you can also register extra contracts via an outer
+  `with_handler` — this option is a convenience for passing them
+  inline:
 
 ```elixir
 Repo.Test.with_handler(comp,
   registry: %{MyApp.Queries => MyApp.Queries.TestImpl},
   output: fn r, log -> {r, log} end
 )
+
+# Equivalent — outer with_handler merges with Repo.Test's inner handler:
+comp
+|> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
+|> Port.with_handler(%{MyApp.Queries => MyApp.Queries.TestImpl})
 ```
 
 ### Combining with domain-specific contracts

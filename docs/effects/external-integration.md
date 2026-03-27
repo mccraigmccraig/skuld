@@ -61,8 +61,42 @@ The dispatch map keys are modules and values are resolvers:
 
 - `:direct` - `apply(mod, name, args)` (call directly on the keyed module)
 - `module` - `apply(module, name, args)` (dispatch to an implementation module)
+- `{:effectful, module}` - `apply(module, name, args)`, result is a
+  computation inlined into the caller's effect context
 - `fun/3` - `fun.(mod, name, args)` (function receives all three)
 - `{module, function}` - `apply(module, function, [mod, name, args])`
+
+### Nested handlers and merging
+
+Nested `with_handler`, `with_test_handler`, and `with_fn_handler` calls
+**merge** into a single unified registry rather than shadowing. Inner
+entries win on conflict; the previous registry is restored when the
+inner scope exits.
+
+```elixir
+# Outer registers MyQueries, inner adds AuditLog — both accessible
+comp
+|> Port.with_handler(%{AuditLog => AuditLog.Ecto})
+|> Port.with_handler(%{MyQueries => :direct})
+|> Comp.run!()
+```
+
+### Mixed handler modes
+
+All three handler installers share the same registry. Module-specific
+entries (from `with_handler`) take priority over catch-all entries
+(from `with_test_handler` / `with_fn_handler`). This lets you mix
+runtime and test dispatch for different contracts:
+
+```elixir
+# ModuleA dispatched via :direct, everything else via test stubs
+comp
+|> Port.with_test_handler(%{
+  Port.key(ModuleB, :fetch, [1]) => {:ok, :stubbed}
+})
+|> Port.with_handler(%{ModuleA => :direct})
+|> Comp.run!()
+```
 
 ### Testing patterns
 

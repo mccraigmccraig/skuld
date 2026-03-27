@@ -344,6 +344,15 @@ end)
 |> Throw.with_handler()
 |> Comp.run!()
 
+# Mixed modes — runtime handler for one contract, test stubs for another
+comp
+|> Port.with_test_handler(%{
+  MyApp.Inventory.key(:reserve_stock, sku, qty) => {:ok, %Reservation{}}
+})
+|> Port.with_handler(%{MyApp.Orders => {:effectful, MyApp.OrderService.Effectful}})
+|> Throw.with_handler()
+|> Comp.run!()
+
 # Test Adapter.Direct — plain Elixir, no effect machinery
 assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
 
@@ -361,6 +370,9 @@ assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
 - Use `Adapter.Effectful` when you want encapsulated effect execution
 - Include `Throw.with_handler/1` in any stack where computations can
   throw — without it, `Comp.run!/1` raises `ThrowError`
+- Nested `with_handler`, `with_test_handler`, and `with_fn_handler`
+  calls merge into a unified registry — you can mix runtime dispatch
+  for some contracts with test stubs for others in the same stack
 - For generic Ecto Repo operations (insert, update, delete, get, etc.),
   use the built-in `Port.Repo` contract instead of redeclaring them in
   every domain contract. See
