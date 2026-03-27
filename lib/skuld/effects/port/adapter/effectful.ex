@@ -1,15 +1,16 @@
-defmodule Skuld.Effects.Port.Provider do
+defmodule Skuld.Effects.Port.Adapter.Effectful do
   @moduledoc """
-  Macro for bridging effectful (Provider) implementations to plain Elixir (Consumer) interfaces.
+  Macro for bridging effectful implementations to plain Elixir interfaces.
 
-  A Provider adapter wraps an effectful implementation module — one whose functions
-  return `computation(return_type)` — with a handler stack and `Comp.run!/1`, producing
-  a module that satisfies the Consumer behaviour with plain Elixir functions.
+  An effectful adapter wraps an effectful implementation module — one whose
+  functions return `computation(return_type)` — with a handler stack and
+  `Comp.run!/1`, producing a module that satisfies the Plain behaviour with
+  plain Elixir functions.
 
   ## Options
 
     * `:contract` — the Port.Contract module (required)
-    * `:impl` — the Provider-behaviour implementation module (required)
+    * `:impl` — the Effectful-behaviour implementation module (required)
     * `:stack` — a function `(computation -> computation)` that installs the
       handler stack (required)
 
@@ -21,24 +22,24 @@ defmodule Skuld.Effects.Port.Provider do
         defport find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
       end
 
-      # Effectful implementation satisfies Provider behaviour
-      defmodule MyApp.UserService.Effectful do
-        @behaviour MyApp.UserService.Provider
+      # Effectful implementation satisfies Effectful behaviour
+      defmodule MyApp.UserService.EffectfulImpl do
+        @behaviour MyApp.UserService.Effectful
         defcomp find_user(id) do
           user <- MyApp.UserRepo.get(id)
           {:ok, user}
         end
       end
 
-      # Provider adapter satisfies Consumer behaviour, runs effectful impl
+      # Effectful adapter satisfies Plain behaviour, runs effectful impl
       defmodule MyApp.UserService.Adapter do
-        use Skuld.Effects.Port.Provider,
+        use Skuld.Effects.Port.Adapter.Effectful,
           contract: MyApp.UserService,
-          impl: MyApp.UserService.Effectful,
+          impl: MyApp.UserService.EffectfulImpl,
           stack: &MyApp.Stacks.user_service/1
       end
 
-      # Now MyApp.UserService.Adapter can be used as a plain Consumer implementation:
+      # Now MyApp.UserService.Adapter can be used as a plain implementation:
       MyApp.UserService.Adapter.find_user("user-123")
       # => {:ok, %User{...}}
 
@@ -51,23 +52,22 @@ defmodule Skuld.Effects.Port.Provider do
   2. Pipes through the stack function to install effect handlers
   3. Runs the computation with `Comp.run!/1`
 
-  The generated module declares `@behaviour ContractModule.Consumer`, ensuring
+  The generated module declares `@behaviour ContractModule.Plain`, ensuring
   compile-time verification that all required callbacks are implemented.
 
   ## Hexagonal Architecture
 
-  In hexagonal architecture terms:
+  In hexagonal architecture terms, there are four scenarios for a port contract:
 
-    * **Consumer** (outbound/driven) — effectful code calls out to plain Elixir
-      implementations through the Port effect. The contract's caller functions
-      emit Port effects that are resolved by `Port.with_handler/2` at runtime.
-    * **Provider** (inbound/driving) — plain Elixir code calls in to effectful
-      implementations through the Provider adapter. The adapter runs the effectful
+    * **Skuld→Plain** — effectful code calls out to plain Elixir implementations
+      through the Port effect, resolved by `Port.with_handler/2` at runtime.
+    * **Skuld→Effectful** — effectful code calls out to effectful implementations
+      through the Port effect with an `:effectful` resolver.
+    * **Legacy→Plain** — plain Elixir code calls plain implementations through
+      `Port.Adapter.Direct`.
+    * **Legacy→Effectful** — plain Elixir code calls into effectful implementations
+      through this adapter (`Port.Adapter.Effectful`), which runs the effectful
       code with a handler stack, producing plain return values.
-
-  This enables a symmetric architecture where the same contract module defines
-  the boundary, and implementations can be either plain Elixir (Consumer) or
-  effectful (Provider), depending on the direction of the call.
 
   ## Throw handler in the stack
 
@@ -78,7 +78,7 @@ defmodule Skuld.Effects.Port.Provider do
 
   A minimal stack that only handles throws:
 
-      use Skuld.Effects.Port.Provider,
+      use Skuld.Effects.Port.Adapter.Effectful,
         contract: MyContract,
         impl: MyEffectfulImpl,
         stack: &Skuld.Effects.Throw.with_handler/1
@@ -93,9 +93,9 @@ defmodule Skuld.Effects.Port.Provider do
         |> Throw.with_handler()
       end
 
-  ## Testing Provider Adapters
+  ## Testing Effectful Adapters
 
-  Provider adapters produce plain Elixir values, so they can be tested directly
+  Effectful adapters produce plain Elixir values, so they can be tested directly
   without effect machinery:
 
       test "adapter returns expected result" do
@@ -108,7 +108,7 @@ defmodule Skuld.Effects.Port.Provider do
 
       test "effectful impl with handlers" do
         comp =
-          MyApp.UserService.Effectful.find_user("user-123")
+          MyApp.UserService.EffectfulImpl.find_user("user-123")
           |> MyApp.UserRepo.with_test_handler(...)
           |> Throw.with_handler()
 
@@ -116,7 +116,7 @@ defmodule Skuld.Effects.Port.Provider do
         assert {:ok, %User{}} = result
       end
 
-  Since the adapter satisfies the Consumer behaviour, it can also be used as a
+  Since the adapter satisfies the Plain behaviour, it can also be used as a
   handler target in `Port.with_handler/2`, enabling effectful-to-effectful
   composition through the Port system.
   """
@@ -131,7 +131,7 @@ defmodule Skuld.Effects.Port.Provider do
     escaped_stack = Macro.escape(stack_ast)
 
     quote do
-      @before_compile {Skuld.Effects.Port.Provider, :__before_compile__}
+      @before_compile {Skuld.Effects.Port.Adapter.Effectful, :__before_compile__}
       @__port_provider_contract__ unquote(contract)
       @__port_provider_impl__ unquote(impl)
       @__port_provider_stack_ast__ unquote(escaped_stack)
@@ -154,7 +154,7 @@ defmodule Skuld.Effects.Port.Provider do
         line: 0
     end
 
-    consumer_behaviour = Module.concat(contract, Consumer)
+    plain_behaviour = Module.concat(contract, Plain)
     operations = contract.__port_operations__()
 
     functions =
@@ -172,7 +172,7 @@ defmodule Skuld.Effects.Port.Provider do
       end)
 
     quote do
-      @behaviour unquote(consumer_behaviour)
+      @behaviour unquote(plain_behaviour)
       unquote_splicing(functions)
     end
   end

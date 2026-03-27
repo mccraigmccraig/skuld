@@ -4,26 +4,28 @@ defmodule Skuld.Effects.Port.Contract do
 
   A Port contract defines a set of operations, generating:
 
-    * **Consumer behaviour** (`__MODULE__.Consumer`) — plain Elixir callbacks for
+    * **Plain behaviour** (`__MODULE__.Plain`) — plain Elixir callbacks for
       non-effectful implementations
-    * **Provider behaviour** (`__MODULE__.Provider`) — computation-returning callbacks
+    * **Effectful behaviour** (`__MODULE__.Effectful`) — computation-returning callbacks
       for effectful implementations
     * **Caller functions** — typed public API returning `computation(return_type)`,
-      which also satisfy the Provider behaviour
+      which also satisfy the Effectful behaviour
     * **Bang variants** — unwrap `{:ok, v}` or dispatch Throw (when applicable)
     * **Key helpers** — for test stub matching
     * **Introspection** — `__port_operations__/0`
 
-  ## Consumer vs Provider
+  ## Plain vs Effectful
 
   The contract generates two behaviour modules:
 
-    * `MyContract.Consumer` — callbacks return plain values. Use for non-effectful
-      implementations that are called via `Port.with_handler/2`.
-    * `MyContract.Provider` — callbacks return `computation(return_type)`. Use for
-      effectful implementations that need to be wrapped with `Port.Provider`.
+    * `MyContract.Plain` — callbacks return plain values. Use for non-effectful
+      implementations that are called via `Port.with_handler/2` or
+      `Port.Adapter.Direct`.
+    * `MyContract.Effectful` — callbacks return `computation(return_type)`. Use for
+      effectful implementations that are called via the `:effectful` resolver in
+      `Port.with_handler/2` or wrapped with `Port.Adapter.Effectful`.
 
-  The contract module's own caller functions satisfy the Provider behaviour (they
+  The contract module's own caller functions satisfy the Effectful behaviour (they
   return computations that emit Port effects).
 
   ## Bang Variant Generation
@@ -66,15 +68,15 @@ defmodule Skuld.Effects.Port.Contract do
 
   This generates:
 
-      # Consumer behaviour (plain Elixir)
-      MyApp.Repository.Consumer
+      # Plain behaviour (plain Elixir)
+      MyApp.Repository.Plain
       @callback get_todo(String.t(), String.t()) :: {:ok, Todo.t()} | {:error, term()}
 
-      # Provider behaviour (computation-returning)
-      MyApp.Repository.Provider
+      # Effectful behaviour (computation-returning)
+      MyApp.Repository.Effectful
       @callback get_todo(String.t(), String.t()) :: computation({:ok, Todo.t()} | {:error, term()})
 
-      # Caller (returns computation, satisfies Provider behaviour)
+      # Caller (returns computation, satisfies Effectful behaviour)
       @spec get_todo(String.t(), String.t()) :: Types.computation({:ok, Todo.t()} | {:error, term()})
       def get_todo(tenant_id, id)
 
@@ -85,10 +87,10 @@ defmodule Skuld.Effects.Port.Contract do
       # Key helper (for test stubs)
       def key(:get_todo, tenant_id, id)
 
-  ## Consumer Implementation
+  ## Plain Implementation
 
       defmodule MyApp.Repository.Ecto do
-        @behaviour MyApp.Repository.Consumer
+        @behaviour MyApp.Repository.Plain
 
         @impl true
         def get_todo(tenant_id, id), do: ...
@@ -100,24 +102,24 @@ defmodule Skuld.Effects.Port.Contract do
       |> Port.with_handler(%{MyApp.Repository => MyApp.Repository.Ecto})
       |> Comp.run!()
 
-  ## Provider Implementation (Effectful)
+  ## Effectful Implementation
 
   For the reverse direction — plain Elixir code calling into effectful
-  implementations — see `Skuld.Effects.Port.Provider`.
+  implementations — see `Skuld.Effects.Port.Adapter.Effectful`.
 
-      # Effectful implementation satisfies Provider behaviour
-      defmodule MyApp.Repository.Effectful do
-        @behaviour MyApp.Repository.Provider
+      # Effectful implementation satisfies Effectful behaviour
+      defmodule MyApp.Repository.EffectfulImpl do
+        @behaviour MyApp.Repository.Effectful
         defcomp get_todo(tenant_id, id) do
           # ... effectful code returning computation(return_type)
         end
       end
 
-      # Provider adapter satisfies Consumer behaviour
-      defmodule MyApp.Repository.Effectful.Adapter do
-        use Skuld.Effects.Port.Provider,
+      # Effectful adapter satisfies Plain behaviour
+      defmodule MyApp.Repository.EffectfulImpl.Adapter do
+        use Skuld.Effects.Port.Adapter.Effectful,
           contract: MyApp.Repository,
-          impl: MyApp.Repository.Effectful,
+          impl: MyApp.Repository.EffectfulImpl,
           stack: &MyApp.Stacks.repository/1
       end
   """
@@ -231,8 +233,8 @@ defmodule Skuld.Effects.Port.Contract do
         line: 0
     end
 
-    consumer_module = Module.concat(env.module, Consumer)
-    provider_module = Module.concat(env.module, Provider)
+    consumer_module = Module.concat(env.module, Plain)
+    provider_module = Module.concat(env.module, Effectful)
 
     consumer_callbacks = Enum.map(operations, &generate_callback/1)
     provider_callbacks = Enum.map(operations, &generate_provider_callback/1)
@@ -250,11 +252,12 @@ defmodule Skuld.Effects.Port.Contract do
     quote do
       defmodule unquote(consumer_module) do
         @moduledoc """
-        Consumer behaviour for `#{inspect(unquote(env.module))}`.
+        Plain behaviour for `#{inspect(unquote(env.module))}`.
 
         Defines plain Elixir callbacks — implementations receive and return
-        ordinary values (no computations). Use this behaviour for modules that
-        provide non-effectful implementations of the port contract.
+        ordinary values (no computations). Implementations satisfying this
+        behaviour can be used with `Port.with_handler/2` (`:direct` resolver)
+        or wrapped with `Port.Adapter.Direct`.
         """
 
         unquote_splicing(consumer_callbacks)
@@ -262,11 +265,12 @@ defmodule Skuld.Effects.Port.Contract do
 
       defmodule unquote(provider_module) do
         @moduledoc """
-        Provider behaviour for `#{inspect(unquote(env.module))}`.
+        Effectful behaviour for `#{inspect(unquote(env.module))}`.
 
         Defines computation-returning callbacks — implementations return
-        `computation(return_type)` values. Use this behaviour for modules that
-        provide effectful implementations of the port contract.
+        `computation(return_type)` values. Implementations satisfying this
+        behaviour can be used with `Port.with_handler/2` (`:effectful` resolver)
+        or wrapped with `Port.Adapter.Effectful`.
 
         The contract module's own caller functions satisfy this behaviour.
         """
