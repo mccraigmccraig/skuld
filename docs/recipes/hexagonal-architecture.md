@@ -51,7 +51,7 @@ Consider a system with three plain Elixir modules forming a dependency
 chain:
 
 ```
-OrderController → OrderService → Inventory
+OrderController → OrderService → InventoryService
 ```
 
 Each calls the next directly. We want to incrementally impose port
