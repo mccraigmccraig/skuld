@@ -765,4 +765,131 @@ defmodule Skuld.Effects.PortTest do
       assert {:error, {:unknown_port_module, UnknownModule}} = result
     end
   end
+
+  # ---------------------------------------------------------------
+  # Nested with_handler registry merging tests
+  # ---------------------------------------------------------------
+
+  defmodule ModuleA do
+    def do_a(x), do: {:ok, {:a, x}}
+  end
+
+  defmodule ModuleB do
+    def do_b(x), do: {:ok, {:b, x}}
+  end
+
+  defmodule ModuleAv2 do
+    def do_a(x), do: {:ok, {:a_v2, x}}
+  end
+
+  describe "nested with_handler/2 - registry merging" do
+    test "inner handler merges registries with outer handler" do
+      # Outer registers ModuleA, inner registers ModuleB.
+      # A request to ModuleA should still work inside the inner scope.
+      comp =
+        Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
+          Comp.bind(Port.request(ModuleB, :do_b, [2]), fn b_result ->
+            Comp.pure({a_result, b_result})
+          end)
+        end)
+        |> Port.with_handler(%{ModuleB => :direct})
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      {result, _} = Comp.run(comp)
+      assert {{:ok, {:a, 1}}, {:ok, {:b, 2}}} = result
+    end
+
+    test "inner handler overrides conflicting entries (inner wins)" do
+      # Both register ModuleA, inner should win.
+      comp =
+        Port.request(ModuleA, :do_a, [42])
+        |> Port.with_handler(%{ModuleA => ModuleAv2})
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      {result, _} = Comp.run(comp)
+      # Inner wins → dispatched to ModuleAv2
+      assert {:ok, {:a_v2, 42}} = result
+    end
+
+    test "outer registry restored after inner scope exits" do
+      # After inner scope exits, outer scope should use its own registry.
+      inner_comp =
+        Port.request(ModuleA, :do_a, [1])
+        |> Port.with_handler(%{ModuleA => ModuleAv2})
+
+      comp =
+        Comp.bind(inner_comp, fn inner_result ->
+          Comp.bind(Port.request(ModuleA, :do_a, [2]), fn outer_result ->
+            Comp.pure({inner_result, outer_result})
+          end)
+        end)
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      {result, _} = Comp.run(comp)
+      # Inner used ModuleAv2, outer restored to :direct
+      assert {{:ok, {:a_v2, 1}}, {:ok, {:a, 2}}} = result
+    end
+
+    test "three levels of nesting merge correctly" do
+      # Level 1: ModuleA, Level 2: adds ModuleB, Level 3: overrides ModuleA
+      innermost_comp =
+        Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
+          Comp.bind(Port.request(ModuleB, :do_b, [2]), fn b_result ->
+            Comp.pure({a_result, b_result})
+          end)
+        end)
+        |> Port.with_handler(%{ModuleA => ModuleAv2})
+
+      middle_comp =
+        innermost_comp
+        |> Port.with_handler(%{ModuleB => :direct})
+
+      comp =
+        middle_comp
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      {result, _} = Comp.run(comp)
+      # Innermost overrides ModuleA to ModuleAv2, ModuleB from middle
+      assert {{:ok, {:a_v2, 1}}, {:ok, {:b, 2}}} = result
+    end
+
+    test "inner scope does not leak entries to outer scope" do
+      # Inner adds ModuleB, but outer should not have it after inner exits.
+      inner_comp =
+        Port.request(ModuleB, :do_b, [1])
+        |> Port.with_handler(%{ModuleB => :direct})
+
+      # Wrap the outer ModuleB request in try_catch so it doesn't short-circuit
+      outer_request =
+        Port.request(ModuleB, :do_b, [2])
+        |> Throw.try_catch()
+
+      comp =
+        Comp.bind(inner_comp, fn inner_result ->
+          Comp.bind(outer_request, fn outer_result ->
+            Comp.pure({inner_result, outer_result})
+          end)
+        end)
+        |> Port.with_handler(%{ModuleA => :direct})
+        |> Throw.with_handler()
+
+      {result, _} = Comp.run(comp)
+      # Inner succeeded, outer failed because ModuleB was not leaked
+      assert {{:ok, {:b, 1}}, {:error, {:unknown_port_module, ModuleB}}} = result
+    end
+
+    test "inner effectful resolver merged with outer plain resolver" do
+      comp =
+        Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
+          Comp.bind(Port.request(TestQueries, :find_user, [42]), fn q_result ->
+            Comp.pure({a_result, q_result})
+          end)
+        end)
+        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      {result, _} = Comp.run(comp)
+      assert {{:ok, {:a, 1}}, {:ok, %{id: 42, name: "Effectful 42"}}} = result
+    end
+  end
 end

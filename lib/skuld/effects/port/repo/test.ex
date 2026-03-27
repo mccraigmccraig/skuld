@@ -63,8 +63,8 @@ if Code.ensure_loaded?(Ecto) do
         Use this when you need to distinguish multiple Repo logs or avoid
         collisions with other Writer tags.
       * `:registry` — Additional `Port` registry entries to merge alongside
-        the `Port.Repo` entry. Use this when the computation also uses other
-        Port contracts. Example:
+        the `Port.Repo` entry. Since nested `Port.with_handler` calls now
+        merge registries, this is a convenience shorthand. Example:
 
             Repo.Test.with_handler(comp,
               registry: %{MyApp.Queries => MyApp.Queries.TestImpl},
@@ -243,8 +243,10 @@ if Code.ensure_loaded?(Ecto) do
         Use this when you need to distinguish multiple Repo logs or avoid
         collisions with other Writer tags.
       * `:registry` — Additional `Port` registry entries to merge alongside
-        the `Port.Repo` entry. Since `Port.with_handler/2` scopes shadow
-        each other, use this when the computation uses other Port contracts:
+        the `Port.Repo` entry. Since nested `Port.with_handler/2` calls now
+        merge registries (inner wins on conflict), you can also register
+        extra Port contracts via an outer `with_handler` call. This option
+        is a convenience for passing them inline:
 
             Repo.Test.with_handler(comp,
               registry: %{MyApp.Queries => MyApp.Queries.TestImpl},

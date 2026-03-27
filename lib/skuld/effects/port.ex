@@ -291,6 +291,22 @@ defmodule Skuld.Effects.Port do
   that are passed directly to the continuation. The `:effectful` resolver
   returns a computation that participates in the surrounding effect context.
 
+  ## Nested Handlers
+
+  Nested `with_handler` calls **merge** registries rather than shadowing.
+  Inner entries win on conflict. When the inner scope exits, the previous
+  registry is restored.
+
+      # Outer registers ModuleA, inner adds ModuleB — both are available
+      my_comp
+      |> Port.with_handler(%{ModuleB => :direct})   # inner: adds ModuleB
+      |> Port.with_handler(%{ModuleA => :direct})   # outer: registers ModuleA
+      |> Comp.run!()
+
+  Note: `with_test_handler` and `with_fn_handler` do **not** merge with
+  runtime registries — they replace the dispatch mode entirely, which is
+  the expected behaviour for test stubs.
+
   ## Example
 
       # Plain implementations
@@ -313,14 +329,65 @@ defmodule Skuld.Effects.Port do
   def with_handler(comp, registry \\ %{}, opts \\ []) do
     output = Keyword.get(opts, :output)
     suspend = Keyword.get(opts, :suspend)
-
-    scoped_opts =
-      []
-      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
-      |> then(fn o -> if suspend, do: Keyword.put(o, :suspend, suspend), else: o end)
+    state_key = @state_key
 
     comp
-    |> Comp.with_scoped_state(@state_key, {:runtime, registry}, scoped_opts)
+    |> Comp.scoped(fn env ->
+      previous_state = Env.get_state(env, state_key)
+
+      # Merge with any existing runtime registry so nested with_handler
+      # calls accumulate registrations rather than shadowing them.
+      merged_registry =
+        case previous_state do
+          {:runtime, outer_registry} -> Map.merge(outer_registry, registry)
+          _ -> registry
+        end
+
+      env_with_state = Env.put_state(env, state_key, {:runtime, merged_registry})
+
+      # If :suspend option provided, compose into transform_suspend
+      {modified_env, previous_transform} =
+        if suspend do
+          old_transform = Env.get_transform_suspend(env_with_state)
+
+          new_transform = fn susp, e ->
+            {susp1, e1} = old_transform.(susp, e)
+            suspend.(susp1, e1)
+          end
+
+          {Env.with_transform_suspend(env_with_state, new_transform), old_transform}
+        else
+          {env_with_state, nil}
+        end
+
+      finally_k = fn value, e ->
+        # Restore previous state
+        restored_env =
+          case previous_state do
+            nil -> %{e | state: Map.delete(e.state, state_key)}
+            val -> Env.put_state(e, state_key, val)
+          end
+
+        # Restore previous transform_suspend if we modified it
+        restored_env =
+          if previous_transform do
+            Env.with_transform_suspend(restored_env, previous_transform)
+          else
+            restored_env
+          end
+
+        transformed_value =
+          if output do
+            output.(value, Env.get_state(e, state_key))
+          else
+            value
+          end
+
+        {transformed_value, restored_env}
+      end
+
+      {modified_env, finally_k}
+    end)
     |> Comp.with_handler(@__sig__, &__MODULE__.handle/3)
   end
 
