@@ -5,239 +5,362 @@
 <!-- nav:header:end -->
 
 Hexagonal architecture (ports and adapters) separates domain logic from
-infrastructure by defining ports - interfaces that the domain uses to
-communicate with the outside world. Skuld's Port.Contract and
-Port.Adapter.Effectful map directly to the two directions of hexagonal ports.
+infrastructure by defining ports — interfaces through which components
+communicate. Skuld's Port system supports incremental adoption: you can
+impose port boundaries on existing code without introducing Skuld, then
+gradually convert components to effectful implementations at your own pace.
 
-## The two directions
+## The four scenarios
 
-**Plain (outbound/driven)** - domain logic calls out to
-infrastructure. "I need to fetch a user" becomes a Port effect that
-gets resolved by whichever implementation is installed.
+A port contract defines an interface. On each side of the interface, the
+code can be either **plain Elixir** (legacy/non-effectful) or **effectful**
+(Skuld computations). This gives four scenarios:
 
-**Effectful (inbound/driving)** - external code calls into domain logic.
-A Phoenix controller or GenServer invokes effectful domain logic through
-an adapter that handles the effect machinery.
+| # | Caller | Implementation | Mechanism |
+|---|--------|---------------|-----------|
+| 1 | Plain Elixir | Plain Elixir | `Port.Adapter.Direct` |
+| 2 | Plain Elixir | Effectful | `Port.Adapter.Effectful` |
+| 3 | Effectful | Plain Elixir | `Port.with_handler` + `:direct` resolver |
+| 4 | Effectful | Effectful | `Port.with_handler` + `{:effectful, mod}` resolver |
 
-## Defining the port
+The contract generates two behaviours to match:
+
+- `MyContract.Plain` — callbacks return plain values
+- `MyContract.Effectful` — callbacks return `computation(return_type)`
+
+## Defining a contract
 
 ```elixir
-defmodule MyApp.UserService do
+defmodule MyApp.Orders do
   use Skuld.Effects.Port.Contract
 
-  defport find_user(id :: String.t()) ::
-            {:ok, User.t()} | {:error, term()}
+  defport place_order(params :: map()) ::
+            {:ok, Order.t()} | {:error, term()}
 
-  defport create_user(params :: map()) ::
-            {:ok, User.t()} | {:error, term()}
-
-  defport list_users(opts :: map()) ::
-            {:ok, [User.t()]} | {:error, term()}
+  defport get_order(id :: String.t()) ::
+            {:ok, Order.t()} | {:error, term()}
 end
 ```
 
-This generates Plain and Effectful behaviours, caller functions, bang
-variants, and key helpers.
+This generates `MyApp.Orders.Plain` and `MyApp.Orders.Effectful`
+behaviours, caller functions, bang variants, and key helpers.
 
-## Plain side (outbound)
+## Incremental adoption walkthrough
 
-Domain logic uses the port as an effect. The implementation is pluggable.
+Consider a system with three plain Elixir modules forming a dependency
+chain:
 
-### Domain logic
+```
+OrderController → OrderService → Inventory
+```
+
+Each calls the next directly. We want to incrementally impose port
+boundaries and then convert to Skuld — without a big-bang rewrite.
+
+### Step 1: Define contracts
+
+Define port contracts for the boundaries you want to impose:
 
 ```elixir
-defmodule MyApp.Onboarding do
+defmodule MyApp.Orders do
+  use Skuld.Effects.Port.Contract
+
+  defport place_order(params :: map()) ::
+            {:ok, Order.t()} | {:error, term()}
+
+  defport get_order(id :: String.t()) ::
+            {:ok, Order.t()} | {:error, term()}
+end
+
+defmodule MyApp.Inventory do
+  use Skuld.Effects.Port.Contract
+
+  defport reserve_stock(sku :: String.t(), qty :: integer()) ::
+            {:ok, Reservation.t()} | {:error, term()}
+
+  defport check_stock(sku :: String.t()) ::
+            {:ok, integer()} | {:error, term()}
+end
+```
+
+### Step 2: Wire plain→plain with `Adapter.Direct`
+
+The existing implementations already have the right function signatures.
+Declare that they satisfy the `Plain` behaviour and create direct adapters:
+
+```elixir
+# Existing implementations — add @behaviour
+defmodule MyApp.OrderService do
+  @behaviour MyApp.Orders.Plain
+  # ... existing code unchanged ...
+end
+
+defmodule MyApp.InventoryService do
+  @behaviour MyApp.Inventory.Plain
+  # ... existing code unchanged ...
+end
+
+# Direct adapters — plain delegation through the contract
+defmodule MyApp.Orders.Adapter do
+  use Skuld.Effects.Port.Adapter.Direct,
+    contract: MyApp.Orders,
+    impl: MyApp.OrderService
+end
+
+defmodule MyApp.Inventory.Adapter do
+  use Skuld.Effects.Port.Adapter.Direct,
+    contract: MyApp.Inventory,
+    impl: MyApp.InventoryService
+end
+```
+
+Now update callers to go through the adapters:
+
+```
+OrderController → MyApp.Orders.Adapter → OrderService
+                                              ↓
+                               MyApp.Inventory.Adapter → InventoryService
+```
+
+Nothing uses Skuld yet. The contracts impose compile-time interface
+verification via `@behaviour`, and the adapters are simple delegation.
+You can swap implementations (e.g. in-memory for tests) by creating
+alternative adapters.
+
+### Step 3: Convert a provider to effectful
+
+Now convert `OrderService` to an effectful implementation. It calls
+`Inventory` through a Port effect, and its own effects participate in
+the caller's context:
+
+```elixir
+defmodule MyApp.OrderService.Effectful do
   use Skuld.Syntax
+  @behaviour MyApp.Orders.Effectful
 
-  defcomp register(params) do
-    user <- MyApp.UserService.create_user!(params)
-    id <- Fresh.fresh_uuid()
-    _ <- EventAccumulator.emit(%UserRegistered{
-      id: id, user_id: user.id
-    })
-    {:ok, user}
+  defcomp place_order(params) do
+    reservation <- MyApp.Inventory.reserve_stock!(params.sku, params.qty)
+    order = %Order{sku: params.sku, qty: params.qty, reservation: reservation}
+    {:ok, order}
+  end
+
+  defcomp get_order(id) do
+    # ... effectful implementation
   end
 end
 ```
 
-### Plain implementation (Ecto)
+The `OrderController` is still plain Elixir, so it needs an
+`Adapter.Effectful` to call the effectful implementation:
 
 ```elixir
-defmodule MyApp.UserService.Ecto do
-  @behaviour MyApp.UserService.Plain
-
-  @impl true
-  def find_user(id) do
-    case Repo.get(User, id) do
-      nil -> {:error, :not_found}
-      user -> {:ok, user}
-    end
-  end
-
-  @impl true
-  def create_user(params) do
-    %User{}
-    |> User.changeset(params)
-    |> Repo.insert()
-  end
-
-  @impl true
-  def list_users(opts) do
-    {:ok, Repo.all(User.query(opts))}
-  end
-end
-```
-
-### Plain implementation (in-memory, for tests)
-
-```elixir
-defmodule MyApp.UserService.InMemory do
-  @behaviour MyApp.UserService.Plain
-
-  # Backed by an Agent or ETS for test isolation
-  use Agent
-
-  def start_link(initial \\ []) do
-    Agent.start_link(fn -> Map.new(initial, &{&1.id, &1}) end,
-      name: __MODULE__)
-  end
-
-  @impl true
-  def find_user(id) do
-    case Agent.get(__MODULE__, &Map.get(&1, id)) do
-      nil -> {:error, :not_found}
-      user -> {:ok, user}
-    end
-  end
-
-  @impl true
-  def create_user(params) do
-    user = struct(User, Map.put(params, :id, Ecto.UUID.generate()))
-    Agent.update(__MODULE__, &Map.put(&1, user.id, user))
-    {:ok, user}
-  end
-
-  @impl true
-  def list_users(_opts) do
-    {:ok, Agent.get(__MODULE__, &Map.values/1)}
-  end
-end
-```
-
-### Wiring
-
-```elixir
-# Production
-MyApp.Onboarding.register(params)
-|> Port.with_handler(%{MyApp.UserService => MyApp.UserService.Ecto})
-|> Fresh.with_uuid7_handler()
-|> EventAccumulator.with_handler(output: fn r, e -> {r, e} end)
-|> Throw.with_handler()
-|> Comp.run!()
-
-# Test
-MyApp.Onboarding.register(params)
-|> Port.with_handler(%{MyApp.UserService => MyApp.UserService.InMemory})
-|> Fresh.with_test_handler()
-|> EventAccumulator.with_handler(output: fn r, e -> {r, e} end)
-|> Throw.with_handler()
-|> Comp.run!()
-```
-
-## Effectful adapter side (inbound)
-
-When plain Elixir code (a Phoenix controller, a GenServer, a CLI)
-needs to call effectful domain logic, Port.Adapter.Effectful bridges the gap.
-
-### Effectful implementation
-
-```elixir
-defmodule MyApp.UserService.Effectful do
-  use Skuld.Syntax
-  @behaviour MyApp.UserService.Effectful
-
-  defcomp find_user(id) do
-    UserQueries.get_user(id)
-  end
-
-  defcomp create_user(params) do
-    user <- UserRepo.insert_user!(params)
-    _ <- EventAccumulator.emit(%UserCreated{user_id: user.id})
-    {:ok, user}
-  end
-
-  defcomp list_users(opts) do
-    UserQueries.list_users(opts)
-  end
-end
-```
-
-### Effectful adapter
-
-```elixir
-defmodule MyApp.UserService.Adapter do
+defmodule MyApp.Orders.Adapter do
   use Skuld.Effects.Port.Adapter.Effectful,
-    contract: MyApp.UserService,
-    impl: MyApp.UserService.Effectful,
+    contract: MyApp.Orders,
+    impl: MyApp.OrderService.Effectful,
     stack: fn comp ->
       comp
-      |> Port.with_handler(%{
-        UserQueries => UserQueries.Ecto,
-        UserRepo => UserRepo.Ecto
-      })
-      |> EventAccumulator.with_handler(
-        output: fn r, events ->
-          MyApp.EventBus.publish(events)
-          r
-        end
-      )
+      |> Port.with_handler(%{MyApp.Inventory => MyApp.InventoryService})
       |> Throw.with_handler()
     end
 end
 ```
 
-### Usage from plain Elixir
+The call chain is now:
+
+```
+OrderController → MyApp.Orders.Adapter [Effectful]
+                       ↓ Comp.run!()
+                  OrderService.Effectful
+                       ↓ Port effect
+                  Port.with_handler(:direct)
+                       ↓
+                  InventoryService (plain)
+```
+
+The controller still calls `MyApp.Orders.Adapter.place_order(params)`
+and gets a plain `{:ok, order}` back — it doesn't know Skuld is
+involved. The effectful order service calls `Inventory` through a Port
+effect, which the adapter's stack resolves to the plain
+`InventoryService`.
+
+### Step 4: Convert the caller to effectful
+
+Now convert `OrderController` to effectful code (e.g. a LiveView or
+an effectful orchestrator):
 
 ```elixir
-# Phoenix controller
-def create(conn, params) do
-  case MyApp.UserService.Adapter.create_user(params) do
-    {:ok, user} -> json(conn, user)
-    {:error, reason} -> json(conn, %{error: reason})
+defmodule MyApp.OrderWorkflow do
+  use Skuld.Syntax
+
+  defcomp place_order(params) do
+    order <- MyApp.Orders.place_order!(params)
+    _ <- EventAccumulator.emit(%OrderPlaced{order_id: order.id})
+    {:ok, order}
   end
 end
 ```
 
-The caller doesn't know about effects, computations, or handlers. It
-calls a plain Elixir function and gets a plain Elixir value back.
+Since both caller and provider are now effectful, use the `:effectful`
+resolver — the order service's computation is inlined into the
+workflow's effect context:
 
-## Full picture
+```elixir
+MyApp.OrderWorkflow.place_order(params)
+|> Port.with_handler(%{
+  MyApp.Orders => {:effectful, MyApp.OrderService.Effectful},
+  MyApp.Inventory => MyApp.InventoryService
+})
+|> EventAccumulator.with_handler(output: fn r, events -> {r, events} end)
+|> Throw.with_handler()
+|> Comp.run!()
+```
+
+The call chain is now:
 
 ```
-                    UserService
-                    (defport)
-                   /          \
-     Plain side              Effectful side
-     (outbound)                 (inbound)
-          |                          |
-     Domain computations        Phoenix controllers
-     call UserService.*         call Adapter.*
-          |                          |
-     Port.with_handler          Port.Adapter.Effectful
-     → Ecto impl (prod)        → Effectful impl
-     → InMemory impl (test)      → handler stack
-                                   → Comp.run!()
+OrderWorkflow (effectful)
+    ↓ Port effect
+Port.with_handler({:effectful, ...})
+    ↓ computation inlined
+OrderService.Effectful
+    ↓ Port effect
+Port.with_handler(:direct)
+    ↓
+InventoryService (plain)
+```
+
+All effects from `OrderService.Effectful` (its Port calls, any State,
+Throw, etc.) are handled by the workflow's handler stack. There's a
+single `Comp.run!` at the top level — no intermediate adapter needed.
+
+### That's it
+
+Note that `InventoryService` stays plain throughout — and that's
+perfectly fine. Not everything needs to be effectful. Thin wrappers
+around Ecto queries, HTTP clients, or other infrastructure are often
+best left as plain Elixir behind a `Plain` behaviour. The port
+boundary gives you the interface contract and implementation
+swappability without forcing effectful machinery where it adds no
+value.
+
+## The four scenarios in detail
+
+### Scenario 1: Plain → Plain (`Adapter.Direct`)
+
+Both caller and implementation are plain Elixir. The adapter delegates
+through the contract boundary.
+
+```elixir
+defmodule MyApp.Orders.Adapter do
+  use Skuld.Effects.Port.Adapter.Direct,
+    contract: MyApp.Orders,
+    impl: MyApp.OrderService
+end
+
+# Usage — plain call, plain result
+MyApp.Orders.Adapter.place_order(params)
+```
+
+Use this when imposing a port boundary without introducing Skuld.
+
+### Scenario 2: Plain → Effectful (`Adapter.Effectful`)
+
+The caller is plain Elixir, the implementation is effectful. The adapter
+wraps the implementation with a handler stack and `Comp.run!()`.
+
+```elixir
+defmodule MyApp.Orders.Adapter do
+  use Skuld.Effects.Port.Adapter.Effectful,
+    contract: MyApp.Orders,
+    impl: MyApp.OrderService.Effectful,
+    stack: fn comp ->
+      comp
+      |> Port.with_handler(%{MyApp.Inventory => MyApp.InventoryService})
+      |> Throw.with_handler()
+    end
+end
+
+# Usage — plain call, plain result
+MyApp.Orders.Adapter.place_order(params)
+```
+
+Use this when a Phoenix controller, GenServer, or other non-effectful
+code needs to call effectful domain logic.
+
+### Scenario 3: Effectful → Plain (`:direct` resolver)
+
+The caller is effectful, the implementation is plain Elixir. The Port
+handler calls the plain implementation and passes the result to the
+continuation.
+
+```elixir
+# In effectful code
+order <- MyApp.Orders.place_order!(params)
+
+# Wiring
+|> Port.with_handler(%{MyApp.Orders => MyApp.OrderService})
+```
+
+Use this when effectful domain logic calls out to plain infrastructure
+(database queries, HTTP clients, etc.).
+
+### Scenario 4: Effectful → Effectful (`{:effectful, mod}` resolver)
+
+Both caller and implementation are effectful. The Port handler inlines
+the implementation's computation into the caller's effect context.
+
+```elixir
+# In effectful code
+order <- MyApp.Orders.place_order!(params)
+
+# Wiring — implementation's effects handled by this stack
+|> Port.with_handler(%{MyApp.Orders => {:effectful, MyApp.OrderService.Effectful}})
+|> Throw.with_handler()
+```
+
+Use this when both sides are effectful and should share the same
+effect context (transactions, state, etc.).
+
+## Testing
+
+Each scenario has a natural testing approach:
+
+```elixir
+# Test with map-based stubs (any scenario)
+comp
+|> Port.with_test_handler(%{
+  MyApp.Orders.key(:place_order, params) => {:ok, %Order{}}
+})
+|> Throw.with_handler()
+|> Comp.run!()
+
+# Test with function-based handler (pattern matching)
+comp
+|> Port.with_fn_handler(fn
+  MyApp.Orders, :place_order, [params] -> {:ok, %Order{}}
+  MyApp.Inventory, :reserve_stock, [_sku, _qty] -> {:ok, %Reservation{}}
+end)
+|> Throw.with_handler()
+|> Comp.run!()
+
+# Test Adapter.Direct — plain Elixir, no effect machinery
+assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
+
+# Test Adapter.Effectful — also plain Elixir (adapter runs effects internally)
+assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
 ```
 
 ## Tips
 
-- Define one contract per bounded context or aggregate (UserService,
-  OrderService, etc.)
-- Keep Plain implementations thin - just infrastructure calls
-- The in-memory implementation is your test double - no mocks needed
-- Effectful adapters are where you compose the full handler stack
-- Include `Throw.with_handler/1` in the stack if computations can
-  throw - without it, `Comp.run!/1` raises `ThrowError`
+- Define one contract per bounded context or aggregate
+- Keep Plain implementations thin — just infrastructure calls
+- The in-memory Plain implementation is your test double — no mocks needed
+- Start with `Adapter.Direct` to impose boundaries, convert later
+- Use `{:effectful, mod}` when you want shared effect context
+- Use `Adapter.Effectful` when you want encapsulated effect execution
+- Include `Throw.with_handler/1` in any stack where computations can
+  throw — without it, `Comp.run!/1` raises `ThrowError`
 
 <!-- nav:footer:start -->
 
