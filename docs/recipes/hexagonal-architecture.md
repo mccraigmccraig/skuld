@@ -16,12 +16,12 @@ A port contract defines an interface. On each side of the interface, the
 code can be either **plain Elixir** (legacy/non-effectful) or **effectful**
 (Skuld computations). This gives four scenarios:
 
-| # | Caller | Implementation | Mechanism |
-|---|--------|---------------|-----------|
-| 1 | Plain Elixir | Plain Elixir | `Port.Adapter.Direct` |
-| 2 | Plain Elixir | Effectful | `Port.Adapter.Effectful` |
-| 3 | Effectful | Plain Elixir | `Port.with_handler` + `:direct` resolver |
-| 4 | Effectful | Effectful | `Port.with_handler` + `{:effectful, mod}` resolver |
+| # | Caller       | Implementation | Mechanism                                          |
+|---|--------------|----------------|----------------------------------------------------|
+| 1 | Plain Elixir | Plain Elixir   | `Port.Adapter.Direct`                              |
+| 2 | Plain Elixir | Effectful      | `Port.Adapter.Effectful`                           |
+| 3 | Effectful    | Plain Elixir   | `Port.with_handler` + `:direct` resolver           |
+| 4 | Effectful    | Effectful      | `Port.with_handler` + `{:effectful, mod}` resolver |
 
 The contract generates two behaviours to match:
 
