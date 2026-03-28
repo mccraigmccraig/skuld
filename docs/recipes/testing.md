@@ -178,6 +178,91 @@ defmodule MyApp.Generators do
 end
 ```
 
+## Testing plain hexagons with Mox
+
+When adopting Port contracts incrementally, you may have plain Elixir
+modules that drive a Port contract via `Port.Adapter.Direct` or
+`Port.Adapter.Effectful`. These modules aren't effectful — they call
+plain functions — so you can't install effect handlers from your test.
+
+The Port contract already generates a `Plain` behaviour
+(`MyContract.Plain`) that describes the plain Elixir interface. This
+is exactly what [Mox](https://hexdocs.pm/mox) needs.
+
+### Setup
+
+Add Mox to your test dependencies and define a mock in `test/support`:
+
+```elixir
+# test/support/mocks.ex
+Mox.defmock(MyApp.Repository.Mock, for: MyApp.Repository.Plain)
+```
+
+### Using the mock in tests
+
+Your plain hexagon receives the repository module as a dependency
+(via config, function argument, or module attribute):
+
+```elixir
+defmodule MyApp.OrderService do
+  @repo Application.compile_env(:my_app, :repository, MyApp.Repository.Adapter)
+
+  def place_order(params) do
+    item = @repo.get!(Item, params.item_id)
+    changeset = Order.changeset(%Order{}, %{item_id: item.id, qty: params.qty})
+    @repo.insert(changeset)
+  end
+end
+```
+
+Test with Mox expectations:
+
+```elixir
+import Mox
+
+setup :verify_on_exit!
+
+test "place_order inserts an order for the item" do
+  item = %Item{id: "item-1", name: "Widget"}
+  
+  MyApp.Repository.Mock
+  |> expect(:get!, fn Item, "item-1" -> item end)
+  |> expect(:insert, fn changeset ->
+    assert changeset.changes.item_id == "item-1"
+    {:ok, Ecto.Changeset.apply_changes(changeset)}
+  end)
+
+  assert {:ok, %Order{item_id: "item-1"}} =
+    MyApp.OrderService.place_order(%{item_id: "item-1", qty: 3})
+end
+```
+
+### Why this works well
+
+- **Async-safe** — Mox expectations are per-process by default
+- **No effects needed** — test isolation without introducing Skuld
+  computations
+- **Incremental** — add a Port contract and get better tests
+  immediately, convert to effectful implementations later if desired
+- **Familiar** — Mox is a well-known pattern in the Elixir ecosystem
+- **Compile-time safety** — Mox validates that the mock satisfies the
+  Plain behaviour, so contract changes break tests at compile time
+
+### Adoption path
+
+1. **Define a Port contract** — `use Skuld.Effects.Port.Contract` with
+   `defport` declarations
+2. **Implement with `Port.Adapter.Direct`** — wrap your existing module
+   to satisfy the Plain behaviour
+3. **Use Mox in tests** — `Mox.defmock(Mock, for: MyContract.Plain)`
+   for isolated unit tests
+4. **Later, optionally** — introduce effectful implementations behind
+   the port and use effect-based testing patterns from the sections
+   above
+
+Each step delivers value independently. You don't need to adopt the
+full effect system to benefit from Port contracts and test isolation.
+
 ## Tips
 
 - **Test at the handler boundary** - test computations with handlers,
