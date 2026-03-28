@@ -1,7 +1,7 @@
-# Test executor for Port.Repo that records operations via Writer.
+# Test executor for Port.Repo that provides default return values.
 #
-# Each operation is logged as a {op_name, args_list, return_value} tuple,
-# making it straightforward to assert on the sequence of Repo calls.
+# Logging is handled by Port-level :log option — each dispatch emits
+# {mod, name, args, result} to a Writer tag automatically.
 #
 # ## Usage
 #
@@ -9,40 +9,29 @@
 #     |> Port.Repo.Test.with_handler(output: fn r, log -> {r, log} end)
 #     |> Throw.with_handler()
 #     |> Comp.run!()
-#     #=> {result, [{:insert, [changeset], {:ok, struct}}, ...]}
+#     #=> {result, [{Port.Repo, :insert, [changeset], {:ok, struct}}, ...]}
 #
 if Code.ensure_loaded?(Ecto) do
   defmodule Skuld.Effects.Port.Repo.Test do
     @moduledoc """
-    Effectful test executor for `Port.Repo` that records operations via `Writer`.
-
-    Each operation emits a `{op_name, args_list, return_value}` tuple to a
-    Writer log, making it easy to assert on the exact sequence of Repo calls
-    made during a computation.
-
-    ## Write Operations
+    Test executor for `Port.Repo` with automatic dispatch logging via Port.
 
     Write operations (`insert`, `update`, `delete`) apply changeset changes
-    to produce a struct and return `{:ok, struct}`. The changeset and result
-    are both captured in the log entry.
+    to produce a struct and return `{:ok, struct}`. Read operations return
+    sensible empty defaults (`nil`, `[]`, `false`). Bulk operations return
+    `{0, nil}`.
 
-    ## Bulk Operations
-
-    `update_all` and `delete_all` return `{0, nil}` by default.
-
-    ## Read Operations
-
-    Read operations return sensible empty defaults (`nil`, `[]`, `false`).
-    Override specific reads using `Port.with_fn_handler/2` or
-    `Port.with_test_handler/2` for your domain contract.
+    Logging is handled by Port's built-in `:log` option — every Port dispatch
+    (not just Repo operations) emits a `{mod, name, args, result}` 4-tuple
+    to a Writer tag. `with_handler/2` wires this up automatically.
 
     ## Log Format
 
-    Each entry is a 3-tuple: `{operation_name, args_list, return_value}`:
+    Each entry is a 4-tuple: `{module, operation, args_list, return_value}`:
 
-        {:insert, [changeset], {:ok, %User{name: "Alice"}}}
-        {:get, [User, 42], nil}
-        {:delete, [record], {:ok, record}}
+        {Port.Repo, :insert, [changeset], {:ok, %User{name: "Alice"}}}
+        {Port.Repo, :get, [User, 42], nil}
+        {Port.Repo, :delete, [record], {:ok, record}}
 
     ## Handler Installation
 
@@ -59,12 +48,11 @@ if Code.ensure_loaded?(Ecto) do
       * `:output` — Transform function `(result, log) -> output` passed to
         `Writer.with_handler/3`. Use `fn r, log -> {r, log} end` to capture
         the log alongside the result.
-      * `:tag` — Writer tag for the log. Defaults to `Skuld.Effects.Port.Repo`.
-        Use this when you need to distinguish multiple Repo logs or avoid
+      * `:tag` — Writer tag for the log. Defaults to `Skuld.Effects.Port`.
+        Use this when you need to distinguish multiple Port logs or avoid
         collisions with other Writer tags.
       * `:registry` — Additional `Port` registry entries to merge alongside
-        the `Port.Repo` entry. Since nested `Port.with_handler` calls now
-        merge registries, this is a convenience shorthand. Example:
+        the `Port.Repo` entry. Example:
 
             Repo.Test.with_handler(comp,
               registry: %{MyApp.Queries => MyApp.Queries.TestImpl},
@@ -72,27 +60,14 @@ if Code.ensure_loaded?(Ecto) do
             )
     """
 
-    use Skuld.Syntax
-
+    alias Skuld.Comp
     alias Skuld.Effects.Port
     alias Skuld.Effects.Port.Repo
-    alias Skuld.Effects.Reader
     alias Skuld.Effects.Writer
 
     @behaviour Repo.Effectful
 
-    @default_tag Repo
-    @reader_tag __MODULE__
-
-    # -----------------------------------------------------------------
-    # Internal: read the Writer tag from Reader, log an operation
-    # -----------------------------------------------------------------
-
-    defcompp log(op, args, result) do
-      tag <- Reader.ask(@reader_tag)
-      _ <- Writer.tell(tag, {op, args, result})
-      result
-    end
+    @default_tag Port
 
     # -----------------------------------------------------------------
     # Write Operations
@@ -100,29 +75,17 @@ if Code.ensure_loaded?(Ecto) do
 
     @impl true
     def insert(changeset) do
-      comp do
-        result = {:ok, safe_apply_changes(changeset)}
-        _ <- log(:insert, [changeset], result)
-        result
-      end
+      Comp.pure({:ok, safe_apply_changes(changeset)})
     end
 
     @impl true
     def update(changeset) do
-      comp do
-        result = {:ok, safe_apply_changes(changeset)}
-        _ <- log(:update, [changeset], result)
-        result
-      end
+      Comp.pure({:ok, safe_apply_changes(changeset)})
     end
 
     @impl true
     def delete(record) do
-      comp do
-        result = {:ok, record}
-        _ <- log(:delete, [record], result)
-        result
-      end
+      Comp.pure({:ok, record})
     end
 
     # -----------------------------------------------------------------
@@ -130,21 +93,13 @@ if Code.ensure_loaded?(Ecto) do
     # -----------------------------------------------------------------
 
     @impl true
-    def update_all(queryable, updates, opts) do
-      comp do
-        result = {0, nil}
-        _ <- log(:update_all, [queryable, updates, opts], result)
-        result
-      end
+    def update_all(_queryable, _updates, _opts) do
+      Comp.pure({0, nil})
     end
 
     @impl true
-    def delete_all(queryable, opts) do
-      comp do
-        result = {0, nil}
-        _ <- log(:delete_all, [queryable, opts], result)
-        result
-      end
+    def delete_all(_queryable, _opts) do
+      Comp.pure({0, nil})
     end
 
     # -----------------------------------------------------------------
@@ -152,98 +107,53 @@ if Code.ensure_loaded?(Ecto) do
     # -----------------------------------------------------------------
 
     @impl true
-    def get(queryable, id) do
-      comp do
-        _ <- log(:get, [queryable, id], nil)
-        nil
-      end
-    end
+    def get(_queryable, _id), do: Comp.pure(nil)
 
     @impl true
-    def get!(queryable, id) do
-      comp do
-        _ <- log(:get!, [queryable, id], nil)
-        nil
-      end
-    end
+    def get!(_queryable, _id), do: Comp.pure(nil)
 
     @impl true
-    def get_by(queryable, clauses) do
-      comp do
-        _ <- log(:get_by, [queryable, clauses], nil)
-        nil
-      end
-    end
+    def get_by(_queryable, _clauses), do: Comp.pure(nil)
 
     @impl true
-    def get_by!(queryable, clauses) do
-      comp do
-        _ <- log(:get_by!, [queryable, clauses], nil)
-        nil
-      end
-    end
+    def get_by!(_queryable, _clauses), do: Comp.pure(nil)
 
     @impl true
-    def one(queryable) do
-      comp do
-        _ <- log(:one, [queryable], nil)
-        nil
-      end
-    end
+    def one(_queryable), do: Comp.pure(nil)
 
     @impl true
-    def one!(queryable) do
-      comp do
-        _ <- log(:one!, [queryable], nil)
-        nil
-      end
-    end
+    def one!(_queryable), do: Comp.pure(nil)
 
     @impl true
-    def all(queryable) do
-      comp do
-        _ <- log(:all, [queryable], [])
-        []
-      end
-    end
+    def all(_queryable), do: Comp.pure([])
 
     @impl true
-    def exists?(queryable) do
-      comp do
-        _ <- log(:exists?, [queryable], false)
-        false
-      end
-    end
+    def exists?(_queryable), do: Comp.pure(false)
 
     @impl true
-    def aggregate(queryable, aggregate_fn, field) do
-      comp do
-        _ <- log(:aggregate, [queryable, aggregate_fn, field], nil)
-        nil
-      end
-    end
+    def aggregate(_queryable, _aggregate_fn, _field), do: Comp.pure(nil)
 
     # -----------------------------------------------------------------
     # Handler Installation
     # -----------------------------------------------------------------
 
     @doc """
-    Install a test handler that wires `Port`, `Writer`, and `Reader` effects.
+    Install a test handler that wires `Port` (with logging) and `Writer`.
 
-    Registers this module as the effectful executor for `Port.Repo`,
-    installs a `Writer` handler to capture the operation log, and a
-    `Reader` to configure the Writer tag.
+    Registers this module as the effectful executor for `Port.Repo` and
+    enables Port-level logging via the `:log` option. A `Writer` handler
+    captures the log entries.
 
     ## Options
 
       * `:output` — Transform function `(result, log) -> output` passed
         through to `Writer.with_handler/3`. Without this, the log is
         discarded and only the computation result is returned.
-      * `:tag` — Writer tag for the log. Defaults to `Skuld.Effects.Port.Repo`.
-        Use this when you need to distinguish multiple Repo logs or avoid
+      * `:tag` — Writer tag for the log. Defaults to `Skuld.Effects.Port`.
+        Use this when you need to distinguish multiple Port logs or avoid
         collisions with other Writer tags.
       * `:registry` — Additional `Port` registry entries to merge alongside
-        the `Port.Repo` entry. Since nested `Port.with_handler/2` calls now
+        the `Port.Repo` entry. Since nested `Port.with_handler/2` calls
         merge registries (inner wins on conflict), you can also register
         extra Port contracts via an outer `with_handler` call. This option
         is a convenience for passing them inline:
@@ -261,7 +171,7 @@ if Code.ensure_loaded?(Ecto) do
         |> Repo.Test.with_handler(output: fn result, log -> {result, log} end)
         |> Throw.with_handler()
         |> Comp.run!()
-        #=> {result, [{:insert, [changeset], {:ok, struct}}, ...]}
+        #=> {result, [{Port.Repo, :insert, [changeset], {:ok, struct}}, ...]}
     """
     @spec with_handler(Skuld.Comp.Types.computation(), keyword()) ::
             Skuld.Comp.Types.computation()
@@ -285,9 +195,8 @@ if Code.ensure_loaded?(Ecto) do
         |> then(fn o -> if writer_output, do: Keyword.put(o, :output, writer_output), else: o end)
 
       comp
-      |> Port.with_handler(registry)
+      |> Port.with_handler(registry, log: tag)
       |> Writer.with_handler([], writer_opts)
-      |> Reader.with_handler(tag, tag: @reader_tag)
     end
 
     # -----------------------------------------------------------------

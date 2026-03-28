@@ -272,7 +272,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Comp.run!()
 
       assert {:ok, %TestUser{name: "Alice"}} = user
-      assert [{:insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
+      assert [{Repo, :insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
     end
 
     test "update applies changeset and logs operation" do
@@ -287,7 +287,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Comp.run!()
 
       assert {:ok, %TestUser{id: 1, name: "new"}} = result
-      assert [{:update, [^cs], {:ok, %TestUser{id: 1, name: "new"}}}] = log
+      assert [{Repo, :update, [^cs], {:ok, %TestUser{id: 1, name: "new"}}}] = log
     end
 
     test "delete logs operation and returns the record" do
@@ -302,7 +302,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Comp.run!()
 
       assert {:ok, ^record} = result
-      assert [{:delete, [^record], {:ok, ^record}}] = log
+      assert [{Repo, :delete, [^record], {:ok, ^record}}] = log
     end
 
     test "bang variant unwraps and logs" do
@@ -318,7 +318,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Comp.run!()
 
       assert %TestUser{name: "Alice"} = user
-      assert [{:insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
+      assert [{Repo, :insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
     end
 
     test "multiple operations accumulate in order" do
@@ -337,9 +337,9 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Comp.run!()
 
       assert [
-               {:insert, _, {:ok, %TestUser{name: "Alice"}}},
-               {:insert, _, {:ok, %TestUser{name: "Bob"}}},
-               {:get, [TestUser, 42], nil}
+               {Repo, :insert, _, {:ok, %TestUser{name: "Alice"}}},
+               {Repo, :insert, _, {:ok, %TestUser{name: "Bob"}}},
+               {Repo, :get, [TestUser, 42], nil}
              ] = log
     end
 
@@ -374,8 +374,8 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert {{0, nil}, {0, nil}} = results
 
       assert [
-               {:update_all, [TestUser, [set: [name: "bulk"]], []], {0, nil}},
-               {:delete_all, [TestUser, []], {0, nil}}
+               {Repo, :update_all, [TestUser, [set: [name: "bulk"]], []], {0, nil}},
+               {Repo, :delete_all, [TestUser, []], {0, nil}}
              ] = log
     end
 
@@ -390,7 +390,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Repo.Test.with_handler(tag: :my_repo_log, output: fn r, log -> {r, log} end)
         |> Comp.run!()
 
-      assert [{:insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
+      assert [{Repo, :insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
     end
 
     test "without output option, log is discarded" do
@@ -438,8 +438,11 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Comp.run!()
 
       assert {:did, %TestUser{name: "Alice"}} = result
-      # Only Repo operations appear in the log
-      assert [{:insert, _, _}] = log
+      # Both Repo and OtherContract operations appear in the log (Port-level logging)
+      assert [
+               {Repo, :insert, _, {:ok, %TestUser{name: "Alice"}}},
+               {OtherContract, :do_thing, _, {:ok, {:did, %TestUser{name: "Alice"}}}}
+             ] = log
     end
   end
 end
