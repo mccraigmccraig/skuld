@@ -1388,4 +1388,250 @@ defmodule Skuld.Effects.PortTest do
              ] = log
     end
   end
+
+  # ---------------------------------------------------------------
+  # Stateful handler tests
+  # ---------------------------------------------------------------
+
+  describe "with_stateful_handler/4" do
+    test "basic stateful handler — state threads across calls" do
+      handler = fn
+        TestQueries, :find_user, [id], state ->
+          count = Map.get(state, :call_count, 0) + 1
+          {{:ok, %{id: id, call: count}}, Map.put(state, :call_count, count)}
+      end
+
+      result =
+        Comp.bind(Port.request(TestQueries, :find_user, [1]), fn r1 ->
+          Comp.bind(Port.request(TestQueries, :find_user, [2]), fn r2 ->
+            Comp.pure({r1, r2})
+          end)
+        end)
+        |> Port.with_stateful_handler(%{}, handler)
+        |> Comp.run!()
+
+      assert {{:ok, %{id: 1, call: 1}}, {:ok, %{id: 2, call: 2}}} = result
+    end
+
+    test "read-after-write consistency — insert then get" do
+      handler = fn
+        TestQueries, :insert, [record], state ->
+          key = {:user, record.id}
+          {{:ok, record}, Map.put(state, key, record)}
+
+        TestQueries, :get, [kind, id], state ->
+          key = {kind, id}
+          {Map.get(state, key), state}
+      end
+
+      record = %{id: 42, name: "Alice"}
+
+      result =
+        Comp.bind(Port.request(TestQueries, :insert, [record]), fn {:ok, inserted} ->
+          Comp.bind(Port.request(TestQueries, :get, [:user, inserted.id]), fn found ->
+            Comp.pure({inserted, found})
+          end)
+        end)
+        |> Port.with_stateful_handler(%{}, handler)
+        |> Comp.run!()
+
+      assert {^record, ^record} = result
+    end
+
+    test "initial state is available from first call" do
+      handler = fn
+        TestQueries, :find_user, [id], state ->
+          user = Map.get(state, id)
+          {{:ok, user}, state}
+      end
+
+      initial = %{42 => %{id: 42, name: "Seeded Alice"}}
+
+      result =
+        Port.request(TestQueries, :find_user, [42])
+        |> Port.with_stateful_handler(initial, handler)
+        |> Comp.run!()
+
+      assert {:ok, %{id: 42, name: "Seeded Alice"}} = result
+    end
+
+    test "output callback receives final handler_state" do
+      handler = fn
+        TestQueries, :find_user, [id], state ->
+          new_state = Map.update(state, :seen, [id], &[id | &1])
+          {{:ok, %{id: id}}, new_state}
+      end
+
+      {result, final_state} =
+        Comp.bind(Port.request(TestQueries, :find_user, [1]), fn r1 ->
+          Comp.bind(Port.request(TestQueries, :find_user, [2]), fn r2 ->
+            Comp.pure({r1, r2})
+          end)
+        end)
+        |> Port.with_stateful_handler(%{}, handler,
+          output: fn result, state -> {result, state.handler_state} end
+        )
+        |> Comp.run!()
+
+      assert {{:ok, %{id: 1}}, {:ok, %{id: 2}}} = result
+      assert %{seen: [2, 1]} = final_state
+    end
+
+    test "logging works with stateful handler" do
+      handler = fn
+        TestQueries, :find_user, [id], state ->
+          count = Map.get(state, :count, 0) + 1
+          {{:ok, %{id: id}}, Map.put(state, :count, count)}
+      end
+
+      {result, log} =
+        Port.request(TestQueries, :find_user, [42])
+        |> Port.with_stateful_handler(%{}, handler,
+          log: true,
+          output: &log_output/2
+        )
+        |> Comp.run!()
+
+      assert {:ok, %{id: 42}} = result
+      assert [{TestQueries, :find_user, [42], {:ok, %{id: 42}}}] = log
+    end
+
+    test "FunctionClauseError returns port_not_handled" do
+      handler = fn
+        TestQueries, :find_user, [_id], state ->
+          {{:ok, :found}, state}
+      end
+
+      {result, _env} =
+        Port.request(TestQueries, :unknown_query, [:arg])
+        |> Port.with_stateful_handler(%{}, handler)
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %ThrowResult{error: {:port_not_handled, TestQueries, :unknown_query, [:arg], _}} =
+               result
+    end
+
+    test "handler exception returns port_handler_error" do
+      handler = fn
+        TestQueries, :find_user, _args, _state ->
+          raise "Stateful handler exploded!"
+      end
+
+      {result, _env} =
+        Port.request(TestQueries, :find_user, [1])
+        |> Port.with_stateful_handler(%{}, handler)
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %ThrowResult{
+               error: {:port_handler_error, TestQueries, :find_user, %RuntimeError{}}
+             } = result
+    end
+
+    test "works with request!/3 unwrapping" do
+      handler = fn
+        TestQueries, :find_user, [id], state ->
+          {{:ok, %{id: id, name: "Stateful"}}, state}
+      end
+
+      result =
+        Port.request!(TestQueries, :find_user, [42])
+        |> Port.with_stateful_handler(%{}, handler)
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert %{id: 42, name: "Stateful"} = result
+    end
+
+    test "request!/3 throws on {:error, _} from stateful handler" do
+      handler = fn
+        TestQueries, :find_user, [_id], state ->
+          {{:error, :not_found}, state}
+      end
+
+      {result, _env} =
+        Port.request!(TestQueries, :find_user, [42])
+        |> Port.with_stateful_handler(%{}, handler)
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %ThrowResult{error: :not_found} = result
+    end
+
+    test "module-specific resolver overrides stateful default" do
+      handler = fn
+        _mod, _name, [x], state ->
+          {{:ok, {:stateful, x}}, state}
+      end
+
+      comp =
+        Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
+          Comp.bind(Port.request(ModuleB, :do_b, [2]), fn b_result ->
+            Comp.pure({a_result, b_result})
+          end)
+        end)
+        |> Port.with_stateful_handler(%{}, handler)
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      {result, _} = Comp.run(comp)
+      # ModuleA goes to :direct, ModuleB falls through to stateful default
+      assert {{:ok, {:a, 1}}, {:ok, {:stateful, 2}}} = result
+    end
+
+    test "combines with other effects (State)" do
+      alias Skuld.Effects.State
+
+      handler = fn
+        TestQueries, :find_user, [id], store ->
+          {{:ok, Map.get(store, id, :not_found)}, store}
+      end
+
+      initial_store = %{1 => %{id: 1, name: "Alice"}}
+
+      result =
+        Comp.bind(Port.request(TestQueries, :find_user, [1]), fn user ->
+          Comp.bind(State.get(), fn count ->
+            Comp.bind(State.put(count + 1), fn _ ->
+              Comp.pure({user, count})
+            end)
+          end)
+        end)
+        |> Port.with_stateful_handler(initial_store, handler)
+        |> State.with_handler(0)
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+      assert {{:ok, %{id: 1, name: "Alice"}}, 0} = result
+    end
+
+    test "output receives both log and handler_state" do
+      handler = fn
+        TestQueries, :find_user, [id], state ->
+          count = Map.get(state, :count, 0) + 1
+          {{:ok, %{id: id}}, Map.put(state, :count, count)}
+      end
+
+      {result, log, final_handler_state} =
+        Comp.bind(Port.request(TestQueries, :find_user, [1]), fn r1 ->
+          Comp.bind(Port.request(TestQueries, :find_user, [2]), fn r2 ->
+            Comp.pure({r1, r2})
+          end)
+        end)
+        |> Port.with_stateful_handler(%{}, handler,
+          log: true,
+          output: fn result, state -> {result, state.log, state.handler_state} end
+        )
+        |> Comp.run!()
+
+      assert {{:ok, %{id: 1}}, {:ok, %{id: 2}}} = result
+
+      assert [
+               {TestQueries, :find_user, [1], {:ok, %{id: 1}}},
+               {TestQueries, :find_user, [2], {:ok, %{id: 2}}}
+             ] = log
+
+      assert %{count: 2} = final_handler_state
+    end
+  end
 end

@@ -100,11 +100,12 @@ defmodule Skuld.Effects.Port do
   defmodule State do
     @moduledoc false
     @enforce_keys [:registry]
-    defstruct [:registry, :log]
+    defstruct [:registry, :log, :handler_state]
 
     @type t :: %__MODULE__{
             registry: Skuld.Effects.Port.registry(),
-            log: list() | nil
+            log: list() | nil,
+            handler_state: term()
           }
 
     @doc false
@@ -158,6 +159,8 @@ defmodule Skuld.Effects.Port do
     * `{:test_stub, responses}` – map-based test stubs keyed by `Port.key/3`
     * `{:test_stub, responses, fallback}` – test stubs with fallback function
     * `{:fn_dispatch, handler_fn}` – function-based dispatch via `fn(mod, name, args)`
+    * `{:stateful_dispatch, handler_fn}` – stateful dispatch via
+      `fn(mod, name, args, state) -> {result, new_state}`
   """
   @type resolver ::
           :direct
@@ -168,12 +171,16 @@ defmodule Skuld.Effects.Port do
           | {:test_stub, map()}
           | {:test_stub, map(), fn_handler()}
           | {:fn_dispatch, fn_handler()}
+          | {:stateful_dispatch, stateful_handler()}
 
   @typedoc "Registry mapping port modules (or `:__default__`) to resolvers"
   @type registry :: %{(port_module() | :__default__) => resolver()}
 
   @typedoc "Function handler for test scenarios - receives (mod, name, args)"
   @type fn_handler :: (port_module(), port_name(), args() -> term())
+
+  @typedoc "Stateful handler function - receives (mod, name, args, state), returns {result, new_state}"
+  @type stateful_handler :: (port_module(), port_name(), args(), term() -> {term(), term()})
 
   # Sentinel registry key for catch-all resolvers (test stubs, fn handlers)
   @default_key :__default__
@@ -533,6 +540,78 @@ defmodule Skuld.Effects.Port do
   end
 
   #############################################################################
+  ## Handler Installation - Test (Stateful Function-based)
+  #############################################################################
+
+  @doc """
+  Install a stateful function-based test handler.
+
+  The handler function receives `(mod, name, args, state)` and returns
+  `{result, new_state}`. State is threaded across Port calls within the
+  scope, enabling test doubles where writes are visible to subsequent reads.
+
+  ## Options
+
+    * `:log` — enable dispatch logging (see `with_handler/3`)
+    * `:output` — transform `(result, %Port.State{}) -> output` on scope exit.
+      The `state.handler_state` field contains the final handler state.
+
+  ## Example
+
+      # Stateful in-memory store: insert then read back
+      handler = fn
+        MyRepo, :insert, [record], state ->
+          key = {record.__struct__, record.id}
+          {{:ok, record}, Map.put(state, key, record)}
+
+        MyRepo, :get, [schema, id], state ->
+          key = {schema, id}
+          {Map.get(state, key), state}
+      end
+
+      {result, final_state} =
+        my_insert_then_read_comp
+        |> Port.with_stateful_handler(%{}, handler,
+          output: fn result, state -> {result, state.handler_state} end
+        )
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+  ## Property-Based Testing
+
+  Stateful handlers pair naturally with property-based tests where
+  the in-memory model serves as the oracle:
+
+      property "insert then get returns the same record" do
+        check all id <- integer(), name <- string(:alphanumeric) do
+          record = %User{id: id, name: name}
+          handler = fn
+            Repo, :insert, [r], state -> {{:ok, r}, Map.put(state, {User, r.id}, r)}
+            Repo, :get, [schema, id], state -> {Map.get(state, {schema, id}), state}
+          end
+
+          result =
+            insert_then_get(record)
+            |> Port.with_stateful_handler(%{}, handler)
+            |> Throw.with_handler()
+            |> Comp.run!()
+
+          assert result == record
+        end
+      end
+  """
+  @spec with_stateful_handler(Types.computation(), term(), stateful_handler(), keyword()) ::
+          Types.computation()
+  def with_stateful_handler(comp, initial_state, handler_fn, opts \\ [])
+      when is_function(handler_fn, 4) do
+    install_registry(
+      comp,
+      %{@default_key => {:stateful_dispatch, handler_fn}},
+      Keyword.put(opts, :initial_handler_state, initial_state)
+    )
+  end
+
+  #############################################################################
   ## Shared Registry Installation
   #############################################################################
 
@@ -541,6 +620,7 @@ defmodule Skuld.Effects.Port do
     output = Keyword.get(opts, :output)
     suspend = Keyword.get(opts, :suspend)
     log_enabled = Keyword.has_key?(opts, :log) and opts[:log] != nil
+    initial_handler_state = Keyword.get(opts, :initial_handler_state)
     state_key = @state_key
 
     comp
@@ -585,7 +665,12 @@ defmodule Skuld.Effects.Port do
           end
         end
 
-      new_state = State.new(merged_registry, merged_log)
+      new_state = %State{
+        registry: merged_registry,
+        log: merged_log,
+        handler_state: initial_handler_state
+      }
+
       env_with_state = Env.put_state(env, state_key, new_state)
 
       # If :suspend option provided, compose into transform_suspend
@@ -682,6 +767,9 @@ defmodule Skuld.Effects.Port do
       {:ok, {:fn_dispatch, handler_fn}} ->
         dispatch_fn(handler_fn, mod, name, args, log, env, k)
 
+      {:ok, {:stateful_dispatch, handler_fn}} ->
+        dispatch_stateful(handler_fn, mod, name, args, log, env, k)
+
       {:ok, runtime_resolver} ->
         dispatch_runtime(runtime_resolver, mod, name, args, log, env, k)
 
@@ -755,6 +843,38 @@ defmodule Skuld.Effects.Port do
   defp dispatch_fn(handler_fn, mod, name, args, log, env, k) do
     result = handler_fn.(mod, name, args)
     emit_log_and_continue(result, mod, name, args, log, env, k)
+  rescue
+    e in FunctionClauseError ->
+      # No matching clause - report what we received
+      emit_log_and_return(
+        %ThrowResult{error: {:port_not_handled, mod, name, args, e}},
+        mod,
+        name,
+        args,
+        log,
+        env
+      )
+
+    e ->
+      # Other error in handler
+      emit_log_and_return(
+        %ThrowResult{error: {:port_handler_error, mod, name, e}},
+        mod,
+        name,
+        args,
+        log,
+        env
+      )
+  end
+
+  defp dispatch_stateful(handler_fn, mod, name, args, log, env, k) do
+    state_key = @state_key
+    port_state = Env.get_state!(env, state_key)
+    handler_state = port_state.handler_state
+    {result, new_handler_state} = handler_fn.(mod, name, args, handler_state)
+    updated_port_state = %{port_state | handler_state: new_handler_state}
+    env_with_state = Env.put_state(env, state_key, updated_port_state)
+    emit_log_and_continue(result, mod, name, args, log, env_with_state, k)
   rescue
     e in FunctionClauseError ->
       # No matching clause - report what we received
