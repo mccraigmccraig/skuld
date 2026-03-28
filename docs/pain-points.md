@@ -46,30 +46,46 @@ that's impractical when every test run hits real infrastructure.
 See: [Testing Effectful Code](recipes/testing.md),
 [Handler Stacks](recipes/handler-stacks.md)
 
-### No more Mox boilerplate
+### Reusable stateful test doubles
 
-**The pain**: Mox works for one mock. But when a single test needs
-to stub three behaviours that interact, the setup is fragile and verbose.
-Mocks are global (or per-process), making concurrent tests tricky.
-And Mox can't help with property-based tests - you'd need stateful mock
-coordination across hundreds of generated inputs.
+**The pain**: Mox works well for simple tests — stub a few calls and
+verify the result. But when functions make many calls to the same
+dependency, and later calls depend on data from earlier calls
+(reads-after-writes), each stub must return values consistent with what
+earlier stubs returned. Adding a new data access call to the function
+means updating every test's stub setup. Property-based tests are
+possible but require building ad-hoc in-memory implementations with
+Agents or closures.
 
-**What Skuld does**: Handler swapping replaces Mox entirely for most
-use cases. Handlers are scoped to the computation, not the process.
-There's no global state to coordinate. Multiple effects compose
-naturally - stubbing five things is as clean as stubbing one:
+**What Skuld does**: Handler swapping provides reusable stateful test
+doubles. `Repo.InMemory` is a complete in-memory Repo backed by a map
+that maintains read-after-write consistency. Seed the data, and the
+handler routes `get`, `insert`, `get_by`, etc. automatically — no
+per-call stubs to maintain:
 
 ```elixir
-process_order(%{user_id: "u1", items: items})
-|> Port.with_test_handler(%{
-  UserRepo.key(:fetch_user, "u1") => {:ok, test_user},
-  PricingService.key(:calculate, {test_user, items}) => {:ok, 99_00}
-})
-|> Fresh.with_test_handler()
-|> EventAccumulator.with_handler(output: &{&1, &2})
-|> Throw.with_handler()
-|> Comp.run!()
+initial = Repo.InMemory.seed([
+  %User{id: "u1", name: "Alice"},
+  %PayRate{id: "pr1", hourly_rate: Decimal.new("25.00")}
+])
+
+result =
+  process_order(%{user_id: "u1", items: items})
+  |> Repo.InMemory.with_handler(initial)
+  |> Fresh.with_test_handler()
+  |> EventAccumulator.with_handler(output: &{&1, &2})
+  |> Throw.with_handler()
+  |> Comp.run!()
 ```
+
+For simple tests, `Port.with_test_handler` (exact-match map) and
+`Port.with_fn_handler` (pattern-matching function) provide lightweight
+stateless stubs — similar in spirit to Mox's `stub/3`.
+
+For custom stateful test doubles beyond Repo, use
+`Port.with_stateful_handler(comp, initial_state, handler_fn)` where
+the handler function receives `(mod, name, args, state)` and returns
+`{result, new_state}`.
 
 ### Deterministic UUIDs, randomness, and time
 

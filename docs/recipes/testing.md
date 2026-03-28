@@ -133,10 +133,12 @@ Skuld provides test handlers for common effects:
 
 | Effect | Test handler | What it does |
 |--------|-------------|--------------|
-| Port   | `Port.with_test_handler/1` | Exact-match stub map |
-| Port   | `Port.with_fn_handler/1` | Pattern-matching function |
+| Port   | `Port.with_test_handler/2` | Exact-match stub map |
+| Port   | `Port.with_fn_handler/2` | Pattern-matching function |
+| Port   | `Port.with_stateful_handler/4` | Stateful `fn(mod, name, args, state) -> {result, new_state}` |
 | Port   | Any handler + `log: true` | Dispatch logging in `Port.State.log` |
-| Port.Repo | `Port.Repo.Test` (effectful resolver) | In-memory Repo (sensible defaults) |
+| Port.Repo | `Port.Repo.Test` (effectful resolver) | Stateless Repo (sensible defaults, no state) |
+| Port.Repo | `Repo.InMemory.with_handler/3` | Stateful in-memory Repo (read-after-write consistency) |
 | Transaction | `Transaction.Noop.with_handler/0` | Env state rollback, no database |
 | Fresh  | `Fresh.with_test_handler/0` | Deterministic UUIDs (UUID5) |
 | Random | `Random.with_handler/1` | Fixed sequence or seeded |
@@ -191,6 +193,111 @@ code is written.
 See [Testing plain hexagons with Mox](hexagonal-architecture.md#testing-plain-hexagons-with-mox)
 in the Hexagonal Architecture recipe for the full setup, examples, and
 adoption path.
+
+## Stateful test handlers
+
+When tests need **read-after-write consistency** — insert a record, then
+get it back within the same computation — use `Port.with_stateful_handler`
+or the built-in `Repo.InMemory`.
+
+### Port.with_stateful_handler
+
+The primitive for building custom stateful test doubles. The handler
+function receives `(mod, name, args, state)` and returns
+`{result, new_state}`:
+
+```elixir
+handler = fn
+  MyCache, :put, [key, value], state ->
+    {:ok, Map.put(state, key, value)}
+
+  MyCache, :get, [key], state ->
+    {Map.get(state, key), state}
+end
+
+result =
+  my_comp
+  |> Port.with_stateful_handler(%{}, handler)
+  |> Comp.run!()
+```
+
+Use `output:` to inspect the final handler state:
+
+```elixir
+{result, final_state} =
+  my_comp
+  |> Port.with_stateful_handler(%{}, handler,
+    output: fn result, state -> {result, state.handler_state} end
+  )
+  |> Comp.run!()
+```
+
+### Repo.InMemory
+
+A complete in-memory Repo implementation built on
+`Port.with_stateful_handler`. State is a `%{{schema, id} => struct}`
+map. All standard Repo operations are supported — `insert`, `update`,
+`delete`, `get`, `get_by`, `all`, `exists?`, `aggregate`, etc.
+
+```elixir
+alias Skuld.Effects.Port.Repo
+
+# Start empty — inserted records get auto-incremented IDs
+result =
+  comp do
+    {:ok, user} <- Repo.insert(User.changeset(%{name: "Alice"}))
+    found <- Repo.get(User, user.id)
+    {user, found}
+  end
+  |> Repo.InMemory.with_handler()
+  |> Comp.run!()
+
+assert {user, user} = result
+```
+
+Seed initial state with `Repo.InMemory.seed/1`:
+
+```elixir
+initial = Repo.InMemory.seed([
+  %User{id: 1, name: "Alice"},
+  %User{id: 2, name: "Bob"}
+])
+
+result =
+  Repo.all(User)
+  |> Repo.InMemory.with_handler(initial)
+  |> Comp.run!()
+
+assert length(result) == 2
+```
+
+Inspect the final store:
+
+```elixir
+{result, store} =
+  comp do
+    _ <- Repo.insert(User.changeset(%{name: "Alice"}))
+    _ <- Repo.insert(User.changeset(%{name: "Bob"}))
+    Repo.all(User)
+  end
+  |> Repo.InMemory.with_handler(%{},
+    output: fn result, state -> {result, state.handler_state} end
+  )
+  |> Comp.run!()
+
+# store is %{{User, 1} => %User{...}, {User, 2} => %User{...}}
+```
+
+### When to use Repo.InMemory vs Repo.Test
+
+- **`Repo.Test`** — stateless: writes apply changesets and return
+  `{:ok, struct}` but nothing is stored. Reads return defaults
+  (`nil`, `[]`, `false`). Use for tests that only need fire-and-forget
+  writes with applied changesets.
+
+- **`Repo.InMemory`** — stateful: writes store records, subsequent
+  reads find them. Use when your test needs read-after-write consistency
+  (insert then get, update then read back, etc.).
 
 ## Tips
 

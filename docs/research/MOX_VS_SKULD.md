@@ -253,21 +253,23 @@ needs stateful interactions builds its own version of this.
 ```elixir
 property "register creates consistent user" do
   check all(name <- string(:alphanumeric, min_length: 1)) do
-    {user, _env} =
+    user =
       Onboarding.register(%{name: name})
-      |> Port.with_handler(%{Repo => Repo.InMemory})
+      |> Repo.InMemory.with_handler()
       |> Fresh.with_test_handler()
       |> Throw.with_handler()
-      |> Comp.run()
+      |> Comp.run!()
 
     assert user.name == name
   end
 end
 ```
 
-`Repo.InMemory` is a reusable in-memory implementation that maintains
-consistent state across all calls within a single `Comp.run`. It's
-written once and used across all tests.
+`Repo.InMemory` is a stateful in-memory Repo handler built on
+`Port.with_stateful_handler`. State is a `%{{schema, id} => struct}`
+map that threads across Port calls, giving read-after-write
+consistency within a single computation. It's written once and used
+across all tests — no per-test Agent or closure hacks.
 
 ### The key difference
 
@@ -432,26 +434,29 @@ ID, a fake `insert!` that assigns IDs, etc.
 ```elixir
 test "clock out calculates overtime correctly" do
   # Seed the in-memory store with consistent data
-  {result, _env} =
+  initial = Repo.InMemory.seed([
+    %Employee{id: "e1", pay_rate_id: "pr1", overtime_policy_id: "op1"},
+    %Shift{id: "s1", employee_id: "e1", status: :active, started_at: ~U[2024-01-01 08:00:00Z]},
+    %PayRate{id: "pr1", hourly_rate: Decimal.new("25.00")},
+    %OvertimePolicy{id: "op1", threshold_hours: 8, multiplier: Decimal.new("1.5")}
+  ])
+
+  result =
     Payroll.execute_clock_out("e1", ~U[2024-01-01 18:00:00Z])
-    |> Port.with_handler(%{Repo => Repo.InMemory})
-    |> Repo.InMemory.seed(%{
-      {Employee, "e1"} => %Employee{id: "e1", pay_rate_id: "pr1", overtime_policy_id: "op1"},
-      {Shift, "s1"} => %Shift{id: "s1", employee_id: "e1", status: :active, started_at: ~U[2024-01-01 08:00:00Z]},
-      {PayRate, "pr1"} => %PayRate{id: "pr1", hourly_rate: Decimal.new("25.00")},
-      {OvertimePolicy, "op1"} => %OvertimePolicy{id: "op1", threshold_hours: 8, multiplier: Decimal.new("1.5")}
-    })
+    |> Repo.InMemory.with_handler(initial)
     |> Throw.with_handler()
-    |> Comp.run()
+    |> Comp.run!()
 
   assert {:ok, %Pay{overtime_hours: 2}} = result
 end
 ```
 
 When the function adds a Department lookup, you add one line to the
-seed data. No stub routing logic to update, no helper function to
-maintain. The in-memory handler already knows how to `get!`, `insert!`,
-`get_by!`, etc. — it's a complete implementation, not a set of stubs.
+seed list. No stub routing logic to update, no helper function to
+maintain. `Repo.InMemory` already knows how to `get!`, `insert!`,
+`get_by!`, etc. — it's a complete implementation backed by a map,
+not a set of stubs. Writes are visible to subsequent reads within
+the same computation.
 
 ### Why the in-memory handler is fundamentally different from Mox stubs
 
@@ -462,8 +467,9 @@ The key insight is what each approach simulates:
   readable in call 7) must be manually maintained by the test author.
 
 - **Skuld in-memory handlers simulate the dependency's behaviour.**
-  They maintain state across calls. Consistency is automatic because
-  the handler *is* a working implementation, just backed by a map
+  `Repo.InMemory` (built on `Port.with_stateful_handler`) maintains a
+  `%{{schema, id} => struct}` map across calls. Consistency is automatic
+  because the handler *is* a working implementation, backed by a map
   instead of a database.
 
 This matters most when:
@@ -553,11 +559,12 @@ Skuld's handler model pays for itself.
 
 ### What the documentation should say
 
-- **Remove:** "Mocks are global/per-process, making concurrent tests
-  tricky" — this is wrong for Mox
-- **Reframe:** "Mox boilerplate" → "reusable stateful test doubles
-  vs per-test stub setup"
-- **Keep and expand:** the stateful call chain / property testing
-  arguments — these are genuine and well-supported
+- **Removed:** "Mocks are global/per-process, making concurrent tests
+  tricky" — this was wrong for Mox (done: pain-points.md updated)
+- **Reframed:** "Mox boilerplate" → focus on reusable stateful test
+  doubles vs per-test stub setup (done: pain-points.md updated)
+- **Expanded:** the stateful call chain / property testing arguments
+  now have real working implementations (`Port.with_stateful_handler`,
+  `Repo.InMemory`) instead of aspirational examples
 - **Be honest:** Mox is simpler for simple cases. Skuld's advantage
   is structural, not syntactic
