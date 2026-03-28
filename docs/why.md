@@ -115,20 +115,18 @@ To test `renew_subscription/1` you need:
 - A payment provider (or a mock of one)
 - A mailer (or a mock of one)
 
-You can mock these with Mox or Mimic. But mocks have well-known problems:
+You can mock these with Mox or Mimic. For simple cases — a few stubs
+per test — this works well. But as orchestration complexity grows:
 
-- **They couple tests to implementation.** If you refactor
-  `renew_subscription` to call `Repo.preload` instead of separate
-  `Repo.get!` calls, your mock expectations break even though the
-  behaviour is identical.
-- **They don't compose.** Mocking the payment provider while also mocking
-  the database while also mocking the mailer requires understanding how
-  all three interact in each test scenario. The setup becomes the bulk of
-  the test.
-- **Property-based testing is effectively impossible.** You can't generate
-  hundreds of random renewal scenarios and verify invariants like
-  "a successful charge always produces an updated subscription" if each
-  scenario requires carefully choreographed mock expectations.
+- **Stateful call chains get awkward.** When later calls depend on data
+  from earlier calls (insert a record, then read it back), each stub
+  must return values consistent with what earlier stubs returned.
+  Adding a new data access call means updating every test's stub setup.
+- **Property-based testing requires ad-hoc in-memory implementations.**
+  You can generate random inputs and use Agents or closures to build
+  stateful test doubles, but you're hand-rolling an in-memory
+  implementation for each test that needs one — there's no reusable
+  abstraction.
 
 ### The coupling problem
 

@@ -234,14 +234,18 @@ dual type system made higher-order effects awkward.
 
 | Aspect | Mox/Mimic | Skuld effects |
 |--------|-----------|---------------|
-| Scope | Per-test mocks | Per-computation handlers |
-| Composition | Manual; fragile with multiple mocks | Natural; handlers stack |
-| Property testing | Difficult (stateful mocks) | Easy (pure handlers) |
+| Scope | Per-process expectations | Per-computation handlers |
+| Simple stubs | Clean; `stub/3` is order-independent | Clean; map or function handler |
+| Stateful test doubles | Ad-hoc (Agent/closure per test) | Reusable (`Repo.InMemory`, `with_stateful_handler`) |
+| Property testing | Possible but requires hand-rolled in-memory impls | Natural fit with reusable handlers |
 | Runtime behaviour | Same code, mocked dependencies | Same code, different handlers |
-| Concurrency | Global/per-process mock state | Handlers in computation env |
+| Concurrency | Per-process isolation; `allow/3` for multi-process | Handlers in computation env |
 
-Effects replace most uses of Mox. Instead of mocking a behaviour, you
-swap the handler. The computation code is genuinely pure.
+For simple cases (1-3 external calls), Mox and Skuld are comparable.
+Skuld's advantage appears with stateful call chains (reads-after-writes),
+deep orchestration (10+ calls), and property tests — where reusable
+in-memory handlers replace ad-hoc per-test stubs. See
+[Mox vs Skuld](research/MOX_VS_SKULD.md) for a detailed comparison.
 
 ### vs GenStage/Flow (streaming)
 
