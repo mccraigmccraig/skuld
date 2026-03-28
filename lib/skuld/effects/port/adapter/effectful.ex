@@ -64,7 +64,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
     * **Skuld→Effectful** — effectful code calls out to effectful implementations
       through the Port effect with an `:effectful` resolver.
     * **Legacy→Plain** — plain Elixir code calls plain implementations through
-      `Port.Adapter.Direct`.
+      `Port.Adapter.Plain`.
     * **Legacy→Effectful** — plain Elixir code calls into effectful implementations
       through this adapter (`Port.Adapter.Effectful`), which runs the effectful
       code with a handler stack, producing plain return values.

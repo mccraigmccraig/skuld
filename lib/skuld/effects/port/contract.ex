@@ -20,7 +20,7 @@ defmodule Skuld.Effects.Port.Contract do
 
     * `MyContract.Plain` — callbacks return plain values. Use for non-effectful
       implementations that are called via `Port.with_handler/2` or
-      `Port.Adapter.Direct`.
+      `Port.Adapter.Plain`.
     * `MyContract.Effectful` — callbacks return `computation(return_type)`. Use for
       effectful implementations that are called via the `:effectful` resolver in
       `Port.with_handler/2` or wrapped with `Port.Adapter.Effectful`.
@@ -257,7 +257,7 @@ defmodule Skuld.Effects.Port.Contract do
         Defines plain Elixir callbacks — implementations receive and return
         ordinary values (no computations). Implementations satisfying this
         behaviour can be used with `Port.with_handler/2` (`:direct` resolver)
-        or wrapped with `Port.Adapter.Direct`.
+        or wrapped with `Port.Adapter.Plain`.
         """
 
         unquote_splicing(consumer_callbacks)

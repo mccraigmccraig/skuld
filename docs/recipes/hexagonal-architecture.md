@@ -18,7 +18,7 @@ code can be either **plain Elixir** (legacy/non-effectful) or **effectful**
 
 | # | Caller       | Implementation | Mechanism                                          |
 |---|--------------|----------------|----------------------------------------------------|
-| 1 | Plain Elixir | Plain Elixir   | `Port.Adapter.Direct`                              |
+| 1 | Plain Elixir | Plain Elixir   | `Port.Adapter.Plain`                               |
 | 2 | Plain Elixir | Effectful      | `Port.Adapter.Effectful`                           |
 | 3 | Effectful    | Plain Elixir   | `Port.with_handler` + `:direct` resolver           |
 | 4 | Effectful    | Effectful      | `Port.with_handler` + effectful module (auto-detected) |
@@ -83,10 +83,10 @@ defmodule MyApp.Inventory do
 end
 ```
 
-### Step 2: Wire plain→plain with `Adapter.Direct`
+### Step 2: Wire plain→plain with `Adapter.Plain`
 
 The existing implementations already have the right function signatures.
-Declare that they satisfy the `Plain` behaviour and create direct adapters:
+Declare that they satisfy the `Plain` behaviour and create plain adapters:
 
 ```elixir
 # Existing implementations — add @behaviour
@@ -100,16 +100,16 @@ defmodule MyApp.InventoryService do
   # ... existing code unchanged ...
 end
 
-# Direct adapters — config-dispatched delegation through the contract
+# Plain adapters — config-dispatched delegation through the contract
 defmodule MyApp.Orders.Adapter do
-  use Skuld.Effects.Port.Adapter.Direct,
+  use Skuld.Effects.Port.Adapter.Plain,
     contract: MyApp.Orders,
     otp_app: :my_app,
     default: MyApp.OrderService
 end
 
 defmodule MyApp.Inventory.Adapter do
-  use Skuld.Effects.Port.Adapter.Direct,
+  use Skuld.Effects.Port.Adapter.Plain,
     contract: MyApp.Inventory,
     otp_app: :my_app,
     default: MyApp.InventoryService
@@ -248,14 +248,14 @@ value.
 
 ## The four scenarios in detail
 
-### Scenario 1: Plain → Plain (`Adapter.Direct`)
+### Scenario 1: Plain → Plain (`Adapter.Plain`)
 
 Both caller and implementation are plain Elixir. The adapter dispatches
 to a config-resolved implementation through the contract boundary.
 
 ```elixir
 defmodule MyApp.Orders.Adapter do
-  use Skuld.Effects.Port.Adapter.Direct,
+  use Skuld.Effects.Port.Adapter.Plain,
     contract: MyApp.Orders,
     otp_app: :my_app,
     default: MyApp.OrderService
@@ -359,7 +359,7 @@ comp
 |> Throw.with_handler()
 |> Comp.run!()
 
-# Test Adapter.Direct — plain Elixir, no effect machinery
+# Test Adapter.Plain — plain Elixir, no effect machinery
 assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
 
 # Test Adapter.Effectful — also plain Elixir (adapter runs effects internally)
@@ -372,7 +372,7 @@ For plain hexagons that drive a Port contract (scenarios 1 and 2), you
 can use [Mox](https://hexdocs.pm/mox) against the contract's generated
 `Plain` behaviour for isolated unit tests — no effect machinery needed.
 
-The `Adapter.Direct` dispatches to a config-resolved implementation, so
+The `Adapter.Plain` dispatches to a config-resolved implementation, so
 swapping in a Mox mock is just a config change.
 
 #### Setup
@@ -448,11 +448,11 @@ end
 
 1. **Define a Port contract** — `use Skuld.Effects.Port.Contract` with
    `defport` declarations
-2. **Create an `Adapter.Direct`** — config-dispatched adapter with your
+2. **Create an `Adapter.Plain`** — config-dispatched adapter with your
    existing module as the default
 3. **Use Mox in tests** — `Mox.defmock(Mock, for: MyContract.Plain)`,
    point adapter at mock via `config/test.exs`
-4. **Later, optionally** — replace `Adapter.Direct` with
+4. **Later, optionally** — replace `Adapter.Plain` with
    `Adapter.Effectful` for an effectful implementation — callers
    don't change
 
@@ -464,7 +464,7 @@ full effect system to benefit from Port contracts and test isolation.
 - Define one contract per bounded context or aggregate
 - Keep Plain implementations thin — just infrastructure calls
 - The in-memory Plain implementation is your test double — no mocks needed
-- Start with `Adapter.Direct` to impose boundaries, convert later
+- Start with `Adapter.Plain` to impose boundaries, convert later
 - `use MyContract.Effectful` auto-detects effectful resolvers — no
   `{:effectful, mod}` wrapper needed (though it still works)
 - Use `Adapter.Effectful` when you want encapsulated effect execution

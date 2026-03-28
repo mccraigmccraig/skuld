@@ -181,7 +181,7 @@ end
 ## Testing plain hexagons with Mox
 
 When testing plain Elixir code that drives a Port contract (via
-`Port.Adapter.Direct` or `Port.Adapter.Effectful`), you can use
+`Port.Adapter.Plain` or `Port.Adapter.Effectful`), you can use
 [Mox](https://hexdocs.pm/mox) against the contract's generated `Plain`
 behaviour for isolated unit tests — no effect machinery needed. This
 also strengthens the incremental adoption story: introducing a Port

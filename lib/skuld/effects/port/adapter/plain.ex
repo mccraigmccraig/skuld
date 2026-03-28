@@ -1,8 +1,8 @@
-defmodule Skuld.Effects.Port.Adapter.Direct do
+defmodule Skuld.Effects.Port.Adapter.Plain do
   @moduledoc """
-  Macro for creating a config-dispatched adapter for a port contract.
+  Macro for creating a config-dispatched plain adapter for a port contract.
 
-  A direct adapter generates plain Elixir functions that delegate to an
+  A plain adapter generates plain Elixir functions that delegate to an
   implementation module resolved from application config at runtime. Both
   caller and implementation deal in plain values — no Skuld computation
   machinery is involved.
@@ -42,9 +42,9 @@ defmodule Skuld.Effects.Port.Adapter.Direct do
         end
       end
 
-      # Direct adapter — dispatches to config-resolved impl
+      # Plain adapter — dispatches to config-resolved impl
       defmodule MyApp.UserService.Adapter do
-        use Skuld.Effects.Port.Adapter.Direct,
+        use Skuld.Effects.Port.Adapter.Plain,
           contract: MyApp.UserService,
           otp_app: :my_app,
           default: MyApp.UserService.Ecto
@@ -99,7 +99,7 @@ defmodule Skuld.Effects.Port.Adapter.Direct do
   This is the first step in incremental adoption:
 
   1. Define a contract (`defport` declarations)
-  2. Wire callers through `Port.Adapter.Direct`
+  2. Wire callers through `Port.Adapter.Plain`
   3. Use Mox in tests for isolation
   4. Later, replace with `Port.Adapter.Effectful` to switch to an
      effectful implementation — callers don't change
@@ -107,7 +107,7 @@ defmodule Skuld.Effects.Port.Adapter.Direct do
   ## Migration to Effectful
 
   When you're ready to convert to an effectful implementation, replace
-  `use Port.Adapter.Direct` with `use Port.Adapter.Effectful` and
+  `use Port.Adapter.Plain` with `use Port.Adapter.Effectful` and
   provide a handler stack. The adapter's public API doesn't change,
   so callers are unaffected.
 
@@ -123,19 +123,19 @@ defmodule Skuld.Effects.Port.Adapter.Direct do
     default = Keyword.get(opts, :default)
 
     quote do
-      @before_compile {Skuld.Effects.Port.Adapter.Direct, :__before_compile__}
-      @__port_direct_contract__ unquote(contract)
-      @__port_direct_otp_app__ unquote(otp_app)
-      @__port_direct_config_key__ unquote(config_key)
-      @__port_direct_default__ unquote(default)
+      @before_compile {Skuld.Effects.Port.Adapter.Plain, :__before_compile__}
+      @__port_plain_contract__ unquote(contract)
+      @__port_plain_otp_app__ unquote(otp_app)
+      @__port_plain_config_key__ unquote(config_key)
+      @__port_plain_default__ unquote(default)
     end
   end
 
   defmacro __before_compile__(env) do
-    contract = Module.get_attribute(env.module, :__port_direct_contract__)
-    otp_app = Module.get_attribute(env.module, :__port_direct_otp_app__)
-    config_key = Module.get_attribute(env.module, :__port_direct_config_key__) || env.module
-    default = Module.get_attribute(env.module, :__port_direct_default__)
+    contract = Module.get_attribute(env.module, :__port_plain_contract__)
+    otp_app = Module.get_attribute(env.module, :__port_plain_otp_app__)
+    config_key = Module.get_attribute(env.module, :__port_plain_config_key__) || env.module
+    default = Module.get_attribute(env.module, :__port_plain_default__)
 
     # Validate contract module has __port_operations__/0
     unless function_exported?(contract, :__port_operations__, 0) do
