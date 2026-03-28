@@ -191,31 +191,45 @@ is exactly what [Mox](https://hexdocs.pm/mox) needs.
 
 ### Setup
 
-Add Mox to your test dependencies and define a mock in `test/support`:
+1. Add Mox to your test dependencies
+2. Define a mock in `test/support/mocks.ex`:
 
 ```elixir
 # test/support/mocks.ex
 Mox.defmock(MyApp.Repository.Mock, for: MyApp.Repository.Plain)
 ```
 
+3. Configure the mock for the test environment:
+
+```elixir
+# config/test.exs
+config :my_app, :repository, MyApp.Repository.Mock
+```
+
+```elixir
+# config/config.exs (or config/prod.exs, config/dev.exs)
+config :my_app, :repository, MyApp.Repository.Adapter
+```
+
 ### Using the mock in tests
 
-Your plain hexagon receives the repository module as a dependency
-(via config, function argument, or module attribute):
+Your plain hexagon reads the repository module from application
+config at runtime:
 
 ```elixir
 defmodule MyApp.OrderService do
-  @repo Application.compile_env(:my_app, :repository, MyApp.Repository.Adapter)
+  defp repo, do: Application.fetch_env!(:my_app, :repository)
 
   def place_order(params) do
-    item = @repo.get!(Item, params.item_id)
+    item = repo().get!(Item, params.item_id)
     changeset = Order.changeset(%Order{}, %{item_id: item.id, qty: params.qty})
-    @repo.insert(changeset)
+    repo().insert(changeset)
   end
 end
 ```
 
-Test with Mox expectations:
+Test with Mox expectations — each test process gets its own
+expectations, so `async: true` works:
 
 ```elixir
 import Mox
@@ -224,7 +238,7 @@ setup :verify_on_exit!
 
 test "place_order inserts an order for the item" do
   item = %Item{id: "item-1", name: "Widget"}
-  
+
   MyApp.Repository.Mock
   |> expect(:get!, fn Item, "item-1" -> item end)
   |> expect(:insert, fn changeset ->
