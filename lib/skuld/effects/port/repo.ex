@@ -27,7 +27,7 @@
 #     # Test — in-memory executor with dispatch logging
 #     comp
 #     |> Port.with_handler(
-#       %{Port.Repo => {:effectful, Port.Repo.Test}},
+#       %{Port.Repo => Port.Repo.Test},
 #       log: true,
 #       output: fn r, state -> {r, state.log} end
 #     )

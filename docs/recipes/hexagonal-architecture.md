@@ -21,7 +21,7 @@ code can be either **plain Elixir** (legacy/non-effectful) or **effectful**
 | 1 | Plain Elixir | Plain Elixir   | `Port.Adapter.Direct`                              |
 | 2 | Plain Elixir | Effectful      | `Port.Adapter.Effectful`                           |
 | 3 | Effectful    | Plain Elixir   | `Port.with_handler` + `:direct` resolver           |
-| 4 | Effectful    | Effectful      | `Port.with_handler` + `{:effectful, mod}` resolver |
+| 4 | Effectful    | Effectful      | `Port.with_handler` + effectful module (auto-detected) |
 
 The contract generates two behaviours to match:
 
@@ -208,7 +208,7 @@ workflow's effect context:
 ```elixir
 MyApp.OrderWorkflow.place_order(params)
 |> Port.with_handler(%{
-  MyApp.Orders => {:effectful, MyApp.OrderService.Effectful},
+  MyApp.Orders => MyApp.OrderService.Effectful,
   MyApp.Inventory => MyApp.InventoryService
 })
 |> EventAccumulator.with_handler(output: fn r, events -> {r, events} end)
@@ -221,7 +221,7 @@ The call chain is now:
 ```
 OrderWorkflow (effectful)
     ↓ Port effect
-Port.with_handler({:effectful, ...})
+Port.with_handler (effectful auto-detected)
     ↓ computation inlined
 OrderService.Effectful
     ↓ Port effect
@@ -305,7 +305,7 @@ order <- MyApp.Orders.place_order!(params)
 Use this when effectful domain logic calls out to plain infrastructure
 (database queries, HTTP clients, etc.).
 
-### Scenario 4: Effectful → Effectful (`{:effectful, mod}` resolver)
+### Scenario 4: Effectful → Effectful (auto-detected effectful resolver)
 
 Both caller and implementation are effectful. The Port handler inlines
 the implementation's computation into the caller's effect context.
@@ -315,12 +315,14 @@ the implementation's computation into the caller's effect context.
 order <- MyApp.Orders.place_order!(params)
 
 # Wiring — implementation's effects handled by this stack
-|> Port.with_handler(%{MyApp.Orders => {:effectful, MyApp.OrderService.Effectful}})
+|> Port.with_handler(%{MyApp.Orders => MyApp.OrderService.Effectful})
 |> Throw.with_handler()
 ```
 
 Use this when both sides are effectful and should share the same
-effect context (transactions, state, etc.).
+effect context (transactions, state, etc.). Modules that `use
+MyContract.Effectful` are auto-detected — no `{:effectful, mod}`
+wrapper needed.
 
 ## Testing
 
@@ -349,7 +351,7 @@ comp
 |> Port.with_test_handler(%{
   MyApp.Inventory.key(:reserve_stock, sku, qty) => {:ok, %Reservation{}}
 })
-|> Port.with_handler(%{MyApp.Orders => {:effectful, MyApp.OrderService.Effectful}})
+|> Port.with_handler(%{MyApp.Orders => MyApp.OrderService.Effectful})
 |> Throw.with_handler()
 |> Comp.run!()
 
@@ -366,7 +368,8 @@ assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
 - Keep Plain implementations thin — just infrastructure calls
 - The in-memory Plain implementation is your test double — no mocks needed
 - Start with `Adapter.Direct` to impose boundaries, convert later
-- Use `{:effectful, mod}` when you want shared effect context
+- `use MyContract.Effectful` auto-detects effectful resolvers — no
+  `{:effectful, mod}` wrapper needed (though it still works)
 - Use `Adapter.Effectful` when you want encapsulated effect execution
 - Include `Throw.with_handler/1` in any stack where computations can
   throw — without it, `Comp.run!/1` raises `ThrowError`

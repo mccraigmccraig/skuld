@@ -110,7 +110,7 @@ cs = User.changeset(%User{}, %{name: "Alice"})
     user
   end
   |> Port.with_handler(
-    %{Repo => {:effectful, Repo.Test}},
+    %{Repo => Repo.Test},
     log: true,
     output: fn result, state -> {result, state.log} end
   )
@@ -132,7 +132,7 @@ appear in the same log:
 ```elixir
 Port.with_handler(
   comp,
-  %{Repo => {:effectful, Repo.Test}, MyApp.Queries => MyApp.Queries.TestImpl},
+  %{Repo => Repo.Test, MyApp.Queries => MyApp.Queries.TestImpl},
   log: true,
   output: fn r, state -> {r, state.log} end
 )

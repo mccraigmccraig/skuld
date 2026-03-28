@@ -143,11 +143,15 @@ defmodule Skuld.Effects.Port do
   ## Runtime resolvers (used with `with_handler/3`)
 
     * `:direct` – call `apply(mod, name, args)`, result is a plain value
-    * `{:effectful, module}` – call `apply(module, name, args)`, result is a
-      computation that gets inlined into the current effect context
+    * `module` – invokes `apply(module, name, args)` (implementation module).
+      Modules that export `__port_effectful__?/0` (e.g. via
+      `use MyContract.Effectful`) are auto-detected as effectful resolvers
+      whose return values are computations inlined into the current effect
+      context.
+    * `{:effectful, module}` – explicit effectful resolver (same as above,
+      for backward compatibility or modules without the marker)
     * `function` (arity 3) – `fun.(mod, name, args)`
     * `{module, function}` – invokes `apply(module, function, [mod, name, args])`
-    * `module` – invokes `apply(module, name, args)` (implementation module)
 
   ## Default resolvers (used as `:__default__` catch-all)
 
@@ -318,16 +322,19 @@ defmodule Skuld.Effects.Port do
   dispatched. Each entry can be one of:
 
     * `:direct` – call `apply(mod, name, args)`, returns a plain value
-    * `{:effectful, module}` – call `apply(module, name, args)`, returns a
-      computation that is inlined into the current effect context. The
-      effectful impl's effects are handled by the consumer's handler stack.
+    * `module` – invokes `apply(module, name, args)`. Modules that export
+      `__port_effectful__?/0` (e.g. via `use MyContract.Effectful`) are
+      auto-detected as effectful resolvers whose return values are
+      computations inlined into the current effect context.
+    * `{:effectful, module}` – explicit effectful resolver (same as above,
+      for backward compatibility or modules without the marker)
     * `function` (arity 3) – `fun.(mod, name, args)`
     * `{module, function}` – invokes `apply(module, function, [mod, name, args])`
-    * `module` – invokes `apply(module, name, args)` (implementation module)
 
   Plain resolvers (`:direct`, function, `{mod, fun}`, module) return values
-  that are passed directly to the continuation. The `:effectful` resolver
-  returns a computation that participates in the surrounding effect context.
+  that are passed directly to the continuation. Effectful resolvers (auto-
+  detected or explicit `{:effectful, mod}`) return computations that
+  participate in the surrounding effect context.
 
   ## Nested Handlers
 
@@ -364,10 +371,10 @@ defmodule Skuld.Effects.Port do
       })
       |> Comp.run!()
 
-      # Effectful implementation — computation inlined into consumer's stack
+      # Effectful implementation — auto-detected via __port_effectful__?/0
       my_comp
       |> Port.with_handler(%{
-        MyApp.Repository => {:effectful, MyApp.Repository.EffectfulImpl}
+        MyApp.Repository => MyApp.Repository.EffectfulImpl
       })
       |> Throw.with_handler()
       |> Comp.run!()
@@ -376,7 +383,7 @@ defmodule Skuld.Effects.Port do
       {result, log} =
         my_comp
         |> Port.with_handler(
-          %{MyApp.Repo => {:effectful, MyApp.Repo.Test}},
+          %{MyApp.Repo => MyApp.Repo.Test},
           log: true,
           output: fn result, state -> {result, state.log} end
         )
@@ -539,12 +546,29 @@ defmodule Skuld.Effects.Port do
     |> Comp.scoped(fn env ->
       previous = Env.get_state(env, state_key)
 
+      # Auto-detect effectful resolvers: plain module atoms that export
+      # __port_effectful__?/0 are wrapped as {:effectful, module}.
+      resolved_registry =
+        Map.new(registry, fn
+          {key, module} when is_atom(module) and module not in [:direct] ->
+            Code.ensure_loaded(module)
+
+            if function_exported?(module, :__port_effectful__?, 0) do
+              {key, {:effectful, module}}
+            else
+              {key, module}
+            end
+
+          entry ->
+            entry
+        end)
+
       # Merge with any existing registry so nested handler installations
       # accumulate registrations rather than shadowing them.
       merged_registry =
         case previous do
-          %State{registry: outer_registry} -> Map.merge(outer_registry, registry)
-          _ -> registry
+          %State{registry: outer_registry} -> Map.merge(outer_registry, resolved_registry)
+          _ -> resolved_registry
         end
 
       # Log is a list (enabled) or nil (disabled).

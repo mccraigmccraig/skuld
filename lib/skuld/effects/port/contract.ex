@@ -269,11 +269,24 @@ defmodule Skuld.Effects.Port.Contract do
 
         Defines computation-returning callbacks — implementations return
         `computation(return_type)` values. Implementations satisfying this
-        behaviour can be used with `Port.with_handler/2` (`:effectful` resolver)
-        or wrapped with `Port.Adapter.Effectful`.
+        behaviour can be used with `Port.with_handler/2` and are
+        auto-detected as effectful resolvers.
+
+        Use `use #{inspect(unquote(provider_module))}` (preferred) or
+        `@behaviour #{inspect(unquote(provider_module))}` plus a manual
+        `def __port_effectful__?, do: true` marker.
 
         The contract module's own caller functions satisfy this behaviour.
         """
+
+        defmacro __using__(_opts) do
+          behaviour_mod = unquote(provider_module)
+
+          quote do
+            @behaviour unquote(behaviour_mod)
+            def __port_effectful__?, do: true
+          end
+        end
 
         unquote_splicing(provider_callbacks)
       end

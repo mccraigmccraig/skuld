@@ -631,6 +631,8 @@ defmodule Skuld.Effects.PortTest do
 
   # Effectful impl — returns computations, not plain values
   defmodule EffectfulImpl do
+    def __port_effectful__?, do: true
+
     def find_user(id) do
       Comp.pure({:ok, %{id: id, name: "Effectful #{id}"}})
     end
@@ -652,6 +654,8 @@ defmodule Skuld.Effects.PortTest do
   defmodule StatefulEffectfulImpl do
     alias Skuld.Effects.State
 
+    def __port_effectful__?, do: true
+
     def find_user(id) do
       Comp.bind(State.get(), fn count ->
         Comp.bind(State.put(count + 1), fn _ ->
@@ -663,6 +667,8 @@ defmodule Skuld.Effects.PortTest do
 
   # Effectful impl that throws
   defmodule ThrowingEffectfulImpl do
+    def __port_effectful__?, do: true
+
     def find_user(_id) do
       Throw.throw(:something_went_wrong)
     end
@@ -672,7 +678,7 @@ defmodule Skuld.Effects.PortTest do
     test "inlines computation from effectful impl" do
       comp =
         Port.request(TestQueries, :find_user, [42])
-        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+        |> Port.with_handler(%{TestQueries => EffectfulImpl})
 
       {result, _} = Comp.run(comp)
       assert {:ok, %{id: 42, name: "Effectful 42"}} = result
@@ -681,7 +687,7 @@ defmodule Skuld.Effects.PortTest do
     test "works with request!/3 unwrapping" do
       comp =
         Port.request!(TestQueries, :find_user, [42])
-        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+        |> Port.with_handler(%{TestQueries => EffectfulImpl})
         |> Throw.with_handler()
 
       {result, _} = Comp.run(comp)
@@ -691,7 +697,7 @@ defmodule Skuld.Effects.PortTest do
     test "request!/3 throws on error from effectful impl" do
       comp =
         Port.request!(TestQueries, :find_user_or_error, [-1])
-        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+        |> Port.with_handler(%{TestQueries => EffectfulImpl})
         |> Throw.try_catch()
         |> Throw.with_handler()
 
@@ -709,7 +715,7 @@ defmodule Skuld.Effects.PortTest do
             Comp.pure({first_result, second_result})
           end)
         end)
-        |> Port.with_handler(%{TestQueries => {:effectful, StatefulEffectfulImpl}})
+        |> Port.with_handler(%{TestQueries => StatefulEffectfulImpl})
         |> State.with_handler(0)
 
       {result, _} = Comp.run(comp)
@@ -720,7 +726,7 @@ defmodule Skuld.Effects.PortTest do
     test "effectful impl's throws handled by consumer's Throw handler" do
       comp =
         Port.request(TestQueries, :find_user, [42])
-        |> Port.with_handler(%{TestQueries => {:effectful, ThrowingEffectfulImpl}})
+        |> Port.with_handler(%{TestQueries => ThrowingEffectfulImpl})
         |> Throw.try_catch()
         |> Throw.with_handler()
 
@@ -731,7 +737,7 @@ defmodule Skuld.Effects.PortTest do
     test "zero-arg effectful operation" do
       comp =
         Port.request(TestQueries, :no_args, [])
-        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+        |> Port.with_handler(%{TestQueries => EffectfulImpl})
 
       {result, _} = Comp.run(comp)
       assert {:ok, :healthy} = result
@@ -746,7 +752,7 @@ defmodule Skuld.Effects.PortTest do
         end)
         |> Port.with_handler(%{
           TestQueries => :direct,
-          TestImplModule => {:effectful, EffectfulImpl}
+          TestImplModule => EffectfulImpl
         })
 
       {result, _} = Comp.run(comp)
@@ -757,7 +763,7 @@ defmodule Skuld.Effects.PortTest do
     test "unknown module still errors" do
       comp =
         Port.request(UnknownModule, :find_user, [42])
-        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+        |> Port.with_handler(%{TestQueries => EffectfulImpl})
         |> Throw.try_catch()
         |> Throw.with_handler()
 
@@ -885,7 +891,7 @@ defmodule Skuld.Effects.PortTest do
             Comp.pure({a_result, q_result})
           end)
         end)
-        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+        |> Port.with_handler(%{TestQueries => EffectfulImpl})
         |> Port.with_handler(%{ModuleA => :direct})
 
       {result, _} = Comp.run(comp)
@@ -1007,7 +1013,7 @@ defmodule Skuld.Effects.PortTest do
           end)
         end)
         |> Port.with_test_handler(responses)
-        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}})
+        |> Port.with_handler(%{TestQueries => EffectfulImpl})
 
       {result, _} = Comp.run(comp)
       assert {{:ok, %{id: 42, name: "Effectful 42"}}, {:ok, {:stubbed_b, 5}}} = result
@@ -1148,7 +1154,7 @@ defmodule Skuld.Effects.PortTest do
       {result, log} =
         Port.request(TestQueries, :find_user, [42])
         |> Port.with_handler(
-          %{TestQueries => {:effectful, EffectfulImpl}},
+          %{TestQueries => EffectfulImpl},
           log: true,
           output: &log_output/2
         )
@@ -1164,7 +1170,7 @@ defmodule Skuld.Effects.PortTest do
       {result, log} =
         Port.request(TestQueries, :find_user, [1])
         |> Port.with_handler(
-          %{TestQueries => {:effectful, StatefulEffectfulImpl}},
+          %{TestQueries => StatefulEffectfulImpl},
           log: true,
           output: &log_output/2
         )
@@ -1366,7 +1372,7 @@ defmodule Skuld.Effects.PortTest do
         |> Port.with_handler(
           %{
             ModuleA => :direct,
-            TestQueries => {:effectful, EffectfulImpl}
+            TestQueries => EffectfulImpl
           },
           log: true,
           output: &log_output/2

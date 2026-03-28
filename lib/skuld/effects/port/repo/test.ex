@@ -7,7 +7,7 @@
 #
 #     comp
 #     |> Port.with_handler(
-#       %{Port.Repo => {:effectful, Port.Repo.Test}},
+#       %{Port.Repo => Port.Repo.Test},
 #       log: true,
 #       output: fn r, state -> {r, state.log} end
 #     )
@@ -42,7 +42,7 @@ if Code.ensure_loaded?(Ecto) do
         {result, log} =
           comp
           |> Port.with_handler(
-            %{Repo => {:effectful, Repo.Test}},
+            %{Repo => Repo.Test},
             log: true,
             output: fn result, state -> {result, state.log} end
           )
@@ -55,7 +55,7 @@ if Code.ensure_loaded?(Ecto) do
     alias Skuld.Comp
     alias Skuld.Effects.Port.Repo
 
-    @behaviour Repo.Effectful
+    use Repo.Effectful
 
     # -----------------------------------------------------------------
     # Write Operations

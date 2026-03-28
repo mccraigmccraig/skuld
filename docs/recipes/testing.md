@@ -194,7 +194,7 @@ end
   ```elixir
   comp
   |> Port.with_test_handler(%{Notifications.key(:send, msg) => :ok})
-  |> Port.with_handler(%{Repository => {:effectful, Repo.Test}})
+  |> Port.with_handler(%{Repository => Repo.Test})
   |> Throw.with_handler()
   |> Comp.run!()
   ```

@@ -60,9 +60,13 @@ Port.with_handler(dispatch_map)
 The dispatch map keys are modules and values are resolvers:
 
 - `:direct` - `apply(mod, name, args)` (call directly on the keyed module)
-- `module` - `apply(module, name, args)` (dispatch to an implementation module)
-- `{:effectful, module}` - `apply(module, name, args)`, result is a
-  computation inlined into the caller's effect context
+- `module` - `apply(module, name, args)` (dispatch to an implementation
+  module). Modules that export `__port_effectful__?/0` (e.g. via
+  `use MyContract.Effectful`) are auto-detected as effectful resolvers
+  whose return values are computations inlined into the caller's effect
+  context.
+- `{:effectful, module}` - explicit effectful resolver (same as above,
+  for backward compatibility or modules without the marker)
 - `fun/3` - `fun.(mod, name, args)` (function receives all three)
 - `{module, function}` - `apply(module, function, [mod, name, args])`
 

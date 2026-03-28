@@ -262,7 +262,7 @@ defmodule Skuld.Effects.Port.RepoTest do
   # Shorthand: install Repo.Test as an effectful resolver with logging enabled.
   defp with_repo_test(comp, opts \\ []) do
     extra_registry = Keyword.get(opts, :registry, %{})
-    registry = Map.put(extra_registry, Repo, {:effectful, Repo.Test})
+    registry = Map.put(extra_registry, Repo, Repo.Test)
 
     output = Keyword.get(opts, :output)
 
