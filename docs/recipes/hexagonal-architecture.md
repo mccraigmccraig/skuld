@@ -438,8 +438,6 @@ end
 - **Incremental** — add a Port contract and get better tests
   immediately, convert to effectful implementations later if desired
 - **Familiar** — Mox is a well-known pattern in the Elixir ecosystem
-- **Compile-time safety** — Mox validates that the mock satisfies the
-  Plain behaviour, so contract changes break tests at compile time
 
 #### Adoption path
 
