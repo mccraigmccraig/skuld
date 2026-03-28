@@ -5,6 +5,7 @@ defmodule Skuld.Effects.PortTest do
   alias Skuld.Comp.Throw, as: ThrowResult
   alias Skuld.Effects.Port
   alias Skuld.Effects.Throw
+  alias Skuld.Effects.Writer
 
   # Test module - returns {:ok, _} | {:error, _} result tuples
   # Accepts positional args
@@ -1037,6 +1038,389 @@ defmodule Skuld.Effects.PortTest do
       # ModuleA: :direct, ModuleB[1]: exact stub, ModuleB[999]: fallback
       assert {{:ok, {:a, 1}}, {:ok, {:exact_b, 1}}, {:ok, {:fallback, ModuleB, :do_b, [999]}}} =
                result
+    end
+  end
+
+  # ---------------------------------------------------------------
+  # Port-level :log option tests
+  # ---------------------------------------------------------------
+
+  # Helper: wrap a comp with Writer + output to capture the log alongside result.
+  # Writer stores newest-first, so we reverse for chronological order.
+  defp with_log_capture(comp, log_tag) do
+    comp
+    |> Writer.with_handler([],
+      tag: log_tag,
+      output: fn result, log -> {result, Enum.reverse(log)} end
+    )
+  end
+
+  describe ":log option on with_handler — plain resolvers" do
+    test "logs {mod, name, args, result} for :direct resolver" do
+      comp =
+        Port.request(TestQueries, :find_user, [42])
+        |> Port.with_handler(%{TestQueries => :direct}, log: :port_log)
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {{:ok, %{id: 42, name: "User 42"}},
+              [{TestQueries, :find_user, [42], {:ok, %{id: 42, name: "User 42"}}}]} = result
+    end
+
+    test "logs for module resolver" do
+      comp =
+        Port.request(TestQueries, :find_user, [55])
+        |> Port.with_handler(%{TestQueries => TestImplModule}, log: :port_log)
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {{:ok, %{id: 55, name: "Impl 55"}},
+              [{TestQueries, :find_user, [55], {:ok, %{id: 55, name: "Impl 55"}}}]} = result
+    end
+
+    test "logs for function resolver" do
+      resolver = fn _mod, _name, [id] -> {:ok, %{id: id, name: "Custom"}} end
+
+      comp =
+        Port.request(TestQueries, :find_user, [7])
+        |> Port.with_handler(%{TestQueries => resolver}, log: :port_log)
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {{:ok, %{id: 7, name: "Custom"}},
+              [{TestQueries, :find_user, [7], {:ok, %{id: 7, name: "Custom"}}}]} = result
+    end
+
+    test "logs for {module, function} resolver" do
+      defmodule MFResolverForLog do
+        def resolve(_mod, _name, [id]) do
+          {:ok, %{id: id, name: "MF #{id}"}}
+        end
+      end
+
+      comp =
+        Port.request(TestQueries, :find_user, [77])
+        |> Port.with_handler(%{TestQueries => {MFResolverForLog, :resolve}}, log: :port_log)
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {{:ok, %{id: 77, name: "MF 77"}},
+              [{TestQueries, :find_user, [77], {:ok, %{id: 77, name: "MF 77"}}}]} = result
+    end
+  end
+
+  describe ":log option on with_test_handler" do
+    test "logs stub responses" do
+      responses = %{
+        Port.key(TestQueries, :find_user, [123]) => {:ok, %{id: 123, name: "Stubbed"}}
+      }
+
+      comp =
+        Port.request(TestQueries, :find_user, [123])
+        |> Port.with_test_handler(responses, log: :port_log)
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {{:ok, %{id: 123, name: "Stubbed"}},
+              [{TestQueries, :find_user, [123], {:ok, %{id: 123, name: "Stubbed"}}}]} = result
+    end
+
+    test "logs fallback responses" do
+      fallback = fn TestQueries, :find_user, [id] -> {:ok, %{id: id, name: "Fallback"}} end
+
+      comp =
+        Port.request(TestQueries, :find_user, [999])
+        |> Port.with_test_handler(%{}, fallback: fallback, log: :port_log)
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {{:ok, %{id: 999, name: "Fallback"}},
+              [{TestQueries, :find_user, [999], {:ok, %{id: 999, name: "Fallback"}}}]} = result
+    end
+  end
+
+  describe ":log option on with_fn_handler" do
+    test "logs fn handler responses" do
+      handler = fn TestQueries, :find_user, [id] -> {:ok, %{id: id, name: "FnHandler"}} end
+
+      comp =
+        Port.request(TestQueries, :find_user, [42])
+        |> Port.with_fn_handler(handler, log: :port_log)
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {{:ok, %{id: 42, name: "FnHandler"}},
+              [{TestQueries, :find_user, [42], {:ok, %{id: 42, name: "FnHandler"}}}]} = result
+    end
+  end
+
+  describe ":log option with effectful resolvers" do
+    test "logs result after effectful computation completes" do
+      comp =
+        Port.request(TestQueries, :find_user, [42])
+        |> Port.with_handler(%{TestQueries => {:effectful, EffectfulImpl}}, log: :port_log)
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {{:ok, %{id: 42, name: "Effectful 42"}},
+              [{TestQueries, :find_user, [42], {:ok, %{id: 42, name: "Effectful 42"}}}]} = result
+    end
+
+    test "effectful resolver with internal effects still logs correctly" do
+      alias Skuld.Effects.State
+
+      comp =
+        Port.request(TestQueries, :find_user, [1])
+        |> Port.with_handler(%{TestQueries => {:effectful, StatefulEffectfulImpl}},
+          log: :port_log
+        )
+        |> State.with_handler(0)
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {{:ok, %{id: 1, call_count: 1}},
+              [{TestQueries, :find_user, [1], {:ok, %{id: 1, call_count: 1}}}]} = result
+    end
+  end
+
+  describe ":log option — error/throw cases" do
+    test "logs unknown module error" do
+      comp =
+        Port.request(UnknownModule, :some_fn, [:arg])
+        |> Port.with_handler(%{TestQueries => :direct}, log: :port_log)
+        |> Throw.with_handler()
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {%ThrowResult{error: {:unknown_port_module, UnknownModule}},
+              [
+                {UnknownModule, :some_fn, [:arg],
+                 %ThrowResult{error: {:unknown_port_module, UnknownModule}}}
+              ]} =
+               result
+    end
+
+    test "logs runtime exception error" do
+      comp =
+        Port.request(TestQueries, :failing_request, [:boom])
+        |> Port.with_handler(%{TestQueries => :direct}, log: :port_log)
+        |> Throw.with_handler()
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {%ThrowResult{error: {:port_failed, TestQueries, :failing_request, %RuntimeError{}}},
+              [
+                {TestQueries, :failing_request, [:boom],
+                 %ThrowResult{
+                   error: {:port_failed, TestQueries, :failing_request, %RuntimeError{}}
+                 }}
+              ]} =
+               result
+    end
+
+    test "logs port_not_stubbed error" do
+      comp =
+        Port.request(TestQueries, :find_user, [999])
+        |> Port.with_test_handler(%{}, log: :port_log)
+        |> Throw.with_handler()
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {%ThrowResult{error: {:port_not_stubbed, _key}},
+              [{TestQueries, :find_user, [999], %ThrowResult{error: {:port_not_stubbed, _}}}]} =
+               result
+    end
+
+    test "logs port_not_handled error from fn handler" do
+      handler = fn TestQueries, :known_fn, _args -> :ok end
+
+      comp =
+        Port.request(TestQueries, :unknown_fn, [1])
+        |> Port.with_fn_handler(handler, log: :port_log)
+        |> Throw.with_handler()
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {%ThrowResult{error: {:port_not_handled, TestQueries, :unknown_fn, [1], _}},
+              [
+                {TestQueries, :unknown_fn, [1],
+                 %ThrowResult{error: {:port_not_handled, TestQueries, :unknown_fn, [1], _}}}
+              ]} =
+               result
+    end
+  end
+
+  describe ":log option — nested handlers" do
+    test "inner :log overrides outer :log" do
+      inner_comp =
+        Port.request(ModuleA, :do_a, [1])
+        |> Port.with_handler(%{ModuleA => :direct}, log: :inner_log)
+        |> with_log_capture(:inner_log)
+
+      comp =
+        inner_comp
+        |> Port.with_handler(%{}, log: :outer_log)
+        |> with_log_capture(:outer_log)
+
+      {result, _env} = Comp.run(comp)
+
+      # Inner log captured the entry, outer log is empty
+      assert {{{:ok, {:a, 1}}, [{ModuleA, :do_a, [1], {:ok, {:a, 1}}}]}, []} = result
+    end
+
+    test "outer :log active when inner scope has no :log" do
+      inner_comp =
+        Port.request(ModuleA, :do_a, [1])
+        |> Port.with_handler(%{ModuleA => :direct})
+
+      comp =
+        Comp.bind(inner_comp, fn inner_result ->
+          Comp.bind(Port.request(ModuleB, :do_b, [2]), fn outer_result ->
+            Comp.pure({inner_result, outer_result})
+          end)
+        end)
+        |> Port.with_handler(%{ModuleB => :direct}, log: :outer_log)
+        |> with_log_capture(:outer_log)
+
+      {result, _env} = Comp.run(comp)
+
+      # Both dispatches logged to :outer_log — inner scope inherits outer's log tag
+      assert {{{:ok, {:a, 1}}, {:ok, {:b, 2}}},
+              [
+                {ModuleA, :do_a, [1], {:ok, {:a, 1}}},
+                {ModuleB, :do_b, [2], {:ok, {:b, 2}}}
+              ]} = result
+    end
+
+    test "inner :log restored to outer :log after inner scope exits" do
+      inner_comp =
+        Port.request(ModuleA, :do_a, [1])
+        |> Port.with_handler(%{ModuleA => :direct}, log: :inner_log)
+        |> with_log_capture(:inner_log)
+
+      comp =
+        Comp.bind(inner_comp, fn inner_result ->
+          Comp.bind(Port.request(ModuleB, :do_b, [2]), fn outer_result ->
+            Comp.pure({inner_result, outer_result})
+          end)
+        end)
+        |> Port.with_handler(%{ModuleB => :direct}, log: :outer_log)
+        |> with_log_capture(:outer_log)
+
+      {result, _env} = Comp.run(comp)
+
+      # Inner log got the inner dispatch, outer log got the outer dispatch
+      assert {{{{:ok, {:a, 1}}, [{ModuleA, :do_a, [1], {:ok, {:a, 1}}}]}, {:ok, {:b, 2}}},
+              [{ModuleB, :do_b, [2], {:ok, {:b, 2}}}]} = result
+    end
+  end
+
+  describe ":log option — no logging when not set" do
+    test "no Writer needed when :log not set" do
+      # This should work without any Writer handler installed
+      comp =
+        Port.request(TestQueries, :find_user, [42])
+        |> Port.with_handler(%{TestQueries => :direct})
+
+      {result, _env} = Comp.run(comp)
+      assert {:ok, %{id: 42, name: "User 42"}} = result
+    end
+
+    test "existing Writer handler unaffected when :log not set" do
+      comp =
+        Comp.bind(Writer.tell(:my_tag, "manual entry"), fn _ ->
+          Port.request(TestQueries, :find_user, [42])
+        end)
+        |> Port.with_handler(%{TestQueries => :direct})
+        |> Writer.with_handler([],
+          tag: :my_tag,
+          output: fn result, log -> {result, Enum.reverse(log)} end
+        )
+
+      {result, _env} = Comp.run(comp)
+
+      # Only the manual entry, no Port log entries
+      assert {{:ok, %{id: 42}}, ["manual entry"]} = result
+    end
+  end
+
+  describe ":log option — chronological order" do
+    test "multiple dispatches logged in chronological order" do
+      responses = %{
+        Port.key(TestQueries, :find_user, [1]) => {:ok, %{id: 1}},
+        Port.key(TestQueries, :find_user, [2]) => {:ok, %{id: 2}},
+        Port.key(TestQueries, :find_user, [3]) => {:ok, %{id: 3}}
+      }
+
+      comp =
+        Comp.bind(Port.request(TestQueries, :find_user, [1]), fn r1 ->
+          Comp.bind(Port.request(TestQueries, :find_user, [2]), fn r2 ->
+            Comp.bind(Port.request(TestQueries, :find_user, [3]), fn r3 ->
+              Comp.pure({r1, r2, r3})
+            end)
+          end)
+        end)
+        |> Port.with_test_handler(responses, log: :port_log)
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      assert {{:ok, %{id: 1}}, {:ok, %{id: 2}}, {:ok, %{id: 3}}} = elem(result, 0)
+
+      log = elem(result, 1)
+      assert length(log) == 3
+
+      assert [
+               {TestQueries, :find_user, [1], {:ok, %{id: 1}}},
+               {TestQueries, :find_user, [2], {:ok, %{id: 2}}},
+               {TestQueries, :find_user, [3], {:ok, %{id: 3}}}
+             ] = log
+    end
+
+    test "mixed resolver types logged in chronological order" do
+      handler = fn ModuleB, :do_b, [x] -> {:ok, {:fn_b, x}} end
+
+      comp =
+        Comp.bind(Port.request(ModuleA, :do_a, [1]), fn r1 ->
+          Comp.bind(Port.request(ModuleB, :do_b, [2]), fn r2 ->
+            Comp.bind(Port.request(TestQueries, :find_user, [3]), fn r3 ->
+              Comp.pure({r1, r2, r3})
+            end)
+          end)
+        end)
+        |> Port.with_fn_handler(handler, log: :port_log)
+        |> Port.with_handler(
+          %{
+            ModuleA => :direct,
+            TestQueries => {:effectful, EffectfulImpl}
+          },
+          log: :port_log
+        )
+        |> with_log_capture(:port_log)
+
+      {result, _env} = Comp.run(comp)
+
+      log = elem(result, 1)
+      assert length(log) == 3
+
+      assert [
+               {ModuleA, :do_a, [1], {:ok, {:a, 1}}},
+               {ModuleB, :do_b, [2], {:ok, {:fn_b, 2}}},
+               {TestQueries, :find_user, [3], {:ok, %{id: 3, name: "Effectful 3"}}}
+             ] = log
     end
   end
 end
