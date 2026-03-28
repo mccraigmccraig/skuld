@@ -89,6 +89,7 @@ defmodule Skuld.Effects.Port do
   alias Skuld.Comp.Throw, as: ThrowResult
   alias Skuld.Comp.Types
   alias Skuld.Effects.Throw
+  alias Skuld.Effects.Writer
   # Single atom key for all Port state — sig() is __MODULE__ (a plain atom),
   # faster than tuple keys in map lookups.
   @state_key @__sig__
@@ -592,7 +593,7 @@ defmodule Skuld.Effects.Port do
 
   @impl Skuld.Comp.IHandle
   def handle({@request_op, mod, name, args}, env, k) do
-    %State{registry: registry} = Env.get_state!(env, @state_key)
+    %State{registry: registry, log: log_tag} = Env.get_state!(env, @state_key)
 
     # Look up module-specific resolver, fall back to :__default__, then error
     resolver =
@@ -603,19 +604,26 @@ defmodule Skuld.Effects.Port do
 
     case resolver do
       {:ok, {:test_stub, responses}} ->
-        dispatch_test_stub(responses, nil, mod, name, args, env, k)
+        dispatch_test_stub(responses, nil, mod, name, args, log_tag, env, k)
 
       {:ok, {:test_stub, responses, fallback}} ->
-        dispatch_test_stub(responses, fallback, mod, name, args, env, k)
+        dispatch_test_stub(responses, fallback, mod, name, args, log_tag, env, k)
 
       {:ok, {:fn_dispatch, handler_fn}} ->
-        dispatch_fn(handler_fn, mod, name, args, env, k)
+        dispatch_fn(handler_fn, mod, name, args, log_tag, env, k)
 
       {:ok, runtime_resolver} ->
-        dispatch_runtime(runtime_resolver, mod, name, args, env, k)
+        dispatch_runtime(runtime_resolver, mod, name, args, log_tag, env, k)
 
       :error ->
-        {%ThrowResult{error: {:unknown_port_module, mod}}, env}
+        emit_log_and_return(
+          %ThrowResult{error: {:unknown_port_module, mod}},
+          mod,
+          name,
+          args,
+          log_tag,
+          env
+        )
     end
   end
 
@@ -623,48 +631,115 @@ defmodule Skuld.Effects.Port do
   ## Dispatch Logic
   #############################################################################
 
-  defp dispatch_runtime(resolver, mod, name, args, env, k) do
+  defp dispatch_runtime(resolver, mod, name, args, log_tag, env, k) do
     case invoke(resolver, mod, name, args) do
       {:computation, comp} ->
-        # Effectful resolver: inline the computation into the current effect context
-        Comp.call(comp, env, k)
+        # Effectful resolver: inline the computation, capturing result for logging
+        if log_tag do
+          Comp.call(comp, env, fn result, env2 ->
+            emit_log(log_tag, mod, name, args, result, env2, fn _tell, env3 ->
+              k.(result, env3)
+            end)
+          end)
+        else
+          Comp.call(comp, env, k)
+        end
 
       {:value, result} ->
-        k.(result, env)
+        emit_log_and_continue(result, mod, name, args, log_tag, env, k)
     end
   rescue
     exception ->
-      {%ThrowResult{error: {:port_failed, mod, name, exception}}, env}
+      emit_log_and_return(
+        %ThrowResult{error: {:port_failed, mod, name, exception}},
+        mod,
+        name,
+        args,
+        log_tag,
+        env
+      )
   end
 
-  defp dispatch_test_stub(responses, fallback, mod, name, args, env, k) do
+  defp dispatch_test_stub(responses, fallback, mod, name, args, log_tag, env, k) do
     request_key = key(mod, name, args)
 
     case Map.fetch(responses, request_key) do
       {:ok, result} ->
-        k.(result, env)
+        emit_log_and_continue(result, mod, name, args, log_tag, env, k)
 
       :error when is_function(fallback, 3) ->
         # Try fallback function
-        dispatch_fn(fallback, mod, name, args, env, k)
+        dispatch_fn(fallback, mod, name, args, log_tag, env, k)
 
       :error ->
         # No match and no fallback
-        {%ThrowResult{error: {:port_not_stubbed, request_key}}, env}
+        emit_log_and_return(
+          %ThrowResult{error: {:port_not_stubbed, request_key}},
+          mod,
+          name,
+          args,
+          log_tag,
+          env
+        )
     end
   end
 
-  defp dispatch_fn(handler_fn, mod, name, args, env, k) do
+  defp dispatch_fn(handler_fn, mod, name, args, log_tag, env, k) do
     result = handler_fn.(mod, name, args)
-    k.(result, env)
+    emit_log_and_continue(result, mod, name, args, log_tag, env, k)
   rescue
     e in FunctionClauseError ->
       # No matching clause - report what we received
-      {%ThrowResult{error: {:port_not_handled, mod, name, args, e}}, env}
+      emit_log_and_return(
+        %ThrowResult{error: {:port_not_handled, mod, name, args, e}},
+        mod,
+        name,
+        args,
+        log_tag,
+        env
+      )
 
     e ->
       # Other error in handler
-      {%ThrowResult{error: {:port_handler_error, mod, name, e}}, env}
+      emit_log_and_return(
+        %ThrowResult{error: {:port_handler_error, mod, name, e}},
+        mod,
+        name,
+        args,
+        log_tag,
+        env
+      )
+  end
+
+  #############################################################################
+  ## Logging Helpers
+  #############################################################################
+
+  # Emit a Writer.tell log entry as an effect, then call the continuation.
+  defp emit_log(log_tag, mod, name, args, result, env, k) do
+    Comp.call(Writer.tell(log_tag, {mod, name, args, result}), env, k)
+  end
+
+  # For plain results: emit log (if tag set) then continue with k.
+  defp emit_log_and_continue(result, _mod, _name, _args, nil, env, k) do
+    k.(result, env)
+  end
+
+  defp emit_log_and_continue(result, mod, name, args, log_tag, env, k) do
+    emit_log(log_tag, mod, name, args, result, env, fn _tell, env2 ->
+      k.(result, env2)
+    end)
+  end
+
+  # For error results (ThrowResult): emit log (if tag set) then return the error.
+  defp emit_log_and_return(throw_result, _mod, _name, _args, nil, env) do
+    {throw_result, env}
+  end
+
+  defp emit_log_and_return(throw_result, mod, name, args, log_tag, env) do
+    emit_log(log_tag, mod, name, args, throw_result, env, fn _tell, env2 ->
+      {throw_result, env2}
+    end)
   end
 
   defp invoke(:direct, mod, name, args) do
