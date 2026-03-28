@@ -92,8 +92,9 @@ create_and_fetch(attrs)
 ### Test handler (Port.Repo.Test)
 
 An effectful test executor that applies changeset changes (without
-touching a database) and records every operation via Writer. Each log
-entry is a `{op_name, args, return_value}` tuple:
+touching a database) and logs every dispatch via Port's built-in
+`:log` option. Each log entry is a 4-tuple
+`{module, operation, args_list, return_value}`:
 
 ```elixir
 alias Skuld.Effects.Port.Repo
@@ -112,21 +113,22 @@ cs = User.changeset(%User{}, %{name: "Alice"})
 
 assert %User{name: "Alice"} = result
 assert [
-  {:insert, [^cs], {:ok, %User{name: "Alice"}}},
-  {:get, [User, 42], nil}
+  {Repo, :insert, [^cs], {:ok, %User{name: "Alice"}}},
+  {Repo, :get, [User, 42], nil}
 ] = log
 ```
 
-`Repo.Test.with_handler/2` wires three effects in one call:
+`Repo.Test.with_handler/2` wires two effects in one call:
 
-- **Port** — registers the test executor as an effectful resolver
-- **Writer** — captures the operation log
-- **Reader** — passes the Writer tag to the executor
+- **Port** — registers the test executor as an effectful resolver,
+  with `:log` enabled on the Port handler
+- **Writer** — captures the log entries emitted by Port-level logging
 
 Options:
 
 - `:output` — `fn result, log -> transformed end` to capture the log
-- `:tag` — Writer tag (default: `Skuld.Effects.Port.Repo`)
+- `:tag` — Writer tag (default: `Skuld.Effects.Port`). This tag is
+  used for both the Port `:log` option and the Writer handler.
 - `:registry` — additional Port entries to merge alongside the
   `Port.Repo` entry. Since nested `Port.with_handler` calls merge
   registries, you can also register extra contracts via an outer
@@ -144,6 +146,11 @@ comp
 |> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
 |> Port.with_handler(%{MyApp.Queries => MyApp.Queries.TestImpl})
 ```
+
+Because logging happens at the Port level, the log captures **all**
+Port dispatches — not just `Port.Repo` operations. If you register
+additional contracts via `:registry`, their dispatches appear in the
+same log.
 
 ### Combining with domain-specific contracts
 

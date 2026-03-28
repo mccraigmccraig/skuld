@@ -81,6 +81,55 @@ comp
 |> Comp.run!()
 ```
 
+### Dispatch logging
+
+All three handler installers accept a `:log` option. When set to a
+Writer tag, every Port dispatch emits a `{mod, name, args, result}`
+4-tuple to that Writer — giving you a unified log of all Port calls
+regardless of resolver type.
+
+Logging is **disabled by default** (no overhead in production). Enable
+it in tests by passing `log: <tag>` and installing a Writer handler
+for the same tag:
+
+```elixir
+alias Skuld.Effects.Writer
+
+tag = MyApp.PortLog
+
+{result, log} =
+  comp do
+    user <- Port.request!(MyQueries, :find_user, [123])
+    user
+  end
+  |> Port.with_handler(%{MyQueries => :direct}, log: tag)
+  |> Writer.with_handler([], tag: tag, output: fn r, entries ->
+    {r, Enum.reverse(entries)}
+  end)
+  |> Throw.with_handler()
+  |> Comp.run!()
+
+# log contains [{MyQueries, :find_user, [123], {:ok, %{id: 123, ...}}}]
+```
+
+The `:log` option works with all handler types — `with_handler`,
+`with_test_handler`, and `with_fn_handler`:
+
+```elixir
+# Function-based handler with logging
+comp
+|> Port.with_fn_handler(
+  fn mod, name, args -> apply(mod, name, args) end,
+  log: tag
+)
+|> Writer.with_handler([], tag: tag, output: fn r, log -> {r, Enum.reverse(log)} end)
+|> Comp.run!()
+```
+
+When nested handlers both specify `:log`, the **inner** tag wins for
+dispatches within its scope. When neither specifies `:log`, no logging
+overhead is incurred.
+
 ### Mixed handler modes
 
 All three handler installers share the same registry. Module-specific

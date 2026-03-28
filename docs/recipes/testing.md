@@ -135,6 +135,8 @@ Skuld provides test handlers for common effects:
 |--------|-------------|--------------|
 | Port   | `Port.with_test_handler/1` | Exact-match stub map |
 | Port   | `Port.with_fn_handler/1` | Pattern-matching function |
+| Port   | Any handler + `log: tag` | Dispatch logging via Writer |
+| Port.Repo | `Port.Repo.Test.with_handler/1` | In-memory Repo + auto logging |
 | Transaction | `Transaction.Noop.with_handler/0` | Env state rollback, no database |
 | Fresh  | `Fresh.with_test_handler/0` | Deterministic UUIDs (UUID5) |
 | Random | `Random.with_handler/1` | Fixed sequence or seeded |
@@ -196,6 +198,28 @@ end
   |> Throw.with_handler()
   |> Comp.run!()
   ```
+
+- **Port dispatch logging** captures every Port call as a
+  `{mod, name, args, result}` 4-tuple. Pass `log: tag` to any Port
+  handler installer and install a Writer for the same tag:
+
+  ```elixir
+  tag = MyApp.PortLog
+
+  {result, log} =
+    comp
+    |> Port.with_test_handler(stubs, log: tag)
+    |> Writer.with_handler([], tag: tag, output: fn r, entries ->
+      {r, Enum.reverse(entries)}
+    end)
+    |> Throw.with_handler()
+    |> Comp.run!()
+
+  # log is [{mod, name, args, result}, ...]
+  ```
+
+  `Port.Repo.Test.with_handler/1` wires this automatically — pass
+  `output: fn r, log -> {r, log} end` to capture the log.
 
 - **Fresh.with_test_handler** produces deterministic UUIDs - tests
   are reproducible
