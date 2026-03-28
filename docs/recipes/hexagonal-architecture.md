@@ -362,6 +362,11 @@ assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
 assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
 ```
 
+For plain hexagons that drive a Port contract (scenarios 1 and 2), you
+can use [Mox](https://hexdocs.pm/mox) against the contract's generated
+`Plain` behaviour for isolated unit tests — no effect machinery needed.
+See [Testing plain hexagons with Mox](testing.md#testing-plain-hexagons-with-mox).
+
 ## Tips
 
 - Define one contract per bounded context or aggregate
