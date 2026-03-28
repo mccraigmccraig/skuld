@@ -144,10 +144,10 @@ defmodule Skuld.Effects.Port do
 
     * `:direct` – call `apply(mod, name, args)`, result is a plain value
     * `module` – invokes `apply(module, name, args)` (implementation module).
-      Modules that export `__port_effectful__?/0` (e.g. via
+      Modules where `__port_effectful__?/0` returns truthy (e.g. via
       `use MyContract.Effectful`) are auto-detected as effectful resolvers
       whose return values are computations inlined into the current effect
-      context.
+      context. Returning `false` opts out of auto-detection.
     * `{:effectful, module}` – explicit effectful resolver (same as above,
       for backward compatibility or modules without the marker)
     * `function` (arity 3) – `fun.(mod, name, args)`
@@ -322,10 +322,11 @@ defmodule Skuld.Effects.Port do
   dispatched. Each entry can be one of:
 
     * `:direct` – call `apply(mod, name, args)`, returns a plain value
-    * `module` – invokes `apply(module, name, args)`. Modules that export
-      `__port_effectful__?/0` (e.g. via `use MyContract.Effectful`) are
-      auto-detected as effectful resolvers whose return values are
-      computations inlined into the current effect context.
+    * `module` – invokes `apply(module, name, args)`. Modules where
+      `__port_effectful__?/0` returns truthy (e.g. via
+      `use MyContract.Effectful`) are auto-detected as effectful resolvers
+      whose return values are computations inlined into the current effect
+      context. Returning `false` opts out of auto-detection.
     * `{:effectful, module}` – explicit effectful resolver (same as above,
       for backward compatibility or modules without the marker)
     * `function` (arity 3) – `fun.(mod, name, args)`
@@ -546,14 +547,15 @@ defmodule Skuld.Effects.Port do
     |> Comp.scoped(fn env ->
       previous = Env.get_state(env, state_key)
 
-      # Auto-detect effectful resolvers: plain module atoms that export
-      # __port_effectful__?/0 are wrapped as {:effectful, module}.
+      # Auto-detect effectful resolvers: plain module atoms where
+      # __port_effectful__?/0 returns truthy are wrapped as {:effectful, module}.
       resolved_registry =
         Map.new(registry, fn
           {key, module} when is_atom(module) and module not in [:direct] ->
             Code.ensure_loaded(module)
 
-            if function_exported?(module, :__port_effectful__?, 0) do
+            if function_exported?(module, :__port_effectful__?, 0) and
+                 module.__port_effectful__?() do
               {key, {:effectful, module}}
             else
               {key, module}
