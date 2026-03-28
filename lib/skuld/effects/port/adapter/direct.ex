@@ -135,6 +135,7 @@ defmodule Skuld.Effects.Port.Adapter.Direct do
 
     quote do
       @behaviour unquote(plain_behaviour)
+      def __port_effectful__?, do: false
       unquote_splicing(functions)
     end
   end
