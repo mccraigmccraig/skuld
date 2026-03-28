@@ -180,102 +180,17 @@ end
 
 ## Testing plain hexagons with Mox
 
-When adopting Port contracts incrementally, you may have plain Elixir
-modules that drive a Port contract via `Port.Adapter.Direct` or
-`Port.Adapter.Effectful`. These modules aren't effectful — they call
-plain functions — so you can't install effect handlers from your test.
+When testing plain Elixir code that drives a Port contract (via
+`Port.Adapter.Direct` or `Port.Adapter.Effectful`), you can use
+[Mox](https://hexdocs.pm/mox) against the contract's generated `Plain`
+behaviour for isolated unit tests — no effect machinery needed. This
+also strengthens the incremental adoption story: introducing a Port
+contract immediately improves test isolation, before any effectful
+code is written.
 
-The Port contract already generates a `Plain` behaviour
-(`MyContract.Plain`) that describes the plain Elixir interface. This
-is exactly what [Mox](https://hexdocs.pm/mox) needs.
-
-### Setup
-
-1. Add Mox to your test dependencies
-2. Define a mock in `test/support/mocks.ex`:
-
-```elixir
-# test/support/mocks.ex
-Mox.defmock(MyApp.Repository.Mock, for: MyApp.Repository.Plain)
-```
-
-3. Configure the mock for the test environment:
-
-```elixir
-# config/test.exs
-config :my_app, :repository, MyApp.Repository.Mock
-```
-
-```elixir
-# config/config.exs (or config/prod.exs, config/dev.exs)
-config :my_app, :repository, MyApp.Repository.Adapter
-```
-
-### Using the mock in tests
-
-Your plain hexagon reads the repository module from application
-config at runtime:
-
-```elixir
-defmodule MyApp.OrderService do
-  defp repo, do: Application.fetch_env!(:my_app, :repository)
-
-  def place_order(params) do
-    item = repo().get!(Item, params.item_id)
-    changeset = Order.changeset(%Order{}, %{item_id: item.id, qty: params.qty})
-    repo().insert(changeset)
-  end
-end
-```
-
-Test with Mox expectations — each test process gets its own
-expectations, so `async: true` works:
-
-```elixir
-import Mox
-
-setup :verify_on_exit!
-
-test "place_order inserts an order for the item" do
-  item = %Item{id: "item-1", name: "Widget"}
-
-  MyApp.Repository.Mock
-  |> expect(:get!, fn Item, "item-1" -> item end)
-  |> expect(:insert, fn changeset ->
-    assert changeset.changes.item_id == "item-1"
-    {:ok, Ecto.Changeset.apply_changes(changeset)}
-  end)
-
-  assert {:ok, %Order{item_id: "item-1"}} =
-    MyApp.OrderService.place_order(%{item_id: "item-1", qty: 3})
-end
-```
-
-### Why this works well
-
-- **Async-safe** — Mox expectations are per-process by default
-- **No effects needed** — test isolation without introducing Skuld
-  computations
-- **Incremental** — add a Port contract and get better tests
-  immediately, convert to effectful implementations later if desired
-- **Familiar** — Mox is a well-known pattern in the Elixir ecosystem
-- **Compile-time safety** — Mox validates that the mock satisfies the
-  Plain behaviour, so contract changes break tests at compile time
-
-### Adoption path
-
-1. **Define a Port contract** — `use Skuld.Effects.Port.Contract` with
-   `defport` declarations
-2. **Implement with `Port.Adapter.Direct`** — wrap your existing module
-   to satisfy the Plain behaviour
-3. **Use Mox in tests** — `Mox.defmock(Mock, for: MyContract.Plain)`
-   for isolated unit tests
-4. **Later, optionally** — introduce effectful implementations behind
-   the port and use effect-based testing patterns from the sections
-   above
-
-Each step delivers value independently. You don't need to adopt the
-full effect system to benefit from Port contracts and test isolation.
+See [Testing plain hexagons with Mox](hexagonal-architecture.md#testing-plain-hexagons-with-mox)
+in the Hexagonal Architecture recipe for the full setup, examples, and
+adoption path.
 
 ## Tips
 
