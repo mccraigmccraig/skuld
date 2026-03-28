@@ -100,17 +100,19 @@ defmodule MyApp.InventoryService do
   # ... existing code unchanged ...
 end
 
-# Direct adapters — plain delegation through the contract
+# Direct adapters — config-dispatched delegation through the contract
 defmodule MyApp.Orders.Adapter do
   use Skuld.Effects.Port.Adapter.Direct,
     contract: MyApp.Orders,
-    impl: MyApp.OrderService
+    otp_app: :my_app,
+    default: MyApp.OrderService
 end
 
 defmodule MyApp.Inventory.Adapter do
   use Skuld.Effects.Port.Adapter.Direct,
     contract: MyApp.Inventory,
-    impl: MyApp.InventoryService
+    otp_app: :my_app,
+    default: MyApp.InventoryService
 end
 ```
 
@@ -123,9 +125,9 @@ OrderController → MyApp.Orders.Adapter → OrderService
 ```
 
 Nothing uses Skuld yet. The contracts impose compile-time interface
-verification via `@behaviour`, and the adapters are simple delegation.
-You can swap implementations (e.g. in-memory for tests) by creating
-alternative adapters.
+verification via `@behaviour`, and the adapters dispatch to the
+configured implementation at runtime. You can swap implementations
+(e.g. Mox mocks for tests) via application config.
 
 ### Step 3: Convert a provider to effectful
 
@@ -248,14 +250,15 @@ value.
 
 ### Scenario 1: Plain → Plain (`Adapter.Direct`)
 
-Both caller and implementation are plain Elixir. The adapter delegates
-through the contract boundary.
+Both caller and implementation are plain Elixir. The adapter dispatches
+to a config-resolved implementation through the contract boundary.
 
 ```elixir
 defmodule MyApp.Orders.Adapter do
   use Skuld.Effects.Port.Adapter.Direct,
     contract: MyApp.Orders,
-    impl: MyApp.OrderService
+    otp_app: :my_app,
+    default: MyApp.OrderService
 end
 
 # Usage — plain call, plain result
@@ -263,6 +266,7 @@ MyApp.Orders.Adapter.place_order(params)
 ```
 
 Use this when imposing a port boundary without introducing Skuld.
+Swap the implementation in `config/test.exs` for Mox testing.
 
 ### Scenario 2: Plain → Effectful (`Adapter.Effectful`)
 
@@ -368,6 +372,9 @@ For plain hexagons that drive a Port contract (scenarios 1 and 2), you
 can use [Mox](https://hexdocs.pm/mox) against the contract's generated
 `Plain` behaviour for isolated unit tests — no effect machinery needed.
 
+The `Adapter.Direct` dispatches to a config-resolved implementation, so
+swapping in a Mox mock is just a config change.
+
 #### Setup
 
 1. Add Mox to your test dependencies
@@ -378,31 +385,29 @@ can use [Mox](https://hexdocs.pm/mox) against the contract's generated
 Mox.defmock(MyApp.Repository.Mock, for: MyApp.Repository.Plain)
 ```
 
-3. Configure the mock for the test environment:
+3. Point the adapter at the mock in test config:
 
 ```elixir
 # config/test.exs
-config :my_app, :repository, MyApp.Repository.Mock
+config :my_app, MyApp.Repository.Adapter, MyApp.Repository.Mock
 ```
 
-```elixir
-# config/config.exs (or config/prod.exs, config/dev.exs)
-config :my_app, :repository, MyApp.Repository.Adapter
-```
+The adapter already defaults to the real implementation (via the
+`:default` option), so no production config is needed.
 
 #### Using the mock in tests
 
-Your plain hexagon reads the repository module from application
-config at runtime:
+Your plain hexagon calls the adapter directly — no config awareness
+needed at the call site:
 
 ```elixir
 defmodule MyApp.OrderService do
-  defp repo, do: Application.fetch_env!(:my_app, :repository)
+  alias MyApp.Repository
 
   def place_order(params) do
-    item = repo().get!(Item, params.item_id)
+    item = Repository.Adapter.get!(Item, params.item_id)
     changeset = Order.changeset(%Order{}, %{item_id: item.id, qty: params.qty})
-    repo().insert(changeset)
+    Repository.Adapter.insert(changeset)
   end
 end
 ```
@@ -443,13 +448,13 @@ end
 
 1. **Define a Port contract** — `use Skuld.Effects.Port.Contract` with
    `defport` declarations
-2. **Implement with `Port.Adapter.Direct`** — wrap your existing module
-   to satisfy the Plain behaviour
-3. **Use Mox in tests** — `Mox.defmock(Mock, for: MyContract.Plain)`
-   for isolated unit tests
-4. **Later, optionally** — introduce effectful implementations behind
-   the port and use effect-based testing patterns from the
-   [Testing Effectful Code](testing.md) recipe
+2. **Create an `Adapter.Direct`** — config-dispatched adapter with your
+   existing module as the default
+3. **Use Mox in tests** — `Mox.defmock(Mock, for: MyContract.Plain)`,
+   point adapter at mock via `config/test.exs`
+4. **Later, optionally** — replace `Adapter.Direct` with
+   `Adapter.Effectful` for an effectful implementation — callers
+   don't change
 
 Each step delivers value independently. You don't need to adopt the
 full effect system to benefit from Port contracts and test isolation.

@@ -43,11 +43,13 @@ defmodule Skuld.Effects.Port.Adapter.DirectTest do
     end
   end
 
-  # Direct adapter — delegates to TestImpl
+  # Direct adapter — dispatches to config-resolved impl with default
   defmodule TestAdapter do
     use Skuld.Effects.Port.Adapter.Direct,
       contract: TestContract,
-      impl: TestImpl
+      otp_app: :skuld,
+      config_key: :direct_test_adapter,
+      default: TestImpl
   end
 
   # Alternative implementation for swap testing
@@ -64,12 +66,6 @@ defmodule Skuld.Effects.Port.Adapter.DirectTest do
     def health_check, do: :ok
   end
 
-  defmodule AltAdapter do
-    use Skuld.Effects.Port.Adapter.Direct,
-      contract: TestContract,
-      impl: AltImpl
-  end
-
   # ---------------------------------------------------------------
   # Basic Adapter Tests
   # ---------------------------------------------------------------
@@ -81,6 +77,22 @@ defmodule Skuld.Effects.Port.Adapter.DirectTest do
       for {name, arity} <- callbacks do
         assert function_exported?(TestAdapter, name, arity),
                "TestAdapter should export #{name}/#{arity}"
+      end
+    end
+  end
+
+  describe "impl/0" do
+    test "returns default impl when no config set" do
+      assert TestAdapter.impl() == TestImpl
+    end
+
+    test "returns configured impl when config is set" do
+      Application.put_env(:skuld, :direct_test_adapter, AltImpl)
+
+      try do
+        assert TestAdapter.impl() == AltImpl
+      after
+        Application.delete_env(:skuld, :direct_test_adapter)
       end
     end
   end
@@ -108,10 +120,23 @@ defmodule Skuld.Effects.Port.Adapter.DirectTest do
     end
   end
 
-  describe "implementation swapping" do
-    test "different adapter delegates to different impl" do
+  describe "config-based dispatch" do
+    test "dispatches to configured impl" do
+      Application.put_env(:skuld, :direct_test_adapter, AltImpl)
+
+      try do
+        assert {:ok, %{source: :alt_impl}} = TestAdapter.get_todo("t1", "42")
+      after
+        Application.delete_env(:skuld, :direct_test_adapter)
+      end
+    end
+
+    test "reverts to default when config is removed" do
+      Application.put_env(:skuld, :direct_test_adapter, AltImpl)
+      assert {:ok, %{source: :alt_impl}} = TestAdapter.get_todo("t1", "42")
+
+      Application.delete_env(:skuld, :direct_test_adapter)
       assert {:ok, %{source: :direct_impl}} = TestAdapter.get_todo("t1", "42")
-      assert {:ok, %{source: :alt_impl}} = AltAdapter.get_todo("t1", "42")
     end
   end
 
@@ -132,13 +157,19 @@ defmodule Skuld.Effects.Port.Adapter.DirectTest do
     end
   end
 
+  describe "__port_effectful__?" do
+    test "returns false" do
+      refute TestAdapter.__port_effectful__?()
+    end
+  end
+
   describe "compile-time validation" do
     test "raises when contract lacks __port_operations__" do
       assert_raise CompileError, ~r/does not appear to be a Port.Contract module/, fn ->
         defmodule BadDirectAdapter do
           use Skuld.Effects.Port.Adapter.Direct,
             contract: String,
-            impl: TestImpl
+            otp_app: :skuld
         end
       end
     end
@@ -147,15 +178,61 @@ defmodule Skuld.Effects.Port.Adapter.DirectTest do
       assert_raise KeyError, ~r/contract/, fn ->
         defmodule NoContractAdapter do
           use Skuld.Effects.Port.Adapter.Direct,
-            impl: TestImpl
+            otp_app: :skuld
         end
       end
 
-      assert_raise KeyError, ~r/impl/, fn ->
-        defmodule NoImplAdapter do
+      assert_raise KeyError, ~r/otp_app/, fn ->
+        defmodule NoOtpAppAdapter do
           use Skuld.Effects.Port.Adapter.Direct,
             contract: TestContract
         end
+      end
+    end
+  end
+
+  describe "adapter without default" do
+    defmodule NoDefaultAdapter do
+      use Skuld.Effects.Port.Adapter.Direct,
+        contract: TestContract,
+        otp_app: :skuld,
+        config_key: :direct_test_no_default
+    end
+
+    test "raises when no config set and no default" do
+      assert_raise ArgumentError, fn ->
+        NoDefaultAdapter.impl()
+      end
+    end
+
+    test "works when config is set" do
+      Application.put_env(:skuld, :direct_test_no_default, TestImpl)
+
+      try do
+        assert NoDefaultAdapter.impl() == TestImpl
+        assert {:ok, %{source: :direct_impl}} = NoDefaultAdapter.get_todo("t1", "42")
+      after
+        Application.delete_env(:skuld, :direct_test_no_default)
+      end
+    end
+  end
+
+  describe "config_key defaults to module name" do
+    defmodule AutoKeyAdapter do
+      use Skuld.Effects.Port.Adapter.Direct,
+        contract: TestContract,
+        otp_app: :skuld,
+        default: TestImpl
+    end
+
+    test "uses module name as config key" do
+      Application.put_env(:skuld, AutoKeyAdapter, AltImpl)
+
+      try do
+        assert AutoKeyAdapter.impl() == AltImpl
+        assert {:ok, %{source: :alt_impl}} = AutoKeyAdapter.get_todo("t1", "42")
+      after
+        Application.delete_env(:skuld, AutoKeyAdapter)
       end
     end
   end
@@ -177,7 +254,8 @@ defmodule Skuld.Effects.Port.Adapter.DirectTest do
     defmodule ErrorAdapter do
       use Skuld.Effects.Port.Adapter.Direct,
         contract: TestContract,
-        impl: ErrorImpl
+        otp_app: :skuld,
+        default: ErrorImpl
     end
 
     test "error tuples pass through unchanged" do
@@ -202,7 +280,8 @@ defmodule Skuld.Effects.Port.Adapter.DirectTest do
       defmodule RaisingAdapter do
         use Skuld.Effects.Port.Adapter.Direct,
           contract: TestContract,
-          impl: RaisingImpl
+          otp_app: :skuld,
+          default: RaisingImpl
       end
 
       assert_raise RuntimeError, "boom", fn ->
