@@ -509,6 +509,7 @@ defmodule Skuld.Effects.Port do
   ## Shared Registry Installation
   #############################################################################
 
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp install_registry(comp, registry, opts) do
     output = Keyword.get(opts, :output)
     suspend = Keyword.get(opts, :suspend)
