@@ -24,9 +24,13 @@
 #     |> Port.with_handler(%{Port.Repo => MyApp.Repo.Port})
 #     |> Comp.run!()
 #
-#     # Test — logs operations via Writer effect
+#     # Test — in-memory executor with dispatch logging
 #     comp
-#     |> Port.Repo.Test.with_handler(output: fn r, log -> {r, log} end)
+#     |> Port.with_handler(
+#       %{Port.Repo => {:effectful, Port.Repo.Test}},
+#       log: true,
+#       output: fn r, state -> {r, state.log} end
+#     )
 #     |> Throw.with_handler()
 #     |> Comp.run!()
 #

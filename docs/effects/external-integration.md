@@ -83,33 +83,30 @@ comp
 
 ### Dispatch logging
 
-All three handler installers accept a `:log` option. When set to a
-Writer tag, every Port dispatch emits a `{mod, name, args, result}`
-4-tuple to that Writer — giving you a unified log of all Port calls
-regardless of resolver type.
+All three handler installers accept a `:log` option. When truthy,
+every Port dispatch records a `{mod, name, args, result}` 4-tuple
+directly in `Port.State.log` — no Writer needed, no extra effect
+dispatch per call. Use the `:output` option to extract the log on
+scope exit.
 
-Logging is **disabled by default** (no overhead in production). Enable
-it in tests by passing `log: <tag>` and installing a Writer handler
-for the same tag:
+Logging is **disabled by default** (`State.log` is `nil`) for zero
+overhead in production:
 
 ```elixir
-alias Skuld.Effects.Writer
-
-tag = MyApp.PortLog
-
 {result, log} =
   comp do
     user <- Port.request!(MyQueries, :find_user, [123])
     user
   end
-  |> Port.with_handler(%{MyQueries => :direct}, log: tag)
-  |> Writer.with_handler([], tag: tag, output: fn r, entries ->
-    {r, Enum.reverse(entries)}
-  end)
+  |> Port.with_handler(
+    %{MyQueries => :direct},
+    log: true,
+    output: fn result, state -> {result, state.log} end
+  )
   |> Throw.with_handler()
   |> Comp.run!()
 
-# log contains [{MyQueries, :find_user, [123], {:ok, %{id: 123, ...}}}]
+# log is [{MyQueries, :find_user, [123], {:ok, %{id: 123, ...}}}]
 ```
 
 The `:log` option works with all handler types — `with_handler`,
@@ -117,18 +114,21 @@ The `:log` option works with all handler types — `with_handler`,
 
 ```elixir
 # Function-based handler with logging
-comp
-|> Port.with_fn_handler(
-  fn mod, name, args -> apply(mod, name, args) end,
-  log: tag
-)
-|> Writer.with_handler([], tag: tag, output: fn r, log -> {r, Enum.reverse(log)} end)
-|> Comp.run!()
+{result, log} =
+  comp
+  |> Port.with_fn_handler(
+    fn mod, name, args -> apply(mod, name, args) end,
+    log: true,
+    output: fn r, state -> {r, state.log} end
+  )
+  |> Comp.run!()
 ```
 
-When nested handlers both specify `:log`, the **inner** tag wins for
-dispatches within its scope. When neither specifies `:log`, no logging
-overhead is incurred.
+When nested handlers both specify `log: true`, the **inner** scope
+starts a fresh log; its entries are captured by the inner `:output`
+callback and don't leak into the outer scope. When only the outer
+scope has `log: true`, inner dispatches accumulate into the outer log.
+When neither specifies `:log`, no logging overhead is incurred.
 
 ### Mixed handler modes
 

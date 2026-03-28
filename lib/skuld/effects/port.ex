@@ -89,7 +89,6 @@ defmodule Skuld.Effects.Port do
   alias Skuld.Comp.Throw, as: ThrowResult
   alias Skuld.Comp.Types
   alias Skuld.Effects.Throw
-  alias Skuld.Effects.Writer
   # Single atom key for all Port state — sig() is __MODULE__ (a plain atom),
   # faster than tuple keys in map lookups.
   @state_key @__sig__
@@ -105,7 +104,7 @@ defmodule Skuld.Effects.Port do
 
     @type t :: %__MODULE__{
             registry: Skuld.Effects.Port.registry(),
-            log: atom() | nil
+            log: list() | nil
           }
 
     @doc false
@@ -346,6 +345,15 @@ defmodule Skuld.Effects.Port do
   runtime registries — they replace the dispatch mode entirely, which is
   the expected behaviour for test stubs.
 
+  ## Options
+
+    * `:log` — when truthy, enables dispatch logging. Every Port dispatch
+      records a `{mod, name, args, result}` 4-tuple in `Port.State.log`.
+      Disabled by default (nil) for zero overhead in production.
+    * `:output` — transform function `(result, %Port.State{}) -> output`
+      called on scope exit. When logging is enabled, `state.log` contains
+      the log entries in chronological order.
+
   ## Example
 
       # Plain implementations
@@ -363,6 +371,17 @@ defmodule Skuld.Effects.Port do
       })
       |> Throw.with_handler()
       |> Comp.run!()
+
+      # With dispatch logging in tests
+      {result, log} =
+        my_comp
+        |> Port.with_handler(
+          %{MyApp.Repo => {:effectful, MyApp.Repo.Test}},
+          log: true,
+          output: fn result, state -> {result, state.log} end
+        )
+        |> Throw.with_handler()
+        |> Comp.run!()
   """
   @spec with_handler(Types.computation(), registry(), keyword()) :: Types.computation()
   def with_handler(comp, registry \\ %{}, opts \\ []) do
@@ -399,8 +418,8 @@ defmodule Skuld.Effects.Port do
     * `:fallback` - A function `(mod, name, args) -> result` to call when
       no exact key match is found. Useful for handling dynamic arguments
       while still using exact matching for known cases.
-    * `:output` - Transform result when leaving scope
-    * `:suspend` - Decorate Suspend values when yielding
+    * `:log` — enable dispatch logging (see `with_handler/3`)
+    * `:output` - Transform `(result, %Port.State{}) -> output` on scope exit
 
   ## Example
 
@@ -513,7 +532,7 @@ defmodule Skuld.Effects.Port do
   defp install_registry(comp, registry, opts) do
     output = Keyword.get(opts, :output)
     suspend = Keyword.get(opts, :suspend)
-    log_tag = Keyword.get(opts, :log)
+    log_enabled = Keyword.has_key?(opts, :log) and opts[:log] != nil
     state_key = @state_key
 
     comp
@@ -528,10 +547,11 @@ defmodule Skuld.Effects.Port do
           _ -> registry
         end
 
-      # Inner :log overrides outer :log; nil preserves the outer value.
+      # Log is a list (enabled) or nil (disabled).
+      # Inner :log option starts a fresh log; otherwise inherit outer's log.
       merged_log =
-        if log_tag do
-          log_tag
+        if log_enabled do
+          []
         else
           case previous do
             %State{log: outer_log} -> outer_log
@@ -558,11 +578,23 @@ defmodule Skuld.Effects.Port do
         end
 
       finally_k = fn value, e ->
-        # Restore previous state (or remove key if there was none)
+        current_state = Env.get_state(e, state_key)
+
+        # Restore previous state (or remove key if there was none).
+        # Only propagate accumulated log entries to the outer scope when
+        # this scope inherited the outer log (i.e. no fresh :log option).
+        # When :log started a fresh log, entries stay in this scope only.
         restored_env =
           case previous do
-            nil -> %{e | state: Map.delete(e.state, state_key)}
-            val -> Env.put_state(e, state_key, val)
+            nil ->
+              %{e | state: Map.delete(e.state, state_key)}
+
+            %State{log: outer_log} when is_list(outer_log) and not log_enabled ->
+              # Inherited outer log — carry forward accumulated entries.
+              Env.put_state(e, state_key, %{previous | log: current_state.log})
+
+            _ ->
+              Env.put_state(e, state_key, previous)
           end
 
         # Restore previous transform_suspend if we modified it
@@ -573,9 +605,20 @@ defmodule Skuld.Effects.Port do
             restored_env
           end
 
+        # Output callback receives (value, state) — log is in state.log
+        # reversed to chronological order.
         transformed_value =
           if output do
-            output.(value, Env.get_state(e, state_key))
+            output_state =
+              case current_state do
+                %State{log: log} when is_list(log) ->
+                  %{current_state | log: Enum.reverse(log)}
+
+                _ ->
+                  current_state
+              end
+
+            output.(value, output_state)
           else
             value
           end
@@ -594,7 +637,7 @@ defmodule Skuld.Effects.Port do
 
   @impl Skuld.Comp.IHandle
   def handle({@request_op, mod, name, args}, env, k) do
-    %State{registry: registry, log: log_tag} = Env.get_state!(env, @state_key)
+    %State{registry: registry, log: log} = Env.get_state!(env, @state_key)
 
     # Look up module-specific resolver, fall back to :__default__, then error
     resolver =
@@ -605,16 +648,16 @@ defmodule Skuld.Effects.Port do
 
     case resolver do
       {:ok, {:test_stub, responses}} ->
-        dispatch_test_stub(responses, nil, mod, name, args, log_tag, env, k)
+        dispatch_test_stub(responses, nil, mod, name, args, log, env, k)
 
       {:ok, {:test_stub, responses, fallback}} ->
-        dispatch_test_stub(responses, fallback, mod, name, args, log_tag, env, k)
+        dispatch_test_stub(responses, fallback, mod, name, args, log, env, k)
 
       {:ok, {:fn_dispatch, handler_fn}} ->
-        dispatch_fn(handler_fn, mod, name, args, log_tag, env, k)
+        dispatch_fn(handler_fn, mod, name, args, log, env, k)
 
       {:ok, runtime_resolver} ->
-        dispatch_runtime(runtime_resolver, mod, name, args, log_tag, env, k)
+        dispatch_runtime(runtime_resolver, mod, name, args, log, env, k)
 
       :error ->
         emit_log_and_return(
@@ -622,7 +665,7 @@ defmodule Skuld.Effects.Port do
           mod,
           name,
           args,
-          log_tag,
+          log,
           env
         )
     end
@@ -632,22 +675,20 @@ defmodule Skuld.Effects.Port do
   ## Dispatch Logic
   #############################################################################
 
-  defp dispatch_runtime(resolver, mod, name, args, log_tag, env, k) do
+  defp dispatch_runtime(resolver, mod, name, args, log, env, k) do
     case invoke(resolver, mod, name, args) do
       {:computation, comp} ->
         # Effectful resolver: inline the computation, capturing result for logging
-        if log_tag do
+        if log do
           Comp.call(comp, env, fn result, env2 ->
-            emit_log(log_tag, mod, name, args, result, env2, fn _tell, env3 ->
-              k.(result, env3)
-            end)
+            k.(result, append_log(env2, mod, name, args, result))
           end)
         else
           Comp.call(comp, env, k)
         end
 
       {:value, result} ->
-        emit_log_and_continue(result, mod, name, args, log_tag, env, k)
+        emit_log_and_continue(result, mod, name, args, log, env, k)
     end
   rescue
     exception ->
@@ -656,21 +697,21 @@ defmodule Skuld.Effects.Port do
         mod,
         name,
         args,
-        log_tag,
+        log,
         env
       )
   end
 
-  defp dispatch_test_stub(responses, fallback, mod, name, args, log_tag, env, k) do
+  defp dispatch_test_stub(responses, fallback, mod, name, args, log, env, k) do
     request_key = key(mod, name, args)
 
     case Map.fetch(responses, request_key) do
       {:ok, result} ->
-        emit_log_and_continue(result, mod, name, args, log_tag, env, k)
+        emit_log_and_continue(result, mod, name, args, log, env, k)
 
       :error when is_function(fallback, 3) ->
         # Try fallback function
-        dispatch_fn(fallback, mod, name, args, log_tag, env, k)
+        dispatch_fn(fallback, mod, name, args, log, env, k)
 
       :error ->
         # No match and no fallback
@@ -679,15 +720,15 @@ defmodule Skuld.Effects.Port do
           mod,
           name,
           args,
-          log_tag,
+          log,
           env
         )
     end
   end
 
-  defp dispatch_fn(handler_fn, mod, name, args, log_tag, env, k) do
+  defp dispatch_fn(handler_fn, mod, name, args, log, env, k) do
     result = handler_fn.(mod, name, args)
-    emit_log_and_continue(result, mod, name, args, log_tag, env, k)
+    emit_log_and_continue(result, mod, name, args, log, env, k)
   rescue
     e in FunctionClauseError ->
       # No matching clause - report what we received
@@ -696,7 +737,7 @@ defmodule Skuld.Effects.Port do
         mod,
         name,
         args,
-        log_tag,
+        log,
         env
       )
 
@@ -707,7 +748,7 @@ defmodule Skuld.Effects.Port do
         mod,
         name,
         args,
-        log_tag,
+        log,
         env
       )
   end
@@ -716,31 +757,31 @@ defmodule Skuld.Effects.Port do
   ## Logging Helpers
   #############################################################################
 
-  # Emit a Writer.tell log entry as an effect, then call the continuation.
-  defp emit_log(log_tag, mod, name, args, result, env, k) do
-    Comp.call(Writer.tell(log_tag, {mod, name, args, result}), env, k)
+  # Prepend a log entry to Port.State.log in the env. No effect dispatch,
+  # just a direct env mutation — fast path for non-DB test performance.
+  defp append_log(env, mod, name, args, result) do
+    state_key = @state_key
+    state = Env.get_state(env, state_key)
+    updated = %{state | log: [{mod, name, args, result} | state.log]}
+    Env.put_state(env, state_key, updated)
   end
 
-  # For plain results: emit log (if tag set) then continue with k.
+  # For plain results: emit log (if log enabled) then continue with k.
   defp emit_log_and_continue(result, _mod, _name, _args, nil, env, k) do
     k.(result, env)
   end
 
-  defp emit_log_and_continue(result, mod, name, args, log_tag, env, k) do
-    emit_log(log_tag, mod, name, args, result, env, fn _tell, env2 ->
-      k.(result, env2)
-    end)
+  defp emit_log_and_continue(result, mod, name, args, _log, env, k) do
+    k.(result, append_log(env, mod, name, args, result))
   end
 
-  # For error results (ThrowResult): emit log (if tag set) then return the error.
+  # For error results (ThrowResult): emit log (if log enabled) then return the error.
   defp emit_log_and_return(throw_result, _mod, _name, _args, nil, env) do
     {throw_result, env}
   end
 
-  defp emit_log_and_return(throw_result, mod, name, args, log_tag, env) do
-    emit_log(log_tag, mod, name, args, throw_result, env, fn _tell, env2 ->
-      {throw_result, env2}
-    end)
+  defp emit_log_and_return(throw_result, mod, name, args, _log, env) do
+    {throw_result, append_log(env, mod, name, args, throw_result)}
   end
 
   defp invoke(:direct, mod, name, args) do

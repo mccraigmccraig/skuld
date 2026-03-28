@@ -135,8 +135,8 @@ Skuld provides test handlers for common effects:
 |--------|-------------|--------------|
 | Port   | `Port.with_test_handler/1` | Exact-match stub map |
 | Port   | `Port.with_fn_handler/1` | Pattern-matching function |
-| Port   | Any handler + `log: tag` | Dispatch logging via Writer |
-| Port.Repo | `Port.Repo.Test.with_handler/1` | In-memory Repo + auto logging |
+| Port   | Any handler + `log: true` | Dispatch logging in `Port.State.log` |
+| Port.Repo | `Port.Repo.Test` (effectful resolver) | In-memory Repo (sensible defaults) |
 | Transaction | `Transaction.Noop.with_handler/0` | Env state rollback, no database |
 | Fresh  | `Fresh.with_test_handler/0` | Deterministic UUIDs (UUID5) |
 | Random | `Random.with_handler/1` | Fixed sequence or seeded |
@@ -200,26 +200,22 @@ end
   ```
 
 - **Port dispatch logging** captures every Port call as a
-  `{mod, name, args, result}` 4-tuple. Pass `log: tag` to any Port
-  handler installer and install a Writer for the same tag:
+  `{mod, name, args, result}` 4-tuple directly in `Port.State.log`.
+  Pass `log: true` and `output:` to any Port handler installer — no
+  Writer needed:
 
   ```elixir
-  tag = MyApp.PortLog
-
   {result, log} =
     comp
-    |> Port.with_test_handler(stubs, log: tag)
-    |> Writer.with_handler([], tag: tag, output: fn r, entries ->
-      {r, Enum.reverse(entries)}
-    end)
+    |> Port.with_test_handler(stubs,
+      log: true,
+      output: fn r, state -> {r, state.log} end
+    )
     |> Throw.with_handler()
     |> Comp.run!()
 
-  # log is [{mod, name, args, result}, ...]
+  # log is [{mod, name, args, result}, ...] in chronological order
   ```
-
-  `Port.Repo.Test.with_handler/1` wires this automatically — pass
-  `output: fn r, log -> {r, log} end` to capture the log.
 
 - **Fresh.with_test_handler** produces deterministic UUIDs - tests
   are reproducible

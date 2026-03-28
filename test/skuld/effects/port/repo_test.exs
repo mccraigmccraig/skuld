@@ -256,6 +256,24 @@ defmodule Skuld.Effects.Port.RepoTest do
   end
 
   # -------------------------------------------------------------------
+  # Helpers
+  # -------------------------------------------------------------------
+
+  # Shorthand: install Repo.Test as an effectful resolver with logging enabled.
+  defp with_repo_test(comp, opts \\ []) do
+    extra_registry = Keyword.get(opts, :registry, %{})
+    registry = Map.put(extra_registry, Repo, {:effectful, Repo.Test})
+
+    output = Keyword.get(opts, :output)
+
+    port_opts =
+      [log: true]
+      |> then(fn o -> if output, do: Keyword.put(o, :output, output), else: o end)
+
+    Port.with_handler(comp, registry, port_opts)
+  end
+
+  # -------------------------------------------------------------------
   # Test Executor Tests
   # -------------------------------------------------------------------
 
@@ -268,7 +286,7 @@ defmodule Skuld.Effects.Port.RepoTest do
           result <- Repo.insert(cs)
           result
         end
-        |> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
+        |> with_repo_test(output: fn r, state -> {r, state.log} end)
         |> Comp.run!()
 
       assert {:ok, %TestUser{name: "Alice"}} = user
@@ -283,7 +301,7 @@ defmodule Skuld.Effects.Port.RepoTest do
           result <- Repo.update(cs)
           result
         end
-        |> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
+        |> with_repo_test(output: fn r, state -> {r, state.log} end)
         |> Comp.run!()
 
       assert {:ok, %TestUser{id: 1, name: "new"}} = result
@@ -298,7 +316,7 @@ defmodule Skuld.Effects.Port.RepoTest do
           result <- Repo.delete(record)
           result
         end
-        |> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
+        |> with_repo_test(output: fn r, state -> {r, state.log} end)
         |> Comp.run!()
 
       assert {:ok, ^record} = result
@@ -313,7 +331,7 @@ defmodule Skuld.Effects.Port.RepoTest do
           user <- Repo.insert!(cs)
           user
         end
-        |> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
+        |> with_repo_test(output: fn r, state -> {r, state.log} end)
         |> Throw.with_handler()
         |> Comp.run!()
 
@@ -332,7 +350,7 @@ defmodule Skuld.Effects.Port.RepoTest do
           _ <- Repo.get(TestUser, 42)
           {alice, bob}
         end
-        |> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
+        |> with_repo_test(output: fn r, state -> {r, state.log} end)
         |> Throw.with_handler()
         |> Comp.run!()
 
@@ -354,7 +372,7 @@ defmodule Skuld.Effects.Port.RepoTest do
           f <- Repo.aggregate(TestUser, :count, :id)
           {a, b, c, d, e, f}
         end
-        |> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
+        |> with_repo_test(output: fn r, state -> {r, state.log} end)
         |> Comp.run!()
 
       assert {nil, nil, nil, [], false, nil} = results
@@ -368,7 +386,7 @@ defmodule Skuld.Effects.Port.RepoTest do
           b <- Repo.delete_all(TestUser, [])
           {a, b}
         end
-        |> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
+        |> with_repo_test(output: fn r, state -> {r, state.log} end)
         |> Comp.run!()
 
       assert {{0, nil}, {0, nil}} = results
@@ -379,20 +397,6 @@ defmodule Skuld.Effects.Port.RepoTest do
              ] = log
     end
 
-    test "custom tag option routes log to specified Writer tag" do
-      cs = TestUser.changeset(%{name: "Alice"})
-
-      {_result, log} =
-        comp do
-          _ <- Repo.insert(cs)
-          :ok
-        end
-        |> Repo.Test.with_handler(tag: :my_repo_log, output: fn r, log -> {r, log} end)
-        |> Comp.run!()
-
-      assert [{Repo, :insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
-    end
-
     test "without output option, log is discarded" do
       cs = TestUser.changeset(%{name: "Alice"})
 
@@ -401,7 +405,7 @@ defmodule Skuld.Effects.Port.RepoTest do
           user <- Repo.insert!(cs)
           user
         end
-        |> Repo.Test.with_handler()
+        |> with_repo_test()
         |> Throw.with_handler()
         |> Comp.run!()
 
@@ -430,9 +434,9 @@ defmodule Skuld.Effects.Port.RepoTest do
           thing <- OtherContract.do_thing!(user)
           thing
         end
-        |> Repo.Test.with_handler(
+        |> with_repo_test(
           registry: %{OtherContract => OtherImpl},
-          output: fn r, log -> {r, log} end
+          output: fn r, state -> {r, state.log} end
         )
         |> Throw.with_handler()
         |> Comp.run!()

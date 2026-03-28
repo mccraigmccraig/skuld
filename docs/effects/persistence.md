@@ -92,11 +92,13 @@ create_and_fetch(attrs)
 ### Test handler (Port.Repo.Test)
 
 An effectful test executor that applies changeset changes (without
-touching a database) and logs every dispatch via Port's built-in
-`:log` option. Each log entry is a 4-tuple
+touching a database) and returns sensible defaults for reads. Register
+it as an effectful resolver via `Port.with_handler` and use the `:log`
+option to capture a dispatch log. Each log entry is a 4-tuple
 `{module, operation, args_list, return_value}`:
 
 ```elixir
+alias Skuld.Effects.Port
 alias Skuld.Effects.Port.Repo
 
 cs = User.changeset(%User{}, %{name: "Alice"})
@@ -107,7 +109,11 @@ cs = User.changeset(%User{}, %{name: "Alice"})
     _ <- Repo.get(User, 42)
     user
   end
-  |> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
+  |> Port.with_handler(
+    %{Repo => {:effectful, Repo.Test}},
+    log: true,
+    output: fn result, state -> {result, state.log} end
+  )
   |> Throw.with_handler()
   |> Comp.run!()
 
@@ -118,39 +124,19 @@ assert [
 ] = log
 ```
 
-`Repo.Test.with_handler/2` wires two effects in one call:
-
-- **Port** — registers the test executor as an effectful resolver,
-  with `:log` enabled on the Port handler
-- **Writer** — captures the log entries emitted by Port-level logging
-
-Options:
-
-- `:output` — `fn result, log -> transformed end` to capture the log
-- `:tag` — Writer tag (default: `Skuld.Effects.Port`). This tag is
-  used for both the Port `:log` option and the Writer handler.
-- `:registry` — additional Port entries to merge alongside the
-  `Port.Repo` entry. Since nested `Port.with_handler` calls merge
-  registries, you can also register extra contracts via an outer
-  `with_handler` — this option is a convenience for passing them
-  inline:
+Because logging happens at the Port level, the log captures **all**
+Port dispatches — not just `Port.Repo` operations. Register
+additional contracts in the same registry map and their dispatches
+appear in the same log:
 
 ```elixir
-Repo.Test.with_handler(comp,
-  registry: %{MyApp.Queries => MyApp.Queries.TestImpl},
-  output: fn r, log -> {r, log} end
+Port.with_handler(
+  comp,
+  %{Repo => {:effectful, Repo.Test}, MyApp.Queries => MyApp.Queries.TestImpl},
+  log: true,
+  output: fn r, state -> {r, state.log} end
 )
-
-# Equivalent — outer with_handler merges with Repo.Test's inner handler:
-comp
-|> Repo.Test.with_handler(output: fn r, log -> {r, log} end)
-|> Port.with_handler(%{MyApp.Queries => MyApp.Queries.TestImpl})
 ```
-
-Because logging happens at the Port level, the log captures **all**
-Port dispatches — not just `Port.Repo` operations. If you register
-additional contracts via `:registry`, their dispatches appear in the
-same log.
 
 ### Combining with domain-specific contracts
 
