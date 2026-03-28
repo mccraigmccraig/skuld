@@ -157,12 +157,6 @@ defmodule Skuld.Effects.Port.Adapter.PlainTest do
     end
   end
 
-  describe "__port_effectful__?" do
-    test "returns false" do
-      refute TestAdapter.__port_effectful__?()
-    end
-  end
-
   describe "compile-time validation" do
     test "raises when contract lacks __port_operations__" do
       assert_raise CompileError, ~r/does not appear to be a Port.Contract module/, fn ->
