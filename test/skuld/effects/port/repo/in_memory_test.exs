@@ -99,7 +99,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       cs = User.changeset(%{name: "Alice", email: "alice@example.com"})
 
       result =
-        Repo.insert(cs)
+        Repo.EffectPort.insert(cs)
         |> with_in_memory()
         |> Comp.run!()
 
@@ -110,7 +110,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       cs = User.changeset(%{name: "Alice"})
 
       {result, store} =
-        Repo.insert(cs)
+        Repo.EffectPort.insert(cs)
         |> with_store_output()
         |> Comp.run!()
 
@@ -122,7 +122,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       cs = User.changeset(%User{id: 42}, %{name: "Alice"})
 
       {result, store} =
-        Repo.insert(cs)
+        Repo.EffectPort.insert(cs)
         |> with_store_output()
         |> Comp.run!()
 
@@ -135,7 +135,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       {result, _store} =
         comp do
-          r <- Repo.insert(User.changeset(%{name: "New"}))
+          r <- Repo.EffectPort.insert(User.changeset(%{name: "New"}))
           r
         end
         |> with_store_output(initial)
@@ -148,7 +148,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       cs = User.changeset(%{name: "Alice"})
 
       result =
-        Repo.insert!(cs)
+        Repo.EffectPort.insert!(cs)
         |> with_in_memory()
         |> Throw.with_handler()
         |> Comp.run!()
@@ -163,7 +163,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       cs = User.changeset(%User{id: 1, name: "Alice"}, %{email: "new@example.com"})
 
       {result, store} =
-        Repo.update(cs)
+        Repo.EffectPort.update(cs)
         |> with_store_output(initial)
         |> Comp.run!()
 
@@ -176,7 +176,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       cs = User.changeset(%User{id: 1, name: "Alice"}, %{name: "Bob"})
 
       result =
-        Repo.update!(cs)
+        Repo.EffectPort.update!(cs)
         |> InMemory.with_handler(initial)
         |> Throw.with_handler()
         |> Comp.run!()
@@ -191,7 +191,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([alice])
 
       {result, store} =
-        Repo.delete(alice)
+        Repo.EffectPort.delete(alice)
         |> with_store_output(initial)
         |> Comp.run!()
 
@@ -204,7 +204,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([alice])
 
       result =
-        Repo.delete!(alice)
+        Repo.EffectPort.delete!(alice)
         |> InMemory.with_handler(initial)
         |> Throw.with_handler()
         |> Comp.run!()
@@ -223,7 +223,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([alice])
 
       result =
-        Repo.get(User, 1)
+        Repo.EffectPort.get(User, 1)
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -232,7 +232,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
     test "returns nil when not found" do
       result =
-        Repo.get(User, 999)
+        Repo.EffectPort.get(User, 999)
         |> with_in_memory()
         |> Comp.run!()
 
@@ -246,7 +246,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([alice])
 
       result =
-        Repo.get!(User, 1)
+        Repo.EffectPort.get!(User, 1)
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -255,7 +255,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
     test "returns nil when not found" do
       result =
-        Repo.get!(User, 999)
+        Repo.EffectPort.get!(User, 999)
         |> with_in_memory()
         |> Comp.run!()
 
@@ -270,7 +270,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([alice, bob])
 
       result =
-        Repo.get_by(User, name: "Bob")
+        Repo.EffectPort.get_by(User, name: "Bob")
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -281,7 +281,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([%User{id: 1, name: "Alice"}])
 
       result =
-        Repo.get_by(User, name: "Nobody")
+        Repo.EffectPort.get_by(User, name: "Nobody")
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -293,7 +293,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([alice])
 
       result =
-        Repo.get_by(User, name: "Alice", email: "alice@example.com")
+        Repo.EffectPort.get_by(User, name: "Alice", email: "alice@example.com")
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -305,7 +305,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([alice])
 
       result =
-        Repo.get_by(User, %{name: "Alice"})
+        Repo.EffectPort.get_by(User, %{name: "Alice"})
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -319,7 +319,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([alice])
 
       result =
-        Repo.one(User)
+        Repo.EffectPort.one(User)
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -328,7 +328,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
     test "returns nil when no records" do
       result =
-        Repo.one(User)
+        Repo.EffectPort.one(User)
         |> with_in_memory()
         |> Comp.run!()
 
@@ -344,7 +344,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([alice, bob, post])
 
       result =
-        Repo.all(User)
+        Repo.EffectPort.all(User)
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -354,7 +354,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
     test "returns empty list when no records" do
       result =
-        Repo.all(User)
+        Repo.EffectPort.all(User)
         |> with_in_memory()
         |> Comp.run!()
 
@@ -367,7 +367,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([%User{id: 1, name: "Alice"}])
 
       result =
-        Repo.exists?(User)
+        Repo.EffectPort.exists?(User)
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -376,7 +376,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
     test "returns false when no records" do
       result =
-        Repo.exists?(User)
+        Repo.EffectPort.exists?(User)
         |> with_in_memory()
         |> Comp.run!()
 
@@ -394,7 +394,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         ])
 
       result =
-        Repo.aggregate(User, :count, :id)
+        Repo.EffectPort.aggregate(User, :count, :id)
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -403,7 +403,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
     test "count returns 0 for empty" do
       result =
-        Repo.aggregate(User, :count, :id)
+        Repo.EffectPort.aggregate(User, :count, :id)
         |> with_in_memory()
         |> Comp.run!()
 
@@ -418,7 +418,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         ])
 
       result =
-        Repo.aggregate(User, :sum, :age)
+        Repo.EffectPort.aggregate(User, :sum, :age)
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -433,7 +433,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         ])
 
       result =
-        Repo.aggregate(User, :min, :age)
+        Repo.EffectPort.aggregate(User, :min, :age)
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -448,7 +448,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         ])
 
       result =
-        Repo.aggregate(User, :max, :age)
+        Repo.EffectPort.aggregate(User, :max, :age)
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -470,7 +470,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         ])
 
       {result, store} =
-        Repo.delete_all(User, [])
+        Repo.EffectPort.delete_all(User, [])
         |> with_store_output(initial)
         |> Comp.run!()
 
@@ -486,7 +486,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       initial = InMemory.seed([%User{id: 1, name: "Alice"}])
 
       result =
-        Repo.update_all(User, [set: [name: "bulk"]], [])
+        Repo.EffectPort.update_all(User, [set: [name: "bulk"]], [])
         |> with_in_memory(initial)
         |> Comp.run!()
 
@@ -504,8 +504,8 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       result =
         comp do
-          {:ok, user} <- Repo.insert(cs)
-          found <- Repo.get(User, user.id)
+          {:ok, user} <- Repo.EffectPort.insert(cs)
+          found <- Repo.EffectPort.get(User, user.id)
           {user, found}
         end
         |> with_in_memory()
@@ -521,8 +521,8 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       result =
         comp do
-          {:ok, user} <- Repo.insert(cs)
-          found <- Repo.get_by(User, name: "Alice")
+          {:ok, user} <- Repo.EffectPort.insert(cs)
+          found <- Repo.EffectPort.get_by(User, name: "Alice")
           {user, found}
         end
         |> with_in_memory()
@@ -538,9 +538,9 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       result =
         comp do
-          _ <- Repo.insert(cs1)
-          _ <- Repo.insert(cs2)
-          Repo.all(User)
+          _ <- Repo.EffectPort.insert(cs1)
+          _ <- Repo.EffectPort.insert(cs2)
+          Repo.EffectPort.all(User)
         end
         |> with_in_memory()
         |> Comp.run!()
@@ -555,9 +555,9 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       result =
         comp do
-          {:ok, user} <- Repo.insert(cs)
-          _ <- Repo.delete(user)
-          Repo.get(User, user.id)
+          {:ok, user} <- Repo.EffectPort.insert(cs)
+          _ <- Repo.EffectPort.delete(user)
+          Repo.EffectPort.get(User, user.id)
         end
         |> with_in_memory()
         |> Comp.run!()
@@ -568,9 +568,9 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
     test "insert, update, then get returns updated record" do
       result =
         comp do
-          {:ok, user} <- Repo.insert(User.changeset(%{name: "Alice"}))
-          {:ok, updated} <- Repo.update(User.changeset(user, %{name: "Alicia"}))
-          found <- Repo.get(User, user.id)
+          {:ok, user} <- Repo.EffectPort.insert(User.changeset(%{name: "Alice"}))
+          {:ok, updated} <- Repo.EffectPort.update(User.changeset(user, %{name: "Alicia"}))
+          found <- Repo.EffectPort.get(User, user.id)
           {updated, found}
         end
         |> with_in_memory()
@@ -586,11 +586,11 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       result =
         comp do
-          exists_before <- Repo.exists?(User)
-          count_before <- Repo.aggregate(User, :count, :id)
-          _ <- Repo.insert(cs)
-          exists_after <- Repo.exists?(User)
-          count_after <- Repo.aggregate(User, :count, :id)
+          exists_before <- Repo.EffectPort.exists?(User)
+          count_before <- Repo.EffectPort.aggregate(User, :count, :id)
+          _ <- Repo.EffectPort.insert(cs)
+          exists_after <- Repo.EffectPort.exists?(User)
+          count_after <- Repo.EffectPort.aggregate(User, :count, :id)
           {exists_before, count_before, exists_after, count_after}
         end
         |> with_in_memory()
@@ -612,8 +612,8 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       result =
         comp do
-          a <- Repo.get(User, 1)
-          b <- Repo.get(User, 2)
+          a <- Repo.EffectPort.get(User, 1)
+          b <- Repo.EffectPort.get(User, 2)
           {a, b}
         end
         |> with_in_memory(initial)
@@ -628,8 +628,8 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       result =
         comp do
-          _ <- Repo.insert(cs)
-          Repo.all(User)
+          _ <- Repo.EffectPort.insert(cs)
+          Repo.EffectPort.all(User)
         end
         |> with_in_memory(initial)
         |> Comp.run!()
@@ -648,9 +648,9 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       {_result, log} =
         comp do
-          {:ok, user} <- Repo.insert(cs)
-          _ <- Repo.get(User, user.id)
-          Repo.all(User)
+          {:ok, user} <- Repo.EffectPort.insert(cs)
+          _ <- Repo.EffectPort.get(User, user.id)
+          Repo.EffectPort.all(User)
         end
         |> InMemory.with_handler(%{},
           log: true,
@@ -677,7 +677,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       result =
         comp do
-          user <- Repo.get(User, 1)
+          user <- Repo.EffectPort.get(User, 1)
           count <- State.get()
           _ <- State.put(count + 1)
           {user, count}
@@ -707,8 +707,8 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       result =
         comp do
-          user <- Repo.get(User, 1)
-          thing <- OtherContract.do_thing!(user)
+          user <- Repo.EffectPort.get(User, 1)
+          thing <- OtherContract.EffectPort.do_thing!(user)
           thing
         end
         |> with_in_memory(initial)
@@ -728,10 +728,10 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
     test "different schemas are independent" do
       result =
         comp do
-          {:ok, user} <- Repo.insert(User.changeset(%{name: "Alice"}))
-          {:ok, post} <- Repo.insert(Post.changeset(%{title: "Hello"}))
-          users <- Repo.all(User)
-          posts <- Repo.all(Post)
+          {:ok, user} <- Repo.EffectPort.insert(User.changeset(%{name: "Alice"}))
+          {:ok, post} <- Repo.EffectPort.insert(Post.changeset(%{title: "Hello"}))
+          users <- Repo.EffectPort.all(User)
+          posts <- Repo.EffectPort.all(Post)
           {user, post, users, posts}
         end
         |> with_in_memory()
@@ -752,7 +752,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         ])
 
       {result, store} =
-        Repo.delete_all(User, [])
+        Repo.EffectPort.delete_all(User, [])
         |> with_store_output(initial)
         |> Comp.run!()
 

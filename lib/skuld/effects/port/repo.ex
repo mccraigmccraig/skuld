@@ -9,7 +9,7 @@
 #     alias Skuld.Effects.Port.Repo
 #
 #     comp do
-#       record <- Repo.insert!(changeset)
+#       record <- Repo.EffectPort.insert!(changeset)
 #       # ...
 #     end
 #
@@ -72,12 +72,12 @@ if Code.ensure_loaded?(Ecto) do
 
         defcomp create_user(attrs) do
           changeset = User.changeset(%User{}, attrs)
-          user <- Repo.insert!(changeset)
+          user <- Repo.EffectPort.insert!(changeset)
           return(user)
         end
 
         defcomp find_user(id) do
-          user <- Repo.get(User, id)
+          user <- Repo.EffectPort.get(User, id)
           return(user)
         end
     """

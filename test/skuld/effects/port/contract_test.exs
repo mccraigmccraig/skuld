@@ -136,13 +136,21 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
   end
 
-  describe "Effectful submodule generation" do
+  describe "Effectful and EffectPort submodule generation" do
     test "Effectful submodule exists for each contract" do
       assert Code.ensure_loaded?(TestContract.Effectful)
       assert Code.ensure_loaded?(NoBangContract.Effectful)
       assert Code.ensure_loaded?(ForceBangContract.Effectful)
       assert Code.ensure_loaded?(CustomBangContract.Effectful)
       assert Code.ensure_loaded?(BareReturnContract.Effectful)
+    end
+
+    test "EffectPort submodule exists for each contract" do
+      assert Code.ensure_loaded?(TestContract.EffectPort)
+      assert Code.ensure_loaded?(NoBangContract.EffectPort)
+      assert Code.ensure_loaded?(ForceBangContract.EffectPort)
+      assert Code.ensure_loaded?(CustomBangContract.EffectPort)
+      assert Code.ensure_loaded?(BareReturnContract.EffectPort)
     end
 
     test "Effectful has callbacks with correct arities" do
@@ -164,26 +172,26 @@ defmodule Skuld.Effects.Port.ContractTest do
       assert length(callbacks) == length(ops)
     end
 
-    test "contract module's caller functions satisfy Effectful behaviour" do
-      # The contract module's generated caller functions have the same names/arities
+    test "EffectPort module's caller functions satisfy Effectful behaviour" do
+      # The EffectPort module's generated caller functions have the same names/arities
       # as the Effectful callbacks, so they satisfy the behaviour structurally
       callbacks = TestContract.Effectful.behaviour_info(:callbacks)
 
       for {name, arity} <- callbacks do
-        assert function_exported?(TestContract, name, arity),
-               "Contract module should export #{name}/#{arity} to satisfy Effectful behaviour"
+        assert function_exported?(TestContract.EffectPort, name, arity),
+               "EffectPort module should export #{name}/#{arity} to satisfy Effectful behaviour"
       end
     end
 
-    test "contract callers return computations (matching Effectful's computation return type)" do
+    test "EffectPort callers return computations (matching Effectful's computation return type)" do
       # Effectful behaviour expects computation(return_type) — verify callers return functions
-      comp = TestContract.get_todo("t1", "id1")
+      comp = TestContract.EffectPort.get_todo("t1", "id1")
       assert is_function(comp, 2), "Caller should return a computation (2-arity function)"
 
-      comp = TestContract.list_todos("t1")
+      comp = TestContract.EffectPort.list_todos("t1")
       assert is_function(comp, 2)
 
-      comp = TestContract.health_check()
+      comp = TestContract.EffectPort.health_check()
       assert is_function(comp, 2)
     end
   end
@@ -208,7 +216,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
     end
 
-    test "Behaviour and Effectful submodules have @moduledoc" do
+    test "Behaviour, Effectful, and EffectPort submodules have @moduledoc" do
       docs =
         fetch_all_docs("""
         defmodule DocSubmoduleContract do
@@ -225,6 +233,10 @@ defmodule Skuld.Effects.Port.ContractTest do
       {:docs_v1, _, _, _, provider_doc, _, _} = docs[DocSubmoduleContract.Effectful]
       assert %{"en" => pdoc} = provider_doc
       assert pdoc =~ "Effectful behaviour"
+
+      {:docs_v1, _, _, _, effect_port_doc, _, _} = docs[DocSubmoduleContract.EffectPort]
+      assert %{"en" => epdoc} = effect_port_doc
+      assert epdoc =~ "Effectful dispatch facade"
     end
   end
 
@@ -232,41 +244,41 @@ defmodule Skuld.Effects.Port.ContractTest do
   # Contract Macro Tests
   # ---------------------------------------------------------------
 
-  describe "defport generates caller functions" do
+  describe "defport generates caller functions on EffectPort" do
     test "with correct arity for multi-param operation" do
-      assert function_exported?(TestContract, :get_todo, 2)
+      assert function_exported?(TestContract.EffectPort, :get_todo, 2)
     end
 
     test "with correct arity for single-param operation" do
-      assert function_exported?(TestContract, :list_todos, 1)
+      assert function_exported?(TestContract.EffectPort, :list_todos, 1)
     end
 
     test "with correct arity for zero-param operation" do
-      assert function_exported?(TestContract, :health_check, 0)
+      assert function_exported?(TestContract.EffectPort, :health_check, 0)
     end
 
     test "caller returns a computation" do
-      comp = TestContract.get_todo("t1", "id1")
+      comp = TestContract.EffectPort.get_todo("t1", "id1")
       assert is_function(comp, 2)
     end
   end
 
-  describe "defport generates bang variants" do
+  describe "defport generates bang variants on EffectPort" do
     test "for operations with {:ok, T} return type (auto-detect)" do
-      assert function_exported?(TestContract, :get_todo!, 2)
-      assert function_exported?(TestContract, :list_todos!, 1)
+      assert function_exported?(TestContract.EffectPort, :get_todo!, 2)
+      assert function_exported?(TestContract.EffectPort, :list_todos!, 1)
     end
 
     test "not for operations without {:ok, T} return type (auto-detect)" do
-      refute function_exported?(TestContract, :health_check!, 0)
+      refute function_exported?(TestContract.EffectPort, :health_check!, 0)
     end
 
     test "not for bare return types (auto-detect)" do
-      refute function_exported?(BareReturnContract, :count_items!, 1)
+      refute function_exported?(BareReturnContract.EffectPort, :count_items!, 1)
     end
 
     test "bang returns a computation" do
-      comp = TestContract.get_todo!("t1", "id1")
+      comp = TestContract.EffectPort.get_todo!("t1", "id1")
       assert is_function(comp, 2)
     end
   end
@@ -274,32 +286,32 @@ defmodule Skuld.Effects.Port.ContractTest do
   describe "bang: false suppresses bang generation" do
     test "no bang variant even with {:ok, T} return type" do
       # NoBangContract has {:ok, map()} | {:error, term()} but bang: false
-      refute function_exported?(NoBangContract, :get_item!, 1)
+      refute function_exported?(NoBangContract.EffectPort, :get_item!, 1)
     end
 
     test "caller still generated" do
-      assert function_exported?(NoBangContract, :get_item, 1)
+      assert function_exported?(NoBangContract.EffectPort, :get_item, 1)
     end
   end
 
   describe "bang: true forces bang generation" do
     test "bang variant generated for non-ok/error return type" do
-      assert function_exported?(ForceBangContract, :find_user!, 1)
+      assert function_exported?(ForceBangContract.EffectPort, :find_user!, 1)
     end
 
     test "forced bang returns a computation" do
-      comp = ForceBangContract.find_user!("u1")
+      comp = ForceBangContract.EffectPort.find_user!("u1")
       assert is_function(comp, 2)
     end
   end
 
   describe "bang: custom_fn generates bang with custom unwrap" do
     test "bang variant generated with custom unwrap" do
-      assert function_exported?(CustomBangContract, :find_user!, 1)
+      assert function_exported?(CustomBangContract.EffectPort, :find_user!, 1)
     end
 
     test "custom bang returns a computation" do
-      comp = CustomBangContract.find_user!("u1")
+      comp = CustomBangContract.EffectPort.find_user!("u1")
       assert is_function(comp, 2)
     end
 
@@ -309,7 +321,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       comp =
-        CustomBangContract.find_user!("u1")
+        CustomBangContract.EffectPort.find_user!("u1")
         |> Port.with_fn_handler(handler)
         |> Throw.with_handler()
 
@@ -323,7 +335,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       comp =
-        CustomBangContract.find_user!("bad")
+        CustomBangContract.EffectPort.find_user!("bad")
         |> Port.with_fn_handler(handler)
         |> Throw.with_handler()
 
@@ -338,24 +350,24 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
   end
 
-  describe "defport generates key helpers" do
+  describe "defport generates key helpers on EffectPort" do
     test "key helper exists with operation name + params arity" do
       # key(:get_todo, tenant_id, id) => arity 3
-      assert function_exported?(TestContract, :key, 3)
+      assert function_exported?(TestContract.EffectPort, :key, 3)
       # key(:list_todos, tenant_id) => arity 2
-      assert function_exported?(TestContract, :key, 2)
+      assert function_exported?(TestContract.EffectPort, :key, 2)
       # key(:health_check) => arity 1
-      assert function_exported?(TestContract, :key, 1)
+      assert function_exported?(TestContract.EffectPort, :key, 1)
     end
 
     test "key helper matches Port.key/3 output" do
-      key_from_helper = TestContract.key(:get_todo, "t1", "id1")
+      key_from_helper = TestContract.EffectPort.key(:get_todo, "t1", "id1")
       key_from_port = Port.key(TestContract, :get_todo, ["t1", "id1"])
       assert key_from_helper == key_from_port
     end
 
     test "key helper for zero-arg operation" do
-      key_from_helper = TestContract.key(:health_check)
+      key_from_helper = TestContract.EffectPort.key(:health_check)
       key_from_port = Port.key(TestContract, :health_check, [])
       assert key_from_helper == key_from_port
     end
@@ -389,28 +401,28 @@ defmodule Skuld.Effects.Port.ContractTest do
   end
 
   describe "multiple defport declarations in one module" do
-    test "all operations are generated" do
+    test "all operations are generated on EffectPort" do
       # TestContract has 3 operations
-      assert function_exported?(TestContract, :get_todo, 2)
-      assert function_exported?(TestContract, :list_todos, 1)
-      assert function_exported?(TestContract, :health_check, 0)
+      assert function_exported?(TestContract.EffectPort, :get_todo, 2)
+      assert function_exported?(TestContract.EffectPort, :list_todos, 1)
+      assert function_exported?(TestContract.EffectPort, :health_check, 0)
       assert length(TestContract.__port_operations__()) == 3
     end
   end
 
   describe "defport with zero params" do
-    test "generates zero-arity caller" do
-      comp = TestContract.health_check()
+    test "generates zero-arity caller on EffectPort" do
+      comp = TestContract.EffectPort.health_check()
       assert is_function(comp, 2)
     end
 
     test "does not generate bang for non-ok/error return type" do
       # health_check returns :ok (bare atom), no {:ok, T} pattern
-      refute function_exported?(TestContract, :health_check!, 0)
+      refute function_exported?(TestContract.EffectPort, :health_check!, 0)
     end
 
-    test "generates single-arity key helper" do
-      key = TestContract.key(:health_check)
+    test "generates single-arity key helper on EffectPort" do
+      key = TestContract.EffectPort.key(:health_check)
       assert {TestContract, :health_check, _} = key
     end
   end
@@ -448,21 +460,29 @@ defmodule Skuld.Effects.Port.ContractTest do
     # Code.fetch_docs/1 requires .beam files on disk. We compile modules
     # to a temp dir and fetch docs via the beam file path.
 
-    defp fetch_docs_from_compiled(source) do
+    defp fetch_docs_from_compiled(source, suffix) do
       # Ensure docs chunk is included in compiled beam
       Code.put_compiler_option(:docs, true)
       compiled = Code.compile_string(source)
       dir = System.tmp_dir!()
 
-      # Find the contract module (not Plain or Effectful submodule)
+      # Find the target module
       {mod, beam} =
-        Enum.find(compiled, fn {mod, _beam} ->
-          mod_name = inspect(mod)
+        if suffix do
+          Enum.find(compiled, fn {mod, _beam} ->
+            inspect(mod) |> String.ends_with?(suffix)
+          end)
+        else
+          # Find the contract module (not any submodule)
+          Enum.find(compiled, fn {mod, _beam} ->
+            mod_name = inspect(mod)
 
-          not String.ends_with?(mod_name, ".Behaviour") and
-            not String.ends_with?(mod_name, ".Port") and
-            not String.ends_with?(mod_name, ".Effectful")
-        end)
+            not String.ends_with?(mod_name, ".Behaviour") and
+              not String.ends_with?(mod_name, ".Port") and
+              not String.ends_with?(mod_name, ".Effectful") and
+              not String.ends_with?(mod_name, ".EffectPort")
+          end)
+        end
 
       path = Path.join(dir, "Elixir.#{inspect(mod)}.beam")
       File.write!(path, beam)
@@ -474,15 +494,18 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
     end
 
-    test "caller, bang, and key helper docs are generated" do
+    test "caller, bang, and key helper docs are generated on EffectPort" do
       {:docs_v1, _, _, _, _, _, docs} =
-        fetch_docs_from_compiled("""
-        defmodule DocVerifyContract do
-          use Skuld.Effects.Port.Contract
+        fetch_docs_from_compiled(
+          """
+          defmodule DocVerifyContract do
+            use Skuld.Effects.Port.Contract
 
-          defport get_item(id :: String.t()) :: {:ok, map()} | {:error, term()}
-        end
-        """)
+            defport get_item(id :: String.t()) :: {:ok, map()} | {:error, term()}
+          end
+          """,
+          ".EffectPort"
+        )
 
       # Caller doc
       caller_doc =
@@ -518,16 +541,19 @@ defmodule Skuld.Effects.Port.ContractTest do
       assert key_content =~ "test stub key"
     end
 
-    test "user @doc override is respected" do
+    test "user @doc override is respected on EffectPort" do
       {:docs_v1, _, _, _, _, _, docs} =
-        fetch_docs_from_compiled("""
-        defmodule DocOverrideContract do
-          use Skuld.Effects.Port.Contract
+        fetch_docs_from_compiled(
+          """
+          defmodule DocOverrideContract do
+            use Skuld.Effects.Port.Contract
 
-          @doc "My custom doc"
-          defport find_user(id :: integer()) :: {:ok, map()} | {:error, term()}
-        end
-        """)
+            @doc "My custom doc"
+            defport find_user(id :: integer()) :: {:ok, map()} | {:error, term()}
+          end
+          """,
+          ".EffectPort"
+        )
 
       find_user_doc =
         Enum.find(docs, fn
@@ -549,7 +575,7 @@ defmodule Skuld.Effects.Port.ContractTest do
   describe "contract → implementation module dispatch" do
     test "bare module resolver dispatches to implementation" do
       comp =
-        TestContract.get_todo("tenant1", "id1")
+        TestContract.EffectPort.get_todo("tenant1", "id1")
         |> Port.with_handler(%{TestContract => TestImpl})
 
       {result, _env} = Comp.run(comp)
@@ -558,7 +584,7 @@ defmodule Skuld.Effects.Port.ContractTest do
 
     test "zero-arg operation dispatches correctly" do
       comp =
-        TestContract.health_check()
+        TestContract.EffectPort.health_check()
         |> Port.with_handler(%{TestContract => TestImpl})
 
       {result, _env} = Comp.run(comp)
@@ -589,11 +615,12 @@ defmodule Skuld.Effects.Port.ContractTest do
   describe "contract + test_handler with key helpers" do
     test "key helper produces matching keys for test stubs" do
       responses = %{
-        TestContract.key(:get_todo, "t1", "id1") => {:ok, %{id: "id1", name: "Test Todo"}}
+        TestContract.EffectPort.key(:get_todo, "t1", "id1") =>
+          {:ok, %{id: "id1", name: "Test Todo"}}
       }
 
       comp =
-        TestContract.get_todo("t1", "id1")
+        TestContract.EffectPort.get_todo("t1", "id1")
         |> Port.with_test_handler(responses)
 
       {result, _env} = Comp.run(comp)
@@ -602,11 +629,11 @@ defmodule Skuld.Effects.Port.ContractTest do
 
     test "zero-arg key helper works with test stubs" do
       responses = %{
-        TestContract.key(:health_check) => :ok
+        TestContract.EffectPort.key(:health_check) => :ok
       }
 
       comp =
-        TestContract.health_check()
+        TestContract.EffectPort.health_check()
         |> Port.with_test_handler(responses)
 
       {result, _env} = Comp.run(comp)
@@ -617,7 +644,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       responses = %{}
 
       comp =
-        TestContract.get_todo("t1", "id1")
+        TestContract.EffectPort.get_todo("t1", "id1")
         |> Port.with_test_handler(responses)
         |> Throw.with_handler()
 
@@ -637,7 +664,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       comp =
-        TestContract.get_todo("t1", "id1")
+        TestContract.EffectPort.get_todo("t1", "id1")
         |> Port.with_fn_handler(handler)
 
       {result, _env} = Comp.run(comp)
@@ -652,7 +679,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       comp =
-        TestContract.get_todo("t1", "id1")
+        TestContract.EffectPort.get_todo("t1", "id1")
         |> Port.with_handler(%{TestContract => resolver})
 
       {result, _env} = Comp.run(comp)
@@ -669,7 +696,7 @@ defmodule Skuld.Effects.Port.ContractTest do
 
     test "{module, function} resolver works with contract" do
       comp =
-        TestContract.get_todo("t1", "id1")
+        TestContract.EffectPort.get_todo("t1", "id1")
         |> Port.with_handler(%{TestContract => {MFDispatcher, :dispatch}})
 
       {result, _env} = Comp.run(comp)
@@ -684,7 +711,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       comp =
-        TestContract.get_todo("t1", "id1")
+        TestContract.EffectPort.get_todo("t1", "id1")
         |> Port.with_handler(%{TestContract => IncompleteImpl})
         |> Throw.with_handler()
 
@@ -697,7 +724,7 @@ defmodule Skuld.Effects.Port.ContractTest do
 
     test "unknown module in registry" do
       comp =
-        TestContract.get_todo("t1", "id1")
+        TestContract.EffectPort.get_todo("t1", "id1")
         |> Port.with_handler(%{SomeOtherModule => TestImpl})
         |> Throw.with_handler()
 
@@ -713,7 +740,7 @@ defmodule Skuld.Effects.Port.ContractTest do
   describe "full integration: contract → impl → handler → run" do
     test "complete flow with runtime handler" do
       comp =
-        TestContract.get_todo("tenant1", "todo1")
+        TestContract.EffectPort.get_todo("tenant1", "todo1")
         |> Port.with_handler(%{TestContract => TestImpl})
 
       {result, _env} = Comp.run(comp)
@@ -722,7 +749,7 @@ defmodule Skuld.Effects.Port.ContractTest do
 
     test "bang variant with Throw integration" do
       comp =
-        TestContract.get_todo!("tenant1", "todo1")
+        TestContract.EffectPort.get_todo!("tenant1", "todo1")
         |> Port.with_handler(%{TestContract => TestImpl})
         |> Throw.with_handler()
 
@@ -736,7 +763,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       comp =
-        TestContract.get_todo!("tenant1", "bad_id")
+        TestContract.EffectPort.get_todo!("tenant1", "bad_id")
         |> Port.with_fn_handler(handler)
         |> Throw.with_handler()
 
@@ -761,8 +788,8 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       comp =
-        Comp.bind(TestContract.get_todo("t1", "id1"), fn result1 ->
-          Comp.bind(OtherContract.lookup("mykey"), fn result2 ->
+        Comp.bind(TestContract.EffectPort.get_todo("t1", "id1"), fn result1 ->
+          Comp.bind(apply(OtherContract.EffectPort, :lookup, ["mykey"]), fn result2 ->
             Comp.pure({result1, result2})
           end)
         end)
@@ -779,11 +806,11 @@ defmodule Skuld.Effects.Port.ContractTest do
   describe "contract with Throw integration (request! unwrap and throw paths)" do
     test "request! unwraps :ok tuple" do
       responses = %{
-        TestContract.key(:get_todo, "t1", "id1") => {:ok, %{id: "id1"}}
+        TestContract.EffectPort.key(:get_todo, "t1", "id1") => {:ok, %{id: "id1"}}
       }
 
       comp =
-        TestContract.get_todo!("t1", "id1")
+        TestContract.EffectPort.get_todo!("t1", "id1")
         |> Port.with_test_handler(responses)
         |> Throw.with_handler()
 
@@ -793,11 +820,11 @@ defmodule Skuld.Effects.Port.ContractTest do
 
     test "request! throws on :error tuple" do
       responses = %{
-        TestContract.key(:get_todo, "t1", "bad") => {:error, :not_found}
+        TestContract.EffectPort.key(:get_todo, "t1", "bad") => {:error, :not_found}
       }
 
       comp =
-        TestContract.get_todo!("t1", "bad")
+        TestContract.EffectPort.get_todo!("t1", "bad")
         |> Port.with_test_handler(responses)
         |> Throw.with_handler()
 

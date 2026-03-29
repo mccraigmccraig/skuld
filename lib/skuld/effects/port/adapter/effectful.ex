@@ -26,7 +26,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
       defmodule MyApp.UserService.EffectfulImpl do
         @behaviour MyApp.UserService.Effectful
         defcomp find_user(id) do
-          user <- MyApp.UserRepo.get(id)
+          user <- MyApp.UserRepo.EffectPort.get(id)
           {:ok, user}
         end
       end
