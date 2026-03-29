@@ -23,9 +23,9 @@ defmodule Skuld.Effects.Port.Adapter.PlainTest do
     defport(health_check() :: :ok)
   end
 
-  # Plain implementation satisfying Plain behaviour
+  # Plain implementation satisfying Behaviour
   defmodule TestImpl do
-    @behaviour TestContract.Plain
+    @behaviour TestContract.Behaviour
 
     @impl true
     def get_todo(tenant_id, id) do
@@ -54,7 +54,7 @@ defmodule Skuld.Effects.Port.Adapter.PlainTest do
 
   # Alternative implementation for swap testing
   defmodule AltImpl do
-    @behaviour TestContract.Plain
+    @behaviour TestContract.Behaviour
 
     @impl true
     def get_todo(_tenant_id, _id), do: {:ok, %{source: :alt_impl}}
@@ -70,9 +70,9 @@ defmodule Skuld.Effects.Port.Adapter.PlainTest do
   # Basic Adapter Tests
   # ---------------------------------------------------------------
 
-  describe "generated module satisfies Plain behaviour" do
-    test "adapter implements all Plain callbacks" do
-      callbacks = TestContract.Plain.behaviour_info(:callbacks)
+  describe "generated module satisfies Behaviour" do
+    test "adapter implements all Behaviour callbacks" do
+      callbacks = TestContract.Behaviour.behaviour_info(:callbacks)
 
       for {name, arity} <- callbacks do
         assert function_exported?(TestAdapter, name, arity),
@@ -142,8 +142,8 @@ defmodule Skuld.Effects.Port.Adapter.PlainTest do
 
   describe "adapter as Port.with_handler target" do
     test "adapter can be used as a handler target for Skuld consumers" do
-      # Since the adapter satisfies Plain behaviour, it can be used
-      # with Port.with_handler just like any other Plain impl
+      # Since the adapter satisfies Behaviour, it can be used
+      # with Port.with_handler just like any other Behaviour impl
       alias Skuld.Comp
       alias Skuld.Effects.Throw
 
@@ -233,7 +233,7 @@ defmodule Skuld.Effects.Port.Adapter.PlainTest do
 
   describe "error propagation" do
     defmodule ErrorImpl do
-      @behaviour TestContract.Plain
+      @behaviour TestContract.Behaviour
 
       @impl true
       def get_todo(_tenant_id, _id), do: {:error, :not_found}
@@ -259,7 +259,7 @@ defmodule Skuld.Effects.Port.Adapter.PlainTest do
 
     test "exceptions from impl propagate" do
       defmodule RaisingImpl do
-        @behaviour TestContract.Plain
+        @behaviour TestContract.Behaviour
 
         @impl true
         def get_todo(_tenant_id, _id), do: raise("boom")

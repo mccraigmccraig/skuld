@@ -52,7 +52,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
   2. Pipes through the stack function to install effect handlers
   3. Runs the computation with `Comp.run!/1`
 
-  The generated module declares `@behaviour ContractModule.Plain`, ensuring
+  The generated module declares `@behaviour ContractModule.Behaviour`, ensuring
   compile-time verification that all required callbacks are implemented.
 
   ## Hexagonal Architecture
@@ -64,7 +64,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
     * **Skuld→Effectful** — effectful code calls out to effectful implementations
       through the Port effect with an `:effectful` resolver.
     * **Legacy→Plain** — plain Elixir code calls plain implementations through
-      `Port.Adapter.Plain`.
+      the HexPort-generated `X.Port` facade or `Port.Adapter.Plain`.
     * **Legacy→Effectful** — plain Elixir code calls into effectful implementations
       through this adapter (`Port.Adapter.Effectful`), which runs the effectful
       code with a handler stack, producing plain return values.
@@ -116,9 +116,9 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
         assert {:ok, %User{}} = result
       end
 
-  Since the adapter satisfies the Plain behaviour, it can also be used as a
-  handler target in `Port.with_handler/2`, enabling effectful-to-effectful
-  composition through the Port system.
+  Since the adapter satisfies the Behaviour, it can also be used as a handler
+  target in `Port.with_handler/2`, enabling effectful-to-effectful composition
+  through the Port system.
   """
 
   defmacro __using__(opts) do
@@ -154,7 +154,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
         line: 0
     end
 
-    plain_behaviour = Module.concat(contract, Plain)
+    plain_behaviour = Module.concat(contract, Behaviour)
     operations = contract.__port_operations__()
 
     functions =

@@ -29,9 +29,9 @@ defmodule Skuld.Effects.Port.Adapter.Plain do
         defport find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
       end
 
-      # Plain implementation satisfies Plain behaviour
+      # Plain implementation satisfies Behaviour
       defmodule MyApp.UserService.Ecto do
-        @behaviour MyApp.UserService.Plain
+        @behaviour MyApp.UserService.Behaviour
 
         @impl true
         def find_user(id) do
@@ -70,10 +70,10 @@ defmodule Skuld.Effects.Port.Adapter.Plain do
 
   ## Testing with Mox
 
-  The contract's generated `Plain` behaviour is exactly what Mox needs:
+  The contract's generated `Behaviour` is exactly what Mox needs:
 
       # test/support/mocks.ex
-      Mox.defmock(MyApp.UserService.Mock, for: MyApp.UserService.Plain)
+      Mox.defmock(MyApp.UserService.Mock, for: MyApp.UserService.Behaviour)
 
       # config/test.exs
       config :my_app, MyApp.UserService.Adapter, MyApp.UserService.Mock
@@ -148,7 +148,7 @@ defmodule Skuld.Effects.Port.Adapter.Plain do
         line: 0
     end
 
-    plain_behaviour = Module.concat(contract, Plain)
+    plain_behaviour = Module.concat(contract, Behaviour)
     operations = contract.__port_operations__()
 
     impl_fn =

@@ -74,7 +74,7 @@ defmodule Skuld.Effects.Port.ContractTest do
 
   # Implementation module for dispatch tests
   defmodule TestImpl do
-    @behaviour TestContract.Plain
+    @behaviour TestContract.Behaviour
 
     @impl true
     def get_todo(tenant_id, id) do
@@ -96,42 +96,42 @@ defmodule Skuld.Effects.Port.ContractTest do
   # Plain/Effectful Behaviour Submodule Tests
   # ---------------------------------------------------------------
 
-  describe "Plain submodule generation" do
-    test "Plain submodule exists for each contract" do
-      assert Code.ensure_loaded?(TestContract.Plain)
-      assert Code.ensure_loaded?(NoBangContract.Plain)
-      assert Code.ensure_loaded?(ForceBangContract.Plain)
-      assert Code.ensure_loaded?(CustomBangContract.Plain)
-      assert Code.ensure_loaded?(BareReturnContract.Plain)
+  describe "Behaviour submodule generation" do
+    test "Behaviour submodule exists for each contract" do
+      assert Code.ensure_loaded?(TestContract.Behaviour)
+      assert Code.ensure_loaded?(NoBangContract.Behaviour)
+      assert Code.ensure_loaded?(ForceBangContract.Behaviour)
+      assert Code.ensure_loaded?(CustomBangContract.Behaviour)
+      assert Code.ensure_loaded?(BareReturnContract.Behaviour)
     end
 
-    test "Plain has callbacks with correct arities" do
-      callbacks = TestContract.Plain.behaviour_info(:callbacks)
+    test "Behaviour has callbacks with correct arities" do
+      callbacks = TestContract.Behaviour.behaviour_info(:callbacks)
       assert {:get_todo, 2} in callbacks
       assert {:list_todos, 1} in callbacks
       assert {:health_check, 0} in callbacks
     end
 
-    test "Plain callbacks match all contract operations" do
+    test "Behaviour callbacks match all contract operations" do
       ops = TestContract.__port_operations__()
-      callbacks = TestContract.Plain.behaviour_info(:callbacks)
+      callbacks = TestContract.Behaviour.behaviour_info(:callbacks)
 
       for op <- ops do
         assert {op.name, op.arity} in callbacks,
-               "Expected Plain callback #{op.name}/#{op.arity}"
+               "Expected Behaviour callback #{op.name}/#{op.arity}"
       end
 
       assert length(callbacks) == length(ops)
     end
 
-    test "implementation module satisfies Plain behaviour" do
-      # TestImpl declares @behaviour TestContract.Plain and compiles without warnings
+    test "implementation module satisfies Behaviour" do
+      # TestImpl declares @behaviour TestContract.Behaviour and compiles without warnings
       # Verify it implements all required callbacks
-      callbacks = TestContract.Plain.behaviour_info(:callbacks)
+      callbacks = TestContract.Behaviour.behaviour_info(:callbacks)
 
       for {name, arity} <- callbacks do
         assert function_exported?(TestImpl, name, arity),
-               "TestImpl should export #{name}/#{arity} for Plain behaviour"
+               "TestImpl should export #{name}/#{arity} for Behaviour"
       end
     end
   end
@@ -208,7 +208,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
     end
 
-    test "Plain and Effectful submodules have @moduledoc" do
+    test "Behaviour and Effectful submodules have @moduledoc" do
       docs =
         fetch_all_docs("""
         defmodule DocSubmoduleContract do
@@ -218,9 +218,9 @@ defmodule Skuld.Effects.Port.ContractTest do
         end
         """)
 
-      {:docs_v1, _, _, _, consumer_doc, _, _} = docs[DocSubmoduleContract.Plain]
-      assert %{"en" => cdoc} = consumer_doc
-      assert cdoc =~ "Plain behaviour"
+      {:docs_v1, _, _, _, behaviour_doc, _, _} = docs[DocSubmoduleContract.Behaviour]
+      assert %{"en" => bdoc} = behaviour_doc
+      assert bdoc =~ "Behaviour"
 
       {:docs_v1, _, _, _, provider_doc, _, _} = docs[DocSubmoduleContract.Effectful]
       assert %{"en" => pdoc} = provider_doc
@@ -459,7 +459,8 @@ defmodule Skuld.Effects.Port.ContractTest do
         Enum.find(compiled, fn {mod, _beam} ->
           mod_name = inspect(mod)
 
-          not String.ends_with?(mod_name, ".Plain") and
+          not String.ends_with?(mod_name, ".Behaviour") and
+            not String.ends_with?(mod_name, ".Port") and
             not String.ends_with?(mod_name, ".Effectful")
         end)
 
@@ -751,7 +752,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       defmodule OtherImpl do
-        @behaviour OtherContract.Plain
+        @behaviour OtherContract.Behaviour
 
         @impl true
         def lookup(key) do

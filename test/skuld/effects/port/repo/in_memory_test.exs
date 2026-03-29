@@ -697,7 +697,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       end
 
       defmodule OtherImpl do
-        @behaviour OtherContract.Plain
+        @behaviour OtherContract.Behaviour
 
         @impl true
         def do_thing(x), do: {:ok, {:did, x}}

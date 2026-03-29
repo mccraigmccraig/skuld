@@ -31,9 +31,9 @@ defmodule Skuld.Effects.Port.RepoTest do
   # -------------------------------------------------------------------
 
   describe "Port.Repo contract" do
-    test "generates Plain behaviour module" do
+    test "generates Behaviour module" do
       callbacks =
-        Repo.Plain.behaviour_info(:callbacks)
+        Repo.Behaviour.behaviour_info(:callbacks)
         |> Enum.map(&elem(&1, 0))
         |> Enum.sort()
 
@@ -420,7 +420,7 @@ defmodule Skuld.Effects.Port.RepoTest do
       end
 
       defmodule OtherImpl do
-        @behaviour OtherContract.Plain
+        @behaviour OtherContract.Behaviour
 
         @impl true
         def do_thing(x), do: {:ok, {:did, x}}

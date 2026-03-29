@@ -15,7 +15,7 @@
 if Code.ensure_loaded?(Ecto) do
   defmodule Skuld.Effects.Port.Repo.Ecto do
     @moduledoc """
-    Macro for generating a `Port.Repo.Plain` implementation that delegates
+    Macro for generating a `Port.Repo.Behaviour` implementation that delegates
     to a specific Ecto Repo module.
 
     Each operation in the `Port.Repo` contract is implemented by calling
@@ -28,7 +28,7 @@ if Code.ensure_loaded?(Ecto) do
           use Skuld.Effects.Port.Repo.Ecto, repo: MyApp.Repo
         end
 
-    This generates a module satisfying `Skuld.Effects.Port.Repo.Plain`
+    This generates a module satisfying `Skuld.Effects.Port.Repo.Behaviour`
     with functions like:
 
         def insert(changeset), do: MyApp.Repo.insert(changeset)
@@ -64,7 +64,7 @@ if Code.ensure_loaded?(Ecto) do
         end)
 
       quote do
-        @behaviour Skuld.Effects.Port.Repo.Plain
+        @behaviour Skuld.Effects.Port.Repo.Behaviour
 
         unquote_splicing(delegations)
       end

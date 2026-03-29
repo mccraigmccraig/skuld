@@ -194,7 +194,7 @@ defmodule Skuld.Query.Contract do
   end
 
   defp build_deffetch_ast(call_ast, return_type_ast, bang_opt, cache_opt, caller) do
-    {name, params} = Skuld.Effects.Port.Contract.parse_call(call_ast, caller)
+    {name, params} = HexPort.Contract.parse_call(call_ast, caller)
 
     param_names = Enum.map(params, &elem(&1, 0))
     param_types = Enum.map(params, &elem(&1, 1))
@@ -202,7 +202,7 @@ defmodule Skuld.Query.Contract do
     bang_mode =
       case bang_opt do
         :auto ->
-          if Skuld.Effects.Port.Contract.has_ok_error_pattern?(return_type_ast),
+          if HexPort.Contract.has_ok_error_pattern?(return_type_ast),
             do: :standard,
             else: :none
 
@@ -488,7 +488,7 @@ defmodule Skuld.Query.Contract do
     param_vars = Enum.map(param_names, fn pname -> {pname, [], nil} end)
     spec_params = param_types
 
-    unwrapped = Skuld.Effects.Port.Contract.extract_success_type(return_type)
+    unwrapped = HexPort.Contract.extract_success_type(return_type)
     comp_type = {:computation, [], [unwrapped]}
 
     {doc_string, body_ast} =
