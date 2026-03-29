@@ -46,10 +46,19 @@ defmodule Skuld.Effects.Port.Contract do
     * **`bang: unwrap_fn`**: Generate a bang that first applies `unwrap_fn` to the
       raw result (which must return `{:ok, v}` or `{:error, r}`), then unwraps.
 
+  ## Options
+
+    * `:otp_app` — OTP application name for config-based plain dispatch
+      via `MyContract.Port`. When set, `MyContract.Port.operation(args)`
+      resolves the implementation from `Application.get_env(otp_app, MyContract)`.
+      When omitted, `MyContract.Port` raises unless a test handler is set
+      (this is the normal case for pure-effectful usage where dispatch goes
+      through `Port.with_handler/2`).
+
   ## Example
 
       defmodule MyApp.Repository do
-        use Skuld.Effects.Port.Contract
+        use Skuld.Effects.Port.Contract, otp_app: :my_app
 
         # Auto-detected: has {:ok, T}, bang generated automatically
         defport get_todo(tenant_id :: String.t(), id :: String.t()) ::
@@ -137,10 +146,11 @@ defmodule Skuld.Effects.Port.Contract do
   """
 
   @doc false
-  defmacro __using__(_opts) do
+  defmacro __using__(opts) do
     quote do
       # HexPort generates X.Behaviour, X.Port, and __port_operations__/0
-      use HexPort
+      # opts (e.g. otp_app: :my_app) are passed through for plain dispatch
+      use HexPort, unquote(opts)
       # Skuld adds effectful layers after HexPort's __before_compile__ runs
       @before_compile Skuld.Effects.Port.Contract
     end

@@ -832,4 +832,54 @@ defmodule Skuld.Effects.Port.ContractTest do
       assert %ThrowResult{error: :not_found} = result
     end
   end
+
+  # ---------------------------------------------------------------
+  # otp_app passthrough to HexPort
+  # ---------------------------------------------------------------
+
+  defmodule OtpAppContract do
+    use Skuld.Effects.Port.Contract, otp_app: :skuld_test
+
+    defport greet(name :: String.t()) :: String.t()
+  end
+
+  defmodule OtpAppImpl do
+    @behaviour OtpAppContract.Behaviour
+
+    @impl true
+    def greet(name), do: "Hello, #{name}!"
+  end
+
+  describe "otp_app passthrough" do
+    test "Port submodule exists and has dispatch functions" do
+      assert Code.ensure_loaded?(OtpAppContract.Port)
+      assert function_exported?(OtpAppContract.Port, :greet, 1)
+    end
+
+    test "Port dispatches via Application config when otp_app is set" do
+      Application.put_env(:skuld_test, OtpAppContract, impl: OtpAppImpl)
+      on_exit(fn -> Application.delete_env(:skuld_test, OtpAppContract) end)
+
+      assert "Hello, Alice!" = OtpAppContract.Port.greet("Alice")
+    end
+
+    test "EffectPort still generates effectful callers" do
+      assert Code.ensure_loaded?(OtpAppContract.EffectPort)
+      assert function_exported?(OtpAppContract.EffectPort, :greet, 1)
+
+      comp = OtpAppContract.EffectPort.greet("Bob")
+      assert is_function(comp, 2)
+    end
+
+    test "EffectPort dispatches via Port effect handler (not config)" do
+      handler = fn OtpAppContract, :greet, ["Carol"] -> "Hi, Carol!" end
+
+      comp =
+        OtpAppContract.EffectPort.greet("Carol")
+        |> Port.with_fn_handler(handler)
+
+      {result, _env} = Comp.run(comp)
+      assert "Hi, Carol!" = result
+    end
+  end
 end
