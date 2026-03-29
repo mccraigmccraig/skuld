@@ -62,15 +62,15 @@ alias Skuld.Effects.Port.Repo
 
 defcomp create_and_fetch(attrs) do
   changeset = User.changeset(%User{}, attrs)
-  user <- Repo.insert!(changeset)
-  all_users <- Repo.all(User)
+  user <- Repo.EffectPort.insert!(changeset)
+  all_users <- Repo.EffectPort.all(User)
   {user, all_users}
 end
 ```
 
 ### Production handler (Port.Repo.Ecto)
 
-Generate a Plain implementation that delegates to your Ecto Repo:
+Generate a Behaviour implementation that delegates to your Ecto Repo:
 
 ```elixir
 defmodule MyApp.Repo.Port do
@@ -105,8 +105,8 @@ cs = User.changeset(%User{}, %{name: "Alice"})
 
 {result, log} =
   comp do
-    user <- Repo.insert!(cs)
-    _ <- Repo.get(User, 42)
+    user <- Repo.EffectPort.insert!(cs)
+    _ <- Repo.EffectPort.get(User, 42)
     user
   end
   |> Port.with_handler(
@@ -153,9 +153,9 @@ defmodule MyApp.Orders do
 end
 
 defcomp checkout(params) do
-  order <- MyApp.Orders.place_order!(params)
+  order <- MyApp.Orders.EffectPort.place_order!(params)
   audit_cs = AuditLog.changeset(%AuditLog{}, %{action: "checkout", order_id: order.id})
-  _ <- Repo.insert!(audit_cs)
+  _ <- Repo.EffectPort.insert!(audit_cs)
   order
 end
 ```
@@ -186,8 +186,8 @@ transactions with domain-specific persistence Ports.
 ```elixir
 comp do
   result <- Transaction.transact(comp do
-    user <- UserRepo.create_user!(params)
-    order <- OrderRepo.create_order!(%{user_id: user.id, items: items})
+    user <- UserRepo.EffectPort.create_user!(params)
+    order <- OrderRepo.EffectPort.create_order!(%{user_id: user.id, items: items})
     {user, order}
   end)
   result
@@ -296,14 +296,14 @@ For tests that don't need a real database, use the Noop handler:
 comp do
   result <- Transaction.transact(comp do
     # Port calls are stubbed via Port.with_test_handler
-    user <- UserRepo.create_user!(params)
+    user <- UserRepo.EffectPort.create_user!(params)
     user
   end)
   result
 end
 |> Transaction.Noop.with_handler()
 |> Port.with_test_handler(%{
-  UserRepo.key(:create_user, params) => %User{id: "test-id", name: "Alice"}
+  UserRepo.EffectPort.key(:create_user, params) => %User{id: "test-id", name: "Alice"}
 })
 |> Comp.run!()
 ```
@@ -421,7 +421,7 @@ defmodule PlaceOrderHandler do
 
   def handle(%PlaceOrder{user_id: uid, items: items}) do
     comp do
-      order <- OrderRepo.create_order!(%{
+      order <- OrderRepo.EffectPort.create_order!(%{
         user_id: uid, items: items, status: :placed
       })
       _ <- EventAccumulator.emit(%OrderPlaced{

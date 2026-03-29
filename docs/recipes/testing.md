@@ -30,8 +30,8 @@ defmodule Todos.Handlers do
 
   defcomp handle(%ToggleTodo{id: id}) do
     ctx <- Reader.ask(CommandContext)
-    todo <- Repository.get_todo!(ctx.tenant_id, id)
-    updated <- Repository.update_todo!(ctx.tenant_id, Todo.changeset(todo, %{completed: not todo.completed}))
+    todo <- Repository.EffectPort.get_todo!(ctx.tenant_id, id)
+    updated <- Repository.EffectPort.update_todo!(ctx.tenant_id, Todo.changeset(todo, %{completed: not todo.completed}))
     {:ok, updated}
   end
 end
@@ -81,8 +81,8 @@ test "toggle marks incomplete todo as complete" do
     Todos.Handlers.handle(%ToggleTodo{id: "1"})
     |> Reader.with_handler(%CommandContext{tenant_id: "t1"}, tag: CommandContext)
     |> Port.with_test_handler(%{
-      Repository.key(:get_todo, "t1", "1") => {:ok, todo},
-      Repository.key(:update_todo, "t1", _) => {:ok, %Todo{todo | completed: true}}
+      Repository.EffectPort.key(:get_todo, "t1", "1") => {:ok, todo},
+      Repository.EffectPort.key(:update_todo, "t1", _) => {:ok, %Todo{todo | completed: true}}
     })
     |> Throw.with_handler()
     |> Comp.run!()
@@ -183,9 +183,9 @@ end
 ## Testing plain hexagons with Mox
 
 When testing plain Elixir code that drives a Port contract (via
-`Port.Adapter.Plain` or `Port.Adapter.Effectful`), you can use
-[Mox](https://hexdocs.pm/mox) against the contract's generated `Plain`
-behaviour for isolated unit tests — no effect machinery needed. This
+the generated `Port` module or `Port.Adapter.Effectful`), you can use
+[Mox](https://hexdocs.pm/mox) against the contract's generated
+`Behaviour` for isolated unit tests — no effect machinery needed. This
 also strengthens the incremental adoption story: introducing a Port
 contract immediately improves test isolation, before any effectful
 code is written.
@@ -243,14 +243,14 @@ map. All standard Repo operations are supported — `insert`, `update`,
 alias Skuld.Effects.Port.Repo
 
 # Start empty — inserted records get auto-incremented IDs
-result =
-  comp do
-    {:ok, user} <- Repo.insert(User.changeset(%{name: "Alice"}))
-    found <- Repo.get(User, user.id)
-    {user, found}
-  end
-  |> Repo.InMemory.with_handler()
-  |> Comp.run!()
+  result =
+    comp do
+      {:ok, user} <- Repo.EffectPort.insert(User.changeset(%{name: "Alice"}))
+      found <- Repo.EffectPort.get(User, user.id)
+      {user, found}
+    end
+    |> Repo.InMemory.with_handler()
+    |> Comp.run!()
 
 assert {user, user} = result
 ```
@@ -263,10 +263,10 @@ initial = Repo.InMemory.seed([
   %User{id: 2, name: "Bob"}
 ])
 
-result =
-  Repo.all(User)
-  |> Repo.InMemory.with_handler(initial)
-  |> Comp.run!()
+  result =
+    Repo.EffectPort.all(User)
+    |> Repo.InMemory.with_handler(initial)
+    |> Comp.run!()
 
 assert length(result) == 2
 ```
@@ -276,9 +276,9 @@ Inspect the final store:
 ```elixir
 {result, store} =
   comp do
-    _ <- Repo.insert(User.changeset(%{name: "Alice"}))
-    _ <- Repo.insert(User.changeset(%{name: "Bob"}))
-    Repo.all(User)
+    _ <- Repo.EffectPort.insert(User.changeset(%{name: "Alice"}))
+    _ <- Repo.EffectPort.insert(User.changeset(%{name: "Bob"}))
+    Repo.EffectPort.all(User)
   end
   |> Repo.InMemory.with_handler(%{},
     output: fn result, state -> {result, state.handler_state} end
@@ -314,7 +314,7 @@ Inspect the final store:
 
   ```elixir
   comp
-  |> Port.with_test_handler(%{Notifications.key(:send, msg) => :ok})
+  |> Port.with_test_handler(%{Notifications.EffectPort.key(:send, msg) => :ok})
   |> Port.with_handler(%{Repository => Repo.Test})
   |> Throw.with_handler()
   |> Comp.run!()

@@ -38,7 +38,7 @@ testable.
 | N+1 queries                            | `deffetch` + `query` batch independent loads automatically                 | [Batching](docs/pain-points.md#automatic-query-batching)                   |
 | Long-running workflows across restarts | EffectLogger serialises progress; resume from where you left off           | [Durable workflows](docs/pain-points.md#long-running-computations)         |
 | LiveView multi-step operations         | AsyncComputation bridges effects into LiveView's process model             | [LiveView](docs/pain-points.md#liveview-multi-step-operations)             |
-| Hexagonal architecture plumbing        | Port.Contract / Port.Provider - typed boundaries, no parameter threading   | [Hex arch](docs/pain-points.md#clean-architecture-boundaries)              |
+| Hexagonal architecture plumbing        | Port.Contract / Port.Adapter.Effectful - typed boundaries, no parameter threading | [Hex arch](docs/pain-points.md#clean-architecture-boundaries)              |
 
 See [What Skuld Solves](docs/pain-points.md) for worked examples of each.
 
@@ -56,7 +56,7 @@ defmodule Onboarding do
     id <- Fresh.fresh_uuid()
 
     # Use a port for the database call
-    user <- UserRepo.create_user!(%{id: id, name: params.name, tier: config.default_tier})
+    user <- UserRepo.EffectPort.create_user!(%{id: id, name: params.name, tier: config.default_tier})
 
     # Accumulate domain events
     _ <- EventAccumulator.emit(%UserRegistered{user_id: id})
@@ -88,7 +88,7 @@ Onboarding.register(%{name: "Alice"})
 |> Reader.with_handler(%{default_tier: :free})
 |> Fresh.with_test_handler()
 |> Port.with_test_handler(%{
-  UserRepo.key(:create_user, %{id: _, name: "Alice", tier: :free}) =>
+   UserRepo.EffectPort.key(:create_user, %{id: _, name: "Alice", tier: :free}) =>
     {:ok, %User{id: "test-uuid", name: "Alice", tier: :free}}
 })
 |> EventAccumulator.with_handler(output: fn r, events -> {r, events} end)
@@ -123,7 +123,7 @@ like well-structured Elixir code with better testability.
 | Generating IDs (UUIDs)          | Fresh                        |
 | Transactions                    | Transaction                  |
 | Blocking calls to external code | Port, Port.Contract          |
-| Effectful code from plain code  | Port.Provider                |
+| Effectful code from plain code  | Port.Adapter.Effectful       |
 | Mutation dispatch               | Command                      |
 | Domain event collection         | EventAccumulator             |
 | Fork-join concurrency           | Parallel                     |
@@ -172,7 +172,7 @@ get value from Skuld - the foundational effects stand on their own.
 |   | [Collections](docs/effects/collections.md) | FxList, FxFasterList |
 |   | [Concurrency](docs/effects/concurrency.md) | Parallel, AtomicState, AsyncComputation |
 |   | [Persistence](docs/effects/persistence.md) | Transaction, Command, EventAccumulator |
-|   | [External Integration](docs/effects/external-integration.md) | Port, Port.Contract, Port.Provider |
+|   | [External Integration](docs/effects/external-integration.md) | Port, Port.Contract, Port.Adapter.Effectful |
 | 6 | **Advanced Effects** | |
 |   | [Yield](docs/advanced/yield.md) | Coroutines |
 |   | [Fibers & Concurrency](docs/advanced/fibers-concurrency.md) | FiberPool, Channel, Brook |
@@ -180,7 +180,7 @@ get value from Skuld - the foundational effects stand on their own.
 |   | [EffectLogger](docs/advanced/effect-logger.md) | Serializable coroutines |
 | 7 | **Recipes** | |
 |   | [Testing](docs/recipes/testing.md) | Property-based testing with effects |
-|   | [Hexagonal Architecture](docs/recipes/hexagonal-architecture.md) | Port.Contract + Port.Provider |
+|   | [Hexagonal Architecture](docs/recipes/hexagonal-architecture.md) | Port.Contract + Port.Adapter.Effectful |
 |   | [Decider Pattern](docs/recipes/decider-pattern.md) | Event-sourced domain logic |
 |   | [Handler Stacks](docs/recipes/handler-stacks.md) | Composing production & test stacks |
 |   | [LiveView](docs/recipes/liveview.md) | Multi-step wizards |

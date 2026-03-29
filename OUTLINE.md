@@ -79,7 +79,7 @@ stops here has already gotten substantial value.
 - Throw, Bracket
 - Fresh, Random
 - DB, Command, EventAccumulator
-- Port, Port.Contract, Port.Provider
+- Port, Port.Contract, Port.Adapter.Effectful
 - Parallel, AtomicState, AsyncComputation
 - FxList, FxFasterList
 
@@ -343,8 +343,8 @@ Each effect section follows the pattern:
 - **Port** - Low-level dispatch to external code. Resolver types. Test stubs.
 - **Port.Contract** - Typed contracts via `defport`. Consumer/Provider
   behaviours. Bang variants. Dialyzer support.
-- **Port.Provider** - Bridge plain Elixir into effectful implementations.
-  Hexagonal architecture's inbound side.
+- **Port.Adapter.Effectful** - Bridge plain Elixir into effectful
+  implementations. Hexagonal architecture's inbound side.
 
 ## Layer 6: Advanced Effects
 
@@ -403,7 +403,7 @@ recipe is a self-contained how-to guide.
 - **Testing effectful code** - The pattern: write domain logic with effects,
   swap handlers for tests. Property-based testing with `stream_data`.
 - **Hexagonal architecture** - Structuring an app with Port.Contract
-  (outbound), Port.Provider (inbound), and effect-based domain logic.
+  (outbound), Port.Adapter.Effectful (inbound), and effect-based domain logic.
 - **The Decider pattern** - Command + EventAccumulator for event-sourced
   domain logic.
 - **Nested / composed handler stacks** - Production vs test handler stacks,

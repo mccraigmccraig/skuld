@@ -26,10 +26,10 @@ code runs entirely in memory:
 ```elixir
 # The orchestration code - identical in production and tests
 defcomp process_order(order_params) do
-  user <- UserRepo.fetch_user!(order_params.user_id)
+  user <- UserRepo.EffectPort.fetch_user!(order_params.user_id)
   id <- Fresh.fresh_uuid()
-  price <- PricingService.calculate!(user, order_params.items)
-  _ <- OrderRepo.create_order!(%{id: id, user_id: user.id, total: price})
+  price <- PricingService.EffectPort.calculate!(user, order_params.items)
+  _ <- OrderRepo.EffectPort.create_order!(%{id: id, user_id: user.id, total: price})
   _ <- EventAccumulator.emit(%OrderPlaced{order_id: id, total: price})
   {:ok, id}
 end
@@ -262,20 +262,20 @@ end
 
 # Production adapter
 defmodule PaymentGateway.Stripe do
-  @behaviour PaymentGateway.Plain
+  @behaviour PaymentGateway.Behaviour
   def charge(amount, card), do: Stripe.API.create_charge(amount, card)
 end
 
 # Test adapter
 defmodule PaymentGateway.InMemory do
-  @behaviour PaymentGateway.Plain
+  @behaviour PaymentGateway.Behaviour
   def charge(amount, _card), do: {:ok, %Charge{amount: amount, id: "ch_test"}}
 end
 ```
 
-The domain code calls `PaymentGateway.charge!(amount, card)` through
-the effect system. No function parameter threading, no application
-config lookups, no global state.
+The domain code calls `PaymentGateway.EffectPort.charge!(amount, card)`
+through the effect system. No function parameter threading, no
+application config lookups, no global state.
 
 See: [Hexagonal Architecture](recipes/hexagonal-architecture.md),
 [External Integration](effects/external-integration.md)

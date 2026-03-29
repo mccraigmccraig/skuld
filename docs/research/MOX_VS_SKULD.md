@@ -55,11 +55,11 @@ test "place_order succeeds when stock available" do
   result =
     OrderWorkflow.place_order(%{user_id: "u1", sku: "WIDGET", qty: 2})
     |> Port.with_test_handler(%{
-      UserRepo.key(:get, "u1") => {:ok, user},
-      InventoryRepo.key(:check_stock, "WIDGET") => {:ok, %{available: 10}},
-      InventoryRepo.key(:reserve, "WIDGET", 2) => {:ok, %{id: "r1"}},
-      OrderRepo.key(:insert, _) => {:ok, order},
-      Notifications.key(:send, :order_placed, _, _) => :ok
+      UserRepo.EffectPort.key(:get, "u1") => {:ok, user},
+      InventoryRepo.EffectPort.key(:check_stock, "WIDGET") => {:ok, %{available: 10}},
+      InventoryRepo.EffectPort.key(:reserve, "WIDGET", 2) => {:ok, %{id: "r1"}},
+      OrderRepo.EffectPort.key(:insert, _) => {:ok, order},
+      Notifications.EffectPort.key(:send, :order_placed, _, _) => :ok
     })
     |> Throw.with_handler()
     |> Comp.run!()
