@@ -259,10 +259,14 @@ defmodule Skuld.Effects.Port.RepoTest do
   # Helpers
   # -------------------------------------------------------------------
 
-  # Shorthand: install Repo.Test as an effectful resolver with logging enabled.
+  alias Skuld.Comp.Throw, as: ThrowResult
+
+  # Shorthand: install Repo.Test as a resolver with logging enabled.
   defp with_repo_test(comp, opts \\ []) do
     extra_registry = Keyword.get(opts, :registry, %{})
-    registry = Map.put(extra_registry, Repo, Repo.Test)
+    fallback_fn = Keyword.get(opts, :fallback_fn, nil)
+    handler = Repo.Test.new(fallback_fn: fallback_fn)
+    registry = Map.put(extra_registry, Repo, handler)
 
     output = Keyword.get(opts, :output)
 
@@ -277,7 +281,7 @@ defmodule Skuld.Effects.Port.RepoTest do
   # Test Executor Tests
   # -------------------------------------------------------------------
 
-  describe "Port.Repo.Test executor" do
+  describe "Port.Repo.Test: write operations" do
     test "insert applies changeset and logs operation" do
       cs = TestUser.changeset(%{name: "Alice"})
 
@@ -339,7 +343,7 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert [{Repo, :insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
     end
 
-    test "multiple operations accumulate in order" do
+    test "multiple write operations accumulate in log order" do
       cs1 = TestUser.changeset(%{name: "Alice"})
       cs2 = TestUser.changeset(%{name: "Bob"})
 
@@ -347,7 +351,6 @@ defmodule Skuld.Effects.Port.RepoTest do
         comp do
           alice <- Repo.EffectPort.insert!(cs1)
           bob <- Repo.EffectPort.insert!(cs2)
-          _ <- Repo.EffectPort.get(TestUser, 42)
           {alice, bob}
         end
         |> with_repo_test(output: fn r, state -> {r, state.log} end)
@@ -356,44 +359,7 @@ defmodule Skuld.Effects.Port.RepoTest do
 
       assert [
                {Repo, :insert, _, {:ok, %TestUser{name: "Alice"}}},
-               {Repo, :insert, _, {:ok, %TestUser{name: "Bob"}}},
-               {Repo, :get, [TestUser, 42], nil}
-             ] = log
-    end
-
-    test "read operations return sensible defaults" do
-      {results, log} =
-        comp do
-          a <- Repo.EffectPort.get(TestUser, 1)
-          b <- Repo.EffectPort.get_by(TestUser, name: "Alice")
-          c <- Repo.EffectPort.one(TestUser)
-          d <- Repo.EffectPort.all(TestUser)
-          e <- Repo.EffectPort.exists?(TestUser)
-          f <- Repo.EffectPort.aggregate(TestUser, :count, :id)
-          {a, b, c, d, e, f}
-        end
-        |> with_repo_test(output: fn r, state -> {r, state.log} end)
-        |> Comp.run!()
-
-      assert {nil, nil, nil, [], false, nil} = results
-      assert length(log) == 6
-    end
-
-    test "bulk operations log with default values" do
-      {results, log} =
-        comp do
-          a <- Repo.EffectPort.update_all(TestUser, [set: [name: "bulk"]], [])
-          b <- Repo.EffectPort.delete_all(TestUser, [])
-          {a, b}
-        end
-        |> with_repo_test(output: fn r, state -> {r, state.log} end)
-        |> Comp.run!()
-
-      assert {{0, nil}, {0, nil}} = results
-
-      assert [
-               {Repo, :update_all, [TestUser, [set: [name: "bulk"]], []], {0, nil}},
-               {Repo, :delete_all, [TestUser, []], {0, nil}}
+               {Repo, :insert, _, {:ok, %TestUser{name: "Bob"}}}
              ] = log
     end
 
@@ -411,7 +377,123 @@ defmodule Skuld.Effects.Port.RepoTest do
 
       assert %TestUser{name: "Alice"} = result
     end
+  end
 
+  describe "Port.Repo.Test: reads raise without fallback" do
+    test "get errors without fallback" do
+      {result, _env} =
+        Repo.EffectPort.get(TestUser, 1)
+        |> with_repo_test()
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %ThrowResult{error: {:port_failed, Repo, :get, %ArgumentError{} = e}} = result
+      assert e.message =~ "Repo.Test cannot service :get"
+    end
+
+    test "all errors without fallback" do
+      {result, _env} =
+        Repo.EffectPort.all(TestUser)
+        |> with_repo_test()
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %ThrowResult{error: {:port_failed, Repo, :all, %ArgumentError{} = e}} = result
+      assert e.message =~ "Repo.Test cannot service :all"
+    end
+
+    test "exists? errors without fallback" do
+      {result, _env} =
+        Repo.EffectPort.exists?(TestUser)
+        |> with_repo_test()
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %ThrowResult{error: {:port_failed, Repo, :exists?, %ArgumentError{} = e}} = result
+      assert e.message =~ "Repo.Test cannot service :exists?"
+    end
+
+    test "update_all errors without fallback" do
+      {result, _env} =
+        Repo.EffectPort.update_all(TestUser, [set: [name: "bulk"]], [])
+        |> with_repo_test()
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %ThrowResult{error: {:port_failed, Repo, :update_all, %ArgumentError{} = e}} =
+               result
+
+      assert e.message =~ "Repo.Test cannot service :update_all"
+    end
+
+    test "delete_all errors without fallback" do
+      {result, _env} =
+        Repo.EffectPort.delete_all(TestUser, [])
+        |> with_repo_test()
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %ThrowResult{error: {:port_failed, Repo, :delete_all, %ArgumentError{} = e}} =
+               result
+
+      assert e.message =~ "Repo.Test cannot service :delete_all"
+    end
+  end
+
+  describe "Port.Repo.Test: reads with fallback" do
+    test "get dispatches to fallback" do
+      alice = %TestUser{id: 1, name: "Alice"}
+
+      result =
+        Repo.EffectPort.get(TestUser, 1)
+        |> with_repo_test(fallback_fn: fn :get, [TestUser, 1] -> alice end)
+        |> Comp.run!()
+
+      assert ^alice = result
+    end
+
+    test "all dispatches to fallback" do
+      users = [%TestUser{id: 1, name: "Alice"}]
+
+      result =
+        Repo.EffectPort.all(TestUser)
+        |> with_repo_test(fallback_fn: fn :all, [TestUser] -> users end)
+        |> Comp.run!()
+
+      assert ^users = result
+    end
+
+    test "exists? dispatches to fallback" do
+      result =
+        Repo.EffectPort.exists?(TestUser)
+        |> with_repo_test(fallback_fn: fn :exists?, [TestUser] -> true end)
+        |> Comp.run!()
+
+      assert result == true
+    end
+
+    test "aggregate dispatches to fallback" do
+      result =
+        Repo.EffectPort.aggregate(TestUser, :count, :id)
+        |> with_repo_test(fallback_fn: fn :aggregate, [TestUser, :count, :id] -> 42 end)
+        |> Comp.run!()
+
+      assert result == 42
+    end
+
+    test "unmatched fallback clause errors" do
+      {result, _env} =
+        Repo.EffectPort.get(TestUser, 999)
+        |> with_repo_test(fallback_fn: fn :get, [TestUser, 1] -> nil end)
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %ThrowResult{error: {:port_failed, Repo, :get, %ArgumentError{} = e}} = result
+      assert e.message =~ "Repo.Test cannot service :get"
+    end
+  end
+
+  describe "Port.Repo.Test: composition" do
     test "composes with other Port contracts" do
       defmodule OtherContract do
         use Skuld.Effects.Port.Contract

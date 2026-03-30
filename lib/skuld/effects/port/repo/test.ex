@@ -1,125 +1,180 @@
-# Test executor for Port.Repo that provides default return values.
+# Stateless test handler for Port.Repo.
 #
-# Logging is handled by Port's built-in :log option — each dispatch
-# records a {mod, name, args, result} 4-tuple in Port.State.log.
+# Provides a function handler via new/1. Write operations apply changeset
+# changes and return {:ok, struct}. Read operations go through a
+# user-supplied fallback function, or raise.
 #
 # ## Usage
 #
 #     comp
-#     |> Port.with_handler(
-#       %{Port.Repo => Port.Repo.Test},
-#       log: true,
-#       output: fn r, state -> {r, state.log} end
-#     )
+#     |> Port.with_handler(%{Port.Repo => Port.Repo.Test.new()})
 #     |> Throw.with_handler()
 #     |> Comp.run!()
-#     #=> {result, [{Port.Repo, :insert, [changeset], {:ok, struct}}, ...]}
+#
+#     # With fallback for reads:
+#     comp
+#     |> Port.with_handler(%{
+#       Port.Repo => Port.Repo.Test.new(
+#         fallback_fn: fn
+#           :all, [User] -> [%User{id: 1, name: "Alice"}]
+#           :get, [User, 1] -> %User{id: 1, name: "Alice"}
+#         end
+#       )
+#     })
+#     |> Throw.with_handler()
+#     |> Comp.run!()
 #
 if Code.ensure_loaded?(Ecto) do
   defmodule Skuld.Effects.Port.Repo.Test do
     @moduledoc """
-    Test executor for `Port.Repo` with sensible defaults for all operations.
+    Stateless test handler for `Port.Repo`.
 
-    Write operations (`insert`, `update`, `delete`) apply changeset changes
-    to produce a struct and return `{:ok, struct}`. Read operations return
-    sensible empty defaults (`nil`, `[]`, `false`). Bulk operations return
-    `{0, nil}`.
+    Provides a function handler via `new/1` for use in a `Port.with_handler/3`
+    registry. Write operations (`insert`, `update`, `delete`) apply changeset
+    changes and return `{:ok, struct}`. All read operations go through an
+    optional fallback function, or raise a clear error.
 
-    ## Log Format
-
-    When Port's `:log` option is enabled, each dispatch records a 4-tuple
-    `{module, operation, args_list, return_value}` in `Port.State.log`:
-
-        {Port.Repo, :insert, [changeset], {:ok, %User{name: "Alice"}}}
-        {Port.Repo, :get, [User, 42], nil}
-        {Port.Repo, :delete, [record], {:ok, record}}
+    This applies the "fail when consistency cannot be proven" approach —
+    reads never silently return `nil` or `[]` because the adapter has no
+    basis for claiming a record does or doesn't exist.
 
     ## Usage
 
         alias Skuld.Effects.Port
         alias Skuld.Effects.Port.Repo
 
-        {result, log} =
-          comp
-          |> Port.with_handler(
-            %{Repo => Repo.Test},
-            log: true,
-            output: fn result, state -> {result, state.log} end
-          )
-          |> Throw.with_handler()
-          |> Comp.run!()
+        # Writes only — reads will raise:
+        comp
+        |> Port.with_handler(%{Repo => Repo.Test.new()})
+        |> Throw.with_handler()
+        |> Comp.run!()
 
-        # log is [{Repo, :insert, [changeset], {:ok, struct}}, ...]
+        # With fallback for reads:
+        comp
+        |> Port.with_handler(%{
+          Repo => Repo.Test.new(
+            fallback_fn: fn
+              :get, [User, 1] -> %User{id: 1, name: "Alice"}
+              :all, [User] -> [%User{id: 1, name: "Alice"}]
+            end
+          )
+        })
+        |> Throw.with_handler()
+        |> Comp.run!()
+
+    ## Differences from Repo.InMemory
+
+    `Repo.Test` is stateless — writes apply changesets and return `{:ok, struct}`
+    but nothing is stored. There is no read-after-write consistency.
+
+    `Repo.InMemory` is stateful — writes store records and PK-based reads can
+    find them. Use `Repo.InMemory` when your test needs read-after-write
+    consistency. Use `Repo.Test` when you only need fire-and-forget writes.
     """
 
-    alias Skuld.Comp
-    alias Skuld.Effects.Port.Repo
+    @doc """
+    Create a new Test handler function.
 
-    use Repo.Effectful
+    Returns a 3-arity function `(mod, operation, args) -> result` suitable
+    for use as a resolver in `Port.with_handler/3`.
 
-    # -----------------------------------------------------------------
-    # Write Operations
-    # -----------------------------------------------------------------
+    ## Options
 
-    @impl true
-    def insert(changeset) do
-      Comp.pure({:ok, safe_apply_changes(changeset)})
+      * `:fallback_fn` - a 2-arity function `(operation, args) -> result` that
+        handles read operations. If the function raises `FunctionClauseError`
+        (no matching clause), dispatch falls through to an error. If omitted,
+        all reads raise immediately.
+
+    ## Examples
+
+        # Writes only
+        Repo.Test.new()
+
+        # With fallback for specific reads
+        Repo.Test.new(
+          fallback_fn: fn
+            :get, [User, 1] -> %User{id: 1, name: "Alice"}
+            :all, [User] -> [%User{id: 1, name: "Alice"}]
+            :exists?, [User] -> true
+          end
+        )
+    """
+    @spec new(keyword()) :: (module(), atom(), [term()] -> term())
+    def new(opts \\ []) do
+      fallback_fn = Keyword.get(opts, :fallback_fn, nil)
+
+      fn _mod, operation, args ->
+        dispatch(operation, args, fallback_fn)
+      end
     end
 
-    @impl true
-    def update(changeset) do
-      Comp.pure({:ok, safe_apply_changes(changeset)})
-    end
-
-    @impl true
-    def delete(record) do
-      Comp.pure({:ok, record})
-    end
-
     # -----------------------------------------------------------------
-    # Bulk Operations
+    # Write Operations — always authoritative
     # -----------------------------------------------------------------
 
-    @impl true
-    def update_all(_queryable, _updates, _opts) do
-      Comp.pure({0, nil})
+    defp dispatch(:insert, [changeset], _fallback_fn) do
+      {:ok, safe_apply_changes(changeset)}
     end
 
-    @impl true
-    def delete_all(_queryable, _opts) do
-      Comp.pure({0, nil})
+    defp dispatch(:update, [changeset], _fallback_fn) do
+      {:ok, safe_apply_changes(changeset)}
+    end
+
+    defp dispatch(:delete, [record], _fallback_fn) do
+      {:ok, record}
     end
 
     # -----------------------------------------------------------------
-    # Read Operations
+    # Read and bulk operations — fallback or error
     # -----------------------------------------------------------------
 
-    @impl true
-    def get(_queryable, _id), do: Comp.pure(nil)
+    defp dispatch(operation, args, fallback_fn)
+         when operation in [
+                :get,
+                :get!,
+                :get_by,
+                :get_by!,
+                :one,
+                :one!,
+                :all,
+                :exists?,
+                :aggregate,
+                :update_all,
+                :delete_all
+              ] do
+      try_fallback(fallback_fn, operation, args)
+    end
 
-    @impl true
-    def get!(_queryable, _id), do: Comp.pure(nil)
+    # -----------------------------------------------------------------
+    # Fallback dispatch
+    # -----------------------------------------------------------------
 
-    @impl true
-    def get_by(_queryable, _clauses), do: Comp.pure(nil)
+    defp try_fallback(nil, operation, args) do
+      raise_no_fallback(operation, args)
+    end
 
-    @impl true
-    def get_by!(_queryable, _clauses), do: Comp.pure(nil)
+    defp try_fallback(fallback_fn, operation, args) when is_function(fallback_fn, 2) do
+      fallback_fn.(operation, args)
+    rescue
+      FunctionClauseError -> raise_no_fallback(operation, args)
+    end
 
-    @impl true
-    def one(_queryable), do: Comp.pure(nil)
+    defp raise_no_fallback(operation, args) do
+      raise ArgumentError, """
+      Skuld.Effects.Port.Repo.Test cannot service :#{operation} with args #{inspect(args)}.
 
-    @impl true
-    def one!(_queryable), do: Comp.pure(nil)
+      The Test adapter can only answer authoritatively for:
+        - Write operations (insert, update, delete)
 
-    @impl true
-    def all(_queryable), do: Comp.pure([])
+      For all other operations, register a fallback function:
 
-    @impl true
-    def exists?(_queryable), do: Comp.pure(false)
-
-    @impl true
-    def aggregate(_queryable, _aggregate_fn, _field), do: Comp.pure(nil)
+          Repo.Test.new(
+            fallback_fn: fn
+              :#{operation}, #{inspect(args)} -> # your result here
+            end
+          )
+      """
+    end
 
     # -----------------------------------------------------------------
     # Helpers
