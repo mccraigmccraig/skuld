@@ -255,7 +255,7 @@ property "register creates consistent user" do
   check all(name <- string(:alphanumeric, min_length: 1)) do
     user =
       Onboarding.register(%{name: name})
-      |> Repo.InMemory.with_handler()
+      |> Repo.InMemory.with_handler(Repo.InMemory.new())
       |> Fresh.with_test_handler()
       |> Throw.with_handler()
       |> Comp.run!()
@@ -266,9 +266,11 @@ end
 ```
 
 `Repo.InMemory` is a stateful in-memory Repo handler built on
-`Port.with_stateful_handler`. State is a `%{{schema, id} => struct}`
-map that threads across Port calls, giving read-after-write
-consistency within a single computation. It's written once and used
+`Port.with_stateful_handler`. State is a nested
+`%{Schema => %{pk => struct}}` map that threads across Port calls,
+giving read-after-write consistency for PK-based lookups within a
+single computation. Non-PK reads use a `fallback_fn` — the adapter
+never silently lies about record absence. It's written once and used
 across all tests — no per-test Agent or closure hacks.
 
 ### The key difference
@@ -434,16 +436,18 @@ ID, a fake `insert!` that assigns IDs, etc.
 ```elixir
 test "clock out calculates overtime correctly" do
   # Seed the in-memory store with consistent data
-  initial = Repo.InMemory.seed([
-    %Employee{id: "e1", pay_rate_id: "pr1", overtime_policy_id: "op1"},
-    %Shift{id: "s1", employee_id: "e1", status: :active, started_at: ~U[2024-01-01 08:00:00Z]},
-    %PayRate{id: "pr1", hourly_rate: Decimal.new("25.00")},
-    %OvertimePolicy{id: "op1", threshold_hours: 8, multiplier: Decimal.new("1.5")}
-  ])
+  state = Repo.InMemory.new(
+    seed: [
+      %Employee{id: "e1", pay_rate_id: "pr1", overtime_policy_id: "op1"},
+      %Shift{id: "s1", employee_id: "e1", status: :active, started_at: ~U[2024-01-01 08:00:00Z]},
+      %PayRate{id: "pr1", hourly_rate: Decimal.new("25.00")},
+      %OvertimePolicy{id: "op1", threshold_hours: 8, multiplier: Decimal.new("1.5")}
+    ]
+  )
 
   result =
     Payroll.execute_clock_out("e1", ~U[2024-01-01 18:00:00Z])
-    |> Repo.InMemory.with_handler(initial)
+    |> Repo.InMemory.with_handler(state)
     |> Throw.with_handler()
     |> Comp.run!()
 
@@ -453,10 +457,11 @@ end
 
 When the function adds a Department lookup, you add one line to the
 seed list. No stub routing logic to update, no helper function to
-maintain. `Repo.InMemory` already knows how to `get!`, `insert!`,
-`get_by!`, etc. — it's a complete implementation backed by a map,
-not a set of stubs. Writes are visible to subsequent reads within
-the same computation.
+maintain. `Repo.InMemory` handles writes and PK-based reads (`get`,
+`get!`) automatically — it's a working implementation backed by a map,
+not a set of stubs. Writes are visible to subsequent PK reads within
+the same computation. Non-PK reads (like `get_by`) require a
+`fallback_fn` — the adapter never silently lies about record absence.
 
 ### Why the in-memory handler is fundamentally different from Mox stubs
 
@@ -468,9 +473,9 @@ The key insight is what each approach simulates:
 
 - **Skuld in-memory handlers simulate the dependency's behaviour.**
   `Repo.InMemory` (built on `Port.with_stateful_handler`) maintains a
-  `%{{schema, id} => struct}` map across calls. Consistency is automatic
-  because the handler *is* a working implementation, backed by a map
-  instead of a database.
+  `%{Schema => %{pk => struct}}` map across calls. PK-based consistency
+  is automatic because the handler *is* a working implementation, backed
+  by a map instead of a database.
 
 This matters most when:
 - The function makes many calls to the same dependency
@@ -565,6 +570,6 @@ Skuld's handler model pays for itself.
   doubles vs per-test stub setup (done: pain-points.md updated)
 - **Expanded:** the stateful call chain / property testing arguments
   now have real working implementations (`Port.with_stateful_handler`,
-  `Repo.InMemory`) instead of aspirational examples
+  `Repo.InMemory` with 3-stage dispatch) instead of aspirational examples
 - **Be honest:** Mox is simpler for simple cases. Skuld's advantage
   is structural, not syntactic

@@ -236,7 +236,7 @@ dual type system made higher-order effects awkward.
 |--------|-----------|---------------|
 | Scope | Per-process expectations | Per-computation handlers |
 | Simple stubs | Clean; `stub/3` is order-independent | Clean; map or function handler |
-| Stateful test doubles | Ad-hoc (Agent/closure per test) | Reusable (`Repo.InMemory`, `with_stateful_handler`) |
+| Stateful test doubles | Ad-hoc (Agent/closure per test) | Reusable (`Repo.InMemory` with 3-stage dispatch, `with_stateful_handler`) |
 | Property testing | Possible but requires hand-rolled in-memory impls | Natural fit with reusable handlers |
 | Runtime behaviour | Same code, mocked dependencies | Same code, different handlers |
 | Concurrency | Per-process isolation; `allow/3` for multi-process | Handlers in computation env |

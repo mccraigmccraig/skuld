@@ -58,20 +58,25 @@ possible but require building ad-hoc in-memory implementations with
 Agents or closures.
 
 **What Skuld does**: Handler swapping provides reusable stateful test
-doubles. `Repo.InMemory` is a complete in-memory Repo backed by a map
-that maintains read-after-write consistency. Seed the data, and the
-handler routes `get`, `insert`, `get_by`, etc. automatically — no
-per-call stubs to maintain:
+doubles. `Repo.InMemory` is a stateful in-memory Repo that maintains
+read-after-write consistency for PK-based lookups. Seed the data, and
+writes and PK reads are handled automatically. Non-PK reads use a
+`fallback_fn` — the adapter never silently lies about record absence:
 
 ```elixir
-initial = Repo.InMemory.seed([
-  %User{id: "u1", name: "Alice"},
-  %PayRate{id: "pr1", hourly_rate: Decimal.new("25.00")}
-])
+state = Repo.InMemory.new(
+  seed: [
+    %User{id: "u1", name: "Alice"},
+    %PayRate{id: "pr1", hourly_rate: Decimal.new("25.00")}
+  ],
+  fallback_fn: fn
+    :get_by, [User, [name: "Alice"]] -> %User{id: "u1", name: "Alice"}
+  end
+)
 
 result =
   process_order(%{user_id: "u1", items: items})
-  |> Repo.InMemory.with_handler(initial)
+  |> Repo.InMemory.with_handler(state)
   |> Fresh.with_test_handler()
   |> EventAccumulator.with_handler(output: &{&1, &2})
   |> Throw.with_handler()

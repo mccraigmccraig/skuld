@@ -137,8 +137,8 @@ Skuld provides test handlers for common effects:
 | Port   | `Port.with_fn_handler/2` | Pattern-matching function |
 | Port   | `Port.with_stateful_handler/4` | Stateful `fn(mod, name, args, state) -> {result, new_state}` |
 | Port   | Any handler + `log: true` | Dispatch logging in `Port.State.log` |
-| Port.Repo | `Port.Repo.Test` (effectful resolver) | Stateless Repo (sensible defaults, no state) |
-| Port.Repo | `Repo.InMemory.with_handler/3` | Stateful in-memory Repo (read-after-write consistency) |
+| Port.Repo | `Repo.Test.new/1` (fn resolver) | Stateless Repo — writes apply changesets, reads use fallback or error |
+| Port.Repo | `Repo.InMemory.with_handler/3` | Stateful Repo — PK read-after-write, fallback for non-PK reads |
 | Transaction | `Transaction.Noop.with_handler/0` | Env state rollback, no database |
 | Fresh  | `Fresh.with_test_handler/0` | Deterministic UUIDs (UUID5) |
 | Random | `Random.with_handler/1` | Fixed sequence or seeded |
@@ -232,41 +232,79 @@ Use `output:` to inspect the final handler state:
   |> Comp.run!()
 ```
 
-### Repo.InMemory
+### Repo.Test
 
-A complete in-memory Repo implementation built on
-`Port.with_stateful_handler`. State is a `%{{schema, id} => struct}`
-map. All standard Repo operations are supported — `insert`, `update`,
-`delete`, `get`, `get_by`, `all`, `exists?`, `aggregate`, etc.
+A stateless Repo handler. `Repo.Test.new/1` returns a 3-arity fn
+resolver for use in a `Port.with_handler/3` registry. Write operations
+apply changesets and return `{:ok, struct}`. All read operations go
+through an optional `fallback_fn`, or raise a clear error — the adapter
+never silently returns `nil` or `[]` because it has no basis for
+claiming a record does or doesn't exist.
 
 ```elixir
 alias Skuld.Effects.Port.Repo
 
-# Start empty — inserted records get auto-incremented IDs
-  result =
-    comp do
-      {:ok, user} <- Repo.EffectPort.insert(User.changeset(%{name: "Alice"}))
-      found <- Repo.EffectPort.get(User, user.id)
-      {user, found}
+# Writes only — reads will raise:
+comp
+|> Port.with_handler(%{Repo => Repo.Test.new()})
+|> Throw.with_handler()
+|> Comp.run!()
+
+# With fallback for reads:
+comp
+|> Port.with_handler(%{
+  Repo => Repo.Test.new(
+    fallback_fn: fn
+      :get, [User, 1] -> %User{id: 1, name: "Alice"}
+      :all, [User] -> [%User{id: 1, name: "Alice"}]
     end
-    |> Repo.InMemory.with_handler()
-    |> Comp.run!()
+  )
+})
+|> Throw.with_handler()
+|> Comp.run!()
+```
+
+### Repo.InMemory
+
+A stateful in-memory Repo implementation built on
+`Port.with_stateful_handler`. State is a nested
+`%{Schema => %{pk => struct}}` map. Writes are always handled by
+the state. PK-based reads (`get`, `get!`) check state first — if the
+record is found, it's returned; if not, the adapter falls through to
+a `fallback_fn` or raises. All other reads go directly through the
+`fallback_fn` or raise.
+
+```elixir
+alias Skuld.Effects.Port.Repo
+
+# Writes and PK reads — no fallback needed:
+result =
+  comp do
+    {:ok, user} <- Repo.EffectPort.insert(User.changeset(%{name: "Alice"}))
+    found <- Repo.EffectPort.get(User, user.id)
+    {user, found}
+  end
+  |> Repo.InMemory.with_handler(Repo.InMemory.new())
+  |> Comp.run!()
 
 assert {user, user} = result
 ```
 
-Seed initial state with `Repo.InMemory.seed/1`:
+Seed initial state and supply a fallback for non-PK reads:
 
 ```elixir
-initial = Repo.InMemory.seed([
-  %User{id: 1, name: "Alice"},
-  %User{id: 2, name: "Bob"}
-])
+state = Repo.InMemory.new(
+  seed: [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}],
+  fallback_fn: fn
+    :all, [User] -> [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}]
+    :exists?, [User] -> true
+  end
+)
 
-  result =
-    Repo.EffectPort.all(User)
-    |> Repo.InMemory.with_handler(initial)
-    |> Comp.run!()
+result =
+  Repo.EffectPort.all(User)
+  |> Repo.InMemory.with_handler(state)
+  |> Comp.run!()
 
 assert length(result) == 2
 ```
@@ -278,25 +316,26 @@ Inspect the final store:
   comp do
     _ <- Repo.EffectPort.insert(User.changeset(%{name: "Alice"}))
     _ <- Repo.EffectPort.insert(User.changeset(%{name: "Bob"}))
-    Repo.EffectPort.all(User)
+    Repo.EffectPort.get(User, 1)
   end
-  |> Repo.InMemory.with_handler(%{},
+  |> Repo.InMemory.with_handler(Repo.InMemory.new(),
     output: fn result, state -> {result, state.handler_state} end
   )
   |> Comp.run!()
 
-# store is %{{User, 1} => %User{...}, {User, 2} => %User{...}}
+# store is %{User => %{1 => %User{...}, 2 => %User{...}}}
 ```
 
 ### When to use Repo.InMemory vs Repo.Test
 
 - **`Repo.Test`** — stateless: writes apply changesets and return
-  `{:ok, struct}` but nothing is stored. Reads return defaults
-  (`nil`, `[]`, `false`). Use for tests that only need fire-and-forget
-  writes with applied changesets.
+  `{:ok, struct}` but nothing is stored. All reads require a
+  `fallback_fn` or raise. Use for tests that only need fire-and-forget
+  writes, or where you want full control over read return values.
 
-- **`Repo.InMemory`** — stateful: writes store records, subsequent
-  reads find them. Use when your test needs read-after-write consistency
+- **`Repo.InMemory`** — stateful: writes store records, PK-based reads
+  find them automatically. Non-PK reads require a `fallback_fn`. Use
+  when your test needs read-after-write consistency for PK lookups
   (insert then get, update then read back, etc.).
 
 ## Tips
@@ -315,7 +354,7 @@ Inspect the final store:
   ```elixir
   comp
   |> Port.with_test_handler(%{Notifications.EffectPort.key(:send, msg) => :ok})
-  |> Port.with_handler(%{Repository => Repo.Test})
+  |> Port.with_handler(%{Repository => Repo.Test.new()})
   |> Throw.with_handler()
   |> Comp.run!()
   ```

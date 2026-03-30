@@ -51,7 +51,7 @@ defmodule MyApp.Stacks do
 
   defp with_persistence(comp, :test) do
     comp
-    |> Port.with_handler(%{Repo => Repo.InMemory})
+    |> Repo.InMemory.with_handler(Repo.InMemory.new())
     |> Transaction.Noop.with_handler()
   end
 

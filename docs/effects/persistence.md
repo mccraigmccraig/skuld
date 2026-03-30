@@ -91,36 +91,39 @@ create_and_fetch(attrs)
 
 ### Test handler (Port.Repo.Test)
 
-An effectful test executor that applies changeset changes (without
-touching a database) and returns sensible defaults for reads. Register
-it as an effectful resolver via `Port.with_handler` and use the `:log`
-option to capture a dispatch log. Each log entry is a 4-tuple
-`{module, operation, args_list, return_value}`:
+A stateless test handler. `Repo.Test.new/1` returns a fn resolver
+that applies changeset changes for writes and delegates reads to an
+optional `fallback_fn` (or raises). Register it via `Port.with_handler`
+and use the `:log` option to capture a dispatch log. Each log entry is
+a 4-tuple `{module, operation, args_list, return_value}`:
 
 ```elixir
 alias Skuld.Effects.Port
 alias Skuld.Effects.Port.Repo
 
 cs = User.changeset(%User{}, %{name: "Alice"})
+alice = %User{id: 42, name: "Alice"}
 
 {result, log} =
   comp do
     user <- Repo.EffectPort.insert!(cs)
-    _ <- Repo.EffectPort.get(User, 42)
-    user
+    found <- Repo.EffectPort.get(User, 42)
+    {user, found}
   end
   |> Port.with_handler(
-    %{Repo => Repo.Test},
+    %{Repo => Repo.Test.new(
+      fallback_fn: fn :get, [User, 42] -> alice end
+    )},
     log: true,
     output: fn result, state -> {result, state.log} end
   )
   |> Throw.with_handler()
   |> Comp.run!()
 
-assert %User{name: "Alice"} = result
+assert {%User{name: "Alice"}, ^alice} = result
 assert [
   {Repo, :insert, [^cs], {:ok, %User{name: "Alice"}}},
-  {Repo, :get, [User, 42], nil}
+  {Repo, :get, [User, 42], ^alice}
 ] = log
 ```
 
@@ -132,7 +135,7 @@ appear in the same log:
 ```elixir
 Port.with_handler(
   comp,
-  %{Repo => Repo.Test, MyApp.Queries => MyApp.Queries.TestImpl},
+  %{Repo => Repo.Test.new(), MyApp.Queries => MyApp.Queries.TestImpl},
   log: true,
   output: fn r, state -> {r, state.log} end
 )
