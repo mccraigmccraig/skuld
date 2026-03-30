@@ -214,10 +214,9 @@ defmodule MyApp.Repository do
 end
 ```
 
-Each `defport` generates four submodules:
+Each `defport` generates three submodules plus introspection:
 
 - **`MyApp.Repository.Behaviour`** - plain Elixir callbacks (via HexPort)
-- **`MyApp.Repository.Port`** - plain dispatch facade via config (via HexPort)
 - **`MyApp.Repository.Effectful`** - computation-returning callbacks
 - **`MyApp.Repository.EffectPort`** - effectful dispatch with:
   - **Caller** - `EffectPort.get_todo(tenant_id, id)` returning a computation
@@ -226,13 +225,17 @@ Each `defport` generates four submodules:
   - **Key helper** - `EffectPort.key(:get_todo, tenant_id, id)` for test stubs
 - **Introspection** - `__port_operations__/0` on the contract module
 
+Contracts do **not** generate a plain dispatch facade (`.Port` module).
+If plain dispatch is needed, the consuming application generates one
+separately with `use HexPort.Port, contract: MyApp.Repository, otp_app: :my_app`.
+
 ### Behaviour and Effectful behaviours
 
 Each contract generates two behaviour submodules:
 
 - **`MyApp.Repository.Behaviour`** - plain Elixir callbacks. Implementations
   receive and return ordinary values. Use for non-effectful implementations
-  called via `Port.with_handler/2` or via the generated `Port` module.
+  called via `Port.with_handler/2`.
 - **`MyApp.Repository.Effectful`** - computation-returning callbacks.
   Implementations return computations. Use for effectful implementations
   wrapped with `Port.Adapter.Effectful`.
