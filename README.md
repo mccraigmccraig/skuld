@@ -190,8 +190,6 @@ get value from Skuld - the foundational effects stand on their own.
 | 8 | **Internals** | |
 |   | [Internals](docs/internals.md) | Implementation details |
 |   | [Reference](docs/reference.md) | API reference and comparisons |
-| 9 | **Research** | |
-|   | [Performance Investigation](docs/research/performance-investigation.md) | Benchmarks and profiling |
 
 ## Demo Application
 
