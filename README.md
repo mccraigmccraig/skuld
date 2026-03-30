@@ -187,6 +187,11 @@ get value from Skuld - the foundational effects stand on their own.
 |   | [Durable Workflows](docs/recipes/durable-workflows.md) | Persist-and-resume with EffectLogger |
 |   | [Data Pipelines](docs/recipes/data-pipelines.md) | Streaming with Brook |
 |   | [Batch Loading](docs/recipes/batch-loading.md) | N+1-free data access |
+| 8 | **Internals** | |
+|   | [Internals](docs/internals.md) | Implementation details |
+|   | [Reference](docs/reference.md) | API reference and comparisons |
+| 9 | **Research** | |
+|   | [Performance Investigation](docs/research/performance-investigation.md) | Benchmarks and profiling |
 
 ## Demo Application
 
