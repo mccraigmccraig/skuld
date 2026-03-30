@@ -63,7 +63,8 @@ if Code.ensure_loaded?(Ecto) do
 
     1. **State lookup** (PK reads only) — if the record is in state, return it
     2. **Fallback function** — an optional user-supplied function that handles
-       operations the state cannot answer. Receives `(operation, args)` and
+       operations the state cannot answer. Receives `(operation, args, state)`
+       where `state` is the clean store map (without internal keys), and
        returns the result. If it raises `FunctionClauseError`, falls through
        to stage 3.
     3. **Raise** — a clear error explaining that InMemory cannot service the
@@ -84,8 +85,10 @@ if Code.ensure_loaded?(Ecto) do
         state = Repo.InMemory.new(
           seed: [%User{id: 1, name: "Alice"}],
           fallback_fn: fn
-            :all, [User] -> [%User{id: 1, name: "Alice"}]
-            :get_by, [User, [email: "alice@example.com"]] -> %User{id: 1}
+            :all, [User], state ->
+              Map.get(state, User, %{}) |> Map.values()
+            :get_by, [User, [email: "alice@example.com"]], _state ->
+              %User{id: 1}
           end
         )
         comp
@@ -145,21 +148,24 @@ if Code.ensure_loaded?(Ecto) do
     ## Options
 
       * `:seed` - a list of structs to pre-populate the store
-      * `:fallback_fn` - a 2-arity function `(operation, args) -> result` that
-        handles operations the state cannot answer authoritatively. If the
-        function raises `FunctionClauseError`, dispatch falls through to an
-        error.
+      * `:fallback_fn` - a 3-arity function `(operation, args, state) -> result`
+        that handles operations the state cannot answer authoritatively. The
+        `state` argument is the clean store map (without internal keys like
+        `:__fallback_fn__`), so the fallback can compose canned data with
+        records inserted during the test. If the function raises
+        `FunctionClauseError`, dispatch falls through to an error.
 
     ## Examples
 
         # Empty state, no fallback
         Repo.InMemory.new()
 
-        # Seeded with fallback
+        # Seeded with fallback that uses state
         Repo.InMemory.new(
           seed: [%User{id: 1, name: "Alice"}],
           fallback_fn: fn
-            :all, [User] -> [%User{id: 1, name: "Alice"}]
+            :all, [User], state ->
+              Map.get(state, User, %{}) |> Map.values()
           end
         )
     """
@@ -347,9 +353,11 @@ if Code.ensure_loaded?(Ecto) do
         nil ->
           raise_no_fallback(operation, args)
 
-        fallback_fn when is_function(fallback_fn, 2) ->
+        fallback_fn when is_function(fallback_fn, 3) ->
+          clean_state = Map.delete(store, @fallback_fn_key)
+
           try do
-            {fallback_fn.(operation, args), store}
+            {fallback_fn.(operation, args, clean_state), store}
           rescue
             FunctionClauseError -> raise_no_fallback(operation, args)
           end
@@ -368,7 +376,7 @@ if Code.ensure_loaded?(Ecto) do
 
           Repo.InMemory.new(
             fallback_fn: fn
-              :#{operation}, #{inspect(args)} -> # your result here
+              :#{operation}, #{inspect(args)}, _state -> # your result here
             end
           )
       """

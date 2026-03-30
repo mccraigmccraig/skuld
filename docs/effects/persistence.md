@@ -114,6 +114,8 @@ alice = %User{id: 42, name: "Alice"}
     %{Repo => Repo.Test.new(
       fallback_fn: fn :get, [User, 42] -> alice end
     )},
+    # Note: Repo.Test fallback is 2-arity (stateless).
+    # Repo.InMemory fallback is 3-arity (receives store state).
     log: true,
     output: fn result, state -> {result, state.log} end
   )

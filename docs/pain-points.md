@@ -70,7 +70,7 @@ state = Repo.InMemory.new(
     %PayRate{id: "pr1", hourly_rate: Decimal.new("25.00")}
   ],
   fallback_fn: fn
-    :get_by, [User, [name: "Alice"]] -> %User{id: "u1", name: "Alice"}
+    :get_by, [User, [name: "Alice"]], _state -> %User{id: "u1", name: "Alice"}
   end
 )
 

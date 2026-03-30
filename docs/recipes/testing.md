@@ -260,6 +260,9 @@ comp
     end
   )
 })
+
+# Note: Repo.Test fallback_fn is 2-arity (operation, args) — stateless.
+# Repo.InMemory fallback_fn is 3-arity (operation, args, state) — has store access.
 |> Throw.with_handler()
 |> Comp.run!()
 ```
@@ -296,8 +299,10 @@ Seed initial state and supply a fallback for non-PK reads:
 state = Repo.InMemory.new(
   seed: [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}],
   fallback_fn: fn
-    :all, [User] -> [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}]
-    :exists?, [User] -> true
+    :all, [User], state ->
+      Map.get(state, User, %{}) |> Map.values()
+    :exists?, [User], state ->
+      map_size(Map.get(state, User, %{})) > 0
   end
 )
 

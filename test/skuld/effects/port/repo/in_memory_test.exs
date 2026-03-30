@@ -97,14 +97,14 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
     end
 
     test "stores fallback_fn via :fallback_fn option" do
-      fallback = fn :all, [User] -> [] end
+      fallback = fn :all, [User], _state -> [] end
       state = InMemory.new(fallback_fn: fallback)
       assert %{__fallback_fn__: ^fallback} = state
     end
 
     test "combines seed and fallback_fn" do
       alice = %User{id: 1, name: "Alice"}
-      fallback = fn :all, [User] -> [alice] end
+      fallback = fn :all, [User], _state -> [alice] end
       state = InMemory.new(seed: [alice], fallback_fn: fallback)
       assert %{User => %{1 => ^alice}, __fallback_fn__: ^fallback} = state
     end
@@ -267,7 +267,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       state =
         InMemory.new(
           seed: [%User{id: 1, name: "Alice"}],
-          fallback_fn: fn :get, [User, 99] -> bob end
+          fallback_fn: fn :get, [User, 99], _state -> bob end
         )
 
       result =
@@ -318,10 +318,10 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       state =
         InMemory.new(
           fallback_fn: fn
-            :get_by, [User, [name: "Alice"]] -> alice
-            :get_by, [User, [name: "Alice", email: "alice@example.com"]] -> alice
-            :get_by, [User, %{name: "Alice"}] -> alice
-            :get_by, [User, [name: "Nobody"]] -> nil
+            :get_by, [User, [name: "Alice"]], _state -> alice
+            :get_by, [User, [name: "Alice", email: "alice@example.com"]], _state -> alice
+            :get_by, [User, %{name: "Alice"}], _state -> alice
+            :get_by, [User, [name: "Nobody"]], _state -> nil
           end
         )
 
@@ -351,7 +351,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
     test "one dispatches to fallback" do
       alice = %User{id: 1, name: "Alice"}
-      state = InMemory.new(fallback_fn: fn :one, [User] -> alice end)
+      state = InMemory.new(fallback_fn: fn :one, [User], _state -> alice end)
 
       result =
         Repo.EffectPort.one(User)
@@ -373,7 +373,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
     test "all dispatches to fallback" do
       users = [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}]
-      state = InMemory.new(fallback_fn: fn :all, [User] -> users end)
+      state = InMemory.new(fallback_fn: fn :all, [User], _state -> users end)
 
       result =
         Repo.EffectPort.all(User)
@@ -394,7 +394,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
     end
 
     test "exists? dispatches to fallback" do
-      state = InMemory.new(fallback_fn: fn :exists?, [User] -> true end)
+      state = InMemory.new(fallback_fn: fn :exists?, [User], _state -> true end)
 
       result =
         Repo.EffectPort.exists?(User)
@@ -419,10 +419,10 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       state =
         InMemory.new(
           fallback_fn: fn
-            :aggregate, [User, :count, :id] -> 3
-            :aggregate, [User, :sum, :age] -> 55
-            :aggregate, [User, :min, :age] -> 25
-            :aggregate, [User, :max, :age] -> 30
+            :aggregate, [User, :count, :id], _state -> 3
+            :aggregate, [User, :sum, :age], _state -> 55
+            :aggregate, [User, :min, :age], _state -> 25
+            :aggregate, [User, :max, :age], _state -> 30
           end
         )
 
@@ -458,7 +458,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
   describe "bulk operations require fallback" do
     test "delete_all dispatches to fallback" do
-      state = InMemory.new(fallback_fn: fn :delete_all, [User, []] -> {2, nil} end)
+      state = InMemory.new(fallback_fn: fn :delete_all, [User, []], _state -> {2, nil} end)
 
       result =
         Repo.EffectPort.delete_all(User, [])
@@ -482,7 +482,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
     test "update_all dispatches to fallback" do
       state =
         InMemory.new(
-          fallback_fn: fn :update_all, [User, [set: [name: "bulk"]], []] -> {3, nil} end
+          fallback_fn: fn :update_all, [User, [set: [name: "bulk"]], []], _state -> {3, nil} end
         )
 
       result =
