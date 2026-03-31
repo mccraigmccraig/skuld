@@ -171,7 +171,7 @@ Then write the effectful implementation. It calls `Inventory` through the
 effectful facade, and its own effects participate in the caller's context:
 
 ```elixir
-defmodule MyApp.OrderService.Effectful do
+defmodule MyApp.Effectful.OrderService do
   use Skuld.Syntax
   alias MyApp.Effectful.Inventory
 
@@ -193,10 +193,10 @@ The `OrderController` is still plain Elixir, so it needs an
 `Adapter.Effectful` to call the effectful implementation:
 
 ```elixir
-defmodule MyApp.Orders.Adapter do
+defmodule MyApp.Effectful.OrdersAdapter do
   use Skuld.Effects.Port.Adapter.Effectful,
     contract: MyApp.Orders,
-    impl: MyApp.OrderService.Effectful,
+    impl: MyApp.Effectful.OrderService,
     stack: fn comp ->
       comp
       |> Port.with_handler(%{MyApp.Effectful.Inventory => MyApp.InventoryService})
@@ -208,16 +208,16 @@ end
 The call chain is now:
 
 ```
-OrderController → MyApp.Orders.Adapter [Effectful]
+OrderController → MyApp.Effectful.OrdersAdapter [Effectful]
                        ↓ Comp.run!()
-                  OrderService.Effectful
+                  Effectful.OrderService
                        ↓ Port effect (via Effectful.Inventory)
                   Port.with_handler(:direct)
                        ↓
                   InventoryService (plain)
 ```
 
-The controller still calls `MyApp.Orders.Adapter.place_order(params)`
+The controller still calls `MyApp.Effectful.OrdersAdapter.place_order(params)`
 and gets a plain `{:ok, order}` back — it doesn't know Skuld is
 involved. The effectful order service calls `Inventory` through the
 effectful facade, which the adapter's stack resolves to the plain
@@ -238,7 +238,7 @@ end
 Then write the effectful caller:
 
 ```elixir
-defmodule MyApp.OrderWorkflow do
+defmodule MyApp.Effectful.OrderWorkflow do
   use Skuld.Syntax
   alias MyApp.Effectful.Orders
 
@@ -255,9 +255,9 @@ resolver — the order service's computation is inlined into the
 workflow's effect context:
 
 ```elixir
-MyApp.OrderWorkflow.place_order(params)
+MyApp.Effectful.OrderWorkflow.place_order(params)
 |> Port.with_handler(%{
-  MyApp.Effectful.Orders => MyApp.OrderService.Effectful,
+  MyApp.Effectful.Orders => MyApp.Effectful.OrderService,
   MyApp.Effectful.Inventory => MyApp.InventoryService
 })
 |> EventAccumulator.with_handler(output: fn r, events -> {r, events} end)
@@ -268,18 +268,18 @@ MyApp.OrderWorkflow.place_order(params)
 The call chain is now:
 
 ```
-OrderWorkflow (effectful)
+Effectful.OrderWorkflow (effectful)
     ↓ Port effect
 Port.with_handler (effectful auto-detected)
     ↓ computation inlined
-OrderService.Effectful
+Effectful.OrderService
     ↓ Port effect
 Port.with_handler(:direct)
     ↓
 InventoryService (plain)
 ```
 
-All effects from `OrderService.Effectful` (its Port calls, any State,
+All effects from `Effectful.OrderService` (its Port calls, any State,
 Throw, etc.) are handled by the workflow's handler stack. There's a
 single `Comp.run!` at the top level — no intermediate adapter needed.
 
@@ -326,10 +326,10 @@ The caller is plain Elixir, the implementation is effectful. The adapter
 wraps the implementation with a handler stack and `Comp.run!()`.
 
 ```elixir
-defmodule MyApp.Orders.Adapter do
+defmodule MyApp.Effectful.OrdersAdapter do
   use Skuld.Effects.Port.Adapter.Effectful,
     contract: MyApp.Orders,
-    impl: MyApp.OrderService.Effectful,
+    impl: MyApp.Effectful.OrderService,
     stack: fn comp ->
       comp
       |> Port.with_handler(%{MyApp.Effectful.Inventory => MyApp.InventoryService})
@@ -338,7 +338,7 @@ defmodule MyApp.Orders.Adapter do
 end
 
 # Usage — plain call, plain result
-MyApp.Orders.Adapter.place_order(params)
+MyApp.Effectful.OrdersAdapter.place_order(params)
 ```
 
 Use this when a Phoenix controller, GenServer, or other non-effectful
@@ -373,7 +373,7 @@ alias MyApp.Effectful.Orders
 order <- Orders.place_order!(params)
 
 # Wiring — implementation's effects handled by this stack
-|> Port.with_handler(%{MyApp.Effectful.Orders => MyApp.OrderService.Effectful})
+|> Port.with_handler(%{MyApp.Effectful.Orders => MyApp.Effectful.OrderService})
 |> Throw.with_handler()
 ```
 
@@ -409,7 +409,7 @@ comp
 |> Port.with_test_handler(%{
   MyApp.Effectful.Inventory.key(:reserve_stock, sku, qty) => {:ok, %Reservation{}}
 })
-|> Port.with_handler(%{MyApp.Effectful.Orders => MyApp.OrderService.Effectful})
+|> Port.with_handler(%{MyApp.Effectful.Orders => MyApp.Effectful.OrderService})
 |> Throw.with_handler()
 |> Comp.run!()
 
@@ -417,7 +417,7 @@ comp
 assert {:ok, %Order{}} = MyApp.Orders.place_order(params)
 
 # Test Adapter.Effectful — also plain Elixir (adapter runs effects internally)
-assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
+assert {:ok, %Order{}} = MyApp.Effectful.OrdersAdapter.place_order(params)
 ```
 
 ### Testing plain hexagons with Mox
