@@ -180,7 +180,7 @@ defmodule Skuld.MixProject do
 
   defp deps do
     [
-      {:hex_port, "~> 0.8"},
+      {:hex_port, "~> 0.9"},
       {:jason, "~> 1.4"},
       {:uniq, "~> 0.6"},
       {:ecto, "~> 3.12", optional: true},
