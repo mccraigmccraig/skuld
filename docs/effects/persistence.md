@@ -151,7 +151,7 @@ use their own Port.Contract:
 
 ```elixir
 defmodule MyApp.Orders do
-  use Skuld.Effects.Port.Contract
+  use HexPort.Contract
 
   defport place_order(params :: map()) ::
             {:ok, Order.t()} | {:error, term()}

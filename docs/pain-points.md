@@ -259,7 +259,7 @@ modules that implement a behaviour:
 ```elixir
 # The contract (shared boundary)
 defmodule PaymentGateway do
-  use Skuld.Effects.Port.Contract
+  use HexPort.Contract
 
   defport charge(amount :: Money.t(), card :: Card.t()) ::
     {:ok, Charge.t()} | {:error, term()}
