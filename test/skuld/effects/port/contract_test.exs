@@ -898,4 +898,68 @@ defmodule Skuld.Effects.Port.ContractTest do
       assert "Hi, Carol!" = result
     end
   end
+
+  # ---------------------------------------------------------------
+  # Combined effectful contract + facade on same module
+  # ---------------------------------------------------------------
+
+  describe "combined effectful contract and facade on same module" do
+    test "compiles and works correctly" do
+      Code.compile_string("""
+      defmodule Skuld.Test.CombinedContract do
+        use HexPort.Contract
+        defport greet(name :: String.t()) :: String.t()
+        defport ping() :: :pong
+      end
+
+      defmodule Skuld.Test.Combined do
+        use Skuld.Effects.Port.EffectfulContract,
+          hex_port_contract: Skuld.Test.CombinedContract
+        use Skuld.Effects.Port.Facade,
+          contract: Skuld.Test.Combined
+      end
+      """)
+
+      # Has effectful callbacks
+      callbacks = Skuld.Test.Combined.behaviour_info(:callbacks)
+      assert {:greet, 1} in callbacks
+      assert {:ping, 0} in callbacks
+
+      # Has __port_operations__
+      ops = Skuld.Test.Combined.__port_operations__()
+      assert length(ops) == 2
+
+      # Has __port_effectful__?
+      assert Skuld.Test.Combined.__port_effectful__?() == true
+
+      # Facade functions exist and return computations
+      comp = Skuld.Test.Combined.greet("Alice")
+      assert is_function(comp, 2)
+    end
+
+    test "dispatches correctly via Port handler" do
+      Code.compile_string("""
+      defmodule Skuld.Test.CombinedDispatchContract do
+        use HexPort.Contract
+        defport greet(name :: String.t()) :: String.t()
+      end
+
+      defmodule Skuld.Test.CombinedDispatch do
+        use Skuld.Effects.Port.EffectfulContract,
+          hex_port_contract: Skuld.Test.CombinedDispatchContract
+        use Skuld.Effects.Port.Facade,
+          contract: Skuld.Test.CombinedDispatch
+      end
+      """)
+
+      handler = fn Skuld.Test.CombinedDispatch, :greet, ["Alice"] -> "Hello, Alice!" end
+
+      comp =
+        Skuld.Test.CombinedDispatch.greet("Alice")
+        |> Port.with_fn_handler(handler)
+
+      {result, _env} = Comp.run(comp)
+      assert "Hello, Alice!" = result
+    end
+  end
 end

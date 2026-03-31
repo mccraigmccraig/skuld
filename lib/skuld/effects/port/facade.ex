@@ -48,12 +48,20 @@ defmodule Skuld.Effects.Port.Facade do
 
   @doc false
   defmacro __using__(opts) do
-    contract = Keyword.fetch!(opts, :contract)
+    contract = Keyword.fetch!(opts, :contract) |> Macro.expand(__CALLER__)
+    self_ref? = contract == __CALLER__.module
 
-    quote do
-      require unquote(contract)
-      @skuld_port_contract unquote(contract)
-      @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
+    if self_ref? do
+      quote do
+        @skuld_port_contract unquote(contract)
+        @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
+      end
+    else
+      quote do
+        require unquote(contract)
+        @skuld_port_contract unquote(contract)
+        @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
+      end
     end
   end
 
@@ -61,25 +69,46 @@ defmodule Skuld.Effects.Port.Facade do
   defmacro __before_compile__(env) do
     contract = Module.get_attribute(env.module, :skuld_port_contract)
 
-    unless Code.ensure_loaded?(contract) do
-      raise CompileError,
-        description:
-          "Contract module #{inspect(contract)} is not loaded. " <>
-            "Ensure it is compiled before #{inspect(env.module)}.",
-        file: env.file,
-        line: 0
-    end
+    operations =
+      if contract == env.module do
+        # Same-module: EffectfulContract's __before_compile__ has already
+        # run and defined __port_operations__/0, but we can't call it.
+        # Read the hex_port_contract (always a separate compiled module)
+        # and get operations from there.
+        hex_port_contract = Module.get_attribute(env.module, :skuld_hex_port_contract)
 
-    unless function_exported?(contract, :__port_operations__, 0) do
-      raise CompileError,
-        description:
-          "#{inspect(contract)} does not define __port_operations__/0. " <>
-            "Did you `use HexPort.Contract` and add `defport` declarations?",
-        file: env.file,
-        line: 0
-    end
+        unless hex_port_contract do
+          raise CompileError,
+            description:
+              "#{inspect(contract)} does not have a hex_port_contract. " <>
+                "Ensure `use Skuld.Effects.Port.EffectfulContract` appears " <>
+                "before `use Skuld.Effects.Port.Facade` in the same module.",
+            file: env.file,
+            line: 0
+        end
 
-    operations = contract.__port_operations__()
+        hex_port_contract.__port_operations__()
+      else
+        unless Code.ensure_loaded?(contract) do
+          raise CompileError,
+            description:
+              "Contract module #{inspect(contract)} is not loaded. " <>
+                "Ensure it is compiled before #{inspect(env.module)}.",
+            file: env.file,
+            line: 0
+        end
+
+        unless function_exported?(contract, :__port_operations__, 0) do
+          raise CompileError,
+            description:
+              "#{inspect(contract)} does not define __port_operations__/0. " <>
+                "Did you `use HexPort.Contract` and add `defport` declarations?",
+            file: env.file,
+            line: 0
+        end
+
+        contract.__port_operations__()
+      end
 
     callers = Enum.map(operations, &generate_caller(&1, contract))
 
