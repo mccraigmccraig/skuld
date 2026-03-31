@@ -7,14 +7,14 @@
 # ## Usage
 #
 #     comp
-#     |> Port.with_handler(%{Port.Repo => Port.Repo.Test.new()})
+#     |> Port.with_handler(%{Port.Repo.Contract => Port.Repo.Test.new()})
 #     |> Throw.with_handler()
 #     |> Comp.run!()
 #
 #     # With fallback for reads:
 #     comp
 #     |> Port.with_handler(%{
-#       Port.Repo => Port.Repo.Test.new(
+#       Port.Repo.Contract => Port.Repo.Test.new(
 #         fallback_fn: fn
 #           :all, [User] -> [%User{id: 1, name: "Alice"}]
 #           :get, [User, 1] -> %User{id: 1, name: "Alice"}
@@ -27,7 +27,7 @@
 if Code.ensure_loaded?(Ecto) do
   defmodule Skuld.Effects.Port.Repo.Test do
     @moduledoc """
-    Stateless test handler for `Port.Repo`.
+    Stateless test handler for `Port.Repo.Contract`.
 
     Provides a function handler via `new/1` for use in a `Port.with_handler/3`
     registry. Write operations (`insert`, `update`, `delete`) apply changeset
@@ -45,14 +45,14 @@ if Code.ensure_loaded?(Ecto) do
 
         # Writes only — reads will raise:
         comp
-        |> Port.with_handler(%{Repo => Repo.Test.new()})
+        |> Port.with_handler(%{Repo.Contract => Repo.Test.new()})
         |> Throw.with_handler()
         |> Comp.run!()
 
         # With fallback for reads:
         comp
         |> Port.with_handler(%{
-          Repo => Repo.Test.new(
+          Repo.Contract => Repo.Test.new(
             fallback_fn: fn
               :get, [User, 1] -> %User{id: 1, name: "Alice"}
               :all, [User] -> [%User{id: 1, name: "Alice"}]

@@ -252,7 +252,7 @@ if Code.ensure_loaded?(Ecto) do
     # Write operations — always authoritative
     # -----------------------------------------------------------------
 
-    defp dispatch(Repo, :insert, [changeset], store) do
+    defp dispatch(Repo.Contract, :insert, [changeset], store) do
       record = safe_apply_changes(changeset)
       schema = record.__struct__
       id = get_primary_key(record)
@@ -270,14 +270,14 @@ if Code.ensure_loaded?(Ecto) do
       {{:ok, record}, put_record(store, schema, id, record)}
     end
 
-    defp dispatch(Repo, :update, [changeset], store) do
+    defp dispatch(Repo.Contract, :update, [changeset], store) do
       record = safe_apply_changes(changeset)
       schema = record.__struct__
       id = get_primary_key(record)
       {{:ok, record}, put_record(store, schema, id, record)}
     end
 
-    defp dispatch(Repo, :delete, [record], store) do
+    defp dispatch(Repo.Contract, :delete, [record], store) do
       schema = record.__struct__
       id = get_primary_key(record)
       {{:ok, record}, delete_record(store, schema, id)}
@@ -287,7 +287,7 @@ if Code.ensure_loaded?(Ecto) do
     # PK reads — 3-stage: state -> fallback -> error
     # -----------------------------------------------------------------
 
-    defp dispatch(Repo, :get, [queryable, id] = args, store) do
+    defp dispatch(Repo.Contract, :get, [queryable, id] = args, store) do
       schema = extract_schema(queryable)
 
       case get_record(store, schema, id) do
@@ -296,7 +296,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp dispatch(Repo, :get!, [queryable, id] = args, store) do
+    defp dispatch(Repo.Contract, :get!, [queryable, id] = args, store) do
       schema = extract_schema(queryable)
 
       case get_record(store, schema, id) do
@@ -309,35 +309,35 @@ if Code.ensure_loaded?(Ecto) do
     # Non-PK reads — 2-stage: fallback -> error
     # -----------------------------------------------------------------
 
-    defp dispatch(Repo, :get_by, args, store),
+    defp dispatch(Repo.Contract, :get_by, args, store),
       do: dispatch_via_fallback(:get_by, args, store)
 
-    defp dispatch(Repo, :get_by!, args, store),
+    defp dispatch(Repo.Contract, :get_by!, args, store),
       do: dispatch_via_fallback(:get_by!, args, store)
 
-    defp dispatch(Repo, :one, args, store),
+    defp dispatch(Repo.Contract, :one, args, store),
       do: dispatch_via_fallback(:one, args, store)
 
-    defp dispatch(Repo, :one!, args, store),
+    defp dispatch(Repo.Contract, :one!, args, store),
       do: dispatch_via_fallback(:one!, args, store)
 
-    defp dispatch(Repo, :all, args, store),
+    defp dispatch(Repo.Contract, :all, args, store),
       do: dispatch_via_fallback(:all, args, store)
 
-    defp dispatch(Repo, :exists?, args, store),
+    defp dispatch(Repo.Contract, :exists?, args, store),
       do: dispatch_via_fallback(:exists?, args, store)
 
-    defp dispatch(Repo, :aggregate, args, store),
+    defp dispatch(Repo.Contract, :aggregate, args, store),
       do: dispatch_via_fallback(:aggregate, args, store)
 
     # -----------------------------------------------------------------
     # Bulk operations — 2-stage: fallback -> error
     # -----------------------------------------------------------------
 
-    defp dispatch(Repo, :update_all, args, store),
+    defp dispatch(Repo.Contract, :update_all, args, store),
       do: dispatch_via_fallback(:update_all, args, store)
 
-    defp dispatch(Repo, :delete_all, args, store),
+    defp dispatch(Repo.Contract, :delete_all, args, store),
       do: dispatch_via_fallback(:delete_all, args, store)
 
     # -----------------------------------------------------------------
