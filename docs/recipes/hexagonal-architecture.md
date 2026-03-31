@@ -511,6 +511,153 @@ end
 Each step delivers value independently. You don't need to adopt the
 full effect system to benefit from Port contracts and test isolation.
 
+### Testing plain hexagons with HexPort test doubles
+
+HexPort includes its own process-scoped test handler system built on
+`NimbleOwnership`. Unlike Mox, no mock modules are defined at compile
+time — handlers are registered at runtime per-test via closures or
+module references. This gives you three handler modes plus two built-in
+Repo test doubles, all compatible with `async: true`.
+
+#### Setup
+
+Start the ownership server once in `test/test_helper.exs`:
+
+```elixir
+{:ok, _} = HexPort.Testing.start()
+```
+
+#### Three handler modes
+
+**Module handler** — register any module that implements the contract's
+`@behaviour`:
+
+```elixir
+HexPort.Testing.set_handler(MyApp.Orders, MyApp.FakeOrderService)
+```
+
+**Function handler** — register a 2-arity closure
+`(operation, args) -> result` with pattern matching:
+
+```elixir
+HexPort.Testing.set_fn_handler(MyApp.Orders, fn
+  :place_order, [params] -> {:ok, %Order{sku: params.sku}}
+  :get_order, ["order-1"] -> {:ok, %Order{id: "order-1"}}
+end)
+```
+
+**Stateful handler** — register a 3-arity closure
+`(operation, args, state) -> {result, new_state}` with an initial
+state value. State is stored in NimbleOwnership and updated atomically
+on each dispatch:
+
+```elixir
+HexPort.Testing.set_stateful_handler(
+  MyApp.Inventory,
+  fn
+    :reserve_stock, [sku, qty], stock ->
+      current = Map.get(stock, sku, 0)
+      if current >= qty do
+        {{:ok, %Reservation{sku: sku, qty: qty}}, Map.update!(stock, sku, &(&1 - qty))}
+      else
+        {{:error, :insufficient_stock}, stock}
+      end
+
+    :check_stock, [sku], stock ->
+      {{:ok, Map.get(stock, sku, 0)}, stock}
+  end,
+  %{"widget" => 100, "gadget" => 50}  # initial state
+)
+```
+
+#### Process sharing
+
+Child processes (Tasks, Agents) inherit the parent's handlers
+automatically via `$callers`. For non-Task processes, use `allow/3`:
+
+```elixir
+HexPort.Testing.allow(MyApp.Orders, self(), agent_pid)
+```
+
+#### Dispatch logging
+
+Assert on the exact sequence of port calls made during a test:
+
+```elixir
+HexPort.Testing.enable_log(MyApp.Orders)
+
+MyApp.OrderService.place_order(%{sku: "widget", qty: 3})
+
+log = HexPort.Testing.get_log(MyApp.Orders)
+assert [{MyApp.Orders, :place_order, [%{sku: "widget", qty: 3}], {:ok, _}}] = log
+```
+
+#### Cleanup
+
+Call `HexPort.Testing.reset/0` to clear all handlers, state, and logs
+for the current process (useful in `setup` blocks).
+
+#### Built-in Repo test doubles
+
+HexPort ships two test doubles for the `Port.Repo` contract:
+
+**`Repo.Test`** — stateless. Writes apply changeset changes and return
+`{:ok, struct}` but store nothing. Reads delegate to an optional
+fallback function or raise with an actionable suggestion:
+
+```elixir
+HexPort.Testing.set_fn_handler(
+  HexPort.Repo.Contract,
+  HexPort.Repo.Test.new(
+    fallback_fn: fn
+      :get, [User, 1] -> %User{id: 1, name: "Alice"}
+      :all, [User] -> [%User{id: 1}]
+    end
+  )
+)
+```
+
+**`Repo.InMemory`** — stateful. Provides read-after-write consistency
+for primary-key lookups (`get`, `get!`). State is a nested map
+`%{schema_module => %{pk => struct}}` stored in NimbleOwnership and
+updated atomically. Writes insert/update/delete records in state;
+PK reads check state first, then fall back; non-PK reads (`get_by`,
+`all`, `exists?`, etc.) always delegate to a fallback or raise:
+
+```elixir
+HexPort.Testing.set_stateful_handler(
+  HexPort.Repo.Contract,
+  &HexPort.Repo.InMemory.dispatch/3,
+  HexPort.Repo.InMemory.new(
+    seed: [%User{id: 1, name: "Alice"}, %Item{id: 1, sku: "widget"}],
+    fallback_fn: fn
+      :all, [Item], state -> Map.values(state[Item] || %{})
+    end
+  )
+)
+```
+
+Both test doubles handle `transact` (0-arity fns, 1-arity fns, and
+`Ecto.Multi`) via a shared `MultiStepper` that walks through Multi
+operations without a real database.
+
+#### Why `Repo.InMemory` matters
+
+The in-memory Repo gives you database-free tests for Ecto-heavy code.
+Because there's no database roundtrip, tests run at pure-function speed
+— fast enough for property-based testing with StreamData or similar.
+You get:
+
+- **No sandbox, no migrations, no DB setup** — tests start instantly
+- **Read-after-write consistency** — insert a record then `get` it back
+- **Full Ecto.Multi support** — multi-step transactions work correctly
+- **Property-based testing speed** — thousands of test cases per second
+  because there's no I/O
+
+This is particularly valuable for testing domain logic that interleaves
+Ecto operations — the hexagonal boundary lets you swap the real Repo
+for `Repo.InMemory` and verify business rules without database overhead.
+
 ## Tips
 
 - Define one contract per bounded context or aggregate
