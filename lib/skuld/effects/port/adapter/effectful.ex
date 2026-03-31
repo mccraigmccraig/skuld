@@ -18,7 +18,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
 
       # Contract defines the port
       defmodule MyApp.UserService do
-        use Skuld.Effects.Port.Contract
+        use HexPort.Contract
         defport find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
       end
 
@@ -147,8 +147,8 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
     unless function_exported?(contract, :__port_operations__, 0) do
       raise CompileError,
         description:
-          "#{inspect(contract)} does not appear to be a Port.Contract module " <>
-            "(missing __port_operations__/0). Ensure it uses Skuld.Effects.Port.Contract " <>
+          "#{inspect(contract)} does not appear to be a port contract module " <>
+            "(missing __port_operations__/0). Ensure it uses HexPort.Contract " <>
             "and defines at least one defport.",
         file: env.file,
         line: 0

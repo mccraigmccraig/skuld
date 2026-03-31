@@ -258,7 +258,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_handler_error, Repo.Contract, :get, %ArgumentError{}}} =
+      assert %ThrowResult{error: {:port_handler_error, Repo.Effectful, :get, %ArgumentError{}}} =
                result
     end
 
@@ -304,7 +304,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_handler_error, Repo.Contract, :get!, %ArgumentError{}}} =
+      assert %ThrowResult{error: {:port_handler_error, Repo.Effectful, :get!, %ArgumentError{}}} =
                result
     end
   end
@@ -348,7 +348,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_handler_error, Repo.Contract, :get_by, %ArgumentError{}}} =
+      assert %ThrowResult{error: {:port_handler_error, Repo.Effectful, :get_by, %ArgumentError{}}} =
                result
     end
 
@@ -371,7 +371,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_handler_error, Repo.Contract, :one, %ArgumentError{}}} =
+      assert %ThrowResult{error: {:port_handler_error, Repo.Effectful, :one, %ArgumentError{}}} =
                result
     end
 
@@ -394,7 +394,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_handler_error, Repo.Contract, :all, %ArgumentError{}}} =
+      assert %ThrowResult{error: {:port_handler_error, Repo.Effectful, :all, %ArgumentError{}}} =
                result
     end
 
@@ -416,7 +416,9 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_handler_error, Repo.Contract, :exists?, %ArgumentError{}}} =
+      assert %ThrowResult{
+               error: {:port_handler_error, Repo.Effectful, :exists?, %ArgumentError{}}
+             } =
                result
     end
 
@@ -453,7 +455,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         |> Comp.run()
 
       assert %ThrowResult{
-               error: {:port_handler_error, Repo.Contract, :aggregate, %ArgumentError{}}
+               error: {:port_handler_error, Repo.Effectful, :aggregate, %ArgumentError{}}
              } =
                result
     end
@@ -483,7 +485,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         |> Comp.run()
 
       assert %ThrowResult{
-               error: {:port_handler_error, Repo.Contract, :delete_all, %ArgumentError{}}
+               error: {:port_handler_error, Repo.Effectful, :delete_all, %ArgumentError{}}
              } =
                result
     end
@@ -510,7 +512,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         |> Comp.run()
 
       assert %ThrowResult{
-               error: {:port_handler_error, Repo.Contract, :update_all, %ArgumentError{}}
+               error: {:port_handler_error, Repo.Effectful, :update_all, %ArgumentError{}}
              } =
                result
     end
@@ -567,7 +569,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_handler_error, Repo.Contract, :get, %ArgumentError{}}} =
+      assert %ThrowResult{error: {:port_handler_error, Repo.Effectful, :get, %ArgumentError{}}} =
                result
     end
   end
@@ -635,7 +637,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
       assert length(log) == 2
 
-      assert [{Repo.Contract, :insert, _, {:ok, %User{}}}, {Repo.Contract, :get, _, %User{}}] =
+      assert [{Repo.Effectful, :insert, _, {:ok, %User{}}}, {Repo.Effectful, :get, _, %User{}}] =
                log
     end
   end
@@ -666,13 +668,17 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
     test "composes with other Port contracts" do
       defmodule OtherContract do
-        use Skuld.Effects.Port.Contract
+        use HexPort.Contract
 
         defport(do_thing(x :: term()) :: {:ok, term()} | {:error, term()})
       end
 
+      defmodule OtherEffectful do
+        use Skuld.Effects.Port.EffectfulContract, hex_port_contract: OtherContract
+      end
+
       defmodule OtherFacade do
-        use Skuld.Effects.Port.Facade, contract: OtherContract
+        use Skuld.Effects.Port.Facade, contract: OtherEffectful
       end
 
       defmodule OtherImpl do
@@ -691,7 +697,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
           thing
         end
         |> with_in_memory(initial)
-        |> Port.with_handler(%{OtherContract => OtherImpl})
+        |> Port.with_handler(%{OtherEffectful => OtherImpl})
         |> Throw.with_handler()
         |> Comp.run!()
 

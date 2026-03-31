@@ -33,7 +33,7 @@ defmodule Skuld.Effects.Port.RepoTest do
   describe "Port.Repo contract" do
     test "contract module has @callbacks" do
       callbacks =
-        Repo.Contract.behaviour_info(:callbacks)
+        Repo.Effectful.behaviour_info(:callbacks)
         |> Enum.map(&elem(&1, 0))
         |> Enum.sort()
 
@@ -53,9 +53,9 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert :aggregate in callbacks
     end
 
-    test "contract generates Effectful behaviour submodule" do
+    test "effectful contract has effectful callbacks" do
       callbacks =
-        Repo.Contract.Effectful.behaviour_info(:callbacks)
+        Repo.Effectful.behaviour_info(:callbacks)
         |> Enum.map(&elem(&1, 0))
         |> Enum.sort()
 
@@ -76,7 +76,7 @@ defmodule Skuld.Effects.Port.RepoTest do
     end
 
     test "read bang operations are defined as separate ports (not auto-generated)" do
-      ops = Repo.Contract.__port_operations__() |> Enum.map(& &1.name)
+      ops = Repo.Effectful.__port_operations__() |> Enum.map(& &1.name)
 
       # These are declared as defport with bang: false
       assert :get! in ops
@@ -85,7 +85,7 @@ defmodule Skuld.Effects.Port.RepoTest do
     end
 
     test "__port_operations__ lists all operations" do
-      ops = Repo.Contract.__port_operations__()
+      ops = Repo.Effectful.__port_operations__()
 
       assert length(ops) == 14
 
@@ -122,10 +122,10 @@ defmodule Skuld.Effects.Port.RepoTest do
       changeset = TestUser.changeset(%{name: "Alice"})
 
       key = Repo.key(:insert, changeset)
-      assert {Repo.Contract, :insert, _} = key
+      assert {Repo.Effectful, :insert, _} = key
 
       key2 = Repo.key(:get, TestUser, 42)
-      assert {Repo.Contract, :get, _} = key2
+      assert {Repo.Effectful, :get, _} = key2
     end
   end
 
@@ -160,7 +160,7 @@ defmodule Skuld.Effects.Port.RepoTest do
 
       result =
         Repo.insert(cs)
-        |> Port.with_handler(%{Repo.Contract => TestRepoPort})
+        |> Port.with_handler(%{Repo.Effectful => TestRepoPort})
         |> Comp.run!()
 
       assert {:ok, %TestUser{name: "Alice"}} = result
@@ -171,7 +171,7 @@ defmodule Skuld.Effects.Port.RepoTest do
 
       result =
         Repo.update(cs)
-        |> Port.with_handler(%{Repo.Contract => TestRepoPort})
+        |> Port.with_handler(%{Repo.Effectful => TestRepoPort})
         |> Comp.run!()
 
       assert {:ok, %TestUser{name: "new"}} = result
@@ -182,7 +182,7 @@ defmodule Skuld.Effects.Port.RepoTest do
 
       result =
         Repo.delete(record)
-        |> Port.with_handler(%{Repo.Contract => TestRepoPort})
+        |> Port.with_handler(%{Repo.Effectful => TestRepoPort})
         |> Comp.run!()
 
       assert {:ok, ^record} = result
@@ -191,7 +191,7 @@ defmodule Skuld.Effects.Port.RepoTest do
     test "get delegates to Repo" do
       result =
         Repo.get(TestUser, 42)
-        |> Port.with_handler(%{Repo.Contract => TestRepoPort})
+        |> Port.with_handler(%{Repo.Effectful => TestRepoPort})
         |> Comp.run!()
 
       assert %TestUser{id: 42, name: "found"} = result
@@ -200,7 +200,7 @@ defmodule Skuld.Effects.Port.RepoTest do
     test "all delegates to Repo" do
       result =
         Repo.all(TestUser)
-        |> Port.with_handler(%{Repo.Contract => TestRepoPort})
+        |> Port.with_handler(%{Repo.Effectful => TestRepoPort})
         |> Comp.run!()
 
       assert [%TestUser{id: 1}, %TestUser{id: 2}] = result
@@ -209,7 +209,7 @@ defmodule Skuld.Effects.Port.RepoTest do
     test "exists? delegates to Repo" do
       result =
         Repo.exists?(TestUser)
-        |> Port.with_handler(%{Repo.Contract => TestRepoPort})
+        |> Port.with_handler(%{Repo.Effectful => TestRepoPort})
         |> Comp.run!()
 
       assert result == true
@@ -218,7 +218,7 @@ defmodule Skuld.Effects.Port.RepoTest do
     test "aggregate delegates to Repo" do
       result =
         Repo.aggregate(TestUser, :count, :id)
-        |> Port.with_handler(%{Repo.Contract => TestRepoPort})
+        |> Port.with_handler(%{Repo.Effectful => TestRepoPort})
         |> Comp.run!()
 
       assert result == 42
@@ -227,7 +227,7 @@ defmodule Skuld.Effects.Port.RepoTest do
     test "update_all delegates to Repo" do
       result =
         Repo.update_all(TestUser, [set: [name: "bulk"]], [])
-        |> Port.with_handler(%{Repo.Contract => TestRepoPort})
+        |> Port.with_handler(%{Repo.Effectful => TestRepoPort})
         |> Comp.run!()
 
       assert {3, nil} = result
@@ -236,7 +236,7 @@ defmodule Skuld.Effects.Port.RepoTest do
     test "delete_all delegates to Repo" do
       result =
         Repo.delete_all(TestUser, [])
-        |> Port.with_handler(%{Repo.Contract => TestRepoPort})
+        |> Port.with_handler(%{Repo.Effectful => TestRepoPort})
         |> Comp.run!()
 
       assert {5, nil} = result
@@ -247,7 +247,7 @@ defmodule Skuld.Effects.Port.RepoTest do
 
       result =
         Repo.insert!(cs)
-        |> Port.with_handler(%{Repo.Contract => TestRepoPort})
+        |> Port.with_handler(%{Repo.Effectful => TestRepoPort})
         |> Throw.with_handler()
         |> Comp.run!()
 
@@ -266,7 +266,7 @@ defmodule Skuld.Effects.Port.RepoTest do
     extra_registry = Keyword.get(opts, :registry, %{})
     fallback_fn = Keyword.get(opts, :fallback_fn, nil)
     handler = Repo.Test.new(fallback_fn: fallback_fn)
-    registry = Map.put(extra_registry, Repo.Contract, handler)
+    registry = Map.put(extra_registry, Repo.Effectful, handler)
 
     output = Keyword.get(opts, :output)
 
@@ -294,7 +294,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Comp.run!()
 
       assert {:ok, %TestUser{name: "Alice"}} = user
-      assert [{Repo.Contract, :insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
+      assert [{Repo.Effectful, :insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
     end
 
     test "update applies changeset and logs operation" do
@@ -309,7 +309,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Comp.run!()
 
       assert {:ok, %TestUser{id: 1, name: "new"}} = result
-      assert [{Repo.Contract, :update, [^cs], {:ok, %TestUser{id: 1, name: "new"}}}] = log
+      assert [{Repo.Effectful, :update, [^cs], {:ok, %TestUser{id: 1, name: "new"}}}] = log
     end
 
     test "delete logs operation and returns the record" do
@@ -324,7 +324,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Comp.run!()
 
       assert {:ok, ^record} = result
-      assert [{Repo.Contract, :delete, [^record], {:ok, ^record}}] = log
+      assert [{Repo.Effectful, :delete, [^record], {:ok, ^record}}] = log
     end
 
     test "bang variant unwraps and logs" do
@@ -340,7 +340,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Comp.run!()
 
       assert %TestUser{name: "Alice"} = user
-      assert [{Repo.Contract, :insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
+      assert [{Repo.Effectful, :insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
     end
 
     test "multiple write operations accumulate in log order" do
@@ -358,8 +358,8 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Comp.run!()
 
       assert [
-               {Repo.Contract, :insert, _, {:ok, %TestUser{name: "Alice"}}},
-               {Repo.Contract, :insert, _, {:ok, %TestUser{name: "Bob"}}}
+               {Repo.Effectful, :insert, _, {:ok, %TestUser{name: "Alice"}}},
+               {Repo.Effectful, :insert, _, {:ok, %TestUser{name: "Bob"}}}
              ] = log
     end
 
@@ -387,7 +387,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_failed, Repo.Contract, :get, %ArgumentError{} = e}} =
+      assert %ThrowResult{error: {:port_failed, Repo.Effectful, :get, %ArgumentError{} = e}} =
                result
 
       assert e.message =~ "Repo.Test cannot service :get"
@@ -400,7 +400,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_failed, Repo.Contract, :all, %ArgumentError{} = e}} =
+      assert %ThrowResult{error: {:port_failed, Repo.Effectful, :all, %ArgumentError{} = e}} =
                result
 
       assert e.message =~ "Repo.Test cannot service :all"
@@ -413,7 +413,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_failed, Repo.Contract, :exists?, %ArgumentError{} = e}} =
+      assert %ThrowResult{error: {:port_failed, Repo.Effectful, :exists?, %ArgumentError{} = e}} =
                result
 
       assert e.message =~ "Repo.Test cannot service :exists?"
@@ -426,7 +426,9 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_failed, Repo.Contract, :update_all, %ArgumentError{} = e}} =
+      assert %ThrowResult{
+               error: {:port_failed, Repo.Effectful, :update_all, %ArgumentError{} = e}
+             } =
                result
 
       assert e.message =~ "Repo.Test cannot service :update_all"
@@ -439,7 +441,9 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_failed, Repo.Contract, :delete_all, %ArgumentError{} = e}} =
+      assert %ThrowResult{
+               error: {:port_failed, Repo.Effectful, :delete_all, %ArgumentError{} = e}
+             } =
                result
 
       assert e.message =~ "Repo.Test cannot service :delete_all"
@@ -494,7 +498,7 @@ defmodule Skuld.Effects.Port.RepoTest do
         |> Throw.with_handler()
         |> Comp.run()
 
-      assert %ThrowResult{error: {:port_failed, Repo.Contract, :get, %ArgumentError{} = e}} =
+      assert %ThrowResult{error: {:port_failed, Repo.Effectful, :get, %ArgumentError{} = e}} =
                result
 
       assert e.message =~ "Repo.Test cannot service :get"
@@ -504,13 +508,17 @@ defmodule Skuld.Effects.Port.RepoTest do
   describe "Port.Repo.Test: composition" do
     test "composes with other Port contracts" do
       defmodule OtherContract do
-        use Skuld.Effects.Port.Contract
+        use HexPort.Contract
 
         defport(do_thing(x :: term()) :: {:ok, term()} | {:error, term()})
       end
 
+      defmodule OtherEffectful do
+        use Skuld.Effects.Port.EffectfulContract, hex_port_contract: OtherContract
+      end
+
       defmodule OtherFacade do
-        use Skuld.Effects.Port.Facade, contract: OtherContract
+        use Skuld.Effects.Port.Facade, contract: OtherEffectful
       end
 
       defmodule OtherImpl do
@@ -529,7 +537,7 @@ defmodule Skuld.Effects.Port.RepoTest do
           thing
         end
         |> with_repo_test(
-          registry: %{OtherContract => OtherImpl},
+          registry: %{OtherEffectful => OtherImpl},
           output: fn r, state -> {r, state.log} end
         )
         |> Throw.with_handler()
@@ -538,8 +546,8 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert {:did, %TestUser{name: "Alice"}} = result
       # Both Repo and OtherContract operations appear in the log (Port-level logging)
       assert [
-               {Repo.Contract, :insert, _, {:ok, %TestUser{name: "Alice"}}},
-               {OtherContract, :do_thing, _, {:ok, {:did, %TestUser{name: "Alice"}}}}
+               {Repo.Effectful, :insert, _, {:ok, %TestUser{name: "Alice"}}},
+               {OtherEffectful, :do_thing, _, {:ok, {:did, %TestUser{name: "Alice"}}}}
              ] = log
     end
   end

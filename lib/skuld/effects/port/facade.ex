@@ -1,6 +1,6 @@
 defmodule Skuld.Effects.Port.Facade do
   @moduledoc """
-  Generates an effectful dispatch facade for a `Skuld.Effects.Port.Contract`.
+  Generates an effectful dispatch facade for a port contract.
 
   `use Skuld.Effects.Port.Facade` reads the contract's `__port_operations__/0`
   metadata and generates effectful caller functions (returning computations),
@@ -9,7 +9,7 @@ defmodule Skuld.Effects.Port.Facade do
   ## Usage
 
       defmodule MyApp.Todos.Contract do
-        use Skuld.Effects.Port.Contract
+        use HexPort.Contract
 
         defport get_todo(id :: String.t()) :: {:ok, Todo.t()} | {:error, term()}
         defport list_todos() :: [Todo.t()]
@@ -43,7 +43,7 @@ defmodule Skuld.Effects.Port.Facade do
   ## Options
 
     * `:contract` (required) — the contract module that defines port operations
-      via `use Skuld.Effects.Port.Contract` and `defport` declarations.
+      via `use HexPort.Contract` and `defport` declarations.
   """
 
   @doc false
@@ -74,7 +74,7 @@ defmodule Skuld.Effects.Port.Facade do
       raise CompileError,
         description:
           "#{inspect(contract)} does not define __port_operations__/0. " <>
-            "Did you `use Skuld.Effects.Port.Contract` and add `defport` declarations?",
+            "Did you `use HexPort.Contract` and add `defport` declarations?",
         file: env.file,
         line: 0
     end

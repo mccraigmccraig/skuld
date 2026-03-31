@@ -82,7 +82,7 @@ if Code.ensure_loaded?(Ecto) do
         end
     """
 
-    use Skuld.Effects.Port.Contract
+    use HexPort.Contract
 
     # -----------------------------------------------------------------
     # Write Operations

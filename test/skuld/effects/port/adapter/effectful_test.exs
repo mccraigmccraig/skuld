@@ -10,7 +10,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
   # ---------------------------------------------------------------
 
   defmodule TestContract do
-    use Skuld.Effects.Port.Contract
+    use HexPort.Contract
 
     defport(
       get_todo(tenant_id :: String.t(), id :: String.t()) ::
@@ -25,9 +25,13 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
     defport(health_check() :: :ok)
   end
 
+  defmodule TestEffectful do
+    use Skuld.Effects.Port.EffectfulContract, hex_port_contract: TestContract
+  end
+
   # Effectful implementation — returns computations (satisfies Effectful behaviour)
   defmodule EffectfulImpl do
-    @behaviour TestContract.Effectful
+    @behaviour TestEffectful
 
     def get_todo(tenant_id, id) do
       Comp.pure({:ok, %{tenant_id: tenant_id, id: id, source: :effectful}})
@@ -55,7 +59,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
   # ---------------------------------------------------------------
 
   defmodule StatefulImpl do
-    @behaviour TestContract.Effectful
+    @behaviour TestEffectful
 
     def get_todo(tenant_id, id) do
       Comp.bind(State.get(), fn count ->
@@ -90,7 +94,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
   # ---------------------------------------------------------------
 
   defmodule ThrowingImpl do
-    @behaviour TestContract.Effectful
+    @behaviour TestEffectful
 
     def get_todo(_tenant_id, "bad_id") do
       Throw.throw(:not_found)
@@ -214,7 +218,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
 
   describe "compile-time validation" do
     test "raises CompileError when contract module lacks __port_operations__" do
-      assert_raise CompileError, ~r/does not appear to be a Port.Contract module/, fn ->
+      assert_raise CompileError, ~r/does not appear to be a port contract module/, fn ->
         Code.compile_string("""
         defmodule NotAContract do
           def some_function, do: :ok
@@ -250,7 +254,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
   describe "integration: full round-trip with real effects" do
     # A more complex effectful implementation that uses multiple effects
     defmodule CountingImpl do
-      @behaviour TestContract.Effectful
+      @behaviour TestEffectful
 
       def get_todo(tenant_id, id) do
         Comp.bind(State.get(), fn calls ->
@@ -303,7 +307,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
   describe "integration: multi-effect stack" do
     # Effectful impl that uses both State and Throw
     defmodule MultiEffectImpl do
-      @behaviour TestContract.Effectful
+      @behaviour TestEffectful
 
       def get_todo(tenant_id, "fail") do
         Throw.throw({:not_found, tenant_id})
