@@ -920,20 +920,22 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
       """)
 
+      mod = Skuld.Test.Combined
+
       # Has effectful callbacks
-      callbacks = Skuld.Test.Combined.behaviour_info(:callbacks)
+      callbacks = apply(mod, :behaviour_info, [:callbacks])
       assert {:greet, 1} in callbacks
       assert {:ping, 0} in callbacks
 
       # Has __port_operations__
-      ops = Skuld.Test.Combined.__port_operations__()
+      ops = apply(mod, :__port_operations__, [])
       assert length(ops) == 2
 
       # Has __port_effectful__?
-      assert Skuld.Test.Combined.__port_effectful__?() == true
+      assert apply(mod, :__port_effectful__?, []) == true
 
       # Facade functions exist and return computations
-      comp = Skuld.Test.Combined.greet("Alice")
+      comp = apply(mod, :greet, ["Alice"])
       assert is_function(comp, 2)
     end
 
@@ -952,10 +954,11 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
       """)
 
-      handler = fn Skuld.Test.CombinedDispatch, :greet, ["Alice"] -> "Hello, Alice!" end
+      mod = Skuld.Test.CombinedDispatch
+      handler = fn ^mod, :greet, ["Alice"] -> "Hello, Alice!" end
 
       comp =
-        Skuld.Test.CombinedDispatch.greet("Alice")
+        apply(mod, :greet, ["Alice"])
         |> Port.with_fn_handler(handler)
 
       {result, _env} = Comp.run(comp)
