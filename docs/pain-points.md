@@ -26,10 +26,10 @@ code runs entirely in memory:
 ```elixir
 # The orchestration code - identical in production and tests
 defcomp process_order(order_params) do
-  user <- UserRepo.EffectPort.fetch_user!(order_params.user_id)
+  user <- UserRepo.fetch_user!(order_params.user_id)
   id <- Fresh.fresh_uuid()
-  price <- PricingService.EffectPort.calculate!(user, order_params.items)
-  _ <- OrderRepo.EffectPort.create_order!(%{id: id, user_id: user.id, total: price})
+  price <- PricingService.calculate!(user, order_params.items)
+  _ <- OrderRepo.create_order!(%{id: id, user_id: user.id, total: price})
   _ <- EventAccumulator.emit(%OrderPlaced{order_id: id, total: price})
   {:ok, id}
 end
@@ -267,18 +267,18 @@ end
 
 # Production adapter
 defmodule PaymentGateway.Stripe do
-  @behaviour PaymentGateway.Behaviour
+  @behaviour PaymentGateway.Contract
   def charge(amount, card), do: Stripe.API.create_charge(amount, card)
 end
 
 # Test adapter
 defmodule PaymentGateway.InMemory do
-  @behaviour PaymentGateway.Behaviour
+  @behaviour PaymentGateway.Contract
   def charge(amount, _card), do: {:ok, %Charge{amount: amount, id: "ch_test"}}
 end
 ```
 
-The domain code calls `PaymentGateway.EffectPort.charge!(amount, card)`
+The domain code calls `PaymentGateway.charge!(amount, card)`
 through the effect system. No function parameter threading, no
 application config lookups, no global state.
 

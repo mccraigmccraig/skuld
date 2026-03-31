@@ -30,8 +30,8 @@ defmodule Todos.Handlers do
 
   defcomp handle(%ToggleTodo{id: id}) do
     ctx <- Reader.ask(CommandContext)
-    todo <- Repository.EffectPort.get_todo!(ctx.tenant_id, id)
-    updated <- Repository.EffectPort.update_todo!(ctx.tenant_id, Todo.changeset(todo, %{completed: not todo.completed}))
+    todo <- Repository.get_todo!(ctx.tenant_id, id)
+    updated <- Repository.update_todo!(ctx.tenant_id, Todo.changeset(todo, %{completed: not todo.completed}))
     {:ok, updated}
   end
 end
@@ -53,7 +53,7 @@ defmodule Run do
   defp with_handlers(comp, :database, tenant_id) do
     comp
     |> Reader.with_handler(%CommandContext{tenant_id: tenant_id}, tag: CommandContext)
-    |> Port.with_handler(%{Repository => Repository.Ecto})
+    |> Port.with_handler(%{Repository.Contract => Repository.Ecto})
     |> Fresh.with_uuid7_handler()
     |> Throw.with_handler()
   end
@@ -61,7 +61,7 @@ defmodule Run do
   defp with_handlers(comp, :in_memory, tenant_id) do
     comp
     |> Reader.with_handler(%CommandContext{tenant_id: tenant_id}, tag: CommandContext)
-    |> Port.with_handler(%{Repository => Repository.InMemory})
+    |> Port.with_handler(%{Repository.Contract => Repository.InMemory})
     |> InMemoryPersist.with_handler()
     |> Fresh.with_test_handler()
     |> Throw.with_handler()
@@ -81,8 +81,8 @@ test "toggle marks incomplete todo as complete" do
     Todos.Handlers.handle(%ToggleTodo{id: "1"})
     |> Reader.with_handler(%CommandContext{tenant_id: "t1"}, tag: CommandContext)
     |> Port.with_test_handler(%{
-      Repository.EffectPort.key(:get_todo, "t1", "1") => {:ok, todo},
-      Repository.EffectPort.key(:update_todo, "t1", _) => {:ok, %Todo{todo | completed: true}}
+       Repository.key(:get_todo, "t1", "1") => {:ok, todo},
+       Repository.key(:update_todo, "t1", _) => {:ok, %Todo{todo | completed: true}}
     })
     |> Throw.with_handler()
     |> Comp.run!()
@@ -283,8 +283,8 @@ alias Skuld.Effects.Port.Repo
 # Writes and PK reads — no fallback needed:
 result =
   comp do
-    {:ok, user} <- Repo.EffectPort.insert(User.changeset(%{name: "Alice"}))
-    found <- Repo.EffectPort.get(User, user.id)
+    {:ok, user} <- Repo.insert(User.changeset(%{name: "Alice"}))
+    found <- Repo.get(User, user.id)
     {user, found}
   end
   |> Repo.InMemory.with_handler(Repo.InMemory.new())
@@ -307,7 +307,7 @@ state = Repo.InMemory.new(
 )
 
 result =
-  Repo.EffectPort.all(User)
+  Repo.all(User)
   |> Repo.InMemory.with_handler(state)
   |> Comp.run!()
 
@@ -319,9 +319,9 @@ Inspect the final store:
 ```elixir
 {result, store} =
   comp do
-    _ <- Repo.EffectPort.insert(User.changeset(%{name: "Alice"}))
-    _ <- Repo.EffectPort.insert(User.changeset(%{name: "Bob"}))
-    Repo.EffectPort.get(User, 1)
+    _ <- Repo.insert(User.changeset(%{name: "Alice"}))
+    _ <- Repo.insert(User.changeset(%{name: "Bob"}))
+    Repo.get(User, 1)
   end
   |> Repo.InMemory.with_handler(Repo.InMemory.new(),
     output: fn result, state -> {result, state.handler_state} end
@@ -358,8 +358,8 @@ Inspect the final store:
 
   ```elixir
   comp
-  |> Port.with_test_handler(%{Notifications.EffectPort.key(:send, msg) => :ok})
-  |> Port.with_handler(%{Repository => Repo.Test.new()})
+  |> Port.with_test_handler(%{Notifications.key(:send, msg) => :ok})
+  |> Port.with_handler(%{Repository.Contract => Repo.Test.new()})
   |> Throw.with_handler()
   |> Comp.run!()
   ```

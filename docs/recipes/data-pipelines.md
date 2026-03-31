@@ -59,7 +59,7 @@ comp do
 
   Brook.each(source, fn item ->
     comp do
-      _ <- RecordRepo.EffectPort.insert_record!(item)
+      _ <- RecordRepo.insert_record!(item)
       :ok
     end
   end)
@@ -106,7 +106,7 @@ comp do
   # Persist
   Brook.each(valid, fn order ->
     comp do
-      _ <- OrderRepo.EffectPort.insert_enriched_order!(order)
+      _ <- OrderRepo.insert_enriched_order!(order)
       :ok
     end
   end)
@@ -156,7 +156,7 @@ Use `Brook.run` when you need to consume items with a callback:
 ```elixir
 Brook.run(stream, fn item ->
   comp do
-      _ <- ItemRepo.EffectPort.insert_item!(item)
+      _ <- ItemRepo.insert_item!(item)
     :ok
   end
 end)
