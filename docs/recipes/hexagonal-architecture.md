@@ -27,12 +27,10 @@ code can be either **plain Elixir** (legacy/non-effectful) or **effectful**
 `use HexPort.Contract` generates `@callback` declarations and
 `__port_operations__/0` on the contract module.
 
-The effectful contract, facades, and implementations are defined
-separately by the consuming application:
+Facades are defined by the consuming application:
 
-- **Effectful contract**: `use Skuld.Effects.Port.EffectfulContract, hex_port_contract: MyContract`
-- **Plain facade**: `use HexPort.Facade, contract: MyContract, otp_app: :my_app`
-- **Effectful facade**: `use Skuld.Effects.Port.Facade, contract: MyEffectful`
+- **Plain facade**: `use HexPort.Facade, otp_app: :my_app` (can be combined with contract)
+- **Effectful facade**: `use Skuld.Effects.Port.Facade, hex_port_contract: MyContract` (combined effectful contract + facade)
 
 ## Defining a contract
 
@@ -48,21 +46,16 @@ defmodule MyApp.Orders.Contract do
             {:ok, Order.t()} | {:error, term()}
 end
 
-# Effectful contract — computation-returning @callbacks
-defmodule MyApp.Orders.Effectful do
-  use Skuld.Effects.Port.EffectfulContract,
-    hex_port_contract: MyApp.Orders.Contract
-end
-
-# Effectful facade — what domain code calls
+# Effectful facade — combined effectful contract + dispatch facade
 defmodule MyApp.Orders do
-  use Skuld.Effects.Port.Facade, contract: MyApp.Orders.Effectful
+  use Skuld.Effects.Port.Facade,
+    hex_port_contract: MyApp.Orders.Contract
 end
 ```
 
 This generates `@callback` declarations on `MyApp.Orders.Contract` (plain
-behaviour), effectful `@callback` declarations on `MyApp.Orders.Effectful`,
-and effectful caller functions on `MyApp.Orders`.
+behaviour), and effectful `@callback` declarations plus caller functions on
+`MyApp.Orders`.
 
 ## Incremental adoption walkthrough
 
@@ -161,7 +154,7 @@ the caller's context:
 ```elixir
 defmodule MyApp.OrderService.Effectful do
   use Skuld.Syntax
-  @behaviour MyApp.Orders.Effectful
+  @behaviour MyApp.Orders
 
   defcomp place_order(params) do
     reservation <- MyApp.Inventory.reserve_stock!(params.sku, params.qty)
@@ -185,7 +178,7 @@ defmodule MyApp.Orders.Adapter do
     impl: MyApp.OrderService.Effectful,
     stack: fn comp ->
       comp
-      |> Port.with_handler(%{MyApp.Inventory.Effectful => MyApp.InventoryService})
+      |> Port.with_handler(%{MyApp.Inventory => MyApp.InventoryService})
       |> Throw.with_handler()
     end
 end
@@ -233,8 +226,8 @@ workflow's effect context:
 ```elixir
 MyApp.OrderWorkflow.place_order(params)
 |> Port.with_handler(%{
-  MyApp.Orders.Effectful => MyApp.OrderService.Effectful,
-  MyApp.Inventory.Effectful => MyApp.InventoryService
+  MyApp.Orders => MyApp.OrderService.Effectful,
+  MyApp.Inventory => MyApp.InventoryService
 })
 |> EventAccumulator.with_handler(output: fn r, events -> {r, events} end)
 |> Throw.with_handler()
@@ -305,7 +298,7 @@ defmodule MyApp.Orders.Adapter do
     impl: MyApp.OrderService.Effectful,
     stack: fn comp ->
       comp
-      |> Port.with_handler(%{MyApp.Inventory.Effectful => MyApp.InventoryService})
+      |> Port.with_handler(%{MyApp.Inventory => MyApp.InventoryService})
       |> Throw.with_handler()
     end
 end
@@ -328,7 +321,7 @@ continuation.
 order <- MyApp.Orders.place_order!(params)
 
 # Wiring
-|> Port.with_handler(%{MyApp.Orders.Effectful => MyApp.OrderService})
+|> Port.with_handler(%{MyApp.Orders => MyApp.OrderService})
 ```
 
 Use this when effectful domain logic calls out to plain infrastructure
@@ -344,7 +337,7 @@ the implementation's computation into the caller's effect context.
 order <- MyApp.Orders.place_order!(params)
 
 # Wiring — implementation's effects handled by this stack
-|> Port.with_handler(%{MyApp.Orders.Effectful => MyApp.OrderService.Effectful})
+|> Port.with_handler(%{MyApp.Orders => MyApp.OrderService.Effectful})
 |> Throw.with_handler()
 ```
 
@@ -369,8 +362,8 @@ comp
 # Test with function-based handler (pattern matching)
 comp
 |> Port.with_fn_handler(fn
-  MyApp.Orders.Effectful, :place_order, [params] -> {:ok, %Order{}}
-  MyApp.Inventory.Effectful, :reserve_stock, [_sku, _qty] -> {:ok, %Reservation{}}
+  MyApp.Orders, :place_order, [params] -> {:ok, %Order{}}
+  MyApp.Inventory, :reserve_stock, [_sku, _qty] -> {:ok, %Reservation{}}
 end)
 |> Throw.with_handler()
 |> Comp.run!()
@@ -381,7 +374,7 @@ comp
   MyApp.Inventory.key(:reserve_stock, sku, qty) => {:ok, %Reservation{}}
   # Note: key helpers are on the facade module (MyApp.Inventory)
 })
-|> Port.with_handler(%{MyApp.Orders.Effectful => MyApp.OrderService.Effectful})
+|> Port.with_handler(%{MyApp.Orders => MyApp.OrderService.Effectful})
 |> Throw.with_handler()
 |> Comp.run!()
 
@@ -490,8 +483,8 @@ full effect system to benefit from Port contracts and test isolation.
 - Keep contract implementations thin — just infrastructure calls
 - The in-memory implementation is your test double — no mocks needed
 - Start with a `HexPort.Facade` module to impose boundaries, convert later
-- Modules with `__port_effectful__?/0` (from `use EffectfulContract`)
-  auto-detect as effectful resolvers — no `{:effectful, mod}` wrapper needed
+- Effectful facades (from `use Skuld.Effects.Port.Facade`) have
+  `__port_effectful__?/0` and auto-detect as effectful resolvers
 - Use `Adapter.Effectful` when you want encapsulated effect execution
 - Include `Throw.with_handler/1` in any stack where computations can
   throw — without it, `Comp.run!/1` raises `ThrowError`

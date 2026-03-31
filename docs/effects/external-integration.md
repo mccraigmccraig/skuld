@@ -62,7 +62,7 @@ The dispatch map keys are modules and values are resolvers:
 - `:direct` - `apply(mod, name, args)` (call directly on the keyed module)
 - `module` - `apply(module, name, args)` (dispatch to an implementation
   module). Modules where `__port_effectful__?/0` returns truthy (e.g. via
-  `use Skuld.Effects.Port.EffectfulContract`) are auto-detected as effectful resolvers
+  `use Skuld.Effects.Port.Facade`) are auto-detected as effectful resolvers
   whose return values are computations inlined into the caller's effect
   context. Returning `false` opts out of auto-detection.
 - `{:effectful, module}` - explicit effectful resolver (same as above,
@@ -217,8 +217,7 @@ end
 `use HexPort.Contract` generates `@callback` declarations and
 `__port_operations__/0` on the contract module.
 
-The effectful contract, facades, and implementations are all defined
-explicitly by the consuming application:
+Facades are defined by the consuming application:
 
 ```elixir
 # Plain contract
@@ -227,34 +226,29 @@ defmodule MyApp.Repository.Contract do
   defport get_todo(tenant_id :: String.t(), id :: String.t()) :: ...
 end
 
-# Effectful contract
-defmodule MyApp.Repository.Effectful do
-  use Skuld.Effects.Port.EffectfulContract,
-    hex_port_contract: MyApp.Repository.Contract
-end
-
-# Effectful facade
+# Combined effectful contract + facade
 defmodule MyApp.Repository do
-  use Skuld.Effects.Port.Facade, contract: MyApp.Repository.Effectful
+  use Skuld.Effects.Port.Facade,
+    hex_port_contract: MyApp.Repository.Contract
 end
 ```
 
 ### Plain and Effectful behaviours
 
-The plain contract and effectful contract are separate, explicit modules:
+The plain contract and effectful facade are separate modules:
 
 - **`MyApp.Repository.Contract`** — plain Elixir callbacks. Use for
   non-effectful implementations called via `Port.with_handler/2`.
-- **`MyApp.Repository.Effectful`** — computation-returning callbacks.
-  Use for effectful implementations.
+- **`MyApp.Repository`** — effectful callbacks and dispatch facade.
+  Use for effectful implementations and effectful callers.
 
 ```elixir
 # Plain behaviour (on the contract module)
 MyApp.Repository.Contract
 @callback get_todo(String.t(), String.t()) :: {:ok, Todo.t()} | {:error, term()}
 
-# Effectful behaviour (separate explicit module)
-MyApp.Repository.Effectful
+# Effectful behaviour (on the facade module)
+MyApp.Repository
 @callback get_todo(String.t(), String.t()) :: computation({:ok, Todo.t()} | {:error, term()})
 ```
 
@@ -324,12 +318,12 @@ end
 ```elixir
 # Production: dispatch to Ecto implementation
 my_comp
-|> Port.with_handler(%{MyApp.Repository.Effectful => MyApp.Repository.Ecto})
+|> Port.with_handler(%{MyApp.Repository => MyApp.Repository.Ecto})
 |> Comp.run!()
 
 # Test: dispatch to in-memory implementation
 my_comp
-|> Port.with_handler(%{MyApp.Repository.Effectful => MyApp.Repository.InMemory})
+|> Port.with_handler(%{MyApp.Repository => MyApp.Repository.InMemory})
 |> Comp.run!()
 
 # Test: stub specific calls with generated key helpers
@@ -373,16 +367,16 @@ defmodule MyApp.UserService.Contract do
   defport list_users(opts :: map()) :: {:ok, [User.t()]} | {:error, term()}
 end
 
-# 2. Effectful contract
-defmodule MyApp.UserService.Effectful do
-  use Skuld.Effects.Port.EffectfulContract,
+# 2. Combined effectful contract + facade
+defmodule MyApp.UserService do
+  use Skuld.Effects.Port.Facade,
     hex_port_contract: MyApp.UserService.Contract
 end
 
-# 3. Effectful implementation satisfies Effectful behaviour
+# 3. Effectful implementation satisfies the effectful facade's behaviour
 defmodule MyApp.UserService.EffectfulImpl do
   use Skuld.Syntax
-  @behaviour MyApp.UserService.Effectful
+  @behaviour MyApp.UserService
 
   defcomp find_user(id) do
     UserQueries.get_user(id)

@@ -119,8 +119,8 @@ wrapped in `Comp.pure/1`. The final expression, bare `if` without
 |--------|--------|---------------|---------|---------------|
 | **Port** | `Skuld.Effects.Port` | `request/3` `request!/3` | `with_handler(comp, registry, opts)` registry: `%{mod => resolver}` | `with_test_handler(comp, responses)` or `with_fn_handler(comp, fn)` |
 | **HexPort.Contract** | `HexPort.Contract` | `defport name(p :: t) :: t` | Uses Port handler | Stub via Port test handlers |
-| **Port.EffectfulContract** | `Skuld.Effects.Port.EffectfulContract` | `use EffectfulContract, hex_port_contract: M` | Effectful `@callback`s | Same as plain |
-| **Port.Facade** | `Skuld.Effects.Port.Facade` | `use Facade, contract: M` | Effectful callers, bangs, keys | Same as plain |
+| **Port.Facade** | `Skuld.Effects.Port.Facade` | `use Facade, hex_port_contract: M` | Combined effectful contract + facade (callers, bangs, keys) | Same as plain |
+| **Port.EffectfulContract** | `Skuld.Effects.Port.EffectfulContract` | `use EffectfulContract, hex_port_contract: M` | Effectful `@callback`s (when separate from facade) | Same as plain |
 | **Port.Adapter.Effectful** | `Skuld.Effects.Port.Adapter.Effectful` | `use Port.Adapter.Effectful, contract: M, impl: I, stack: &f/1` | Bridges effectful to plain Elixir | Test the effectful impl directly |
 
 ### Advanced effects
