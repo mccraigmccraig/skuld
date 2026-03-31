@@ -965,4 +965,67 @@ defmodule Skuld.Effects.Port.ContractTest do
       assert "Hello, Alice!" = result
     end
   end
+
+  # ---------------------------------------------------------------
+  # Single-use shorthand: hex_port_contract: on Facade
+  # ---------------------------------------------------------------
+
+  describe "Facade with hex_port_contract: shorthand" do
+    test "compiles and works correctly" do
+      Code.compile_string("""
+      defmodule Skuld.Test.ShorthandContract do
+        use HexPort.Contract
+        defport greet(name :: String.t()) :: String.t()
+        defport ping() :: :pong
+      end
+
+      defmodule Skuld.Test.Shorthand do
+        use Skuld.Effects.Port.Facade,
+          hex_port_contract: Skuld.Test.ShorthandContract
+      end
+      """)
+
+      mod = Skuld.Test.Shorthand
+
+      # Has effectful callbacks
+      callbacks = apply(mod, :behaviour_info, [:callbacks])
+      assert {:greet, 1} in callbacks
+      assert {:ping, 0} in callbacks
+
+      # Has __port_operations__
+      ops = apply(mod, :__port_operations__, [])
+      assert length(ops) == 2
+
+      # Has __port_effectful__?
+      assert apply(mod, :__port_effectful__?, []) == true
+
+      # Facade functions exist and return computations
+      comp = apply(mod, :greet, ["Alice"])
+      assert is_function(comp, 2)
+    end
+
+    test "dispatches correctly via Port handler" do
+      Code.compile_string("""
+      defmodule Skuld.Test.ShorthandDispatchContract do
+        use HexPort.Contract
+        defport greet(name :: String.t()) :: String.t()
+      end
+
+      defmodule Skuld.Test.ShorthandDispatch do
+        use Skuld.Effects.Port.Facade,
+          hex_port_contract: Skuld.Test.ShorthandDispatchContract
+      end
+      """)
+
+      mod = Skuld.Test.ShorthandDispatch
+      handler = fn ^mod, :greet, ["Alice"] -> "Hello, Alice!" end
+
+      comp =
+        apply(mod, :greet, ["Alice"])
+        |> Port.with_fn_handler(handler)
+
+      {result, _env} = Comp.run(comp)
+      assert "Hello, Alice!" = result
+    end
+  end
 end

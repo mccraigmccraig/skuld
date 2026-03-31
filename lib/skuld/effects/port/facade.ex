@@ -6,7 +6,11 @@ defmodule Skuld.Effects.Port.Facade do
   metadata and generates effectful caller functions (returning computations),
   bang variants (unwrap or throw), and key helpers for test stub matching.
 
-  ## Usage
+  ## Combined effectful contract + facade (simplest)
+
+  When `:hex_port_contract` is given (and `:contract` is omitted), the
+  effectful contract is set up implicitly and the facade is generated on
+  the same module:
 
       defmodule MyApp.Todos.Contract do
         use HexPort.Contract
@@ -16,19 +20,25 @@ defmodule Skuld.Effects.Port.Facade do
       end
 
       defmodule MyApp.Todos do
-        use Skuld.Effects.Port.Facade, contract: MyApp.Todos.Contract
+        use Skuld.Effects.Port.Facade,
+          hex_port_contract: MyApp.Todos.Contract
       end
 
-  This generates effectful caller functions on `MyApp.Todos`:
+  `MyApp.Todos` is both the effectful contract (has effectful `@callback`s,
+  `__port_operations__/0`, `__port_effectful__?/0`) and the dispatch facade.
 
-      # Returns computation({:ok, Todo.t()} | {:error, term()})
-      MyApp.Todos.get_todo("42")
+  ## Separate effectful contract and facade
 
-      # Bang: unwraps {:ok, v} or dispatches Throw on {:error, r}
-      MyApp.Todos.get_todo!("42")
+  For cases where you want them in different modules:
 
-      # Key helper for test stubs
-      MyApp.Todos.key(:get_todo, "42")
+      defmodule MyApp.Todos.Effectful do
+        use Skuld.Effects.Port.EffectfulContract,
+          hex_port_contract: MyApp.Todos.Contract
+      end
+
+      defmodule MyApp.Todos do
+        use Skuld.Effects.Port.Facade, contract: MyApp.Todos.Effectful
+      end
 
   ## Handler Installation
 
@@ -36,32 +46,75 @@ defmodule Skuld.Effects.Port.Facade do
         todo <- MyApp.Todos.get_todo!("42")
         todo
       end
-      |> Port.with_handler(%{MyApp.Todos.Contract => MyApp.Todos.Ecto})
+      |> Port.with_handler(%{MyApp.Todos => MyApp.Todos.Ecto})
       |> Throw.with_handler()
       |> Comp.run!()
 
   ## Options
 
-    * `:contract` (required) — the contract module that defines port operations
-      via `use HexPort.Contract` and `defport` declarations.
+    * `:contract` — the effectful contract module. Defaults to `__MODULE__`.
+    * `:hex_port_contract` — the HexPort contract module. When given (and
+      `:contract` is not), implicitly issues
+      `use Skuld.Effects.Port.EffectfulContract` and sets `:contract` to
+      `__MODULE__`. Cannot be combined with `:contract`.
   """
 
   @doc false
   defmacro __using__(opts) do
-    contract = Keyword.fetch!(opts, :contract) |> Macro.expand(__CALLER__)
+    has_contract? = Keyword.has_key?(opts, :contract)
+    has_hex_port? = Keyword.has_key?(opts, :hex_port_contract)
+
+    contract =
+      case Keyword.get(opts, :contract) do
+        nil -> __CALLER__.module
+        c -> Macro.expand(c, __CALLER__)
+      end
+
+    hex_port_contract =
+      case Keyword.get(opts, :hex_port_contract) do
+        nil -> nil
+        c -> Macro.expand(c, __CALLER__)
+      end
+
     self_ref? = contract == __CALLER__.module
 
-    if self_ref? do
-      quote do
-        @skuld_port_contract unquote(contract)
-        @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
-      end
-    else
-      quote do
-        require unquote(contract)
-        @skuld_port_contract unquote(contract)
-        @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
-      end
+    # Validate: hex_port_contract: is only allowed when contract: is not given
+    if has_hex_port? and has_contract? do
+      raise CompileError,
+        description:
+          "Cannot specify both :contract and :hex_port_contract. " <>
+            "Use :hex_port_contract for combined effectful contract + facade, " <>
+            "or :contract for a separate effectful contract.",
+        file: __CALLER__.file,
+        line: __CALLER__.line
+    end
+
+    cond do
+      # Combined: hex_port_contract given, no contract — implicitly issue
+      # use EffectfulContract and set contract to __MODULE__
+      has_hex_port? ->
+        quote do
+          use Skuld.Effects.Port.EffectfulContract,
+            hex_port_contract: unquote(hex_port_contract)
+
+          @skuld_port_contract unquote(contract)
+          @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
+        end
+
+      # Self-referencing (contract: __MODULE__ or omitted, no hex_port_contract)
+      self_ref? ->
+        quote do
+          @skuld_port_contract unquote(contract)
+          @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
+        end
+
+      # Separate module
+      true ->
+        quote do
+          require unquote(contract)
+          @skuld_port_contract unquote(contract)
+          @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
+        end
     end
   end
 
