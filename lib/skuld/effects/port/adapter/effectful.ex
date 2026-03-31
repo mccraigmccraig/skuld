@@ -52,7 +52,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
   2. Pipes through the stack function to install effect handlers
   3. Runs the computation with `Comp.run!/1`
 
-  The generated module declares `@behaviour ContractModule.Behaviour`, ensuring
+  The generated module declares `@behaviour ContractModule`, ensuring
   compile-time verification that all required callbacks are implemented.
 
   ## Hexagonal Architecture
@@ -154,7 +154,6 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
         line: 0
     end
 
-    plain_behaviour = Module.concat(contract, Behaviour)
     operations = contract.__port_operations__()
 
     functions =
@@ -172,7 +171,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
       end)
 
     quote do
-      @behaviour unquote(plain_behaviour)
+      @behaviour unquote(contract)
       unquote_splicing(functions)
     end
   end

@@ -122,7 +122,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
 
   describe "generated module satisfies Behaviour" do
     test "adapter implements all Behaviour callbacks" do
-      callbacks = TestContract.Behaviour.behaviour_info(:callbacks)
+      callbacks = TestContract.behaviour_info(:callbacks)
 
       for {name, arity} <- callbacks do
         assert function_exported?(TestAdapter, name, arity),
@@ -131,7 +131,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
     end
 
     test "adapter for stateful impl implements all Behaviour callbacks" do
-      callbacks = TestContract.Behaviour.behaviour_info(:callbacks)
+      callbacks = TestContract.behaviour_info(:callbacks)
 
       for {name, arity} <- callbacks do
         assert function_exported?(StatefulAdapter, name, arity)
