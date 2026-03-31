@@ -19,25 +19,34 @@ code can be either **plain Elixir** (legacy/non-effectful) or **effectful**
 
 | # | Caller       | Implementation | Mechanism                                          |
 |---|--------------|----------------|----------------------------------------------------|
-| 1 | Plain Elixir | Plain Elixir   | App-defined facade via `use HexPort.Facade`        |
+| 1 | Plain Elixir | Plain Elixir   | `HexPort.Facade` — config-dispatched plain calls   |
 | 2 | Plain Elixir | Effectful      | `Port.Adapter.Effectful`                           |
 | 3 | Effectful    | Plain Elixir   | `Port.with_handler` + `:direct` resolver           |
 | 4 | Effectful    | Effectful      | `Port.with_handler` + effectful module (auto-detected) |
 
-`use HexPort.Contract` generates `@callback` declarations and
-`__port_operations__/0` on the contract module.
+A contract module defines `@callback` declarations and
+`__port_operations__/0`. The simplest way to set up a port is to combine
+the contract and facade in a single module:
 
-Facades are defined by the consuming application:
+- **Plain facade**: `use HexPort.Facade, otp_app: :my_app` — when
+  `contract:` is omitted, the module is both contract and facade. Add
+  `defport` declarations to define the interface.
+- **Effectful facade**: `use Skuld.Effects.Port.Facade, hex_port_contract: MyApp.Orders` —
+  when `contract:` is omitted, the module is both effectful contract and
+  facade. The effectful callbacks and caller functions are derived from
+  the plain contract automatically.
 
-- **Plain facade**: `use HexPort.Facade, otp_app: :my_app` (can be combined with contract)
-- **Effectful facade**: `use Skuld.Effects.Port.Facade, hex_port_contract: MyContract` (combined effectful contract + facade)
+If you need the contract separate from the facade (e.g. a shared library
+contract with app-specific facades), pass `contract: MyContract` explicitly.
 
 ## Defining a contract
 
+The simplest pattern combines the contract and facade in one module:
+
 ```elixir
-# Plain contract — defines the port operations and @callbacks
-defmodule MyApp.Orders.Contract do
-  use HexPort.Contract
+# Plain contract + facade — defines the port interface and dispatch functions
+defmodule MyApp.Orders do
+  use HexPort.Facade, otp_app: :my_app
 
   defport place_order(params :: map()) ::
             {:ok, Order.t()} | {:error, term()}
@@ -46,16 +55,26 @@ defmodule MyApp.Orders.Contract do
             {:ok, Order.t()} | {:error, term()}
 end
 
-# Effectful facade — combined effectful contract + dispatch facade
-defmodule MyApp.Orders do
+# Effectful contract + facade — derives effectful callbacks and caller functions
+defmodule MyApp.Effectful.Orders do
   use Skuld.Effects.Port.Facade,
-    hex_port_contract: MyApp.Orders.Contract
+    hex_port_contract: MyApp.Orders
 end
 ```
 
-This generates `@callback` declarations on `MyApp.Orders.Contract` (plain
-behaviour), and effectful `@callback` declarations plus caller functions on
-`MyApp.Orders`.
+`MyApp.Orders` defines `@callback` declarations (the plain behaviour),
+generates config-dispatched functions like `MyApp.Orders.place_order/1`,
+and provides `key/2` helpers for test stubs.
+
+`MyApp.Effectful.Orders` derives effectful `@callback` declarations from
+the plain contract and generates effectful caller functions like
+`MyApp.Effectful.Orders.place_order/1` (returning computations) and
+`MyApp.Effectful.Orders.place_order!/1` (bang variants that dispatch
+`Throw` on error).
+
+Both facades alias cleanly — callers use `Orders.place_order(params)` or
+`Orders.place_order!(params)` regardless of which facade they import,
+making code read the same whether plain or effectful.
 
 ## Incremental adoption walkthrough
 
@@ -71,11 +90,12 @@ boundaries and then convert to Skuld — without a big-bang rewrite.
 
 ### Step 1: Define contracts
 
-Define port contracts for the boundaries you want to impose:
+Define port contracts for the boundaries you want to impose. Since we'll
+also want plain dispatch, combine the contract and facade in one module:
 
 ```elixir
 defmodule MyApp.Orders do
-  use HexPort.Contract
+  use HexPort.Facade, otp_app: :my_app
 
   defport place_order(params :: map()) ::
             {:ok, Order.t()} | {:error, term()}
@@ -85,7 +105,7 @@ defmodule MyApp.Orders do
 end
 
 defmodule MyApp.Inventory do
-  use HexPort.Contract
+  use HexPort.Facade, otp_app: :my_app
 
   defport reserve_stock(sku :: String.t(), qty :: integer()) ::
             {:ok, Reservation.t()} | {:error, term()}
@@ -95,31 +115,21 @@ defmodule MyApp.Inventory do
 end
 ```
 
-### Step 2: Wire plain→plain with `HexPort.Facade`
+### Step 2: Wire plain→plain
 
 The existing implementations already have the right function signatures.
-Declare that they satisfy the contract behaviour and define facade
-modules for plain dispatch:
+Declare that they satisfy the contract behaviour:
 
 ```elixir
 # Existing implementations — add @behaviour
 defmodule MyApp.OrderService do
-  @behaviour MyApp.Orders.Contract
+  @behaviour MyApp.Orders
   # ... existing code unchanged ...
 end
 
 defmodule MyApp.InventoryService do
-  @behaviour MyApp.Inventory.Contract
+  @behaviour MyApp.Inventory
   # ... existing code unchanged ...
-end
-
-# Define Port modules for plain dispatch (in separate files)
-defmodule MyApp.Orders.Plain do
-  use HexPort.Facade, contract: MyApp.Orders.Contract, otp_app: :my_app
-end
-
-defmodule MyApp.Inventory.Plain do
-  use HexPort.Facade, contract: MyApp.Inventory.Contract, otp_app: :my_app
 end
 ```
 
@@ -131,33 +141,44 @@ config :my_app, MyApp.Orders, impl: MyApp.OrderService
 config :my_app, MyApp.Inventory, impl: MyApp.InventoryService
 ```
 
-Now update callers to go through the Port modules:
+Now update callers to go through the facade modules:
 
 ```
-OrderController → MyApp.Orders.Port → OrderService
-                                           ↓
-                              MyApp.Inventory.Port → InventoryService
+OrderController → MyApp.Orders → OrderService
+                                     ↓
+                        MyApp.Inventory → InventoryService
 ```
 
 Nothing uses Skuld's effect system yet. The contracts impose compile-time
-interface verification via `@behaviour`, and the Port modules dispatch
+interface verification via `@behaviour`, and the facade modules dispatch
 to the configured implementation at runtime. You can swap implementations
 (e.g. Mox mocks for tests) via application config or HexPort's test
 handler API.
 
 ### Step 3: Convert a provider to effectful
 
-Now convert `OrderService` to an effectful implementation. It calls
-`Inventory` through a Port effect, and its own effects participate in
-the caller's context:
+Now convert `OrderService` to an effectful implementation. First, define
+the effectful facade for the contracts it will call through:
+
+```elixir
+defmodule MyApp.Effectful.Inventory do
+  use Skuld.Effects.Port.Facade,
+    hex_port_contract: MyApp.Inventory
+end
+```
+
+Then write the effectful implementation. It calls `Inventory` through the
+effectful facade, and its own effects participate in the caller's context:
 
 ```elixir
 defmodule MyApp.OrderService.Effectful do
   use Skuld.Syntax
-  @behaviour MyApp.Orders
+  alias MyApp.Effectful.Inventory
+
+  @behaviour MyApp.Effectful.Orders
 
   defcomp place_order(params) do
-    reservation <- MyApp.Inventory.reserve_stock!(params.sku, params.qty)
+    reservation <- Inventory.reserve_stock!(params.sku, params.qty)
     order = %Order{sku: params.sku, qty: params.qty, reservation: reservation}
     {:ok, order}
   end
@@ -174,11 +195,11 @@ The `OrderController` is still plain Elixir, so it needs an
 ```elixir
 defmodule MyApp.Orders.Adapter do
   use Skuld.Effects.Port.Adapter.Effectful,
-    contract: MyApp.Orders.Contract,
+    contract: MyApp.Orders,
     impl: MyApp.OrderService.Effectful,
     stack: fn comp ->
       comp
-      |> Port.with_handler(%{MyApp.Inventory => MyApp.InventoryService})
+      |> Port.with_handler(%{MyApp.Effectful.Inventory => MyApp.InventoryService})
       |> Throw.with_handler()
     end
 end
@@ -190,7 +211,7 @@ The call chain is now:
 OrderController → MyApp.Orders.Adapter [Effectful]
                        ↓ Comp.run!()
                   OrderService.Effectful
-                       ↓ Port effect (via Inventory (facade))
+                       ↓ Port effect (via Effectful.Inventory)
                   Port.with_handler(:direct)
                        ↓
                   InventoryService (plain)
@@ -198,21 +219,31 @@ OrderController → MyApp.Orders.Adapter [Effectful]
 
 The controller still calls `MyApp.Orders.Adapter.place_order(params)`
 and gets a plain `{:ok, order}` back — it doesn't know Skuld is
-involved. The effectful order service calls `Inventory` through a Port
-effect (via `Inventory (facade)`), which the adapter's stack resolves
-to the plain `InventoryService`.
+involved. The effectful order service calls `Inventory` through the
+effectful facade, which the adapter's stack resolves to the plain
+`InventoryService`.
 
 ### Step 4: Convert the caller to effectful
 
 Now convert `OrderController` to effectful code (e.g. a LiveView or
-an effectful orchestrator):
+an effectful orchestrator). Define the effectful facade for `Orders`:
+
+```elixir
+defmodule MyApp.Effectful.Orders do
+  use Skuld.Effects.Port.Facade,
+    hex_port_contract: MyApp.Orders
+end
+```
+
+Then write the effectful caller:
 
 ```elixir
 defmodule MyApp.OrderWorkflow do
   use Skuld.Syntax
+  alias MyApp.Effectful.Orders
 
   defcomp place_order(params) do
-    order <- MyApp.Orders.place_order!(params)
+    order <- Orders.place_order!(params)
     _ <- EventAccumulator.emit(%OrderPlaced{order_id: order.id})
     {:ok, order}
   end
@@ -226,8 +257,8 @@ workflow's effect context:
 ```elixir
 MyApp.OrderWorkflow.place_order(params)
 |> Port.with_handler(%{
-  MyApp.Orders => MyApp.OrderService.Effectful,
-  MyApp.Inventory => MyApp.InventoryService
+  MyApp.Effectful.Orders => MyApp.OrderService.Effectful,
+  MyApp.Effectful.Inventory => MyApp.InventoryService
 })
 |> EventAccumulator.with_handler(output: fn r, events -> {r, events} end)
 |> Throw.with_handler()
@@ -263,23 +294,26 @@ without forcing effectful machinery where it adds no value.
 
 ## The four scenarios in detail
 
-### Scenario 1: Plain → Plain (`MyContract.Port`)
+### Scenario 1: Plain → Plain (`HexPort.Facade`)
 
-Both caller and implementation are plain Elixir. The app-defined `Port`
-module (via `use HexPort.Facade`) dispatches to a config-resolved
-implementation through the contract boundary.
+Both caller and implementation are plain Elixir. The facade module
+dispatches to a config-resolved implementation through the contract
+boundary.
 
 ```elixir
-# Define your Port module
-defmodule MyApp.Orders.Plain do
-  use HexPort.Facade, contract: MyApp.Orders.Contract, otp_app: :my_app
+# Combined contract + facade
+defmodule MyApp.Orders do
+  use HexPort.Facade, otp_app: :my_app
+
+  defport place_order(params :: map()) ::
+            {:ok, Order.t()} | {:error, term()}
 end
 
 # config/config.exs
 config :my_app, MyApp.Orders, impl: MyApp.OrderService
 
 # Usage — plain call, plain result
-MyApp.Orders.Plain.place_order(params)
+MyApp.Orders.place_order(params)
 ```
 
 Use this when imposing a port boundary without introducing Skuld's
@@ -294,11 +328,11 @@ wraps the implementation with a handler stack and `Comp.run!()`.
 ```elixir
 defmodule MyApp.Orders.Adapter do
   use Skuld.Effects.Port.Adapter.Effectful,
-    contract: MyApp.Orders.Contract,
+    contract: MyApp.Orders,
     impl: MyApp.OrderService.Effectful,
     stack: fn comp ->
       comp
-      |> Port.with_handler(%{MyApp.Inventory => MyApp.InventoryService})
+      |> Port.with_handler(%{MyApp.Effectful.Inventory => MyApp.InventoryService})
       |> Throw.with_handler()
     end
 end
@@ -317,11 +351,12 @@ handler calls the plain implementation and passes the result to the
 continuation.
 
 ```elixir
-# In effectful code (via facade)
-order <- MyApp.Orders.place_order!(params)
+# In effectful code (via effectful facade)
+alias MyApp.Effectful.Orders
+order <- Orders.place_order!(params)
 
 # Wiring
-|> Port.with_handler(%{MyApp.Orders => MyApp.OrderService})
+|> Port.with_handler(%{MyApp.Effectful.Orders => MyApp.OrderService})
 ```
 
 Use this when effectful domain logic calls out to plain infrastructure
@@ -333,11 +368,12 @@ Both caller and implementation are effectful. The Port handler inlines
 the implementation's computation into the caller's effect context.
 
 ```elixir
-# In effectful code (via facade)
-order <- MyApp.Orders.place_order!(params)
+# In effectful code (via effectful facade)
+alias MyApp.Effectful.Orders
+order <- Orders.place_order!(params)
 
 # Wiring — implementation's effects handled by this stack
-|> Port.with_handler(%{MyApp.Orders => MyApp.OrderService.Effectful})
+|> Port.with_handler(%{MyApp.Effectful.Orders => MyApp.OrderService.Effectful})
 |> Throw.with_handler()
 ```
 
@@ -354,7 +390,7 @@ Each scenario has a natural testing approach:
 # Test with map-based stubs (any scenario)
 comp
 |> Port.with_test_handler(%{
-  MyApp.Orders.key(:place_order, params) => {:ok, %Order{}}
+  MyApp.Effectful.Orders.key(:place_order, params) => {:ok, %Order{}}
 })
 |> Throw.with_handler()
 |> Comp.run!()
@@ -362,8 +398,8 @@ comp
 # Test with function-based handler (pattern matching)
 comp
 |> Port.with_fn_handler(fn
-  MyApp.Orders, :place_order, [params] -> {:ok, %Order{}}
-  MyApp.Inventory, :reserve_stock, [_sku, _qty] -> {:ok, %Reservation{}}
+  MyApp.Effectful.Orders, :place_order, [params] -> {:ok, %Order{}}
+  MyApp.Effectful.Inventory, :reserve_stock, [_sku, _qty] -> {:ok, %Reservation{}}
 end)
 |> Throw.with_handler()
 |> Comp.run!()
@@ -371,15 +407,14 @@ end)
 # Mixed modes — runtime handler for one contract, test stubs for another
 comp
 |> Port.with_test_handler(%{
-  MyApp.Inventory.key(:reserve_stock, sku, qty) => {:ok, %Reservation{}}
-  # Note: key helpers are on the facade module (MyApp.Inventory)
+  MyApp.Effectful.Inventory.key(:reserve_stock, sku, qty) => {:ok, %Reservation{}}
 })
-|> Port.with_handler(%{MyApp.Orders => MyApp.OrderService.Effectful})
+|> Port.with_handler(%{MyApp.Effectful.Orders => MyApp.OrderService.Effectful})
 |> Throw.with_handler()
 |> Comp.run!()
 
 # Test plain dispatch — plain Elixir, no effect machinery
-assert {:ok, %Order{}} = MyApp.Orders.Plain.place_order(params)
+assert {:ok, %Order{}} = MyApp.Orders.place_order(params)
 
 # Test Adapter.Effectful — also plain Elixir (adapter runs effects internally)
 assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
@@ -389,9 +424,9 @@ assert {:ok, %Order{}} = MyApp.Orders.Adapter.place_order(params)
 
 For plain hexagons that drive a Port contract (scenarios 1 and 2), you
 can use [Mox](https://hexdocs.pm/mox) against the contract's generated
-contract behaviour for isolated unit tests — no effect machinery needed.
+behaviour for isolated unit tests — no effect machinery needed.
 
-The `Port` module dispatches to a config-resolved implementation,
+The facade module dispatches to a config-resolved implementation,
 so swapping in a Mox mock is just a config change.
 
 #### Setup
@@ -401,14 +436,14 @@ so swapping in a Mox mock is just a config change.
 
 ```elixir
 # test/support/mocks.ex
-Mox.defmock(MyApp.Repository.Mock, for: MyApp.Repository.Contract)
+Mox.defmock(MyApp.Orders.Mock, for: MyApp.Orders)
 ```
 
 3. Point the app at the mock in test config:
 
 ```elixir
 # config/test.exs
-config :my_app, MyApp.Repository, MyApp.Repository.Mock
+config :my_app, MyApp.Orders, impl: MyApp.Orders.Mock
 ```
 
 Production config points to the real implementation; the test config
@@ -416,7 +451,7 @@ overrides it with the mock.
 
 #### Using the mock in tests
 
-Your plain hexagon calls the `Port` module directly — no config
+Your plain hexagon calls the facade module directly — no config
 awareness needed at the call site:
 
 ```elixir
@@ -424,9 +459,9 @@ defmodule MyApp.OrderService do
   alias MyApp.Repository
 
   def place_order(params) do
-    item = Repository.Plain.get!(Item, params.item_id)
+    item = Repository.get!(Item, params.item_id)
     changeset = Order.changeset(%Order{}, %{item_id: item.id, qty: params.qty})
-    Repository.Plain.insert(changeset)
+    Repository.insert(changeset)
   end
 end
 ```
@@ -442,7 +477,7 @@ setup :verify_on_exit!
 test "place_order inserts an order for the item" do
   item = %Item{id: "item-1", name: "Widget"}
 
-  MyApp.Repository.Mock
+  MyApp.Orders.Mock
   |> expect(:get!, fn Item, "item-1" -> item end)
   |> expect(:insert, fn changeset ->
     assert changeset.changes.item_id == "item-1"
@@ -465,14 +500,13 @@ end
 
 #### Adoption path
 
-1. **Define a Port contract** — `use HexPort.Contract` with
-   `defport` declarations
-2. **Define a Port module** — `use HexPort.Facade, contract: MyContract, otp_app: :my_app`
-   for config-dispatched plain dispatch
-3. **Use Mox in tests** — `Mox.defmock(Mock, for: MyContract)`,
+1. **Define a facade** — `use HexPort.Facade, otp_app: :my_app` with
+   `defport` declarations (combined contract + facade)
+2. **Use Mox in tests** — `Mox.defmock(Mock, for: MyApp.Orders)`,
    point app at mock via `config/test.exs`
-4. **Later, optionally** — use `Adapter.Effectful` for an effectful
-   implementation and effectful facade for effectful callers
+3. **Later, optionally** — define `MyApp.Effectful.Orders` with
+   `use Skuld.Effects.Port.Facade` for effectful callers, use
+   `Adapter.Effectful` for plain callers of effectful implementations
 
 Each step delivers value independently. You don't need to adopt the
 full effect system to benefit from Port contracts and test isolation.
@@ -482,7 +516,7 @@ full effect system to benefit from Port contracts and test isolation.
 - Define one contract per bounded context or aggregate
 - Keep contract implementations thin — just infrastructure calls
 - The in-memory implementation is your test double — no mocks needed
-- Start with a `HexPort.Facade` module to impose boundaries, convert later
+- Start with `HexPort.Facade` to impose boundaries, convert later
 - Effectful facades (from `use Skuld.Effects.Port.Facade`) have
   `__port_effectful__?/0` and auto-detect as effectful resolvers
 - Use `Adapter.Effectful` when you want encapsulated effect execution
