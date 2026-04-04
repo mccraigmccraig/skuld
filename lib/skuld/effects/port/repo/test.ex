@@ -112,12 +112,34 @@ if Code.ensure_loaded?(Ecto) do
     # Write Operations — always authoritative
     # -----------------------------------------------------------------
 
+    defp dispatch(:insert, [%Ecto.Changeset{valid?: false} = changeset], _fallback_fn) do
+      {:error, changeset}
+    end
+
     defp dispatch(:insert, [changeset], _fallback_fn) do
-      {:ok, safe_apply_changes(changeset)}
+      alias HexPort.Repo.Autogenerate
+
+      record = Autogenerate.apply_changes(changeset, :insert)
+      schema = record.__struct__
+
+      case Autogenerate.maybe_autogenerate_id(record, schema, fn _schema ->
+             # Repo.Test is stateless — use a monotonic counter for unique integer IDs
+             [System.unique_integer([:positive, :monotonic])]
+           end) do
+        {:error, {:no_autogenerate, message}} ->
+          raise ArgumentError, message
+
+        {_id, record} ->
+          {:ok, record}
+      end
+    end
+
+    defp dispatch(:update, [%Ecto.Changeset{valid?: false} = changeset], _fallback_fn) do
+      {:error, changeset}
     end
 
     defp dispatch(:update, [changeset], _fallback_fn) do
-      {:ok, safe_apply_changes(changeset)}
+      {:ok, HexPort.Repo.Autogenerate.apply_changes(changeset, :update)}
     end
 
     defp dispatch(:delete, [record], _fallback_fn) do
@@ -139,6 +161,7 @@ if Code.ensure_loaded?(Ecto) do
                 :all,
                 :exists?,
                 :aggregate,
+                :insert_all,
                 :update_all,
                 :delete_all
               ] do
@@ -174,14 +197,6 @@ if Code.ensure_loaded?(Ecto) do
             end
           )
       """
-    end
-
-    # -----------------------------------------------------------------
-    # Helpers
-    # -----------------------------------------------------------------
-
-    defp safe_apply_changes(%Ecto.Changeset{} = changeset) do
-      Ecto.Changeset.apply_changes(changeset)
     end
   end
 end

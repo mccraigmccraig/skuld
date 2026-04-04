@@ -132,7 +132,7 @@ if Code.ensure_loaded?(Ecto) do
       then error
     - **Non-PK reads (2-stage):** `get_by`, `get_by!`, `one`, `one!`, `all`,
       `exists?`, `aggregate` — fallback or error
-    - **Bulk (2-stage):** `update_all`, `delete_all` — fallback or error
+    - **Bulk (2-stage):** `insert_all`, `update_all`, `delete_all` — fallback or error
     """
 
     alias Skuld.Effects.Port
@@ -199,7 +199,7 @@ if Code.ensure_loaded?(Ecto) do
     def seed(records) when is_list(records) do
       Enum.reduce(records, %{}, fn record, store ->
         schema = record.__struct__
-        id = get_primary_key(record)
+        id = HexPort.Repo.Autogenerate.get_primary_key(record)
         put_record(store, schema, id, record)
       end)
     end
@@ -252,34 +252,44 @@ if Code.ensure_loaded?(Ecto) do
     # Write operations — always authoritative
     # -----------------------------------------------------------------
 
+    defp dispatch(Repo.Effectful, :insert, [%Ecto.Changeset{valid?: false} = changeset], store) do
+      {{:error, changeset}, store}
+    end
+
     defp dispatch(Repo.Effectful, :insert, [changeset], store) do
-      record = safe_apply_changes(changeset)
+      alias HexPort.Repo.Autogenerate
+
+      record = Autogenerate.apply_changes(changeset, :insert)
       schema = record.__struct__
-      id = get_primary_key(record)
 
-      # Auto-assign ID if nil
-      {id, record} =
-        if id == nil do
-          new_id = next_id(store, schema)
-          record = put_primary_key(record, new_id)
-          {new_id, record}
-        else
-          {id, record}
-        end
+      case Autogenerate.maybe_autogenerate_id(record, schema, fn s ->
+             store
+             |> records_for_schema(s)
+             |> Enum.map(&Autogenerate.get_primary_key/1)
+             |> Enum.filter(&is_integer/1)
+           end) do
+        {:error, {:no_autogenerate, message}} ->
+          raise ArgumentError, message
 
-      {{:ok, record}, put_record(store, schema, id, record)}
+        {id, record} ->
+          {{:ok, record}, put_record(store, schema, id, record)}
+      end
+    end
+
+    defp dispatch(Repo.Effectful, :update, [%Ecto.Changeset{valid?: false} = changeset], store) do
+      {{:error, changeset}, store}
     end
 
     defp dispatch(Repo.Effectful, :update, [changeset], store) do
-      record = safe_apply_changes(changeset)
+      record = HexPort.Repo.Autogenerate.apply_changes(changeset, :update)
       schema = record.__struct__
-      id = get_primary_key(record)
+      id = HexPort.Repo.Autogenerate.get_primary_key(record)
       {{:ok, record}, put_record(store, schema, id, record)}
     end
 
     defp dispatch(Repo.Effectful, :delete, [record], store) do
       schema = record.__struct__
-      id = get_primary_key(record)
+      id = HexPort.Repo.Autogenerate.get_primary_key(record)
       {{:ok, record}, delete_record(store, schema, id)}
     end
 
@@ -333,6 +343,9 @@ if Code.ensure_loaded?(Ecto) do
     # -----------------------------------------------------------------
     # Bulk operations — 2-stage: fallback -> error
     # -----------------------------------------------------------------
+
+    defp dispatch(Repo.Effectful, :insert_all, args, store),
+      do: dispatch_via_fallback(:insert_all, args, store)
 
     defp dispatch(Repo.Effectful, :update_all, args, store),
       do: dispatch_via_fallback(:update_all, args, store)
@@ -414,10 +427,6 @@ if Code.ensure_loaded?(Ecto) do
     # Other helpers
     # -----------------------------------------------------------------
 
-    defp safe_apply_changes(%Ecto.Changeset{} = changeset) do
-      Ecto.Changeset.apply_changes(changeset)
-    end
-
     defp extract_schema(queryable) when is_atom(queryable), do: queryable
 
     defp extract_schema(%Ecto.Query{from: %Ecto.Query.FromExpr{source: {_table, schema}}})
@@ -426,46 +435,5 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp extract_schema(queryable), do: queryable
-
-    defp get_primary_key(record) do
-      schema = record.__struct__
-
-      if function_exported?(schema, :__schema__, 1) do
-        case schema.__schema__(:primary_key) do
-          [pk_field] -> Map.get(record, pk_field)
-          # Composite keys — use a tuple
-          fields when is_list(fields) -> List.to_tuple(Enum.map(fields, &Map.get(record, &1)))
-          _ -> Map.get(record, :id)
-        end
-      else
-        Map.get(record, :id)
-      end
-    end
-
-    defp put_primary_key(record, value) do
-      schema = record.__struct__
-
-      if function_exported?(schema, :__schema__, 1) do
-        case schema.__schema__(:primary_key) do
-          [pk_field] -> Map.put(record, pk_field, value)
-          _ -> Map.put(record, :id, value)
-        end
-      else
-        Map.put(record, :id, value)
-      end
-    end
-
-    defp next_id(store, schema) do
-      existing_ids =
-        store
-        |> records_for_schema(schema)
-        |> Enum.map(&get_primary_key/1)
-        |> Enum.filter(&is_integer/1)
-
-      case existing_ids do
-        [] -> 1
-        ids -> Enum.max(ids) + 1
-      end
-    end
   end
 end

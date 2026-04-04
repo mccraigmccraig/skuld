@@ -51,8 +51,9 @@ if Code.ensure_loaded?(Ecto) do
 
     ## Bulk Operations
 
-    `update_all/3` and `delete_all/1` follow Ecto's return convention of
-    `{count, nil | list}`. No bang variants are generated for these.
+    `insert_all/3`, `update_all/3` and `delete_all/2` follow Ecto's return
+    convention of `{count, nil | list}`. No bang variants are generated for
+    these.
 
     ## Read Operations
 
@@ -103,6 +104,13 @@ if Code.ensure_loaded?(Ecto) do
     # -----------------------------------------------------------------
     # Bulk Operations
     # -----------------------------------------------------------------
+
+    @doc "Insert all entries into a schema or source at once."
+    defport insert_all(
+              source :: Ecto.Queryable.t() | binary(),
+              entries :: [map() | keyword()],
+              opts :: keyword()
+            ) :: {non_neg_integer(), nil | list()}
 
     @doc "Update all records matching a queryable."
     defport update_all(

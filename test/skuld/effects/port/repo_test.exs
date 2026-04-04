@@ -87,7 +87,7 @@ defmodule Skuld.Effects.Port.RepoTest do
     test "__port_operations__ lists all operations" do
       ops = Repo.Effectful.__port_operations__()
 
-      assert length(ops) == 14
+      assert length(ops) == 15
 
       op_names = Enum.map(ops, & &1.name) |> Enum.sort()
 
@@ -102,6 +102,7 @@ defmodule Skuld.Effects.Port.RepoTest do
                :get_by,
                :get_by!,
                :insert,
+               :insert_all,
                :one,
                :one!,
                :update,
@@ -137,6 +138,7 @@ defmodule Skuld.Effects.Port.RepoTest do
     def insert(cs), do: {:ok, Ecto.Changeset.apply_changes(cs)}
     def update(cs), do: {:ok, Ecto.Changeset.apply_changes(cs)}
     def delete(record), do: {:ok, record}
+    def insert_all(_s, entries, _o), do: {length(entries), nil}
     def update_all(_q, _u, _o), do: {3, nil}
     def delete_all(_q, _o), do: {5, nil}
     def get(_q, id), do: %TestUser{id: id, name: "found"}
