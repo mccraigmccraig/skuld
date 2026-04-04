@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-04-04
+
 ### Changed
 
 - Upgraded `hex_port` dependency from `~> 0.11` to `~> 0.14`.
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `Repo.Contract.insert_all/3` — bulk insert operation, dispatched via
   fallback in both test adapters.
+- `CHANGELOG.md` — project changelog compiled from git history.
 
 ## [0.21.0] — 2026-03-31
 
