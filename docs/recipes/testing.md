@@ -81,8 +81,8 @@ test "toggle marks incomplete todo as complete" do
     Todos.Handlers.handle(%ToggleTodo{id: "1"})
     |> Reader.with_handler(%CommandContext{tenant_id: "t1"}, tag: CommandContext)
     |> Port.with_test_handler(%{
-       Repository.key(:get_todo, "t1", "1") => {:ok, todo},
-       Repository.key(:update_todo, "t1", _) => {:ok, %Todo{todo | completed: true}}
+       Repository.__key__(:get_todo, "t1", "1") => {:ok, todo},
+       Repository.__key__(:update_todo, "t1", _) => {:ok, %Todo{todo | completed: true}}
     })
     |> Throw.with_handler()
     |> Comp.run!()
@@ -358,7 +358,7 @@ Inspect the final store:
 
   ```elixir
   comp
-  |> Port.with_test_handler(%{Notifications.key(:send, msg) => :ok})
+  |> Port.with_test_handler(%{Notifications.__key__(:send, msg) => :ok})
   |> Port.with_handler(%{Repository.Contract => Repo.Test.new()})
   |> Throw.with_handler()
   |> Comp.run!()

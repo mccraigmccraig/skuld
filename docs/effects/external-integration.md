@@ -329,7 +329,7 @@ my_comp
 # Test: stub specific calls with generated key helpers
 my_comp
 |> Port.with_test_handler(%{
-  MyApp.Repository.key(:get_todo, "tenant-1", "id-1") => {:ok, mock_todo}
+  MyApp.Repository.__key__(:get_todo, "tenant-1", "id-1") => {:ok, mock_todo}
 })
 |> Throw.with_handler()
 |> Comp.run!()
@@ -340,7 +340,7 @@ my_comp
 - Dialyzer checks call sites and implementations via `@spec` and `@callback`
 - LSP autocomplete on `Repository.` shows available operations
 - Missing callback implementations produce compiler warnings
-- Facade `.key/N` helpers replace verbose `Port.key(Module, :name, [args...])` calls
+- Facade `.__key__/N` helpers replace verbose `Port.key(Module, :name, [args...])` calls
 - Bang generation adapts to any return convention via `bang:` option
 
 ## Port.Adapter.Effectful
@@ -488,7 +488,7 @@ test "effectful impl uses Port effect" do
   result =
     MyApp.UserService.EffectfulImpl.find_user("user-123")
     |> Port.with_test_handler(%{
-      UserQueries.key(:get_user, "user-123") => {:ok, %User{id: "user-123"}}
+      UserQueries.__key__(:get_user, "user-123") => {:ok, %User{id: "user-123"}}
     })
     |> Throw.with_handler()
     |> Comp.run!()

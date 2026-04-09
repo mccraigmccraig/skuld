@@ -64,7 +64,7 @@ end
 
 `MyApp.Orders` defines `@callback` declarations (the plain behaviour),
 generates config-dispatched functions like `MyApp.Orders.place_order/1`,
-and provides `key/2` helpers for test stubs.
+and provides `__key__/2` helpers for test stubs.
 
 `MyApp.Effectful.Orders` derives effectful `@callback` declarations from
 the plain contract and generates effectful caller functions like
@@ -390,7 +390,7 @@ Each scenario has a natural testing approach:
 # Test with map-based stubs (any scenario)
 comp
 |> Port.with_test_handler(%{
-  MyApp.Effectful.Orders.key(:place_order, params) => {:ok, %Order{}}
+  MyApp.Effectful.Orders.__key__(:place_order, params) => {:ok, %Order{}}
 })
 |> Throw.with_handler()
 |> Comp.run!()
@@ -407,7 +407,7 @@ end)
 # Mixed modes — runtime handler for one contract, test stubs for another
 comp
 |> Port.with_test_handler(%{
-  MyApp.Effectful.Inventory.key(:reserve_stock, sku, qty) => {:ok, %Reservation{}}
+  MyApp.Effectful.Inventory.__key__(:reserve_stock, sku, qty) => {:ok, %Reservation{}}
 })
 |> Port.with_handler(%{MyApp.Effectful.Orders => MyApp.Effectful.OrderService})
 |> Throw.with_handler()

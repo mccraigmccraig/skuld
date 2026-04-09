@@ -308,7 +308,7 @@ comp do
 end
 |> Transaction.Noop.with_handler()
 |> Port.with_test_handler(%{
-  UserRepo.key(:create_user, params) => %User{id: "test-id", name: "Alice"}
+  UserRepo.__key__(:create_user, params) => %User{id: "test-id", name: "Alice"}
 })
 |> Comp.run!()
 ```
