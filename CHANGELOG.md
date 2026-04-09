@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-04-09
+
+### Changed
+
+- Upgraded `hex_port` dependency from `~> 0.14` to `~> 0.17`.
+- Renamed generated facade key helper from `key/N` to `__key__/N`, matching
+  the upstream hex_port rename. This avoids clashes with user-defined
+  `defport key(...)` operations.
+
 ## [0.22.0] — 2026-04-04
 
 ### Changed
