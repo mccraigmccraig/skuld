@@ -119,13 +119,13 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert is_function(Repo.all(TestUser))
     end
 
-    test "key helpers generate keys for test stubs" do
+    test "__key__ helpers generate keys for test stubs" do
       changeset = TestUser.changeset(%{name: "Alice"})
 
-      key = Repo.key(:insert, changeset)
+      key = Repo.__key__(:insert, changeset)
       assert {Repo.Effectful, :insert, _} = key
 
-      key2 = Repo.key(:get, TestUser, 42)
+      key2 = Repo.__key__(:get, TestUser, 42)
       assert {Repo.Effectful, :get, _} = key2
     end
   end

@@ -4,7 +4,7 @@ defmodule Skuld.Effects.Port.Facade do
 
   `use Skuld.Effects.Port.Facade` reads the contract's `__port_operations__/0`
   metadata and generates effectful caller functions (returning computations),
-  bang variants (unwrap or throw), and key helpers for test stub matching.
+  bang variants (unwrap or throw), and `__key__` helpers for test stub matching.
 
   ## Combined effectful contract + facade (simplest)
 
@@ -178,8 +178,8 @@ defmodule Skuld.Effects.Port.Facade do
 
       Provides typed public functions returning `computation(return_type)`
       values that dispatch to the configured implementation via the Port
-      effect. Also provides bang variants (unwrap or throw) and key helpers
-      for test stub matching.
+      effect. Also provides bang variants (unwrap or throw) and `__key__`
+      helpers for test stub matching.
       """
 
       unquote_splicing(callers)
@@ -312,7 +312,7 @@ defmodule Skuld.Effects.Port.Facade do
 
     quote do
       @doc unquote(doc_string)
-      def key(unquote(name), unquote_splicing(param_vars)) do
+      def __key__(unquote(name), unquote_splicing(param_vars)) do
         Skuld.Effects.Port.key(unquote(contract_module), unquote(name), unquote(args_list))
       end
     end

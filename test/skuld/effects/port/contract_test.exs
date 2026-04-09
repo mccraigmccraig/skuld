@@ -340,24 +340,24 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
   end
 
-  describe "defport generates key helpers on EffectPort" do
-    test "key helper exists with operation name + params arity" do
-      # key(:get_todo, tenant_id, id) => arity 3
-      assert function_exported?(TestFacade, :key, 3)
-      # key(:list_todos, tenant_id) => arity 2
-      assert function_exported?(TestFacade, :key, 2)
-      # key(:health_check) => arity 1
-      assert function_exported?(TestFacade, :key, 1)
+  describe "defport generates __key__ helpers on EffectPort" do
+    test "__key__ helper exists with operation name + params arity" do
+      # __key__(:get_todo, tenant_id, id) => arity 3
+      assert function_exported?(TestFacade, :__key__, 3)
+      # __key__(:list_todos, tenant_id) => arity 2
+      assert function_exported?(TestFacade, :__key__, 2)
+      # __key__(:health_check) => arity 1
+      assert function_exported?(TestFacade, :__key__, 1)
     end
 
-    test "key helper matches Port.key/3 output" do
-      key_from_helper = TestFacade.key(:get_todo, "t1", "id1")
+    test "__key__ helper matches Port.key/3 output" do
+      key_from_helper = TestFacade.__key__(:get_todo, "t1", "id1")
       key_from_port = Port.key(TestEffectful, :get_todo, ["t1", "id1"])
       assert key_from_helper == key_from_port
     end
 
-    test "key helper for zero-arg operation" do
-      key_from_helper = TestFacade.key(:health_check)
+    test "__key__ helper for zero-arg operation" do
+      key_from_helper = TestFacade.__key__(:health_check)
       key_from_port = Port.key(TestEffectful, :health_check, [])
       assert key_from_helper == key_from_port
     end
@@ -411,8 +411,8 @@ defmodule Skuld.Effects.Port.ContractTest do
       refute function_exported?(TestFacade, :health_check!, 0)
     end
 
-    test "generates single-arity key helper on EffectPort" do
-      key = TestFacade.key(:health_check)
+    test "generates single-arity __key__ helper on EffectPort" do
+      key = TestFacade.__key__(:health_check)
       assert {TestEffectful, :health_check, _} = key
     end
   end
@@ -523,12 +523,12 @@ defmodule Skuld.Effects.Port.ContractTest do
       # Key helper doc
       key_doc =
         Enum.find(docs, fn
-          {{:function, :key, 2}, _, _, _, _} -> true
+          {{:function, :__key__, 2}, _, _, _, _} -> true
           _ -> false
         end)
 
       assert key_doc != nil
-      {{:function, :key, 2}, _, _, %{"en" => key_content}, _} = key_doc
+      {{:function, :__key__, 2}, _, _, %{"en" => key_content}, _} = key_doc
       assert key_content =~ "test stub key"
     end
 
@@ -608,9 +608,9 @@ defmodule Skuld.Effects.Port.ContractTest do
   end
 
   describe "contract + test_handler with key helpers" do
-    test "key helper produces matching keys for test stubs" do
+    test "__key__ helper produces matching keys for test stubs" do
       responses = %{
-        TestFacade.key(:get_todo, "t1", "id1") => {:ok, %{id: "id1", name: "Test Todo"}}
+        TestFacade.__key__(:get_todo, "t1", "id1") => {:ok, %{id: "id1", name: "Test Todo"}}
       }
 
       comp =
@@ -621,9 +621,9 @@ defmodule Skuld.Effects.Port.ContractTest do
       assert {:ok, %{id: "id1", name: "Test Todo"}} = result
     end
 
-    test "zero-arg key helper works with test stubs" do
+    test "zero-arg __key__ helper works with test stubs" do
       responses = %{
-        TestFacade.key(:health_check) => :ok
+        TestFacade.__key__(:health_check) => :ok
       }
 
       comp =
@@ -808,7 +808,7 @@ defmodule Skuld.Effects.Port.ContractTest do
   describe "contract with Throw integration (request! unwrap and throw paths)" do
     test "request! unwraps :ok tuple" do
       responses = %{
-        TestFacade.key(:get_todo, "t1", "id1") => {:ok, %{id: "id1"}}
+        TestFacade.__key__(:get_todo, "t1", "id1") => {:ok, %{id: "id1"}}
       }
 
       comp =
@@ -822,7 +822,7 @@ defmodule Skuld.Effects.Port.ContractTest do
 
     test "request! throws on :error tuple" do
       responses = %{
-        TestFacade.key(:get_todo, "t1", "bad") => {:error, :not_found}
+        TestFacade.__key__(:get_todo, "t1", "bad") => {:error, :not_found}
       }
 
       comp =
