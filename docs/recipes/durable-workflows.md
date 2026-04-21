@@ -78,6 +78,40 @@ Repo.insert!(%WorkflowState{
 })
 ```
 
+At this point the finalized log contains a flat list of every effect
+that fired, in execution order. Each entry records the effect signature,
+its arguments, and the result value (if the effect completed). Here is
+what `Log.to_list(log)` looks like when the workflow suspends at the
+Yield:
+
+```elixir
+[
+  # Auto-inserted root checkpoint (captures initial handler state)
+  %EffectLogEntry{sig: EffectLogger, data: %MarkLoop{loop_id: :__root__, env_state: ...},
+                  value: :ok,  state: :executed},
+
+  # validate(request) — Port call into the validation module
+  %EffectLogEntry{sig: Port, data: {Port.Request, Validator, :validate, [request]},
+                  value: validated,  state: :executed},
+
+  # Yield.yield(...) — computation suspended here, waiting for approval
+  %EffectLogEntry{sig: Yield, data: {Yield.Yield, %{type: :approval_needed, ...}},
+                  value: nil,  state: :started}
+  #                            ^^^              ^^^^^^^^
+  #                     no result yet     still in-progress
+]
+```
+
+Key things to notice:
+
+- **`:executed`** entries have a `value` — during replay these are
+  short-circuited (the logged value is returned without re-running the
+  effect).
+- **`:started`** marks the suspension point — this is where `with_resume`
+  injects the resume value.
+- Pure computations (plain function calls, pattern matches) don't
+  appear in the log — only effects do.
+
 ### Resuming after approval
 
 ```elixir
@@ -96,6 +130,34 @@ cold_log = workflow.log |> Jason.decode!() |> Log.from_json()
   |> Comp.run()
 
 # result is {:ok, execution_result}
+```
+
+During resume the computation replays from the beginning, but
+`:executed` entries are short-circuited — their logged values are
+returned instantly without calling the real handlers. At the `:started`
+Yield entry, the resume value (`:approved`) is injected and execution
+continues live from that point. The final log after completion:
+
+```elixir
+[
+  # — replayed from log (short-circuited) —
+  %EffectLogEntry{sig: EffectLogger, data: %MarkLoop{loop_id: :__root__, ...},
+                  value: :ok,  state: :executed},
+  %EffectLogEntry{sig: Port, data: {Port.Request, Validator, :validate, [request]},
+                  value: validated,  state: :executed},
+
+  # — resume value injected here —
+  %EffectLogEntry{sig: Yield, data: {Yield.Yield, %{type: :approval_needed, ...}},
+                  value: :approved,  state: :executed},
+  #               ^^^^^^^^^^^^^^^^
+  #          now :executed with the resume value
+
+  # — live execution continues —
+  %EffectLogEntry{sig: Port, data: {Port.Request, Actions, :execute, [validated]},
+                  value: exec_result,  state: :executed},
+  %EffectLogEntry{sig: Writer, data: {Writer.Tell, %RequestApproved{request_id: 42}},
+                  value: [...],  state: :executed}
+]
 ```
 
 ## Long-running loops: LLM conversations
@@ -138,6 +200,38 @@ end
 Each cycle: suspend -> serialize -> persist -> (user responds) ->
 deserialize -> resume -> next cycle. The `mark_loop` keeps the log
 O(current iteration) regardless of conversation length.
+
+After several turns the log is pruned down to just the most recent
+iteration. Here is the log after the second turn suspends at the Yield
+(with loop pruning applied):
+
+```elixir
+[
+  # Root checkpoint (always preserved)
+  %EffectLogEntry{sig: EffectLogger, data: %MarkLoop{loop_id: :__root__, ...},
+                  value: :ok,  state: :executed},
+
+  # Most recent loop mark — earlier iterations were pruned away
+  %EffectLogEntry{sig: EffectLogger,
+                  data: %MarkLoop{loop_id: ConversationLoop, env_state: snapshot},
+                  value: :ok,  state: :executed},
+  #               env_state captures handler state at this point,
+  #               so cold resume can restore State, Writer, etc.
+
+  # Current iteration's effects
+  %EffectLogEntry{sig: State,  data: State.Get,
+                  value: [%{role: :user, ...}, %{role: :assistant, ...}],
+                  state: :executed},
+  %EffectLogEntry{sig: Yield,  data: {Yield.Yield, %{type: :user_input, ...}},
+                  value: nil,  state: :started}
+  #                                   ^^^^^^^^ suspended, waiting for next input
+]
+```
+
+Without `mark_loop`, the log would grow with every turn. With it,
+completed iterations are pruned and the `env_state` snapshot in the
+mark entry preserves enough state for cold resume to restore handlers
+correctly.
 
 ## Surviving deployments
 
