@@ -164,16 +164,15 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       assert {:ok, %User{id: 6, name: "New"}} = result
     end
 
-    test "insert! unwraps the result" do
+    test "insert returns {:ok, struct}" do
       cs = User.changeset(%{name: "Alice"})
 
       result =
-        Repo.insert!(cs)
+        Repo.insert(cs)
         |> with_in_memory()
-        |> Throw.with_handler()
         |> Comp.run!()
 
-      assert %User{name: "Alice"} = result
+      assert {:ok, %User{name: "Alice"}} = result
     end
   end
 
@@ -191,17 +190,16 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       assert %{User => %{1 => %User{id: 1, email: "new@example.com"}}} = store
     end
 
-    test "update! unwraps the result" do
+    test "update returns {:ok, struct}" do
       initial = InMemory.new(seed: [%User{id: 1, name: "Alice"}])
       cs = User.changeset(%User{id: 1, name: "Alice"}, %{name: "Bob"})
 
       result =
-        Repo.update!(cs)
+        Repo.update(cs)
         |> InMemory.with_handler(initial)
-        |> Throw.with_handler()
         |> Comp.run!()
 
-      assert %User{id: 1, name: "Bob"} = result
+      assert {:ok, %User{id: 1, name: "Bob"}} = result
     end
   end
 
@@ -220,17 +218,16 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       assert store == %{User => %{}}
     end
 
-    test "delete! unwraps the result" do
+    test "delete returns {:ok, struct}" do
       alice = %User{id: 1, name: "Alice"}
       initial = InMemory.new(seed: [alice])
 
       result =
-        Repo.delete!(alice)
+        Repo.delete(alice)
         |> InMemory.with_handler(initial)
-        |> Throw.with_handler()
         |> Comp.run!()
 
-      assert ^alice = result
+      assert {:ok, ^alice} = result
     end
   end
 
@@ -668,13 +665,13 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
 
     test "composes with other Port contracts" do
       defmodule OtherContract do
-        use HexPort.Contract
+        use DoubleDown.Contract
 
-        defport(do_thing(x :: term()) :: {:ok, term()} | {:error, term()})
+        defcallback(do_thing(x :: term()) :: {:ok, term()} | {:error, term()})
       end
 
       defmodule OtherEffectful do
-        use Skuld.Effects.Port.EffectfulContract, hex_port_contract: OtherContract
+        use Skuld.Effects.Port.EffectfulContract, double_down_contract: OtherContract
       end
 
       defmodule OtherFacade do
@@ -693,12 +690,11 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
       result =
         comp do
           user <- Repo.get(User, 1)
-          thing <- OtherFacade.do_thing!(user)
+          {:ok, thing} <- OtherFacade.do_thing(user)
           thing
         end
         |> with_in_memory(initial)
         |> Port.with_handler(%{OtherEffectful => OtherImpl})
-        |> Throw.with_handler()
         |> Comp.run!()
 
       assert {:did, %User{name: "Alice"}} = result

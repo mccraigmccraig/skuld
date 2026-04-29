@@ -18,8 +18,8 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
 
       # Contract defines the port
       defmodule MyApp.UserService do
-        use HexPort.Contract
-        defport find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
+        use DoubleDown.Contract
+        defcallback find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
       end
 
       # Effectful implementation satisfies Effectful behaviour
@@ -45,7 +45,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
 
   ## How It Works
 
-  For each operation defined in the contract (via `__port_operations__/0`), the
+  For each operation defined in the contract (via `__callbacks__/0`), the
   adapter generates a function that:
 
   1. Calls the impl module's corresponding function to get a computation
@@ -64,7 +64,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
     * **Skuld→Effectful** — effectful code calls out to effectful implementations
       through the Port effect with an `:effectful` resolver.
     * **Legacy→Plain** — plain Elixir code calls plain implementations through
-      the HexPort-generated `X.Port` facade.
+      the DoubleDown-generated `X.Port` facade.
     * **Legacy→Effectful** — plain Elixir code calls into effectful implementations
       through this adapter (`Port.Adapter.Effectful`), which runs the effectful
       code with a handler stack, producing plain return values.
@@ -143,18 +143,18 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
     impl = Module.get_attribute(env.module, :__port_provider_impl__)
     stack_ast = Module.get_attribute(env.module, :__port_provider_stack_ast__)
 
-    # Validate contract module has __port_operations__/0
-    unless function_exported?(contract, :__port_operations__, 0) do
+    # Validate contract module has __callbacks__/0
+    unless function_exported?(contract, :__callbacks__, 0) do
       raise CompileError,
         description:
           "#{inspect(contract)} does not appear to be a port contract module " <>
-            "(missing __port_operations__/0). Ensure it uses HexPort.Contract " <>
-            "and defines at least one defport.",
+            "(missing __callbacks__/0). Ensure it uses DoubleDown.Contract " <>
+            "and defines at least one defcallback.",
         file: env.file,
         line: 0
     end
 
-    operations = contract.__port_operations__()
+    operations = contract.__callbacks__()
 
     functions =
       Enum.map(operations, fn %{name: name, params: param_names} ->

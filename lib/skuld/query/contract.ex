@@ -146,7 +146,7 @@ defmodule Skuld.Query.Contract do
   Each `deffetch` declaration generates an operation struct, caller function,
   executor callback, dispatch clause, and optionally a bang variant.
 
-  The `bang` option follows the same rules as `Port.Contract.defport`:
+  The `bang` option follows the same rules as `Port.Contract.defcallback`:
 
     * **omitted** -- auto-detect: generate bang only if return type contains `{:ok, T}`
     * **`true`** -- force standard `{:ok, v}` / `{:error, r}` unwrapping
@@ -194,7 +194,7 @@ defmodule Skuld.Query.Contract do
   end
 
   defp build_deffetch_ast(call_ast, return_type_ast, bang_opt, cache_opt, caller) do
-    {name, params} = HexPort.Contract.parse_call(call_ast, caller)
+    {name, params} = DoubleDown.Contract.parse_call(call_ast, caller)
 
     param_names = Enum.map(params, &elem(&1, 0))
     param_types = Enum.map(params, &elem(&1, 1))
@@ -202,7 +202,7 @@ defmodule Skuld.Query.Contract do
     bang_mode =
       case bang_opt do
         :auto ->
-          if HexPort.Contract.has_ok_error_pattern?(return_type_ast),
+          if has_ok_error_pattern?(return_type_ast),
             do: :standard,
             else: :none
 
@@ -488,7 +488,7 @@ defmodule Skuld.Query.Contract do
     param_vars = Enum.map(param_names, fn pname -> {pname, [], nil} end)
     spec_params = param_types
 
-    unwrapped = HexPort.Contract.extract_success_type(return_type)
+    unwrapped = extract_success_type(return_type)
     comp_type = {:computation, [], [unwrapped]}
 
     {doc_string, body_ast} =
@@ -587,4 +587,35 @@ defmodule Skuld.Query.Contract do
     |> Enum.map_join(&String.capitalize/1)
     |> String.to_atom()
   end
+
+  # -------------------------------------------------------------------
+  # Type AST helpers for bang variant generation
+  #
+  # Inlined from DoubleDown.Contract (removed in double_down v0.38).
+  # These are only used by deffetch bang generation — Port facades
+  # no longer auto-generate bangs.
+  # -------------------------------------------------------------------
+
+  defp has_ok_error_pattern?(return_type_ast) do
+    extract_from_union(return_type_ast) != nil
+  end
+
+  defp extract_success_type(return_type_ast) do
+    case extract_from_union(return_type_ast) do
+      nil -> {:term, [], []}
+      type -> type
+    end
+  end
+
+  defp extract_from_union({:|, _, [left, right]}) do
+    extract_from_ok_tuple(left) || extract_from_union(right)
+  end
+
+  defp extract_from_union(type) do
+    extract_from_ok_tuple(type)
+  end
+
+  defp extract_from_ok_tuple({:{}, _, [:ok, inner_type]}), do: inner_type
+  defp extract_from_ok_tuple({:ok, inner_type}), do: inner_type
+  defp extract_from_ok_tuple(_), do: nil
 end

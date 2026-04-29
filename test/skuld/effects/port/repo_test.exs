@@ -66,26 +66,26 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert :all in callbacks
     end
 
-    test "generates bang variants for write operations" do
+    test "no auto-generated bang variants on facade" do
       fns = Repo.__info__(:functions) |> Map.new()
 
-      # Auto-generated bangs from {:ok, T} return types
-      assert Map.has_key?(fns, :insert!)
-      assert Map.has_key?(fns, :update!)
-      assert Map.has_key?(fns, :delete!)
+      # Facades no longer auto-generate bangs
+      refute Map.has_key?(fns, :insert!)
+      refute Map.has_key?(fns, :update!)
+      refute Map.has_key?(fns, :delete!)
     end
 
-    test "read bang operations are defined as separate ports (not auto-generated)" do
-      ops = Repo.Effectful.__port_operations__() |> Enum.map(& &1.name)
+    test "explicitly declared bang operations are in the contract" do
+      ops = Repo.Effectful.__callbacks__() |> Enum.map(& &1.name)
 
-      # These are declared as defport with bang: false
+      # These are explicitly declared as defcallback in the contract
       assert :get! in ops
       assert :get_by! in ops
       assert :one! in ops
     end
 
-    test "__port_operations__ lists all operations" do
-      ops = Repo.Effectful.__port_operations__()
+    test "__callbacks__ lists all operations" do
+      ops = Repo.Effectful.__callbacks__()
 
       assert length(ops) == 15
 
@@ -244,11 +244,11 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert {5, nil} = result
     end
 
-    test "bang variant unwraps {:ok, value}" do
+    test "request! unwraps {:ok, value}" do
       cs = TestUser.changeset(%{name: "Alice"})
 
       result =
-        Repo.insert!(cs)
+        Port.request!(Repo.Effectful, :insert, [cs])
         |> Port.with_handler(%{Repo.Effectful => TestRepoPort})
         |> Throw.with_handler()
         |> Comp.run!()
@@ -329,19 +329,18 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert [{Repo.Effectful, :delete, [^record], {:ok, ^record}}] = log
     end
 
-    test "bang variant unwraps and logs" do
+    test "insert logs dispatched operations" do
       cs = TestUser.changeset(%{name: "Alice"})
 
-      {user, log} =
+      {result, log} =
         comp do
-          user <- Repo.insert!(cs)
-          user
+          result <- Repo.insert(cs)
+          result
         end
         |> with_repo_test(output: fn r, state -> {r, state.log} end)
-        |> Throw.with_handler()
         |> Comp.run!()
 
-      assert %TestUser{name: "Alice"} = user
+      assert {:ok, %TestUser{name: "Alice"}} = result
       assert [{Repo.Effectful, :insert, [^cs], {:ok, %TestUser{name: "Alice"}}}] = log
     end
 
@@ -351,12 +350,11 @@ defmodule Skuld.Effects.Port.RepoTest do
 
       {_result, log} =
         comp do
-          alice <- Repo.insert!(cs1)
-          bob <- Repo.insert!(cs2)
-          {alice, bob}
+          _alice <- Repo.insert(cs1)
+          _bob <- Repo.insert(cs2)
+          :ok
         end
         |> with_repo_test(output: fn r, state -> {r, state.log} end)
-        |> Throw.with_handler()
         |> Comp.run!()
 
       assert [
@@ -370,14 +368,13 @@ defmodule Skuld.Effects.Port.RepoTest do
 
       result =
         comp do
-          user <- Repo.insert!(cs)
-          user
+          result <- Repo.insert(cs)
+          result
         end
         |> with_repo_test()
-        |> Throw.with_handler()
         |> Comp.run!()
 
-      assert %TestUser{name: "Alice"} = result
+      assert {:ok, %TestUser{name: "Alice"}} = result
     end
   end
 
@@ -510,13 +507,13 @@ defmodule Skuld.Effects.Port.RepoTest do
   describe "Port.Repo.Test: composition" do
     test "composes with other Port contracts" do
       defmodule OtherContract do
-        use HexPort.Contract
+        use DoubleDown.Contract
 
-        defport(do_thing(x :: term()) :: {:ok, term()} | {:error, term()})
+        defcallback(do_thing(x :: term()) :: {:ok, term()} | {:error, term()})
       end
 
       defmodule OtherEffectful do
-        use Skuld.Effects.Port.EffectfulContract, hex_port_contract: OtherContract
+        use Skuld.Effects.Port.EffectfulContract, double_down_contract: OtherContract
       end
 
       defmodule OtherFacade do
@@ -534,15 +531,14 @@ defmodule Skuld.Effects.Port.RepoTest do
 
       {result, log} =
         comp do
-          user <- Repo.insert!(cs)
-          thing <- OtherFacade.do_thing!(user)
+          {:ok, user} <- Repo.insert(cs)
+          {:ok, thing} <- OtherFacade.do_thing(user)
           thing
         end
         |> with_repo_test(
           registry: %{OtherEffectful => OtherImpl},
           output: fn r, state -> {r, state.log} end
         )
-        |> Throw.with_handler()
         |> Comp.run!()
 
       assert {:did, %TestUser{name: "Alice"}} = result

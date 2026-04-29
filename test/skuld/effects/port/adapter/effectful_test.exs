@@ -10,23 +10,23 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
   # ---------------------------------------------------------------
 
   defmodule TestContract do
-    use HexPort.Contract
+    use DoubleDown.Contract
 
-    defport(
+    defcallback(
       get_todo(tenant_id :: String.t(), id :: String.t()) ::
         {:ok, map()} | {:error, term()}
     )
 
-    defport(
+    defcallback(
       list_todos(tenant_id :: String.t()) ::
         {:ok, [map()]} | {:error, term()}
     )
 
-    defport(health_check() :: :ok)
+    defcallback(health_check() :: :ok)
   end
 
   defmodule TestEffectful do
-    use Skuld.Effects.Port.EffectfulContract, hex_port_contract: TestContract
+    use Skuld.Effects.Port.EffectfulContract, double_down_contract: TestContract
   end
 
   # Effectful implementation — returns computations (satisfies Effectful behaviour)
@@ -217,7 +217,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
   # ---------------------------------------------------------------
 
   describe "compile-time validation" do
-    test "raises CompileError when contract module lacks __port_operations__" do
+    test "raises CompileError when contract module lacks __callbacks__" do
       assert_raise CompileError, ~r/does not appear to be a port contract module/, fn ->
         Code.compile_string("""
         defmodule NotAContract do

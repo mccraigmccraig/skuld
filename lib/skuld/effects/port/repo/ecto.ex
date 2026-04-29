@@ -47,7 +47,7 @@ if Code.ensure_loaded?(Ecto) do
     defmacro __using__(opts) do
       repo = Keyword.fetch!(opts, :repo)
 
-      operations = Skuld.Effects.Port.Repo.Contract.__port_operations__()
+      operations = Skuld.Effects.Port.Repo.Contract.__callbacks__()
 
       delegations =
         Enum.map(operations, fn %{name: name, params: params, arity: arity} ->

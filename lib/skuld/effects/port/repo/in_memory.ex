@@ -199,7 +199,7 @@ if Code.ensure_loaded?(Ecto) do
     def seed(records) when is_list(records) do
       Enum.reduce(records, %{}, fn record, store ->
         schema = record.__struct__
-        id = HexPort.Repo.Autogenerate.get_primary_key(record)
+        id = DoubleDown.Repo.Impl.Autogenerate.get_primary_key(record)
         put_record(store, schema, id, record)
       end)
     end
@@ -257,7 +257,7 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp dispatch(Repo.Effectful, :insert, [changeset], store) do
-      alias HexPort.Repo.Autogenerate
+      alias DoubleDown.Repo.Impl.Autogenerate
 
       record = Autogenerate.apply_changes(changeset, :insert)
       schema = record.__struct__
@@ -281,15 +281,15 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp dispatch(Repo.Effectful, :update, [changeset], store) do
-      record = HexPort.Repo.Autogenerate.apply_changes(changeset, :update)
+      record = DoubleDown.Repo.Impl.Autogenerate.apply_changes(changeset, :update)
       schema = record.__struct__
-      id = HexPort.Repo.Autogenerate.get_primary_key(record)
+      id = DoubleDown.Repo.Impl.Autogenerate.get_primary_key(record)
       {{:ok, record}, put_record(store, schema, id, record)}
     end
 
     defp dispatch(Repo.Effectful, :delete, [record], store) do
       schema = record.__struct__
-      id = HexPort.Repo.Autogenerate.get_primary_key(record)
+      id = DoubleDown.Repo.Impl.Autogenerate.get_primary_key(record)
       {{:ok, record}, delete_record(store, schema, id)}
     end
 

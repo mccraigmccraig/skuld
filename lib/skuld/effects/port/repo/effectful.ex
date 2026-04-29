@@ -1,7 +1,7 @@
 # Effectful contract for Repo operations.
 #
 # Generates effectful @callback declarations from the plain
-# Repo.Contract, plus __port_operations__/0 and __port_effectful__?/0.
+# Repo.Contract, plus __callbacks__/0 and __port_effectful__?/0.
 #
 if Code.ensure_loaded?(Ecto) do
   defmodule Skuld.Effects.Port.Repo.Effectful do
@@ -15,6 +15,6 @@ if Code.ensure_loaded?(Ecto) do
     require Skuld.Effects.Port.Repo.Contract
 
     use Skuld.Effects.Port.EffectfulContract,
-      hex_port_contract: Skuld.Effects.Port.Repo.Contract
+      double_down_contract: Skuld.Effects.Port.Repo.Contract
   end
 end

@@ -1,13 +1,13 @@
 defmodule Skuld.Effects.Port.EffectfulContract do
   @moduledoc """
-  Generates an effectful behaviour from a `HexPort.Contract`.
+  Generates an effectful behaviour from a `DoubleDown.Contract`.
 
   `use Skuld.Effects.Port.EffectfulContract` reads the operations from a
-  plain HexPort contract and generates:
+  plain DoubleDown contract and generates:
 
     * Effectful `@callback` declarations with `computation(return_type)`
       return types on the using module
-    * `__port_operations__/0` — copied from the HexPort contract
+    * `__callbacks__/0` — copied from the DoubleDown contract
     * `__port_effectful__?/0` — marker for effectful resolver auto-detection
 
   The effectful contract module *is* the effectful behaviour. Effectful
@@ -15,17 +15,17 @@ defmodule Skuld.Effects.Port.EffectfulContract do
 
   ## Usage
 
-      # Plain contract (HexPort)
+      # Plain contract (DoubleDown)
       defmodule MyApp.Todos.Contract do
-        use HexPort.Contract
+        use DoubleDown.Contract
 
-        defport get_todo(id :: String.t()) :: {:ok, Todo.t()} | {:error, term()}
+        defcallback get_todo(id :: String.t()) :: {:ok, Todo.t()} | {:error, term()}
       end
 
       # Effectful contract (Skuld)
       defmodule MyApp.Todos.Effectful do
         use Skuld.Effects.Port.EffectfulContract,
-          hex_port_contract: MyApp.Todos.Contract
+          double_down_contract: MyApp.Todos.Contract
       end
 
       # Effectful facade
@@ -45,43 +45,43 @@ defmodule Skuld.Effects.Port.EffectfulContract do
 
   ## Options
 
-    * `:hex_port_contract` (required) — the HexPort contract module that
-      defines `__port_operations__/0` via `use HexPort.Contract`.
+    * `:double_down_contract` (required) — the DoubleDown contract module that
+      defines `__callbacks__/0` via `use DoubleDown.Contract`.
   """
 
   @doc false
   defmacro __using__(opts) do
-    hex_port_contract = Keyword.fetch!(opts, :hex_port_contract)
+    double_down_contract = Keyword.fetch!(opts, :double_down_contract)
 
     quote do
-      @skuld_hex_port_contract unquote(hex_port_contract)
+      @skuld_double_down_contract unquote(double_down_contract)
       @before_compile Skuld.Effects.Port.EffectfulContract
     end
   end
 
   @doc false
   defmacro __before_compile__(env) do
-    hex_port_contract = Module.get_attribute(env.module, :skuld_hex_port_contract)
+    double_down_contract = Module.get_attribute(env.module, :skuld_double_down_contract)
 
-    unless Code.ensure_loaded?(hex_port_contract) do
+    unless Code.ensure_loaded?(double_down_contract) do
       raise CompileError,
         description:
-          "HexPort contract module #{inspect(hex_port_contract)} is not loaded. " <>
+          "DoubleDown contract module #{inspect(double_down_contract)} is not loaded. " <>
             "Ensure it is compiled before #{inspect(env.module)}.",
         file: env.file,
         line: 0
     end
 
-    unless function_exported?(hex_port_contract, :__port_operations__, 0) do
+    unless function_exported?(double_down_contract, :__callbacks__, 0) do
       raise CompileError,
         description:
-          "#{inspect(hex_port_contract)} does not define __port_operations__/0. " <>
-            "Did you `use HexPort.Contract` and add `defport` declarations?",
+          "#{inspect(double_down_contract)} does not define __callbacks__/0. " <>
+            "Did you `use DoubleDown.Contract` and add `defcallback` declarations?",
         file: env.file,
         line: 0
     end
 
-    operations = hex_port_contract.__port_operations__()
+    operations = double_down_contract.__callbacks__()
     callbacks = Enum.map(operations, &generate_effectful_callback/1)
     escaped_ops = Macro.escape(operations)
 
@@ -89,7 +89,7 @@ defmodule Skuld.Effects.Port.EffectfulContract do
       unquote_splicing(callbacks)
 
       @doc false
-      def __port_operations__, do: unquote(escaped_ops)
+      def __callbacks__, do: unquote(escaped_ops)
 
       @doc false
       def __port_effectful__?, do: true
