@@ -150,21 +150,10 @@ if Code.ensure_loaded?(Ecto) do
     # Read and bulk operations — fallback or error
     # -----------------------------------------------------------------
 
-    defp dispatch(operation, args, fallback_fn)
-         when operation in [
-                :get,
-                :get!,
-                :get_by,
-                :get_by!,
-                :one,
-                :one!,
-                :all,
-                :exists?,
-                :aggregate,
-                :insert_all,
-                :update_all,
-                :delete_all
-              ] do
+    # All other operations (reads, bulk, transaction, etc.) go through
+    # fallback. This catch-all ensures new operations added to the Repo
+    # contract don't crash — they just require a fallback function.
+    defp dispatch(operation, args, fallback_fn) do
       try_fallback(fallback_fn, operation, args)
     end
 

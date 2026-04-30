@@ -1,15 +1,15 @@
 # Port contract for common Ecto Repo operations.
 #
-# Provides a built-in set of defcallback declarations so that every domain
-# using Port for DB operations doesn't need to redeclare insert/update/
-# delete/get/all etc. with identical boilerplate.
+# Mirrors DoubleDown.Repo's defcallback declarations so that skuld's
+# effectful Repo surface covers the same operations available through
+# plain DoubleDown dispatch.
 #
 # ## Usage
 #
 #     alias Skuld.Effects.Port.Repo
 #
 #     comp do
-#       record <- Repo.EffectPort.insert!(changeset)
+#       {:ok, record} <- Repo.insert(changeset)
 #       # ...
 #     end
 #
@@ -31,7 +31,6 @@
 #       log: true,
 #       output: fn r, state -> {r, state.log} end
 #     )
-#     |> Throw.with_handler()
 #     |> Comp.run!()
 #
 if Code.ensure_loaded?(Ecto) do
@@ -39,21 +38,30 @@ if Code.ensure_loaded?(Ecto) do
     @moduledoc """
     Port contract for common Ecto Repo operations.
 
-    Provides `defcallback` declarations for the standard write and read operations
-    from `Ecto.Repo`, so that domain code using `Port` for database access
-    doesn't need to redeclare these with identical boilerplate.
+    Mirrors `DoubleDown.Repo`'s `defcallback` declarations so that skuld's
+    effectful Repo surface covers the same operations available through
+    plain DoubleDown dispatch. This enables the upgrade/downgrade path:
+    code using `DoubleDown.Repo` via `ContractFacade` can switch to skuld's
+    effectful dispatch (or back) without changing the contract.
 
     ## Write Operations
 
-    Write operations return `{:ok, struct()} | {:error, Ecto.Changeset.t()}`
-    and auto-generate bang variants (`insert!`, `update!`, `delete!`) that
-    unwrap the success value or dispatch `Throw` on error.
+    Write operations return `{:ok, struct()} | {:error, Ecto.Changeset.t()}`.
+    Opts-accepting variants (`insert/2`, `update/2`, `delete/2`) are provided
+    for use in `Ecto.Multi` callbacks and similar contexts.
+
+    Bang write variants (`insert!/1,2`, `update!/1,2`, `delete!/1,2`) are
+    explicit operations that raise on failure, mirroring `Ecto.Repo`.
+
+    ## Upsert Operations
+
+    `insert_or_update/1,2` and their bang variants delegate to insert or
+    update based on whether the changeset's data has `:loaded` state.
 
     ## Bulk Operations
 
     `insert_all/3`, `update_all/3` and `delete_all/2` follow Ecto's return
-    convention of `{count, nil | list}`. No bang variants are generated for
-    these.
+    convention of `{count, nil | list}`.
 
     ## Read Operations
 
@@ -62,25 +70,20 @@ if Code.ensure_loaded?(Ecto) do
     a boolean; `aggregate/3` returns a term.
 
     Bang read variants (`get!/2`, `get_by!/2`, `one!/1`) are provided as
-    separate port operations that mirror Ecto's raise-on-not-found semantics.
+    separate operations that mirror Ecto's raise-on-not-found semantics.
     In the effectful context these dispatch `Throw` instead of raising.
 
-    ## Example
+    ## Transaction Operations
 
-        alias Skuld.Effects.Port.Repo
+    `transact/2` (and its alias `transaction/2`) run a function or
+    `Ecto.Multi` inside a database transaction. `rollback/1` aborts
+    the current transaction. `in_transaction?/0` checks if currently
+    inside a transaction.
 
-        use Skuld.Syntax
-
-        defcomp create_user(attrs) do
-          changeset = User.changeset(%User{}, attrs)
-          user <- Repo.EffectPort.insert!(changeset)
-          return(user)
-        end
-
-        defcomp find_user(id) do
-          user <- Repo.EffectPort.get(User, id)
-          return(user)
-        end
+    Note: `pre_dispatch` on transact/transaction wraps 1-arity fns
+    into 0-arity thunks at the facade level. Skuld's effectful facade
+    does not currently apply pre_dispatch — transaction fn wrapping
+    is handled by the effect handler.
     """
 
     use DoubleDown.Contract
@@ -89,17 +92,94 @@ if Code.ensure_loaded?(Ecto) do
     # Write Operations
     # -----------------------------------------------------------------
 
-    @doc "Insert a new record from a changeset."
-    defcallback insert(changeset :: Ecto.Changeset.t()) ::
+    @doc "Insert a new record from a changeset or struct."
+    defcallback insert(struct_or_changeset :: Ecto.Changeset.t() | struct()) ::
+                  {:ok, struct()} | {:error, Ecto.Changeset.t()}
+
+    @doc "Insert a new record from a changeset or struct with options."
+    defcallback insert(struct_or_changeset :: Ecto.Changeset.t() | struct(), opts :: keyword()) ::
                   {:ok, struct()} | {:error, Ecto.Changeset.t()}
 
     @doc "Update an existing record from a changeset."
     defcallback update(changeset :: Ecto.Changeset.t()) ::
                   {:ok, struct()} | {:error, Ecto.Changeset.t()}
 
-    @doc "Delete a record."
-    defcallback delete(record :: struct()) ::
+    @doc "Update an existing record from a changeset with options."
+    defcallback update(changeset :: Ecto.Changeset.t(), opts :: keyword()) ::
                   {:ok, struct()} | {:error, Ecto.Changeset.t()}
+
+    @doc "Delete a record or changeset."
+    defcallback delete(struct_or_changeset :: struct() | Ecto.Changeset.t()) ::
+                  {:ok, struct()} | {:error, Ecto.Changeset.t()}
+
+    @doc "Delete a record or changeset with options."
+    defcallback delete(struct_or_changeset :: struct() | Ecto.Changeset.t(), opts :: keyword()) ::
+                  {:ok, struct()} | {:error, Ecto.Changeset.t()}
+
+    # -----------------------------------------------------------------
+    # Bang Write Operations
+    # -----------------------------------------------------------------
+
+    @doc "Insert a new record, raising on failure. Mirrors `Ecto.Repo.insert!/2`."
+    defcallback insert!(struct_or_changeset :: Ecto.Changeset.t() | struct()) :: struct()
+
+    @doc "Insert a new record with options, raising on failure."
+    defcallback insert!(struct_or_changeset :: Ecto.Changeset.t() | struct(), opts :: keyword()) ::
+                  struct()
+
+    @doc "Update an existing record, raising on failure. Mirrors `Ecto.Repo.update!/2`."
+    defcallback update!(changeset :: Ecto.Changeset.t()) :: struct()
+
+    @doc "Update an existing record with options, raising on failure."
+    defcallback update!(changeset :: Ecto.Changeset.t(), opts :: keyword()) :: struct()
+
+    @doc "Delete a record or changeset, raising on failure. Mirrors `Ecto.Repo.delete!/2`."
+    defcallback delete!(struct_or_changeset :: struct() | Ecto.Changeset.t()) :: struct()
+
+    @doc "Delete a record or changeset with options, raising on failure."
+    defcallback delete!(struct_or_changeset :: struct() | Ecto.Changeset.t(), opts :: keyword()) ::
+                  struct()
+
+    # -----------------------------------------------------------------
+    # Upsert Operations
+    # -----------------------------------------------------------------
+
+    @doc "Insert or update a record depending on whether it has been loaded."
+    defcallback insert_or_update(changeset :: Ecto.Changeset.t()) ::
+                  {:ok, struct()} | {:error, Ecto.Changeset.t()}
+
+    @doc "Insert or update a record with options."
+    defcallback insert_or_update(changeset :: Ecto.Changeset.t(), opts :: keyword()) ::
+                  {:ok, struct()} | {:error, Ecto.Changeset.t()}
+
+    @doc "Insert or update a record, raising on failure."
+    defcallback insert_or_update!(changeset :: Ecto.Changeset.t()) :: struct()
+
+    @doc "Insert or update a record with options, raising on failure."
+    defcallback insert_or_update!(changeset :: Ecto.Changeset.t(), opts :: keyword()) :: struct()
+
+    # -----------------------------------------------------------------
+    # Raw SQL Operations
+    # -----------------------------------------------------------------
+
+    @doc "Execute a raw SQL query. Returns `{:ok, result} | {:error, term()}`."
+    defcallback query(sql :: String.t()) :: {:ok, term()} | {:error, term()}
+
+    @doc "Execute a raw SQL query with parameters."
+    defcallback query(sql :: String.t(), params :: list()) :: {:ok, term()} | {:error, term()}
+
+    @doc "Execute a raw SQL query with parameters and options."
+    defcallback query(sql :: String.t(), params :: list(), opts :: keyword()) ::
+                  {:ok, term()} | {:error, term()}
+
+    @doc "Execute a raw SQL query, raising on error."
+    defcallback query!(sql :: String.t()) :: term()
+
+    @doc "Execute a raw SQL query with parameters, raising on error."
+    defcallback query!(sql :: String.t(), params :: list()) :: term()
+
+    @doc "Execute a raw SQL query with parameters and options, raising on error."
+    defcallback query!(sql :: String.t(), params :: list(), opts :: keyword()) :: term()
 
     # -----------------------------------------------------------------
     # Bulk Operations
@@ -130,17 +210,31 @@ if Code.ensure_loaded?(Ecto) do
     @doc "Fetch a single record by primary key. Returns `nil` if not found."
     defcallback get(queryable :: Ecto.Queryable.t(), id :: term()) :: struct() | nil
 
+    @doc "Fetch a single record by primary key with options."
+    defcallback get(queryable :: Ecto.Queryable.t(), id :: term(), opts :: keyword()) ::
+                  struct() | nil
+
     @doc """
     Fetch a single record by primary key, or dispatch Throw if not found.
 
     Mirrors `Ecto.Repo.get!/2` — in the effectful context this dispatches
-    `Throw` with `{:not_found, queryable, id}` instead of raising.
+    `Throw` instead of raising.
     """
     defcallback get!(queryable :: Ecto.Queryable.t(), id :: term()) :: struct()
+
+    @doc "Fetch a single record by primary key with options, or dispatch Throw."
+    defcallback get!(queryable :: Ecto.Queryable.t(), id :: term(), opts :: keyword()) :: struct()
 
     @doc "Fetch a single record by the given clauses. Returns `nil` if not found."
     defcallback get_by(queryable :: Ecto.Queryable.t(), clauses :: keyword() | map()) ::
                   struct() | nil
+
+    @doc "Fetch a single record by the given clauses with options."
+    defcallback get_by(
+                  queryable :: Ecto.Queryable.t(),
+                  clauses :: keyword() | map(),
+                  opts :: keyword()
+                ) :: struct() | nil
 
     @doc """
     Fetch a single record by the given clauses, or dispatch Throw if not found.
@@ -149,8 +243,18 @@ if Code.ensure_loaded?(Ecto) do
     """
     defcallback get_by!(queryable :: Ecto.Queryable.t(), clauses :: keyword() | map()) :: struct()
 
+    @doc "Fetch a single record by the given clauses with options, or dispatch Throw."
+    defcallback get_by!(
+                  queryable :: Ecto.Queryable.t(),
+                  clauses :: keyword() | map(),
+                  opts :: keyword()
+                ) :: struct()
+
     @doc "Fetch a single result from a query. Returns `nil` if no result."
     defcallback one(queryable :: Ecto.Queryable.t()) :: struct() | nil
+
+    @doc "Fetch a single result from a query with options."
+    defcallback one(queryable :: Ecto.Queryable.t(), opts :: keyword()) :: struct() | nil
 
     @doc """
     Fetch a single result from a query, or dispatch Throw if no result.
@@ -159,14 +263,156 @@ if Code.ensure_loaded?(Ecto) do
     """
     defcallback one!(queryable :: Ecto.Queryable.t()) :: struct()
 
+    @doc "Fetch a single result from a query with options, or dispatch Throw."
+    defcallback one!(queryable :: Ecto.Queryable.t(), opts :: keyword()) :: struct()
+
     @doc "Fetch all records matching a queryable."
     defcallback all(queryable :: Ecto.Queryable.t()) :: list(struct())
+
+    @doc "Fetch all records matching a queryable with options."
+    defcallback all(queryable :: Ecto.Queryable.t(), opts :: keyword()) :: list(struct())
 
     @doc "Check whether any record matching the queryable exists."
     defcallback exists?(queryable :: Ecto.Queryable.t()) :: boolean()
 
+    @doc "Check whether any record matching the queryable exists, with options."
+    defcallback exists?(queryable :: Ecto.Queryable.t(), opts :: keyword()) :: boolean()
+
     @doc "Calculate an aggregate over the given field."
     defcallback aggregate(queryable :: Ecto.Queryable.t(), aggregate :: atom(), field :: atom()) ::
                   term()
+
+    @doc "Calculate an aggregate over the given field with options."
+    defcallback aggregate(
+                  queryable :: Ecto.Queryable.t(),
+                  aggregate :: atom(),
+                  field :: atom(),
+                  opts :: keyword()
+                ) :: term()
+
+    @doc "Fetch all records matching the given clauses."
+    defcallback all_by(queryable :: Ecto.Queryable.t(), clauses :: keyword() | map()) ::
+                  list(struct())
+
+    @doc "Fetch all records matching the given clauses with options."
+    defcallback all_by(
+                  queryable :: Ecto.Queryable.t(),
+                  clauses :: keyword() | map(),
+                  opts :: keyword()
+                ) :: list(struct())
+
+    # -----------------------------------------------------------------
+    # Stream Operations
+    # -----------------------------------------------------------------
+
+    @doc "Return a lazy enumerable that emits all records matching a queryable."
+    defcallback stream(queryable :: Ecto.Queryable.t()) :: Enum.t()
+
+    @doc "Return a lazy enumerable with options."
+    defcallback stream(queryable :: Ecto.Queryable.t(), opts :: keyword()) :: Enum.t()
+
+    # -----------------------------------------------------------------
+    # Reload Operations
+    # -----------------------------------------------------------------
+
+    @doc "Reload a struct or list of structs from the data store."
+    defcallback reload(struct_or_structs :: struct() | list(struct())) ::
+                  struct() | nil | list(struct() | nil)
+
+    @doc "Reload a struct or list of structs with options."
+    defcallback reload(struct_or_structs :: struct() | list(struct()), opts :: keyword()) ::
+                  struct() | nil | list(struct() | nil)
+
+    @doc "Reload a struct or list of structs, raising if any are not found."
+    defcallback reload!(struct_or_structs :: struct() | list(struct())) ::
+                  struct() | list(struct())
+
+    @doc "Reload a struct or list of structs with options, raising if not found."
+    defcallback reload!(struct_or_structs :: struct() | list(struct()), opts :: keyword()) ::
+                  struct() | list(struct())
+
+    # -----------------------------------------------------------------
+    # Preload Operations
+    # -----------------------------------------------------------------
+
+    @doc "Preload associations on a struct, list of structs, or nil."
+    defcallback preload(
+                  structs_or_struct_or_nil :: list(struct()) | struct() | nil,
+                  preloads :: term()
+                ) :: list(struct()) | struct() | nil
+
+    @doc "Preload associations with options."
+    defcallback preload(
+                  structs_or_struct_or_nil :: list(struct()) | struct() | nil,
+                  preloads :: term(),
+                  opts :: keyword()
+                ) :: list(struct()) | struct() | nil
+
+    # -----------------------------------------------------------------
+    # Load Operations
+    # -----------------------------------------------------------------
+
+    @doc "Load a schema struct or map from raw data. Mirrors `Ecto.Repo.load/2`."
+    defcallback load(
+                  schema_or_map :: module() | map(),
+                  data :: map() | keyword() | {list(), list()}
+                ) :: struct() | map()
+
+    # -----------------------------------------------------------------
+    # Transaction Operations
+    # -----------------------------------------------------------------
+
+    @doc """
+    Run a function or `Ecto.Multi` inside a database transaction.
+
+    Mirrors `Ecto.Repo.transaction/2`. Accepts either a function or an
+    `Ecto.Multi` struct as the first argument.
+
+    The function may be 0-arity or 1-arity. 1-arity functions receive the
+    facade module so that calls inside the fn go through the dispatch chain.
+
+    Note: the `pre_dispatch` option on this operation wraps 1-arity fns at
+    the DoubleDown facade level. Skuld's effectful facade does not apply
+    `pre_dispatch` — transaction fn wrapping is handled by the effect handler.
+    """
+    defcallback transact(fun_or_multi :: term(), opts :: keyword()) ::
+                  {:ok, term()} | {:error, term()} | {:error, term(), term(), term()},
+                pre_dispatch: fn args, facade_mod ->
+                  case args do
+                    [fun, opts] when is_function(fun, 1) ->
+                      [fn -> fun.(facade_mod) end, opts]
+
+                    [%Ecto.Multi{} = _multi, opts] ->
+                      [Enum.at(args, 0), Keyword.put(opts, DoubleDown.Repo.Facade, facade_mod)]
+
+                    [fun, _opts] when is_function(fun, 0) ->
+                      args
+                  end
+                end
+
+    @doc """
+    Alias for `transact/2` — provided for compatibility with existing
+    `Ecto.Repo.transaction/2` call sites.
+    """
+    defcallback transaction(fun_or_multi :: term(), opts :: keyword()) ::
+                  {:ok, term()} | {:error, term()} | {:error, term(), term(), term()},
+                pre_dispatch: fn args, facade_mod ->
+                  case args do
+                    [fun, opts] when is_function(fun, 1) ->
+                      [fn -> fun.(facade_mod) end, opts]
+
+                    [%Ecto.Multi{} = _multi, opts] ->
+                      [Enum.at(args, 0), Keyword.put(opts, DoubleDown.Repo.Facade, facade_mod)]
+
+                    [fun, _opts] when is_function(fun, 0) ->
+                      args
+                  end
+                end
+
+    @doc "Roll back the current transaction."
+    defcallback rollback(value :: term()) :: no_return()
+
+    @doc "Check whether the current process is inside a transaction."
+    defcallback in_transaction?() :: boolean()
   end
 end

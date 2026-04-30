@@ -354,6 +354,13 @@ if Code.ensure_loaded?(Ecto) do
       do: dispatch_via_fallback(:delete_all, args, store)
 
     # -----------------------------------------------------------------
+    # Catch-all — new operations added to the Repo contract
+    # -----------------------------------------------------------------
+
+    defp dispatch(Repo.Effectful, operation, args, store),
+      do: dispatch_via_fallback(operation, args, store)
+
+    # -----------------------------------------------------------------
     # Fallback dispatch
     # -----------------------------------------------------------------
 

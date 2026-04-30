@@ -66,46 +66,60 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert :all in callbacks
     end
 
-    test "no auto-generated bang variants on facade" do
-      fns = Repo.__info__(:functions) |> Map.new()
-
-      # Facades no longer auto-generate bangs
-      refute Map.has_key?(fns, :insert!)
-      refute Map.has_key?(fns, :update!)
-      refute Map.has_key?(fns, :delete!)
-    end
-
-    test "explicitly declared bang operations are in the contract" do
+    test "bang operations are explicitly declared in the contract" do
       ops = Repo.Effectful.__callbacks__() |> Enum.map(& &1.name)
 
-      # These are explicitly declared as defcallback in the contract
+      # All bang operations are explicitly declared defcallbacks, not auto-generated
+      assert :insert! in ops
+      assert :update! in ops
+      assert :delete! in ops
       assert :get! in ops
       assert :get_by! in ops
       assert :one! in ops
+      assert :insert_or_update! in ops
+      assert :reload! in ops
+      assert :query! in ops
     end
 
     test "__callbacks__ lists all operations" do
       ops = Repo.Effectful.__callbacks__()
 
-      assert length(ops) == 15
+      assert length(ops) == 58
 
-      op_names = Enum.map(ops, & &1.name) |> Enum.sort()
+      unique_names = Enum.map(ops, & &1.name) |> Enum.uniq() |> Enum.sort()
 
-      assert op_names == [
+      assert unique_names == [
                :aggregate,
                :all,
+               :all_by,
                :delete,
+               :delete!,
                :delete_all,
                :exists?,
                :get,
                :get!,
                :get_by,
                :get_by!,
+               :in_transaction?,
                :insert,
+               :insert!,
                :insert_all,
+               :insert_or_update,
+               :insert_or_update!,
+               :load,
                :one,
                :one!,
+               :preload,
+               :query,
+               :query!,
+               :reload,
+               :reload!,
+               :rollback,
+               :stream,
+               :transact,
+               :transaction,
                :update,
+               :update!,
                :update_all
              ]
     end
