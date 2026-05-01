@@ -84,10 +84,12 @@ defmodule Skuld.Effects.Port.RepoTest do
     test "__callbacks__ lists all operations" do
       ops = Repo.Effectful.__callbacks__()
 
-      assert length(ops) == 58
+      assert length(ops) == 54
 
       unique_names = Enum.map(ops, & &1.name) |> Enum.uniq() |> Enum.sort()
 
+      # Transaction operations (transact, transaction, rollback, in_transaction?)
+      # are deliberately omitted — use the Transaction effect instead.
       assert unique_names == [
                :aggregate,
                :all,
@@ -100,7 +102,6 @@ defmodule Skuld.Effects.Port.RepoTest do
                :get!,
                :get_by,
                :get_by!,
-               :in_transaction?,
                :insert,
                :insert!,
                :insert_all,
@@ -114,10 +115,7 @@ defmodule Skuld.Effects.Port.RepoTest do
                :query!,
                :reload,
                :reload!,
-               :rollback,
                :stream,
-               :transact,
-               :transaction,
                :update,
                :update!,
                :update_all
@@ -403,7 +401,7 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert %ThrowResult{error: {:port_failed, Repo.Effectful, :get, %ArgumentError{} = e}} =
                result
 
-      assert e.message =~ "Repo.Test cannot service :get"
+      assert e.message =~ "Repo.Stub cannot service :get"
     end
 
     test "all errors without fallback" do
@@ -416,7 +414,7 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert %ThrowResult{error: {:port_failed, Repo.Effectful, :all, %ArgumentError{} = e}} =
                result
 
-      assert e.message =~ "Repo.Test cannot service :all"
+      assert e.message =~ "Repo.Stub cannot service :all"
     end
 
     test "exists? errors without fallback" do
@@ -429,7 +427,7 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert %ThrowResult{error: {:port_failed, Repo.Effectful, :exists?, %ArgumentError{} = e}} =
                result
 
-      assert e.message =~ "Repo.Test cannot service :exists?"
+      assert e.message =~ "Repo.Stub cannot service :exists?"
     end
 
     test "update_all errors without fallback" do
@@ -444,7 +442,7 @@ defmodule Skuld.Effects.Port.RepoTest do
              } =
                result
 
-      assert e.message =~ "Repo.Test cannot service :update_all"
+      assert e.message =~ "Repo.Stub cannot service :update_all"
     end
 
     test "delete_all errors without fallback" do
@@ -459,7 +457,7 @@ defmodule Skuld.Effects.Port.RepoTest do
              } =
                result
 
-      assert e.message =~ "Repo.Test cannot service :delete_all"
+      assert e.message =~ "Repo.Stub cannot service :delete_all"
     end
   end
 
@@ -514,7 +512,7 @@ defmodule Skuld.Effects.Port.RepoTest do
       assert %ThrowResult{error: {:port_failed, Repo.Effectful, :get, %ArgumentError{} = e}} =
                result
 
-      assert e.message =~ "Repo.Test cannot service :get"
+      assert e.message =~ "Repo.Stub cannot service :get"
     end
   end
 

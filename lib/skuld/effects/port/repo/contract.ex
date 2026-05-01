@@ -75,15 +75,15 @@ if Code.ensure_loaded?(Ecto) do
 
     ## Transaction Operations
 
-    `transact/2` (and its alias `transaction/2`) run a function or
-    `Ecto.Multi` inside a database transaction. `rollback/1` aborts
-    the current transaction. `in_transaction?/0` checks if currently
-    inside a transaction.
+    Transaction operations (`transact`, `transaction`, `rollback`,
+    `in_transaction?`) are deliberately omitted from the Repo contract.
+    In skuld, transaction coordination is handled by the `Transaction`
+    effect (`Skuld.Effects.Transaction`), which provides env state
+    rollback, nested savepoints, and optional DB transaction wrapping.
 
-    Note: `pre_dispatch` on transact/transaction wraps 1-arity fns
-    into 0-arity thunks at the facade level. Skuld's effectful facade
-    does not currently apply pre_dispatch — transaction fn wrapping
-    is handled by the effect handler.
+    Similarly, `Ecto.Multi` is not supported — it is a limited
+    sequencing mechanism that is superseded by skuld's effect-based
+    computation composition (`comp do ... end`).
     """
 
     use DoubleDown.Contract
@@ -357,62 +357,5 @@ if Code.ensure_loaded?(Ecto) do
                   schema_or_map :: module() | map(),
                   data :: map() | keyword() | {list(), list()}
                 ) :: struct() | map()
-
-    # -----------------------------------------------------------------
-    # Transaction Operations
-    # -----------------------------------------------------------------
-
-    @doc """
-    Run a function or `Ecto.Multi` inside a database transaction.
-
-    Mirrors `Ecto.Repo.transaction/2`. Accepts either a function or an
-    `Ecto.Multi` struct as the first argument.
-
-    The function may be 0-arity or 1-arity. 1-arity functions receive the
-    facade module so that calls inside the fn go through the dispatch chain.
-
-    Note: the `pre_dispatch` option on this operation wraps 1-arity fns at
-    the DoubleDown facade level. Skuld's effectful facade does not apply
-    `pre_dispatch` — transaction fn wrapping is handled by the effect handler.
-    """
-    defcallback transact(fun_or_multi :: term(), opts :: keyword()) ::
-                  {:ok, term()} | {:error, term()} | {:error, term(), term(), term()},
-                pre_dispatch: fn args, facade_mod ->
-                  case args do
-                    [fun, opts] when is_function(fun, 1) ->
-                      [fn -> fun.(facade_mod) end, opts]
-
-                    [%Ecto.Multi{} = _multi, opts] ->
-                      [Enum.at(args, 0), Keyword.put(opts, DoubleDown.Repo.Facade, facade_mod)]
-
-                    [fun, _opts] when is_function(fun, 0) ->
-                      args
-                  end
-                end
-
-    @doc """
-    Alias for `transact/2` — provided for compatibility with existing
-    `Ecto.Repo.transaction/2` call sites.
-    """
-    defcallback transaction(fun_or_multi :: term(), opts :: keyword()) ::
-                  {:ok, term()} | {:error, term()} | {:error, term(), term(), term()},
-                pre_dispatch: fn args, facade_mod ->
-                  case args do
-                    [fun, opts] when is_function(fun, 1) ->
-                      [fn -> fun.(facade_mod) end, opts]
-
-                    [%Ecto.Multi{} = _multi, opts] ->
-                      [Enum.at(args, 0), Keyword.put(opts, DoubleDown.Repo.Facade, facade_mod)]
-
-                    [fun, _opts] when is_function(fun, 0) ->
-                      args
-                  end
-                end
-
-    @doc "Roll back the current transaction."
-    defcallback rollback(value :: term()) :: no_return()
-
-    @doc "Check whether the current process is inside a transaction."
-    defcallback in_transaction?() :: boolean()
   end
 end

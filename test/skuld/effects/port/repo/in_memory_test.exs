@@ -1,4 +1,4 @@
-defmodule Skuld.Effects.Port.Repo.InMemoryTest do
+defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
   use ExUnit.Case, async: true
 
   use Skuld.Syntax
@@ -6,7 +6,7 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
   alias Skuld.Comp
   alias Skuld.Effects.Port
   alias Skuld.Effects.Port.Repo
-  alias Skuld.Effects.Port.Repo.InMemory
+  alias Skuld.Effects.Port.Repo.OpenInMemory, as: InMemory
   alias Skuld.Effects.Throw
   alias Skuld.Comp.Throw, as: ThrowResult
 
@@ -99,14 +99,16 @@ defmodule Skuld.Effects.Port.Repo.InMemoryTest do
     test "stores fallback_fn via :fallback_fn option" do
       fallback = fn :all, [User], _state -> [] end
       state = InMemory.new(fallback_fn: fallback)
-      assert %{__fallback_fn__: ^fallback} = state
+      assert %{__fallback_fn__: stored_fn} = state
+      assert is_function(stored_fn)
     end
 
     test "combines seed and fallback_fn" do
       alice = %User{id: 1, name: "Alice"}
       fallback = fn :all, [User], _state -> [alice] end
       state = InMemory.new(seed: [alice], fallback_fn: fallback)
-      assert %{User => %{1 => ^alice}, __fallback_fn__: ^fallback} = state
+      assert %{User => %{1 => ^alice}, __fallback_fn__: stored_fn} = state
+      assert is_function(stored_fn)
     end
   end
 

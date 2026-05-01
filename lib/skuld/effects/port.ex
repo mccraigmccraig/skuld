@@ -872,6 +872,10 @@ defmodule Skuld.Effects.Port do
     port_state = Env.get_state!(env, state_key)
     handler_state = port_state.handler_state
     {result, new_handler_state} = handler_fn.(mod, name, args, handler_state)
+    # Unwrap DoubleDown.Contract.Dispatch.Defer — DD's fakes use Defer to
+    # defer execution outside the NimbleOwnership lock. Skuld doesn't use
+    # NimbleOwnership, so we invoke the deferred function immediately.
+    result = unwrap_defer(result)
     updated_port_state = %{port_state | handler_state: new_handler_state}
     env_with_state = Env.put_state(env, state_key, updated_port_state)
     emit_log_and_continue(result, mod, name, args, log, env_with_state, k)
@@ -898,6 +902,19 @@ defmodule Skuld.Effects.Port do
         env
       )
   end
+
+  #############################################################################
+  ## Defer Unwrapping
+  #############################################################################
+
+  # DoubleDown's stateful fakes (InMemory, OpenInMemory) use %Defer{} to
+  # defer execution outside the NimbleOwnership lock. Skuld doesn't use
+  # NimbleOwnership, so we invoke the deferred function immediately.
+  if Code.ensure_loaded?(DoubleDown.Contract.Dispatch.Defer) do
+    defp unwrap_defer(%DoubleDown.Contract.Dispatch.Defer{fun: fun}), do: fun.()
+  end
+
+  defp unwrap_defer(result), do: result
 
   #############################################################################
   ## Logging Helpers
