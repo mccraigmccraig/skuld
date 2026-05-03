@@ -148,20 +148,59 @@ defmodule Skuld.Effects.Port.RepoTest do
 
   defmodule MockRepo do
     def insert(cs), do: {:ok, Ecto.Changeset.apply_changes(cs)}
+    def insert(cs, _opts), do: {:ok, Ecto.Changeset.apply_changes(cs)}
+    def insert!(cs), do: Ecto.Changeset.apply_changes(cs)
+    def insert!(cs, _opts), do: Ecto.Changeset.apply_changes(cs)
     def update(cs), do: {:ok, Ecto.Changeset.apply_changes(cs)}
+    def update(cs, _opts), do: {:ok, Ecto.Changeset.apply_changes(cs)}
+    def update!(cs), do: Ecto.Changeset.apply_changes(cs)
+    def update!(cs, _opts), do: Ecto.Changeset.apply_changes(cs)
     def delete(record), do: {:ok, record}
+    def delete(record, _opts), do: {:ok, record}
+    def delete!(record), do: record
+    def delete!(record, _opts), do: record
     def insert_all(_s, entries, _o), do: {length(entries), nil}
     def update_all(_q, _u, _o), do: {3, nil}
     def delete_all(_q, _o), do: {5, nil}
     def get(_q, id), do: %TestUser{id: id, name: "found"}
+    def get(_q, id, _opts), do: %TestUser{id: id, name: "found"}
     def get!(_q, id), do: %TestUser{id: id, name: "found!"}
+    def get!(_q, id, _opts), do: %TestUser{id: id, name: "found!"}
     def get_by(_q, clauses), do: %TestUser{id: 1, name: clauses[:name]}
+    def get_by(_q, clauses, _opts), do: %TestUser{id: 1, name: clauses[:name]}
     def get_by!(_q, clauses), do: %TestUser{id: 1, name: clauses[:name]}
+    def get_by!(_q, clauses, _opts), do: %TestUser{id: 1, name: clauses[:name]}
     def one(_q), do: %TestUser{id: 1, name: "one"}
+    def one(_q, _opts), do: %TestUser{id: 1, name: "one"}
     def one!(_q), do: %TestUser{id: 1, name: "one!"}
+    def one!(_q, _opts), do: %TestUser{id: 1, name: "one!"}
     def all(_q), do: [%TestUser{id: 1}, %TestUser{id: 2}]
+    def all(_q, _opts), do: [%TestUser{id: 1}, %TestUser{id: 2}]
     def exists?(_q), do: true
+    def exists?(_q, _opts), do: true
     def aggregate(_q, _agg, _f), do: 42
+    def aggregate(_q, _agg, _f, _opts), do: 42
+    def insert_or_update(cs), do: insert(cs)
+    def insert_or_update(cs, opts), do: insert(cs, opts)
+    def insert_or_update!(cs), do: insert!(cs)
+    def insert_or_update!(cs, opts), do: insert!(cs, opts)
+    def query(sql), do: {:ok, %{sql: sql}}
+    def query(sql, params), do: {:ok, %{sql: sql, params: params}}
+    def query(sql, params, _opts), do: {:ok, %{sql: sql, params: params}}
+    def query!(sql), do: %{sql: sql}
+    def query!(sql, params), do: %{sql: sql, params: params}
+    def query!(sql, params, _opts), do: %{sql: sql, params: params}
+    def reload(struct), do: struct
+    def reload(struct, _opts), do: struct
+    def reload!(struct), do: struct
+    def reload!(struct, _opts), do: struct
+    def preload(structs, preloads), do: {structs, preloads}
+    def preload(structs, preloads, _opts), do: {structs, preloads}
+    def all_by(_q, _clauses), do: [%TestUser{id: 1}]
+    def all_by(_q, _clauses, _opts), do: [%TestUser{id: 1}]
+    def load(schema, data), do: {schema, data}
+    def stream(_q), do: []
+    def stream(_q, _opts), do: []
   end
 
   defmodule TestRepoPort do
@@ -279,7 +318,7 @@ defmodule Skuld.Effects.Port.RepoTest do
   defp with_repo_test(comp, opts \\ []) do
     extra_registry = Keyword.get(opts, :registry, %{})
     fallback_fn = Keyword.get(opts, :fallback_fn, nil)
-    handler = Repo.Test.new(fallback_fn: fallback_fn)
+    handler = Repo.Stub.new(fallback_fn: fallback_fn)
     registry = Map.put(extra_registry, Repo.Effectful, handler)
 
     output = Keyword.get(opts, :output)

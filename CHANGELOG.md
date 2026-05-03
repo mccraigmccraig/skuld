@@ -15,7 +15,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the facade module, with `computation()`-wrapped `@callback` declarations
   and dispatch functions generated automatically.
 
+- `Skuld.Effects.Port.Repo.InMemory` — closed-world in-memory Repo handler,
+  thin wrapper around `DoubleDown.Repo.InMemory`. Authoritative for all
+  bare-schema reads without a fallback. Supports writes, PK reads, clause
+  reads, aggregates, bulk operations, preload, reload, and transaction
+  rollback.
+
+- `Skuld.Effects.Port.Repo.OpenInMemory` — open-world in-memory Repo handler,
+  thin wrapper around `DoubleDown.Repo.OpenInMemory`. Authoritative for PK
+  reads only; everything else falls through to a fallback function.
+
+- `Skuld.Effects.Port.Repo.Stub` — stateless stub Repo handler, thin wrapper
+  around `DoubleDown.Repo.Stub`. Writes apply changesets and return results
+  but store nothing. Reads require a fallback function.
+
+- Transaction effect (`Skuld.Effects.Transaction`) with `transact` and
+  `rollback` operations. Supports env state rollback, nested savepoints,
+  and optional database transaction wrapping via separate Noop and Ecto
+  handlers.
+
+- Extended `Skuld.Effects.Port.Repo.Contract` to match `DoubleDown.Repo`
+  operations: opts-accepting write/read variants, explicit bang operations
+  (`insert!/1,2`, `update!/1,2`, `delete!/1,2`), upsert (`insert_or_update`),
+  raw SQL (`query/1,2,3` and `query!/1,2,3`), reload, preload, all_by, load,
+  and stream.
+
+### Changed
+
 - Upgraded `double_down` dependency from `~> 0.54` to `~> 0.58`.
+
+### Removed
+
+- Auto-bang generation from effectful Port facades (`extract_success_type/1`
+  and `has_ok_error_pattern?/1` removed in `double_down` 0.38). Bang variants
+  must be declared as explicit `defcallback` declarations.
+
+- Deprecated `Skuld.Effects.Port.Repo.Test` — use `Repo.Stub` instead.
 
 ## [0.23.0] — 2026-04-09
 
