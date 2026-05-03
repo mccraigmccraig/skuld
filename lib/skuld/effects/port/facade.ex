@@ -2,15 +2,28 @@ defmodule Skuld.Effects.Port.Facade do
   @moduledoc """
   Generates an effectful dispatch facade for a port contract.
 
-  `use Skuld.Effects.Port.Facade` reads the contract's `__callbacks__/0`
-  metadata and generates effectful caller functions (returning computations),
-  bang variants (unwrap or throw), and `__key__` helpers for test stub matching.
+  `use Skuld.Effects.Port.Facade` reads a contract's metadata and generates
+  effectful caller functions (returning computations) and `__key__` helpers
+  for test stub matching.
 
-  ## Combined effectful contract + facade (simplest)
+  ## Single-module (simplest)
 
-  When `:double_down_contract` is given (and `:contract` is omitted), the
-  effectful contract is set up implicitly and the facade is generated on
-  the same module:
+  With no options, the module is both the contract and the dispatch facade:
+
+      defmodule MyApp.Todos do
+        use Skuld.Effects.Port.Facade
+
+        defcallback get_todo(id :: String.t()) :: {:ok, Todo.t()} | {:error, term()}
+        defcallback list_todos() :: [Todo.t()]
+      end
+
+  `MyApp.Todos` has effectful `@callback`s, `__callbacks__/0`,
+  `__port_effectful__?/0`, and facade dispatch functions — all in one module.
+
+  ## From an existing DoubleDown Contract
+
+  When you have a separate contract module, use the `:double_down_contract`
+  option:
 
       defmodule MyApp.Todos.Contract do
         use DoubleDown.Contract
@@ -43,7 +56,7 @@ defmodule Skuld.Effects.Port.Facade do
   ## Handler Installation
 
       comp do
-        todo <- MyApp.Todos.get_todo!("42")
+        todo <- MyApp.Todos.get_todo("42")
         todo
       end
       |> Port.with_handler(%{MyApp.Todos => MyApp.Todos.Ecto})
@@ -57,6 +70,8 @@ defmodule Skuld.Effects.Port.Facade do
       `:contract` is not), implicitly issues
       `use Skuld.Effects.Port.EffectfulContract` and sets `:contract` to
       `__MODULE__`. Cannot be combined with `:contract`.
+    * Without options: single-module pattern — `use DoubleDown.Contract` is
+      issued implicitly and everything is generated on the same module.
   """
 
   @doc false
@@ -90,6 +105,17 @@ defmodule Skuld.Effects.Port.Facade do
     end
 
     cond do
+      # Single-module: no options at all — contract defaults to __MODULE__
+      # with no separate DD contract. Issue DD.Contract (callbacks: false)
+      # and register @before_compile.
+      not has_contract? and not has_double_down? ->
+        quote do
+          use DoubleDown.Contract, callbacks: false
+
+          @skuld_port_contract __MODULE__
+          @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
+        end
+
       # Combined: double_down_contract given, no contract — implicitly issue
       # use EffectfulContract and set contract to __MODULE__
       has_double_down? ->
@@ -101,7 +127,8 @@ defmodule Skuld.Effects.Port.Facade do
           @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
         end
 
-      # Self-referencing (contract: __MODULE__ or omitted, no double_down_contract)
+      # Self-referencing (contract: __MODULE__, no double_down_contract)
+      # The effectful contract was already set up (by EffectfulContract above)
       self_ref? ->
         quote do
           @skuld_port_contract unquote(contract)
@@ -122,25 +149,30 @@ defmodule Skuld.Effects.Port.Facade do
   defmacro __before_compile__(env) do
     contract = Module.get_attribute(env.module, :skuld_port_contract)
 
-    operations =
+    {operations, is_single_module?} =
       if contract == env.module do
-        # Same-module: EffectfulContract's __before_compile__ has already
-        # run and defined __callbacks__/0, but we can't call it.
-        # Read the double_down_contract (always a separate compiled module)
-        # and get operations from there.
         double_down_contract = Module.get_attribute(env.module, :skuld_double_down_contract)
 
-        unless double_down_contract do
-          raise CompileError,
-            description:
-              "#{inspect(contract)} does not have a double_down_contract. " <>
-                "Ensure `use Skuld.Effects.Port.EffectfulContract` appears " <>
-                "before `use Skuld.Effects.Port.Facade` in the same module.",
-            file: env.file,
-            line: 0
-        end
+        if double_down_contract do
+          # Combined pattern: EffectfulContract ran, operations come from
+          # the separate DD contract module.
+          {double_down_contract.__callbacks__(), false}
+        else
+          # Single-module pattern: DD.Contract (callbacks: false) ran,
+          # __callbacks__/0 exists but can't be called yet. Read raw
+          # @callback_operations and normalise to __callbacks__/0 format.
+          raw_ops = Module.get_attribute(env.module, :callback_operations) |> Enum.reverse()
 
-        double_down_contract.__callbacks__()
+          if raw_ops == [] do
+            raise CompileError,
+              description:
+                "#{inspect(env.module)} uses Skuld.Effects.Port.Facade but has no defcallback declarations",
+              file: env.file,
+              line: 0
+          end
+
+          {normalize_operations(raw_ops), true}
+        end
       else
         unless Code.ensure_loaded?(contract) do
           raise CompileError,
@@ -160,12 +192,25 @@ defmodule Skuld.Effects.Port.Facade do
             line: 0
         end
 
-        contract.__callbacks__()
+        {contract.__callbacks__(), false}
       end
 
     callers = Enum.map(operations, &generate_caller(&1, contract))
-
     key_helpers = Enum.map(operations, &generate_key_helper(&1, contract))
+
+    # Single-module pattern: generate effectful @callback declarations
+    # and __port_effectful__?/0 (DD.Contract already generated __callbacks__/0).
+    effectful_block =
+      if is_single_module? do
+        effectful_callbacks = Enum.map(operations, &generate_effectful_callback/1)
+
+        quote do
+          unquote_splicing(effectful_callbacks)
+
+          @doc false
+          def __port_effectful__?, do: true
+        end
+      end
 
     quote do
       @moduledoc """
@@ -176,6 +221,7 @@ defmodule Skuld.Effects.Port.Facade do
       effect. Also provides `__key__` helpers for test stub matching.
       """
 
+      unquote(effectful_block)
       unquote_splicing(callers)
       unquote_splicing(key_helpers)
     end
@@ -242,5 +288,61 @@ defmodule Skuld.Effects.Port.Facade do
         Skuld.Effects.Port.key(unquote(contract_module), unquote(name), unquote(args_list))
       end
     end
+  end
+
+  # -------------------------------------------------------------------
+  # Code Generation: Effectful @callback declarations
+  # -------------------------------------------------------------------
+
+  defp generate_effectful_callback(%{
+         name: name,
+         params: param_names,
+         param_types: param_types,
+         return_type: return_type
+       }) do
+    callback_params =
+      Enum.zip(param_names, param_types)
+      |> Enum.map(fn {pname, ptype} ->
+        {:"::", [], [{pname, [], nil}, ptype]}
+      end)
+
+    comp_type = {:computation, [], [return_type]}
+
+    quote do
+      @callback unquote(name)(unquote_splicing(callback_params)) ::
+                  Skuld.Comp.Types.unquote(comp_type)
+    end
+  end
+
+  # -------------------------------------------------------------------
+  # Raw @callback_operations → __callbacks__/0 format
+  # -------------------------------------------------------------------
+  #
+  # @callback_operations uses :param_names and lacks :arity/:params.
+  # __callbacks__/0 uses :params (list) and :arity (integer).
+  # Normalise so generate_caller/2 and generate_effectful_callback/1
+  # can consume operations from either source.
+
+  defp normalize_operations(raw_ops) do
+    Enum.map(raw_ops, fn %{
+                           name: name,
+                           param_names: param_names,
+                           param_types: param_types,
+                           return_type: return_type,
+                           pre_dispatch: pre_dispatch,
+                           warn_on_typespec_mismatch?: warn_on_typespec_mismatch?,
+                           user_doc: user_doc
+                         } ->
+      %{
+        name: name,
+        params: param_names,
+        param_types: param_types,
+        return_type: return_type,
+        pre_dispatch: pre_dispatch,
+        warn_on_typespec_mismatch?: warn_on_typespec_mismatch?,
+        user_doc: user_doc,
+        arity: length(param_names)
+      }
+    end)
   end
 end
