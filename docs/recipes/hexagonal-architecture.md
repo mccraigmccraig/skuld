@@ -7,7 +7,7 @@
 Hexagonal architecture (ports and adapters) separates domain logic from
 infrastructure by defining ports — interfaces through which components
 communicate. Skuld's Port system supports incremental adoption: you can
-impose port boundaries on existing code using HexPort's plain dispatch
+impose port boundaries on existing code using DoubleDown's plain dispatch
 layer, then gradually convert components to effectful implementations at
 your own pace.
 
@@ -19,19 +19,19 @@ code can be either **plain Elixir** (legacy/non-effectful) or **effectful**
 
 | # | Caller       | Implementation | Mechanism                                          |
 |---|--------------|----------------|----------------------------------------------------|
-| 1 | Plain Elixir | Plain Elixir   | `HexPort.Facade` — config-dispatched plain calls   |
+| 1 | Plain Elixir | Plain Elixir   | `DoubleDown.ContractFacade` — config-dispatched plain calls   |
 | 2 | Plain Elixir | Effectful      | `Port.Adapter.Effectful`                           |
 | 3 | Effectful    | Plain Elixir   | `Port.with_handler` + `:direct` resolver           |
 | 4 | Effectful    | Effectful      | `Port.with_handler` + effectful module (auto-detected) |
 
 A contract module defines `@callback` declarations and
-`__port_operations__/0`. The simplest way to set up a port is to combine
+`__callbacks__/0`. The simplest way to set up a port is to combine
 the contract and facade in a single module:
 
-- **Plain facade**: `use HexPort.Facade, otp_app: :my_app` — when
+- **Plain facade**: `use DoubleDown.ContractFacade, otp_app: :my_app` — when
   `contract:` is omitted, the module is both contract and facade. Add
-  `defport` declarations to define the interface.
-- **Effectful facade**: `use Skuld.Effects.Port.Facade, hex_port_contract: MyApp.Orders` —
+  `defcallback` declarations to define the interface.
+- **Effectful facade**: `use Skuld.Effects.Port.Facade, double_down_contract: MyApp.Orders` —
   when `contract:` is omitted, the module is both effectful contract and
   facade. The effectful callbacks and caller functions are derived from
   the plain contract automatically.
@@ -46,19 +46,19 @@ The simplest pattern combines the contract and facade in one module:
 ```elixir
 # Plain contract + facade — defines the port interface and dispatch functions
 defmodule MyApp.Orders do
-  use HexPort.Facade, otp_app: :my_app
+  use DoubleDown.ContractFacade, otp_app: :my_app
 
-  defport place_order(params :: map()) ::
+  defcallback place_order(params :: map()) ::
             {:ok, Order.t()} | {:error, term()}
 
-  defport get_order(id :: String.t()) ::
+  defcallback get_order(id :: String.t()) ::
             {:ok, Order.t()} | {:error, term()}
 end
 
 # Effectful contract + facade — derives effectful callbacks and caller functions
 defmodule MyApp.Effectful.Orders do
   use Skuld.Effects.Port.Facade,
-    hex_port_contract: MyApp.Orders
+    double_down_contract: MyApp.Orders
 end
 ```
 
@@ -95,22 +95,22 @@ also want plain dispatch, combine the contract and facade in one module:
 
 ```elixir
 defmodule MyApp.Orders do
-  use HexPort.Facade, otp_app: :my_app
+  use DoubleDown.ContractFacade, otp_app: :my_app
 
-  defport place_order(params :: map()) ::
+  defcallback place_order(params :: map()) ::
             {:ok, Order.t()} | {:error, term()}
 
-  defport get_order(id :: String.t()) ::
+  defcallback get_order(id :: String.t()) ::
             {:ok, Order.t()} | {:error, term()}
 end
 
 defmodule MyApp.Inventory do
-  use HexPort.Facade, otp_app: :my_app
+  use DoubleDown.ContractFacade, otp_app: :my_app
 
-  defport reserve_stock(sku :: String.t(), qty :: integer()) ::
+  defcallback reserve_stock(sku :: String.t(), qty :: integer()) ::
             {:ok, Reservation.t()} | {:error, term()}
 
-  defport check_stock(sku :: String.t()) ::
+  defcallback check_stock(sku :: String.t()) ::
             {:ok, integer()} | {:error, term()}
 end
 ```
@@ -152,7 +152,7 @@ OrderController → MyApp.Orders → OrderService
 Nothing uses Skuld's effect system yet. The contracts impose compile-time
 interface verification via `@behaviour`, and the facade modules dispatch
 to the configured implementation at runtime. You can swap implementations
-(e.g. Mox mocks for tests) via application config or HexPort's test
+(e.g. Mox mocks for tests) via application config or DoubleDown's test
 handler API.
 
 ### Step 3: Convert a provider to effectful
@@ -163,7 +163,7 @@ the effectful facade for the contracts it will call through:
 ```elixir
 defmodule MyApp.Effectful.Inventory do
   use Skuld.Effects.Port.Facade,
-    hex_port_contract: MyApp.Inventory
+    double_down_contract: MyApp.Inventory
 end
 ```
 
@@ -231,7 +231,7 @@ an effectful orchestrator). Define the effectful facade for `Orders`:
 ```elixir
 defmodule MyApp.Effectful.Orders do
   use Skuld.Effects.Port.Facade,
-    hex_port_contract: MyApp.Orders
+    double_down_contract: MyApp.Orders
 end
 ```
 
@@ -294,7 +294,7 @@ without forcing effectful machinery where it adds no value.
 
 ## The four scenarios in detail
 
-### Scenario 1: Plain → Plain (`HexPort.Facade`)
+### Scenario 1: Plain → Plain (`DoubleDown.ContractFacade`)
 
 Both caller and implementation are plain Elixir. The facade module
 dispatches to a config-resolved implementation through the contract
@@ -303,9 +303,9 @@ boundary.
 ```elixir
 # Combined contract + facade
 defmodule MyApp.Orders do
-  use HexPort.Facade, otp_app: :my_app
+  use DoubleDown.ContractFacade, otp_app: :my_app
 
-  defport place_order(params :: map()) ::
+  defcallback place_order(params :: map()) ::
             {:ok, Order.t()} | {:error, term()}
 end
 
@@ -318,7 +318,7 @@ MyApp.Orders.place_order(params)
 
 Use this when imposing a port boundary without introducing Skuld's
 effect system. Swap the implementation in `config/test.exs` for Mox
-testing, or use HexPort's test handler API.
+testing, or use DoubleDown's test handler API.
 
 ### Scenario 2: Plain → Effectful (`Adapter.Effectful`)
 
@@ -500,8 +500,8 @@ end
 
 #### Adoption path
 
-1. **Define a facade** — `use HexPort.Facade, otp_app: :my_app` with
-   `defport` declarations (combined contract + facade)
+1. **Define a facade** — `use DoubleDown.ContractFacade, otp_app: :my_app` with
+   `defcallback` declarations (combined contract + facade)
 2. **Use Mox in tests** — `Mox.defmock(Mock, for: MyApp.Orders)`,
    point app at mock via `config/test.exs`
 3. **Later, optionally** — define `MyApp.Effectful.Orders` with
@@ -511,9 +511,9 @@ end
 Each step delivers value independently. You don't need to adopt the
 full effect system to benefit from Port contracts and test isolation.
 
-### Testing plain hexagons with HexPort test doubles
+### Testing plain hexagons with DoubleDown test doubles
 
-HexPort includes its own process-scoped test handler system built on
+DoubleDown includes its own process-scoped test handler system built on
 `NimbleOwnership`. Unlike Mox, no mock modules are defined at compile
 time — handlers are registered at runtime per-test via closures or
 module references. This gives you three handler modes plus two built-in
@@ -524,7 +524,7 @@ Repo test doubles, all compatible with `async: true`.
 Start the ownership server once in `test/test_helper.exs`:
 
 ```elixir
-{:ok, _} = HexPort.Testing.start()
+{:ok, _} = DoubleDown.Testing.start()
 ```
 
 #### Three handler modes
@@ -533,14 +533,14 @@ Start the ownership server once in `test/test_helper.exs`:
 `@behaviour`:
 
 ```elixir
-HexPort.Testing.set_handler(MyApp.Orders, MyApp.FakeOrderService)
+DoubleDown.Testing.set_handler(MyApp.Orders, MyApp.FakeOrderService)
 ```
 
 **Function handler** — register a 2-arity closure
 `(operation, args) -> result` with pattern matching:
 
 ```elixir
-HexPort.Testing.set_fn_handler(MyApp.Orders, fn
+DoubleDown.Testing.set_fn_handler(MyApp.Orders, fn
   :place_order, [params] -> {:ok, %Order{sku: params.sku}}
   :get_order, ["order-1"] -> {:ok, %Order{id: "order-1"}}
 end)
@@ -552,7 +552,7 @@ state value. State is stored in NimbleOwnership and updated atomically
 on each dispatch:
 
 ```elixir
-HexPort.Testing.set_stateful_handler(
+DoubleDown.Testing.set_stateful_handler(
   MyApp.Inventory,
   fn
     :reserve_stock, [sku, qty], stock ->
@@ -576,7 +576,7 @@ Child processes (Tasks, Agents) inherit the parent's handlers
 automatically via `$callers`. For non-Task processes, use `allow/3`:
 
 ```elixir
-HexPort.Testing.allow(MyApp.Orders, self(), agent_pid)
+DoubleDown.Testing.allow(MyApp.Orders, self(), agent_pid)
 ```
 
 #### Dispatch logging
@@ -584,31 +584,31 @@ HexPort.Testing.allow(MyApp.Orders, self(), agent_pid)
 Assert on the exact sequence of port calls made during a test:
 
 ```elixir
-HexPort.Testing.enable_log(MyApp.Orders)
+DoubleDown.Testing.enable_log(MyApp.Orders)
 
 MyApp.OrderService.place_order(%{sku: "widget", qty: 3})
 
-log = HexPort.Testing.get_log(MyApp.Orders)
+log = DoubleDown.Testing.get_log(MyApp.Orders)
 assert [{MyApp.Orders, :place_order, [%{sku: "widget", qty: 3}], {:ok, _}}] = log
 ```
 
 #### Cleanup
 
-Call `HexPort.Testing.reset/0` to clear all handlers, state, and logs
+Call `DoubleDown.Testing.reset/0` to clear all handlers, state, and logs
 for the current process (useful in `setup` blocks).
 
 #### Built-in Repo test doubles
 
-HexPort ships two test doubles for the `Port.Repo` contract:
+DoubleDown ships two test doubles for the `DoubleDown.Repo` contract:
 
-**`Repo.Test`** — stateless. Writes apply changeset changes and return
+**`Repo.Stub`** — stateless. Writes apply changeset changes and return
 `{:ok, struct}` but store nothing. Reads delegate to an optional
 fallback function or raise with an actionable suggestion:
 
 ```elixir
-HexPort.Testing.set_fn_handler(
-  HexPort.Repo.Contract,
-  HexPort.Repo.Test.new(
+DoubleDown.Testing.set_fn_handler(
+  DoubleDown.Repo.Contract,
+  DoubleDown.Repo.Stub.new(
     fallback_fn: fn
       :get, [User, 1] -> %User{id: 1, name: "Alice"}
       :all, [User] -> [%User{id: 1}]
@@ -625,10 +625,10 @@ PK reads check state first, then fall back; non-PK reads (`get_by`,
 `all`, `exists?`, etc.) always delegate to a fallback or raise:
 
 ```elixir
-HexPort.Testing.set_stateful_handler(
-  HexPort.Repo.Contract,
-  &HexPort.Repo.InMemory.dispatch/3,
-  HexPort.Repo.InMemory.new(
+DoubleDown.Testing.set_stateful_handler(
+  DoubleDown.Repo.Contract,
+  &DoubleDown.Repo.InMemory.dispatch/3,
+  DoubleDown.Repo.InMemory.new(
     seed: [%User{id: 1, name: "Alice"}, %Item{id: 1, sku: "widget"}],
     fallback_fn: fn
       :all, [Item], state -> Map.values(state[Item] || %{})
@@ -663,7 +663,7 @@ for `Repo.InMemory` and verify business rules without database overhead.
 - Define one contract per bounded context or aggregate
 - Keep contract implementations thin — just infrastructure calls
 - The in-memory implementation is your test double — no mocks needed
-- Start with `HexPort.Facade` to impose boundaries, convert later
+- Start with `DoubleDown.ContractFacade` to impose boundaries, convert later
 - Effectful facades (from `use Skuld.Effects.Port.Facade`) have
   `__port_effectful__?/0` and auto-detect as effectful resolvers
 - Use `Adapter.Effectful` when you want encapsulated effect execution

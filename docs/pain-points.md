@@ -259,9 +259,9 @@ modules that implement a behaviour:
 ```elixir
 # The contract (shared boundary)
 defmodule PaymentGateway do
-  use HexPort.Contract
+  use DoubleDown.Contract
 
-  defport charge(amount :: Money.t(), card :: Card.t()) ::
+  defcallback charge(amount :: Money.t(), card :: Card.t()) ::
     {:ok, Charge.t()} | {:error, term()}
 end
 

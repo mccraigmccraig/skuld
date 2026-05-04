@@ -341,7 +341,7 @@ Each effect section follows the pattern:
 ### 5g: External Integration
 
 - **Port** - Low-level dispatch to external code. Resolver types. Test stubs.
-- **Port.Contract** - Typed contracts via `defport`. Consumer/Provider
+- **Port.Contract** - Typed contracts via `defcallback`. Consumer/Provider
   behaviours. Bang variants. Dialyzer support.
 - **Port.Adapter.Effectful** - Bridge plain Elixir into effectful
   implementations. Hexagonal architecture's inbound side.

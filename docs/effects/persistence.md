@@ -151,9 +151,9 @@ use their own Port.Contract:
 
 ```elixir
 defmodule MyApp.Orders do
-  use HexPort.Contract
+  use DoubleDown.Contract
 
-  defport place_order(params :: map()) ::
+  defcallback place_order(params :: map()) ::
             {:ok, Order.t()} | {:error, term()}
 end
 

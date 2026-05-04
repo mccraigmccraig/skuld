@@ -12,13 +12,13 @@ swappable for testing.
 Port has three layers:
 
 - **Port** - low-level dispatch via `Port.request/3`
-- **Port.Contract** - typed contracts via `defport`, with Dialyzer support
-  and generated behaviours
+- **Port.Facade** - typed contracts via `defcallback`, with Dialyzer support
+  and generated effectful dispatch functions
 - **Port.Adapter.Effectful** - bridges plain Elixir code into effectful
   implementations (the inbound side of hexagonal architecture)
 
-Most applications should use Port.Contract. The low-level Port API is
-useful for quick prototyping or when you need maximum flexibility.
+Most applications should use `Skuld.Effects.Port.Facade`. The low-level
+Port API is useful for quick prototyping or when you need maximum flexibility.
 
 ## Port (Low-Level API)
 
@@ -190,60 +190,64 @@ The function handler gives you full Elixir pattern matching power -
 pins, guards, wildcards. Use `with_test_handler` for exact-match cases
 and `with_fn_handler` for dynamic scenarios.
 
-## Port.Contract
+## Port.Facade
 
-Typed contracts via `defport` declarations. Generates Dialyzer-checked
+Typed contracts via `defcallback` declarations. Generates Dialyzer-checked
 caller functions, behaviour callbacks, test key helpers, and
-introspection. This is the recommended way to define ports.
+introspection. This is the recommended way to define effectful ports.
 
-### Defining a contract
+### Defining a contract and facade
+
+The single-module pattern is the simplest — `use Skuld.Effects.Port.Facade`
+with no options creates the contract, effectful behaviour, and dispatch
+facade in one module:
 
 ```elixir
 defmodule MyApp.Repository do
-  use HexPort.Contract
+  use Skuld.Effects.Port.Facade
 
   alias MyApp.Todo
 
-  defport get_todo(tenant_id :: String.t(), id :: String.t()) ::
-            {:ok, Todo.t()} | {:error, term()}
+  defcallback get_todo(tenant_id :: String.t(), id :: String.t()) ::
+               {:ok, Todo.t()} | {:error, term()}
 
-  defport list_todos(tenant_id :: String.t(), opts :: map()) ::
-            {:ok, [Todo.t()]} | {:error, term()}
+  defcallback list_todos(tenant_id :: String.t(), opts :: map()) ::
+               {:ok, [Todo.t()]} | {:error, term()}
 
-  defport health_check() :: :ok | {:error, term()}
+  defcallback health_check() :: :ok | {:error, term()}
 end
 ```
 
-`use HexPort.Contract` generates `@callback` declarations and
-`__port_operations__/0` on the contract module.
-
-Facades are defined by the consuming application:
+When you have a separate plain contract module (e.g. from `DoubleDown.ContractFacade`),
+use the `:double_down_contract` option:
 
 ```elixir
 # Plain contract
 defmodule MyApp.Repository.Contract do
-  use HexPort.Contract
-  defport get_todo(tenant_id :: String.t(), id :: String.t()) :: ...
+  use DoubleDown.Contract
+
+  defcallback get_todo(tenant_id :: String.t(), id :: String.t()) ::
+               {:ok, Todo.t()} | {:error, term()}
 end
 
-# Combined effectful contract + facade
+# Effectful facade (same callbacks, effectful dispatch)
 defmodule MyApp.Repository do
   use Skuld.Effects.Port.Facade,
-    hex_port_contract: MyApp.Repository.Contract
+    double_down_contract: MyApp.Repository.Contract
 end
 ```
 
+The single-module approach means swapping between plain DoubleDown dispatch
+and skuld effectful dispatch is a one-line `use` change.
+
 ### Plain and Effectful behaviours
 
-The plain contract and effectful facade are separate modules:
-
-- **`MyApp.Repository.Contract`** — plain Elixir callbacks. Use for
-  non-effectful implementations called via `Port.with_handler/2`.
-- **`MyApp.Repository`** — effectful callbacks and dispatch facade.
-  Use for effectful implementations and effectful callers.
+`Skuld.Effects.Port.Facade` generates effectful `@callback` declarations
+with `computation()`-wrapped return types on the facade module, while
+`__callbacks__/0` preserves the original plain operation metadata:
 
 ```elixir
-# Plain behaviour (on the contract module)
+# Plain behaviour (on a separate DoubleDown.Contract module)
 MyApp.Repository.Contract
 @callback get_todo(String.t(), String.t()) :: {:ok, Todo.t()} | {:error, term()}
 
@@ -252,41 +256,22 @@ MyApp.Repository
 @callback get_todo(String.t(), String.t()) :: computation({:ok, Todo.t()} | {:error, term()})
 ```
 
-### Bang variant generation
+### Explicit bang operations
 
-Bang variants are auto-detected based on return type and can be
-overridden:
+Bang variants are explicit `defcallback` declarations — auto-bang generation
+was removed in `double_down` 0.38. If you want a bang version, declare it:
 
 ```elixir
 defmodule MyApp.Users do
-  use HexPort.Contract
+  use Skuld.Effects.Port.Facade
 
-  # Auto: bang generated (return type has {:ok, T})
-  defport get_user(id :: String.t()) ::
-            {:ok, User.t()} | {:error, term()}
+  defcallback get_user(id :: String.t()) ::
+               {:ok, User.t()} | {:error, term()}
 
-  # Auto: NO bang (return type has no {:ok, T})
-  defport find_user(id :: String.t()) :: User.t() | nil
-
-  # Force bang with standard {:ok, v}/{:error, r} unwrapping
-  defport find_by_email(email :: String.t()) :: User.t() | nil, bang: true
-
-  # Suppress bang
-  defport raw_query(sql :: String.t()) ::
-            {:ok, term()} | {:error, term()},
-            bang: false
-
-  # Custom unwrap function
-  defport find_user_safe(id :: String.t()) :: User.t() | nil,
-    bang: fn
-      nil -> {:error, :not_found}
-      user -> {:ok, user}
-    end
+  # Explicit bang variant — different return type
+  defcallback get_user!(id :: String.t()) :: User.t()
 end
 ```
-
-This makes Contract easy to fit to existing implementation code
-regardless of its return convention.
 
 ### Writing a contract implementation
 
@@ -341,7 +326,8 @@ my_comp
 - LSP autocomplete on `Repository.` shows available operations
 - Missing callback implementations produce compiler warnings
 - Facade `.__key__/N` helpers replace verbose `Port.key(Module, :name, [args...])` calls
-- Bang generation adapts to any return convention via `bang:` option
+- Single-module pattern: swap between DoubleDown `ContractFacade` and skuld `Port.Facade`
+  with a one-line `use` change
 
 ## Port.Adapter.Effectful
 
@@ -362,15 +348,16 @@ about it.
 ```elixir
 # 1. Plain contract
 defmodule MyApp.UserService.Contract do
-  use HexPort.Contract
-  defport find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
-  defport list_users(opts :: map()) :: {:ok, [User.t()]} | {:error, term()}
+  use DoubleDown.Contract
+
+  defcallback find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
+  defcallback list_users(opts :: map()) :: {:ok, [User.t()]} | {:error, term()}
 end
 
-# 2. Combined effectful contract + facade
+# 2. Effectful contract + facade (single-module)
 defmodule MyApp.UserService do
   use Skuld.Effects.Port.Facade,
-    hex_port_contract: MyApp.UserService.Contract
+    double_down_contract: MyApp.UserService.Contract
 end
 
 # 3. Effectful implementation satisfies the effectful facade's behaviour
@@ -446,7 +433,7 @@ through the same contract:
 
 ```
                     Contract
-                   (defport)
+                   (defcallback)
                   /          \
     Plain side              Effectful side
     (outbound/driven)          (inbound/driving)

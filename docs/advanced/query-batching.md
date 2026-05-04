@@ -377,7 +377,7 @@ my_query
 | Requires FiberPool  | No                    | Yes                        |
 | Executor receives   | Single call args      | `[{ref, op_struct}]`       |
 | Executor returns    | Single result         | `%{ref => result}`         |
-| Macro               | `defport`             | `deffetch`                 |
+| Macro               | `defcallback`          | `deffetch`                 |
 | Handler             | `Port.with_handler/2` | `Contract.with_executor/2` |
 | Composition         | `comp` (sequential)   | `query` (auto-concurrent)  |
 
