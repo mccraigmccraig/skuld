@@ -5,6 +5,7 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolStateTest do
   alias Skuld.Comp.Env
   alias Skuld.Fiber
   alias Skuld.Fiber.FiberPool.FiberPoolState
+  alias Skuld.Fiber.FiberPool.FiberPoolState.ProgressSnapshot
 
   describe "new/1" do
     test "creates empty state" do
@@ -205,7 +206,7 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolStateTest do
       state = FiberPoolState.new()
       snapshot = FiberPoolState.progress_snapshot(state)
 
-      assert snapshot == %{
+      assert snapshot == %ProgressSnapshot{
                fibers: 0,
                run_queue: 0,
                suspended: 0,

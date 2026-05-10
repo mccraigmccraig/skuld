@@ -565,22 +565,39 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   ## Progress Detection (Deadlock Detection Support)
   #############################################################################
 
+  defmodule ProgressSnapshot do
+    @moduledoc false
+
+    @type t :: %__MODULE__{
+            fibers: non_neg_integer(),
+            run_queue: non_neg_integer(),
+            suspended: non_neg_integer(),
+            completed: non_neg_integer(),
+            wake_signals: non_neg_integer(),
+            tasks: non_neg_integer(),
+            batch_suspended: non_neg_integer(),
+            channel_suspended: non_neg_integer()
+          }
+
+    defstruct [
+      :fibers,
+      :run_queue,
+      :suspended,
+      :completed,
+      :wake_signals,
+      :tasks,
+      :batch_suspended,
+      :channel_suspended
+    ]
+  end
+
   @typedoc """
-  A lightweight snapshot of scheduler state for progress detection.
+  Snapshot of pool state sizes for deadlock detection.
 
   Captures the sizes of all mutable collections so that `progressed?/2`
   can cheaply determine whether a `Scheduler.step` made forward progress.
   """
-  @type progress_snapshot :: %{
-          fibers: non_neg_integer(),
-          run_queue: non_neg_integer(),
-          suspended: non_neg_integer(),
-          completed: non_neg_integer(),
-          wake_signals: non_neg_integer(),
-          tasks: non_neg_integer(),
-          batch_suspended: non_neg_integer(),
-          channel_suspended: non_neg_integer()
-        }
+  @type progress_snapshot :: ProgressSnapshot.t()
 
   @doc """
   Take a lightweight snapshot of the scheduler state for progress detection.
@@ -591,7 +608,7 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   """
   @spec progress_snapshot(t()) :: progress_snapshot()
   def progress_snapshot(state) do
-    %{
+    %ProgressSnapshot{
       fibers: map_size(state.fibers),
       run_queue: :queue.len(state.run_queue),
       suspended: map_size(state.suspended),
