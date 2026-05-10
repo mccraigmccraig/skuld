@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Errored`, `Cancelled` — sum-type structs replacing the single `%Fiber{}`
   struct with a `:status` atom discriminator. Each variant has exactly the
   fields meaningful for that state; no nil fields, no invalid combinations.
+- `Skuld.Fiber.Error` — canonical error struct (`type`, `error`, `stacktrace`)
+  replacing the ad-hoc tuple conventions (`{:throw, ...}`, `{:exception, ...}`,
+  etc.) across all fiber error paths. Collapses `unwrap_result/1` from 9
+  clauses to 1.
+- `Skuld.Effects.Task` — extracted from `Skuld.Effects.FiberPool` as a
+  separate effect module with `task/2`, `with_handler/1`, and
+  `with_task_supervisor/2`. Composes with `FiberPool.with_handler/1` above it.
+- `FiberPoolState` (renamed from `SchedulerState`) — clarifies that the struct
+  is pool-wide shared mutable state, not scheduler-private.
+- `FiberPoolState.ProgressSnapshot` — named struct replacing the bare-map
+  progress snapshot used for deadlock detection.
+- `FiberPoolState.Suspension` sum type — `Suspension.Await`, `Suspension.Batch`,
+  `Suspension.Channel` — unifies the three previous suspension tracking maps
+  into a single `suspensions` map with typed variants.
+- `Comp.computation?/1` — centralized runtime heuristic for detecting
+  computation values, replacing `is_function(result, 2)` checks.
 
 ### Changed
 
@@ -29,16 +45,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `transform_suspend`) to two (`scope`, `state`). The scope machinery is now
   nested under `env.scope`. All existing `Env.*` functions continue to work
   unchanged — they delegate into `ScopeEnv` internally.
+- Channel-Coordination-State decoupled from Scheduler: channel wakes now use
+  a generic `:fiber_pool_wakes` key in `env.state` instead of
+  `ChannelCoordinationState`. Fiber ID tracking uses `:current_fiber_id`.
+  Scheduler no longer imports `ChannelCoordinationState`.
+- `ChannelCoordinationState` trimmed from 147 to ~70 lines — retains only
+  the channel state registry (register, get, put).
 - `Skuld.Fiber` replaced its single `%Fiber{}` struct (with `:status` atom and
   7 optional fields) with a sum of 6 typed structs. Pattern-match on struct
   name (`%Pending{}`, `%Completed{}`, etc.) instead of `case fiber.status`.
   The transient `:running` status is eliminated entirely. `suspended_k` and
   `internal_suspend` are renamed to `k` and `suspend` on their respective
   structs.
+- `FiberPool` Scope handler decomposed from 90-line function into three named
+  functions (`setup_scope`, `wrap_scope_body`, `tracker_handler`) with a
+  4-line orchestration pipeline.
+- `SchedulerState` renamed to `FiberPoolState`.
+- `FiberPool.task/2` now raises a clear `ArgumentError` when a 2-arity
+  function (computation) is passed instead of a zero-arity thunk.
 - All direct field accesses to `env.evidence`, `env.leave_scope`, and
   `env.transform_suspend` replaced with `Env` accessor functions.
-- All direct field accesses to `env.evidence`, `env.leave_scope`, and
-  `env.transform_suspend` replaced with `Env` accessor functions.
+- Rendezvous channel tests expanded: error-wakes-taker, close-wakes-putter,
+  errored-rejects-put-and-take.
+- Brook.map concurrency floor documented — `concurrency: 1` yields 2 concurrent
+  transforms due to producer/reorderer holding chunks in-flight.
 
 ## [0.24.0] — 2026-05-04
 
