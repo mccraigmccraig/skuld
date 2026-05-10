@@ -1,19 +1,7 @@
-# Shared state threaded through all fibers in a FiberPool.
+# Channel state registry threaded through all fibers in a FiberPool.
 #
-# This struct consolidates the loose keys that were previously stored
-# separately in `env.state` for coordination between Scheduler and Channel:
-#
-# - `current_fiber_id` - Set by Scheduler before running each fiber,
-#   read by Channel to know which fiber is executing
-# - `channel_wakes` - Wake requests accumulated by Channel operations,
-#   consumed by Scheduler to resume suspended fibers
-# - `channel_states` - Map of channel_id to Channel.State for all channels
-#
-# ## Lifecycle
-#
-# This state is stored under a single key in `state.env_state` and threaded
-# to all fibers. Unlike `PendingWork` which is fiber-local and cleared,
-# this state persists and is shared across all fiber executions.
+# Stores channel states under a single key in state.env_state so they
+# persist across fiber executions.
 #
 # ## Key
 #
@@ -29,17 +17,11 @@ defmodule Skuld.Fiber.FiberPool.ChannelCoordinationState do
   @spec env_key() :: module()
   def env_key, do: __MODULE__
 
-  @type fiber_id :: reference()
-
   @type t :: %__MODULE__{
-          current_fiber_id: fiber_id() | nil,
-          channel_wakes: [{fiber_id(), term()}],
-          channel_states: %{fiber_id() => Channel.State.t()}
+          channel_states: %{reference() => Channel.State.t()}
         }
 
-  defstruct current_fiber_id: nil,
-            channel_wakes: [],
-            channel_states: %{}
+  defstruct channel_states: %{}
 
   @doc """
   Create a new empty ChannelCoordinationState.
@@ -50,64 +32,7 @@ defmodule Skuld.Fiber.FiberPool.ChannelCoordinationState do
   end
 
   #############################################################################
-  ## Fiber ID Management (Scheduler sets, Channel reads)
-  #############################################################################
-
-  @doc """
-  Set the current fiber ID. Called by Scheduler before running a fiber.
-  """
-  @spec set_fiber_id(t(), fiber_id()) :: t()
-  def set_fiber_id(%__MODULE__{} = env_state, fiber_id) do
-    %{env_state | current_fiber_id: fiber_id}
-  end
-
-  @doc """
-  Get the current fiber ID. Called by Channel to know which fiber is executing.
-
-  Raises if no fiber ID is set.
-  """
-  @spec get_fiber_id!(t()) :: fiber_id()
-  def get_fiber_id!(%__MODULE__{current_fiber_id: nil}) do
-    raise "No fiber ID in environment - Channel operations must run within a FiberPool"
-  end
-
-  def get_fiber_id!(%__MODULE__{current_fiber_id: fid}), do: fid
-
-  #############################################################################
-  ## Channel Wake Management (Channel writes, Scheduler consumes)
-  #############################################################################
-
-  @doc """
-  Add a channel wake request. Called by Channel when an operation can
-  satisfy a waiting fiber.
-
-  The Scheduler will process these wakes and resume the fibers.
-  """
-  @spec add_channel_wake(t(), fiber_id(), term()) :: t()
-  def add_channel_wake(%__MODULE__{channel_wakes: wakes} = env_state, fiber_id, result) do
-    %{env_state | channel_wakes: [{fiber_id, result} | wakes]}
-  end
-
-  @doc """
-  Pop all channel wakes for processing. Called by Scheduler.
-
-  Returns `{wakes, updated_env_state}` where wakes is the list of
-  `{fiber_id, result}` tuples and the env_state has an empty wakes list.
-  """
-  @spec pop_channel_wakes(t()) :: {[{fiber_id(), term()}], t()}
-  def pop_channel_wakes(%__MODULE__{channel_wakes: wakes} = env_state) do
-    {wakes, %{env_state | channel_wakes: []}}
-  end
-
-  @doc """
-  Check if there are any pending channel wakes.
-  """
-  @spec has_channel_wakes?(t()) :: boolean()
-  def has_channel_wakes?(%__MODULE__{channel_wakes: []}), do: false
-  def has_channel_wakes?(%__MODULE__{}), do: true
-
-  #############################################################################
-  ## Channel State Management (Channel reads/writes)
+  ## Channel State Management
   #############################################################################
 
   @doc """
