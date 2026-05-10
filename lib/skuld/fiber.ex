@@ -6,53 +6,63 @@ defmodule Skuld.Fiber do
   yields, and resumed with a value. This is the fundamental building block for
   cooperative concurrency in Skuld.
 
+  ## Sum Type
+
+  A fiber is always exactly one of these states — no `status` atom, no nil fields:
+
+  - `%Fiber.Pending{id, computation, env}` — ready to start
+  - `%Fiber.InternalSuspended{id, k, suspend, env}` — suspended, needs scheduler
+  - `%Fiber.ExternalSuspended{id, k, env}` — suspended, external callback
+  - `%Fiber.Completed{id, result, env}` — finished successfully
+  - `%Fiber.Errored{id, error, env}` — finished with error
+  - `%Fiber.Cancelled{id, reason, env}` — cancelled before completion
+
   ## Lifecycle
 
-  1. Create with `new/2` - fiber is `:pending`
-  2. Run with `run_until_suspend/1` - fiber becomes `:running`, then reaches a
-     terminal or suspended state. All state is captured in the struct:
-     - `:completed` - `result` and `env` are set
-     - `:suspended` - `suspended_k`, `env`, and optionally `internal_suspend` are set
-     - `:error` - `error` and `env` are set
-  3. Resume with `resume/2` - suspended fiber runs again until completion/suspension
-  4. Cancel with `cancel/1` - marks fiber as `:cancelled`
+  1. Create with `new/2` — returns `%Pending{}`
+  2. Run with `run_until_suspend/1` — returns `%Completed{}`, `%InternalSuspended{}`,
+     `%ExternalSuspended{}`, or `%Errored{}`
+  3. Resume with `resume/2` — suspended fiber runs again until
+     completion/suspension/error
+  4. Cancel with `cancel/2` — invokes leave_scope cleanup, returns `%Cancelled{}`
 
   ## Usage
 
   Fibers are typically managed by a FiberPool, not used directly. The FiberPool
   scheduler handles running fibers, tracking suspensions, and resuming when
   results are available.
-
-  ## State Convention
-
-  All fiber state is consolidated in the struct. Callers switch on
-  `fiber.status` rather than pattern-matching different tuple shapes.
   """
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Comp.Types
+  alias Skuld.Fiber.Cancelled
+  alias Skuld.Fiber.Completed
+  alias Skuld.Fiber.Errored
+  alias Skuld.Fiber.ExternalSuspended
+  alias Skuld.Fiber.InternalSuspended
+  alias Skuld.Fiber.Pending
 
-  @type status :: :pending | :running | :suspended | :completed | :cancelled | :error
+  @typedoc """
+  A fiber in any state.
 
-  @type t :: %__MODULE__{
-          id: reference(),
-          status: status(),
-          computation: Types.computation() | nil,
-          suspended_k: Types.k() | nil,
-          internal_suspend: InternalSuspend.t() | nil,
-          env: Types.env() | nil,
-          result: term(),
-          error: term()
-        }
-
-  defstruct [:id, :status, :computation, :suspended_k, :internal_suspend, :env, :result, :error]
+  Callers pattern-match on the struct name to determine state:
+  `%Pending{}`, `%InternalSuspended{}`, `%ExternalSuspended{}`,
+  `%Completed{}`, `%Errored{}`, `%Cancelled{}`.
+  """
+  @type t ::
+          Pending.t()
+          | InternalSuspended.t()
+          | ExternalSuspended.t()
+          | Completed.t()
+          | Errored.t()
+          | Cancelled.t()
 
   @doc """
   Create a new fiber from a computation.
 
-  The fiber starts in `:pending` status with the computation stored,
+  The fiber starts as `%Pending{}` with the computation and env stored,
   ready to be run with `run_until_suspend/1`.
 
   ## Parameters
@@ -63,62 +73,55 @@ defmodule Skuld.Fiber do
   ## Example
 
       fiber = Fiber.new(my_comp, env)
-      assert fiber.status == :pending
+      assert match?(%Fiber.Pending{}, fiber)
   """
-  @spec new(Types.computation(), Types.env()) :: t()
+  @spec new(Types.computation(), Types.env()) :: Pending.t()
   def new(comp, env) do
-    %__MODULE__{
+    %Pending{
       id: make_ref(),
-      status: :pending,
       computation: comp,
-      suspended_k: nil,
       env: env
     }
   end
 
   @doc """
-  Run a fiber until it completes, suspends, or errors.
+  Run a pending fiber until it completes, suspends, or errors.
 
-  Takes a `:pending` fiber and runs its computation. Returns the fiber with
-  all state consolidated in the struct. Callers switch on `fiber.status`:
+  Takes a `%Pending{}` fiber and runs its computation. Returns one of:
 
-  - `:completed` - `fiber.result` and `fiber.env` are set
-  - `:suspended` - `fiber.suspended_k` and `fiber.env` are set;
-    `fiber.internal_suspend` is set for internal suspensions (batch/channel/await)
-  - `:error` - `fiber.error` and `fiber.env` are set
+  - `%Completed{result, env}` — finished successfully
+  - `%InternalSuspended{k, suspend, env}` — suspended for scheduler
+  - `%ExternalSuspended{k, env}` — suspended for external callback
+  - `%Errored{error, env}` — finished with error
 
-  The returned fiber (on suspension) can be resumed with `resume/2`.
+  A suspended fiber can be resumed with `resume/2`.
 
   ## Example
 
       fiber = Fiber.new(my_comp, env)
       fiber = Fiber.run_until_suspend(fiber)
-      case fiber.status do
-        :completed -> IO.puts("Done: \#{inspect(fiber.result)}")
-        :suspended -> IO.puts("Suspended, can resume later")
-        :error -> IO.puts("Error: \#{inspect(fiber.error)}")
+      case fiber do
+        %Fiber.Completed{result: result} -> IO.puts("Done: \#{inspect(result)}")
+        %Fiber.InternalSuspended{} -> IO.puts("Suspended, can resume later")
+        %Fiber.Errored{error: error} -> IO.puts("Error: \#{inspect(error)}")
       end
   """
-  @spec run_until_suspend(t()) :: t()
-  def run_until_suspend(%__MODULE__{status: :pending, computation: comp, env: env} = fiber) do
-    fiber = %{fiber | status: :running, computation: nil}
+  @spec run_until_suspend(Pending.t()) ::
+          Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
+  def run_until_suspend(%Pending{computation: comp, env: env} = fiber) do
     do_run(fiber, comp, env)
-  end
-
-  def run_until_suspend(%__MODULE__{status: status}) do
-    raise ArgumentError, "Cannot run fiber in #{status} status, expected :pending"
   end
 
   @doc """
   Resume a suspended fiber with a value.
 
-  Takes a `:suspended` fiber and resumes it by calling the suspended continuation
+  Takes a suspended fiber and resumes it by calling the suspended continuation
   with the provided value. Returns the fiber with updated state — same contract
   as `run_until_suspend/1`.
 
   ## Parameters
 
-  - `fiber` - A fiber in `:suspended` status
+  - `fiber` - A fiber in suspended state (`%InternalSuspended{}` or `%ExternalSuspended{}`)
   - `value` - The value to resume with (typically a result from an effect)
 
   ## Example
@@ -126,36 +129,33 @@ defmodule Skuld.Fiber do
       fiber = Fiber.run_until_suspend(fiber)
       # ... later, when we have a result ...
       fiber = Fiber.resume(fiber, result)
-      case fiber.status do
-        :completed -> fiber.result
-        :suspended -> # suspended again
-        :error -> # errored
+      case fiber do
+        %Fiber.Completed{result: result} -> result
+        _ -> # suspended again or errored
       end
   """
-  @spec resume(t(), term()) :: t()
-  def resume(%__MODULE__{status: :suspended, suspended_k: k, env: env} = fiber, value)
-      when is_function(k, 2) do
-    fiber = %{fiber | status: :running, suspended_k: nil, internal_suspend: nil, env: nil}
+  @spec resume(InternalSuspended.t() | ExternalSuspended.t(), term()) ::
+          Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
+  def resume(%InternalSuspended{k: k, env: env} = fiber, value) do
     do_resume(fiber, k, value, env)
   end
 
-  def resume(%__MODULE__{status: status}, _value) do
-    raise ArgumentError, "Cannot resume fiber in #{status} status, expected :suspended"
+  def resume(%ExternalSuspended{k: k, env: env} = fiber, value) do
+    do_resume(fiber, k, value, env)
   end
 
   @doc """
   Cancel a fiber, invoking leave_scope cleanup for suspended fibers.
 
-  For `:suspended` fibers, creates a `%Cancelled{}` sentinel and runs it
-  through the leave_scope chain in the fiber's env, giving scoped effects
-  an opportunity to clean up resources. The resulting env is preserved in
-  the cancelled fiber struct.
+  For suspended fibers, creates a `%Cancelled{}` sentinel and runs it
+  through the leave_scope chain, giving scoped effects an opportunity
+  to clean up resources.
 
-  For `:pending` fibers, no scopes have been entered yet so no cleanup is
-  needed.
+  For `%Pending{}` fibers, no scopes have been entered yet so no cleanup
+  is needed.
 
-  For already-terminal fibers (`:completed`, `:cancelled`, `:error`), cancel
-  is a no-op — the fiber is returned unchanged.
+  For already-terminal fibers (`%Completed{}`, `%Cancelled{}`, `%Errored{}`),
+  cancel is a no-op — the fiber is returned unchanged.
 
   ## Parameters
 
@@ -165,55 +165,40 @@ defmodule Skuld.Fiber do
   ## Example
 
       fiber = Fiber.cancel(fiber, :timeout)
-      assert fiber.status == :cancelled
+      assert match?(%Fiber.Cancelled{}, fiber)
   """
   @spec cancel(t(), term()) :: t()
   def cancel(fiber, reason \\ :cancelled)
 
   # Already terminal — no-op
-  def cancel(%__MODULE__{status: status} = fiber, _reason)
-      when status in [:completed, :cancelled, :error] do
+  def cancel(%m{} = fiber, _reason) when m in [Completed, Cancelled, Errored] do
     fiber
   end
 
-  # Suspended with env — run leave_scope cleanup
-  def cancel(%__MODULE__{status: :suspended, env: env} = fiber, reason) when env != nil do
+  # Suspended — run leave_scope cleanup
+  def cancel(%InternalSuspended{id: id, env: env} = _fiber, reason) do
     cancelled = %Comp.Cancelled{reason: reason}
     {_result, final_env} = Env.run_leave_scope(env, cancelled)
-
-    %{
-      fiber
-      | status: :cancelled,
-        computation: nil,
-        suspended_k: nil,
-        internal_suspend: nil,
-        env: final_env,
-        result: nil,
-        error: nil
-    }
+    %Cancelled{id: id, reason: reason, env: final_env}
   end
 
-  # Pending or suspended without env — hard clear, no cleanup needed
-  def cancel(%__MODULE__{} = fiber, _reason) do
-    %{
-      fiber
-      | status: :cancelled,
-        computation: nil,
-        suspended_k: nil,
-        internal_suspend: nil,
-        env: nil,
-        result: nil,
-        error: nil
-    }
+  def cancel(%ExternalSuspended{id: id, env: env} = _fiber, reason) do
+    cancelled = %Comp.Cancelled{reason: reason}
+    {_result, final_env} = Env.run_leave_scope(env, cancelled)
+    %Cancelled{id: id, reason: reason, env: final_env}
+  end
+
+  # Pending — hard clear, no cleanup needed
+  def cancel(%Pending{} = fiber, reason) do
+    %Cancelled{id: fiber.id, reason: reason, env: nil}
   end
 
   @doc """
-  Check if a fiber is in a terminal state (completed, cancelled, or error).
+  Check if a fiber is in a terminal state (completed, cancelled, or errored).
   """
   @spec terminal?(t()) :: boolean()
-  def terminal?(%__MODULE__{status: status}) do
-    status in [:completed, :cancelled, :error]
-  end
+  def terminal?(%m{}) when m in [Completed, Cancelled, Errored], do: true
+  def terminal?(_), do: false
 
   #############################################################################
   ## Internal
@@ -230,7 +215,7 @@ defmodule Skuld.Fiber do
   end
 
   # Execute an invocation and handle all result types.
-  # Returns the fiber with all state consolidated in the struct.
+  # Returns the fiber in its new state.
   defp execute_and_handle(fiber, env, invocation) do
     case invocation.() do
       {%Comp.ExternalSuspend{} = suspend, suspend_env} ->
@@ -240,59 +225,40 @@ defmodule Skuld.Fiber do
         handle_internal_suspend(fiber, internal_suspend, internal_env)
 
       {%Comp.Throw{} = throw, throw_env} ->
-        %{fiber | status: :error, error: {:throw, throw.error}, env: throw_env}
+        %Errored{id: fiber.id, error: {:throw, throw.error}, env: throw_env}
 
       {%Comp.Cancelled{} = cancelled, cancelled_env} ->
-        %{fiber | status: :error, error: {:cancelled, cancelled.reason}, env: cancelled_env}
+        %Errored{id: fiber.id, error: {:cancelled, cancelled.reason}, env: cancelled_env}
 
       {value, %Env{} = final_env} ->
-        %{fiber | status: :completed, result: value, env: final_env}
+        %Completed{id: fiber.id, result: value, env: final_env}
     end
   rescue
     e ->
-      %{fiber | status: :error, error: {:exception, e, __STACKTRACE__}, env: env}
+      %Errored{id: fiber.id, error: {:exception, e, __STACKTRACE__}, env: env}
   catch
     :throw, reason ->
-      %{fiber | status: :error, error: {:throw, reason}, env: env}
+      %Errored{id: fiber.id, error: {:throw, reason}, env: env}
 
     :exit, reason ->
-      %{fiber | status: :error, error: {:exit, reason}, env: env}
+      %Errored{id: fiber.id, error: {:exit, reason}, env: env}
   end
 
   # Handle an external Suspend sentinel (closes over env)
-  # Used for callbacks to non-Skuld code
   defp handle_external_suspend(fiber, %Comp.ExternalSuspend{resume: resume}, env) do
-    # The Suspend.resume is (val -> {result, env}), closes over env at suspension
-    # We wrap it to match our (val, env) -> {result, env} signature
-    suspended_k = fn value, _env ->
-      # Ignore the passed env - external suspend has env already bound
+    k = fn value, _env ->
       resume.(value)
     end
 
-    %{
-      fiber
-      | status: :suspended,
-        suspended_k: suspended_k,
-        internal_suspend: nil,
-        env: env
-    }
+    %ExternalSuspended{id: fiber.id, k: k, env: env}
   end
 
   # Handle an internal suspend (receives env at resume time)
-  # Used by FiberPool scheduler for batch/channel/await operations
   defp handle_internal_suspend(fiber, %InternalSuspend{resume: resume} = internal_suspend, env) do
-    # InternalSuspend.resume is (val, env -> {result, env})
-    # Pass the resume_env at resume time to allow scheduler to thread updated state
-    suspended_k = fn value, resume_env ->
+    k = fn value, resume_env ->
       resume.(value, resume_env)
     end
 
-    %{
-      fiber
-      | status: :suspended,
-        suspended_k: suspended_k,
-        internal_suspend: internal_suspend,
-        env: env
-    }
+    %InternalSuspended{id: fiber.id, k: k, suspend: internal_suspend, env: env}
   end
 end

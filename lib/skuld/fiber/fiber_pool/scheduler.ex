@@ -21,6 +21,10 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   @moduledoc false
 
   alias Skuld.Fiber
+  alias Skuld.Fiber.Completed
+  alias Skuld.Fiber.Errored
+  alias Skuld.Fiber.ExternalSuspended
+  alias Skuld.Fiber.InternalSuspended
   alias Skuld.Fiber.FiberPool.SchedulerState
   alias Skuld.Fiber.FiberPool.ChannelCoordinationState
   alias Skuld.Fiber.FiberPool.PendingWork
@@ -208,13 +212,8 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     end
   end
 
-  defp run_pending_fiber(state, fiber, env) do
-    # Update fiber's env:
-    # - Use fiber's env for per-fiber fields (evidence, leave_scope, transform_suspend)
-    # - Inject shared env_state from pool state
-    # - Set the current fiber ID for Channel operations
-    base_env = fiber.env || env
-    fiber_env = %{base_env | state: state.env_state}
+  defp run_pending_fiber(state, fiber, _env) do
+    fiber_env = %{fiber.env | state: state.env_state}
 
     fiber_env =
       update_env_state_in_env(fiber_env, &ChannelCoordinationState.set_fiber_id(&1, fiber.id))
@@ -242,42 +241,34 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   end
 
   # Handle the result of running or resuming a fiber.
-  # All state is now in the fiber struct — switch on fiber.status.
-  defp handle_fiber_result(%Fiber{status: :completed} = fiber, state) do
-    state = SchedulerState.put_env_state(state, fiber.env.state)
-    state = collect_pending_fibers(state, fiber.env)
-    handle_completion(state, fiber.id, {:ok, fiber.result})
+  # Switch on the fiber's struct type.
+  defp handle_fiber_result(%Completed{result: result, env: env} = fiber, state) do
+    state = SchedulerState.put_env_state(state, env.state)
+    state = collect_pending_fibers(state, env)
+    handle_completion(state, fiber.id, {:ok, result})
   end
 
-  defp handle_fiber_result(%Fiber{status: :suspended, internal_suspend: nil} = fiber, state) do
-    state = SchedulerState.put_env_state(state, fiber.env.state)
+  defp handle_fiber_result(%ExternalSuspended{env: env} = fiber, state) do
+    state = SchedulerState.put_env_state(state, env.state)
     {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
     handle_suspension(state, fiber)
   end
 
-  defp handle_fiber_result(
-         %Fiber{
-           status: :suspended,
-           internal_suspend: %InternalSuspend{payload: payload} = internal_suspend
-         } = fiber,
-         state
-       ) do
-    state = SchedulerState.put_env_state(state, fiber.env.state)
+  defp handle_fiber_result(%InternalSuspended{env: env, suspend: %InternalSuspend{payload: payload} = internal_suspend} = fiber, state) do
+    state = SchedulerState.put_env_state(state, env.state)
     {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
     handle_internal_suspension(state, fiber, internal_suspend, payload)
   end
 
-  defp handle_fiber_result(%Fiber{status: :error} = fiber, state) do
-    state = if fiber.env, do: SchedulerState.put_env_state(state, fiber.env.state), else: state
-    state = collect_pending_fibers(state, fiber.env)
-    handle_completion(state, fiber.id, {:error, fiber.error})
+  defp handle_fiber_result(%Errored{error: error, env: env} = fiber, state) do
+    state = SchedulerState.put_env_state(state, env.state)
+    state = collect_pending_fibers(state, env)
+    handle_completion(state, fiber.id, {:error, error})
   end
 
   # Extract any pending fibers from the env and add them to the scheduler state.
   # Also clears pending work from state.env_state to prevent re-collection
   # when the next fiber runs.
-  defp collect_pending_fibers(state, nil), do: state
-
   defp collect_pending_fibers(state, env) do
     pending_work = get_pending_work(env)
 
@@ -303,33 +294,29 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   defp collect_and_clear_pending_fibers(state, suspended_fiber) do
     env = suspended_fiber.env
 
-    if env == nil do
+    pending_work = get_pending_work(env)
+
+    if PendingWork.has_fibers?(pending_work) do
+      {fibers, _pending_work} = PendingWork.take_fibers(pending_work)
+
+      # Add pending fibers to state
+      state =
+        Enum.reduce(fibers, state, fn {_id, fiber}, acc ->
+          {_id, acc} = SchedulerState.add_fiber(acc, fiber)
+          acc
+        end)
+
+      # Clear pending work from the suspended fiber's env
+      cleared_env = clear_pending_work(env)
+      suspended_fiber = %{suspended_fiber | env: cleared_env}
+
+      # Also clear from state.env_state (which was updated before this call)
+      # to prevent re-collection when next fiber runs
+      state = clear_pending_work_in_env_state(state)
+
       {state, suspended_fiber}
     else
-      pending_work = get_pending_work(env)
-
-      if PendingWork.has_fibers?(pending_work) do
-        {fibers, _pending_work} = PendingWork.take_fibers(pending_work)
-
-        # Add pending fibers to state
-        state =
-          Enum.reduce(fibers, state, fn {_id, fiber}, acc ->
-            {_id, acc} = SchedulerState.add_fiber(acc, fiber)
-            acc
-          end)
-
-        # Clear pending work from the suspended fiber's env
-        cleared_env = clear_pending_work(env)
-        suspended_fiber = %{suspended_fiber | env: cleared_env}
-
-        # Also clear from state.env_state (which was updated before this call)
-        # to prevent re-collection when next fiber runs
-        state = clear_pending_work_in_env_state(state)
-
-        {state, suspended_fiber}
-      else
-        {state, suspended_fiber}
-      end
+      {state, suspended_fiber}
     end
   end
 

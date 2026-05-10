@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Env.handler_sigs/1` — accessor for all installed handler signatures,
   previously exposed only by reaching into `env.evidence` directly.
 - `Env.get_scope/1` and `Env.with_scope/2` — accessors for the scope sub-struct.
+- `Skuld.Fiber.Pending`, `InternalSuspended`, `ExternalSuspended`, `Completed`,
+  `Errored`, `Cancelled` — sum-type structs replacing the single `%Fiber{}`
+  struct with a `:status` atom discriminator. Each variant has exactly the
+  fields meaningful for that state; no nil fields, no invalid combinations.
 
 ### Changed
 
@@ -25,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `transform_suspend`) to two (`scope`, `state`). The scope machinery is now
   nested under `env.scope`. All existing `Env.*` functions continue to work
   unchanged — they delegate into `ScopeEnv` internally.
+- `Skuld.Fiber` replaced its single `%Fiber{}` struct (with `:status` atom and
+  7 optional fields) with a sum of 6 typed structs. Pattern-match on struct
+  name (`%Pending{}`, `%Completed{}`, etc.) instead of `case fiber.status`.
+  The transient `:running` status is eliminated entirely. `suspended_k` and
+  `internal_suspend` are renamed to `k` and `suspend` on their respective
+  structs.
+- All direct field accesses to `env.evidence`, `env.leave_scope`, and
+  `env.transform_suspend` replaced with `Env` accessor functions.
 - All direct field accesses to `env.evidence`, `env.leave_scope`, and
   `env.transform_suspend` replaced with `Env` accessor functions.
 

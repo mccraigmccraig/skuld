@@ -5,6 +5,11 @@ defmodule Skuld.FiberTest do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Fiber
+  alias Skuld.Fiber.Cancelled
+  alias Skuld.Fiber.Completed
+  alias Skuld.Fiber.Errored
+  alias Skuld.Fiber.ExternalSuspended
+  alias Skuld.Fiber.Pending
   alias Skuld.Fiber.Handle
   alias Skuld.Effects.Yield
   alias Skuld.Effects.State
@@ -17,11 +22,10 @@ defmodule Skuld.FiberTest do
 
       fiber = Fiber.new(comp, env)
 
-      assert fiber.status == :pending
+      assert match?(%Pending{}, fiber)
       assert fiber.computation == comp
       assert fiber.env == env
       assert is_reference(fiber.id)
-      assert fiber.suspended_k == nil
     end
 
     test "each fiber has unique id" do
@@ -41,7 +45,7 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(Comp.pure(42), env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :completed
+      assert match?(%Completed{}, fiber)
       assert fiber.result == 42
       assert fiber.env != nil
     end
@@ -60,7 +64,7 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :completed
+      assert match?(%Completed{}, fiber)
       assert fiber.result == {5, 15}
     end
 
@@ -76,10 +80,9 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :suspended
-      assert is_function(fiber.suspended_k, 2)
+      assert match?(%ExternalSuspended{}, fiber)
+      assert is_function(fiber.k, 2)
       assert fiber.env != nil
-      assert fiber.internal_suspend == nil
     end
 
     test "throws return error" do
@@ -94,7 +97,7 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :error
+      assert match?(%Errored{}, fiber)
       assert fiber.error == {:throw, :my_error}
       assert fiber.env != nil
     end
@@ -107,10 +110,8 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      # Comp.call converts exceptions to Throw effects with a map containing
-      # :kind, :payload, :stacktrace - which then becomes {:throw, map} error
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :error
+      assert match?(%Errored{}, fiber)
       assert {:throw, %{kind: :error, payload: %RuntimeError{message: "boom"}}} = fiber.error
       assert fiber.env != nil
     end
@@ -119,13 +120,11 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(Comp.pure(42), env)
 
-      %Fiber{status: :completed} = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run_until_suspend(fiber)
+      assert match?(%Completed{}, fiber)
 
-      # Make a new fiber and manually set status
-      suspended_fiber = %{fiber | status: :suspended}
-
-      assert_raise ArgumentError, ~r/Cannot run fiber in suspended status/, fn ->
-        Fiber.run_until_suspend(suspended_fiber)
+      assert_raise FunctionClauseError, fn ->
+        Fiber.run_until_suspend(fiber)
       end
     end
   end
@@ -143,10 +142,10 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :suspended
+      assert match?(%ExternalSuspended{}, fiber)
 
       fiber = Fiber.resume(fiber, 21)
-      assert fiber.status == :completed
+      assert match?(%Completed{}, fiber)
       assert fiber.result == 42
     end
 
@@ -163,13 +162,13 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :suspended
+      assert match?(%ExternalSuspended{}, fiber)
 
       fiber = Fiber.resume(fiber, 10)
-      assert fiber.status == :suspended
+      assert match?(%ExternalSuspended{}, fiber)
 
       fiber = Fiber.resume(fiber, 20)
-      assert fiber.status == :completed
+      assert match?(%Completed{}, fiber)
       assert fiber.result == 30
     end
 
@@ -191,10 +190,10 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :suspended
+      assert match?(%ExternalSuspended{}, fiber)
 
       fiber = Fiber.resume(fiber, :trigger_error)
-      assert fiber.status == :error
+      assert match?(%Errored{}, fiber)
       assert fiber.error == {:throw, :triggered}
     end
 
@@ -202,7 +201,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(Comp.pure(42), env)
 
-      assert_raise ArgumentError, ~r/Cannot resume fiber in pending status/, fn ->
+      assert_raise FunctionClauseError, fn ->
         Fiber.resume(fiber, :value)
       end
     end
@@ -215,13 +214,8 @@ defmodule Skuld.FiberTest do
 
       cancelled = Fiber.cancel(fiber)
 
-      assert cancelled.status == :cancelled
-      assert cancelled.computation == nil
-      assert cancelled.suspended_k == nil
-      assert cancelled.internal_suspend == nil
+      assert match?(%Cancelled{}, cancelled)
       assert cancelled.env == nil
-      assert cancelled.result == nil
-      assert cancelled.error == nil
     end
 
     test "cancels suspended fiber and invokes leave_scope" do
@@ -243,17 +237,13 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :suspended
+      assert match?(%ExternalSuspended{}, fiber)
 
       cancelled = Fiber.cancel(fiber)
 
-      assert cancelled.status == :cancelled
-      assert cancelled.suspended_k == nil
-      assert cancelled.internal_suspend == nil
-      # env is preserved after leave_scope runs
+      assert match?(%Cancelled{}, cancelled)
       assert cancelled.env != nil
 
-      # leave_scope was invoked with a Cancelled sentinel
       assert_received {:cleanup_called, %Comp.Cancelled{reason: :cancelled}}
     end
 
@@ -278,7 +268,7 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.run_until_suspend(fiber)
       cancelled = Fiber.cancel(fiber, :timeout)
 
-      assert cancelled.status == :cancelled
+      assert match?(%Cancelled{}, cancelled)
       assert_received {:cleanup_reason, %Comp.Cancelled{reason: :timeout}}
     end
 
@@ -312,11 +302,10 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :suspended
+      assert match?(%ExternalSuspended{}, fiber)
 
       _cancelled = Fiber.cancel(fiber, :shutdown)
 
-      # Both scopes cleaned up with the Cancelled sentinel
       assert_received {:inner_cleanup, %Comp.Cancelled{reason: :shutdown}}
       assert_received {:outer_cleanup, %Comp.Cancelled{reason: :shutdown}}
     end
@@ -333,12 +322,11 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :suspended
+      assert match?(%ExternalSuspended{}, fiber)
 
       cancelled = Fiber.cancel(fiber)
 
-      assert cancelled.status == :cancelled
-      # State handler's scoped cleanup should have removed its state key
+      assert match?(%Cancelled{}, cancelled)
       assert Env.get_state(cancelled.env, State.state_key(State)) == nil
     end
 
@@ -348,14 +336,11 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :suspended
+      assert match?(%ExternalSuspended{}, fiber)
 
       cancelled = Fiber.cancel(fiber)
 
-      assert cancelled.status == :cancelled
-      assert cancelled.suspended_k == nil
-      assert cancelled.internal_suspend == nil
-      # env is preserved (leave_scope identity ran successfully)
+      assert match?(%Cancelled{}, cancelled)
       assert cancelled.env != nil
     end
 
@@ -364,11 +349,11 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(Comp.pure(42), env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :completed
+      assert match?(%Completed{}, fiber)
       assert fiber.result == 42
 
       same = Fiber.cancel(fiber)
-      assert same.status == :completed
+      assert match?(%Completed{}, same)
       assert same.result == 42
       assert same == fiber
     end
@@ -385,11 +370,11 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, env)
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :error
+      assert match?(%Errored{}, fiber)
       assert fiber.error == {:throw, :boom}
 
       same = Fiber.cancel(fiber)
-      assert same.status == :error
+      assert match?(%Errored{}, same)
       assert same.error == {:throw, :boom}
       assert same == fiber
     end
@@ -399,10 +384,10 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(Comp.pure(42), env)
 
       cancelled = Fiber.cancel(fiber)
-      assert cancelled.status == :cancelled
+      assert match?(%Cancelled{}, cancelled)
 
       same = Fiber.cancel(cancelled, :different_reason)
-      assert same.status == :cancelled
+      assert match?(%Cancelled{}, same)
       assert same == cancelled
     end
   end
@@ -418,7 +403,7 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.new(comp, Env.new())
 
       fiber = Fiber.run_until_suspend(fiber)
-      assert fiber.status == :suspended
+      assert match?(%ExternalSuspended{}, fiber)
       refute Fiber.terminal?(fiber)
     end
 
