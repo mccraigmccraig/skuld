@@ -225,8 +225,23 @@ defmodule Skuld.Effects.FiberPool do
       end
   """
   @spec task((-> term()), keyword()) :: Comp.Types.computation()
-  def task(thunk, opts \\ []) when is_function(thunk, 0) do
+  def task(thunk, opts \\ [])
+
+  def task(thunk, opts) when is_function(thunk, 0) do
     Comp.effect(@sig, %TaskOp{thunk: thunk, opts: opts})
+  end
+
+  def task(thunk, _opts) when is_function(thunk, 2) do
+    raise ArgumentError, """
+    FiberPool.task/2 requires a zero-arity thunk, but a 2-arity function (a computation) was given.
+
+    Tasks run in a separate BEAM process, so effects (Reader, State, Writer, etc.)
+    do not work inside them. Extract any values you need from the effect environment
+    before constructing the thunk:
+
+        config <- Reader.ask(:config)
+        h <- FiberPool.task(fn -> expensive_work(config) end)
+    """
   end
 
   @doc """
