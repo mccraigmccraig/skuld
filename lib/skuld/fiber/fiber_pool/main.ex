@@ -52,7 +52,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
     if pending_fibers == [] and pending_tasks == [] and not await_suspend?(result) do
       {result, env}
     else
-      task_sup = Env.get_state(env, Skuld.Effects.FiberPool.Task.task_supervisor_key())
+      task_sup = Env.get_state(env, Skuld.Effects.Task.task_supervisor_key())
       state = SchedulerState.new(task_supervisor: task_sup)
 
       # Seed state.env_state from main computation's env.state,

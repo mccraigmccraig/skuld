@@ -4,7 +4,7 @@ defmodule Skuld.Effects.FiberPoolTest do
 
   alias Skuld.Comp
   alias Skuld.Effects.FiberPool
-  alias Skuld.Effects.FiberPool.Task
+  alias Skuld.Effects.Task
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
   alias Skuld.Effects.Writer
@@ -534,7 +534,7 @@ defmodule Skuld.Effects.FiberPoolTest do
     end
 
     test "task without supervisor raises clear error" do
-      assert_raise ArgumentError, ~r/FiberPool\.Task\.task\/2 requires a Task.Supervisor/, fn ->
+      assert_raise ArgumentError, ~r/Task\.task\/2 requires a Task.Supervisor/, fn ->
         comp do
           h <- Task.task(fn -> 42 end)
           FiberPool.await!(h)

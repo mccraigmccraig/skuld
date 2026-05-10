@@ -1,4 +1,4 @@
-defmodule Skuld.Effects.FiberPool.Task do
+defmodule Skuld.Effects.Task do
   @moduledoc """
   Effect for BEAM Task-based parallelism within a FiberPool.
 
@@ -10,12 +10,12 @@ defmodule Skuld.Effects.FiberPool.Task do
   ## Basic Usage
 
       comp do
-        h <- FiberPool.Task.task(fn -> expensive_cpu_work() end)
+        h <- Task.task(fn -> expensive_cpu_work() end)
         FiberPool.await!(h)
       end
       |> FiberPool.with_handler()
-      |> FiberPool.Task.with_handler()
-      |> FiberPool.Task.with_task_supervisor()
+      |> Task.with_handler()
+      |> Task.with_task_supervisor()
       |> Comp.run!()
   """
 
@@ -61,14 +61,14 @@ defmodule Skuld.Effects.FiberPool.Task do
 
   def task(thunk, _opts) when is_function(thunk, 2) do
     raise ArgumentError, """
-    FiberPool.Task.task/2 requires a zero-arity thunk, but a 2-arity function (a computation) was given.
+    Task.task/2 requires a zero-arity thunk, but a 2-arity function (a computation) was given.
 
     Tasks run in a separate BEAM process, so effects (Reader, State, Writer, etc.)
     do not work inside them. Extract any values you need from the effect environment
     before constructing the thunk:
 
         config <- Reader.ask(:config)
-        h <- FiberPool.Task.task(fn -> expensive_work(config) end)
+        h <- Task.task(fn -> expensive_work(config) end)
     """
   end
 
@@ -86,7 +86,7 @@ defmodule Skuld.Effects.FiberPool.Task do
 
       comp
       |> FiberPool.with_handler()
-      |> FiberPool.Task.with_handler()
+      |> Task.with_handler()
       |> Comp.run()
   """
   @spec with_handler(Comp.Types.computation()) :: Comp.Types.computation()
@@ -140,14 +140,14 @@ defmodule Skuld.Effects.FiberPool.Task do
   defp handle(%TaskOp{thunk: thunk, opts: opts}, env, k) do
     unless Env.get_handler(env, Skuld.Effects.FiberPool) do
       raise ArgumentError, """
-      FiberPool.Task.task/2 requires FiberPool.with_handler/1 to be installed.
+      Task.task/2 requires FiberPool.with_handler/1 to be installed.
 
       Wrap your computation with FiberPool.with_handler/1 before using tasks:
 
           comp
           |> FiberPool.with_handler()
-          |> FiberPool.Task.with_handler()
-          |> FiberPool.Task.with_task_supervisor()
+          |> Task.with_handler()
+          |> Task.with_task_supervisor()
           |> Comp.run()
       """
     end
