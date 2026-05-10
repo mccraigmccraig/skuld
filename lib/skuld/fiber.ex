@@ -113,7 +113,8 @@ defmodule Skuld.Fiber do
   end
 
   def run_until_suspend(fiber) do
-    raise ArgumentError, "Cannot run fiber: expected %Fiber.Pending{}, got #{inspect(fiber.__struct__)}"
+    raise ArgumentError,
+          "Cannot run fiber: expected %Fiber.Pending{}, got #{inspect(fiber.__struct__)}"
   end
 
   @doc """
@@ -149,7 +150,8 @@ defmodule Skuld.Fiber do
   end
 
   def resume(fiber, _value) do
-    raise ArgumentError, "Cannot resume fiber: expected %Fiber.InternalSuspended{} or %Fiber.ExternalSuspended{}, got #{inspect(fiber.__struct__)}"
+    raise ArgumentError,
+          "Cannot resume fiber: expected %Fiber.InternalSuspended{} or %Fiber.ExternalSuspended{}, got #{inspect(fiber.__struct__)}"
   end
 
   @doc """

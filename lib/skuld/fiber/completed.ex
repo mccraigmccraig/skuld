@@ -1,5 +1,13 @@
 defmodule Skuld.Fiber.Completed do
-  @moduledoc false
+  @moduledoc """
+  Fiber that finished successfully.
+
+  ## Env semantics
+
+  `env` is the final environment snapshot — scope, accumulated state
+  (Writer logs, State values, etc.) as they were when the computation
+  returned. The scheduler extracts `env.state` into shared pool state.
+  """
 
   alias Skuld.Comp.Env
 

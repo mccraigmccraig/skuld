@@ -254,7 +254,13 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     handle_suspension(state, fiber)
   end
 
-  defp handle_fiber_result(%InternalSuspended{env: env, suspend: %InternalSuspend{payload: payload} = internal_suspend} = fiber, state) do
+  defp handle_fiber_result(
+         %InternalSuspended{
+           env: env,
+           suspend: %InternalSuspend{payload: payload} = internal_suspend
+         } = fiber,
+         state
+       ) do
     state = SchedulerState.put_env_state(state, env.state)
     {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
     handle_internal_suspension(state, fiber, internal_suspend, payload)
