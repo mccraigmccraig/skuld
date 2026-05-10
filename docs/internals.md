@@ -103,7 +103,7 @@ itself):
 # In Skuld.Effects.State:
 @sig __MODULE__
 
-# When State.get() executes, it looks up @sig in env.evidence
+# When State.get() executes, it looks up @sig in the handler map via Env.get_handler(env, @sig)
 ```
 
 This is what "evidence-passing" means: handlers are carried in the
@@ -444,7 +444,7 @@ def handle(%Yield{value: value}, env, k) do
         {result, final_env}
       _ ->
         # Computation finished - invoke leave_scope chain
-        final_env.leave_scope.(result, final_env)
+        Env.run_leave_scope(final_env, result)
     end
   end
 
@@ -536,7 +536,7 @@ Installs a handler in the evidence map:
 ```elixir
 def with_handler(comp, sig, handler) do
   fn env, k ->
-    new_env = %{env | evidence: Map.put(env.evidence, sig, handler)}
+    new_env = Env.with_handler(env, sig, handler)
     call(comp, new_env, k)
   end
 end
@@ -609,7 +609,7 @@ end
 
 1. `comp` returns `%Throw{}` without calling any continuation
 2. `Comp.run` sees the sentinel and calls `ISentinel.run`
-3. `ISentinel.run` invokes `env.leave_scope` (which is `my_leave_scope`)
+3. `ISentinel.run` invokes `Env.run_leave_scope(env, result)` (which calls `my_leave_scope`)
 4. `my_leave_scope` runs `finally_k` for cleanup
 5. `my_leave_scope` chains to `previous_leave_scope`
 
@@ -698,7 +698,7 @@ Normal values invoke the `leave_scope` chain:
 ```elixir
 defimpl Skuld.Comp.ISentinel, for: Any do
   def run(result, env) do
-    env.leave_scope.(result, env)
+    Env.run_leave_scope(env, result)
   end
 
   def run!(value), do: value

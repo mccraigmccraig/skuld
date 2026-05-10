@@ -106,10 +106,12 @@ cores, use `task/1` which runs in a separate BEAM process:
 
 ```elixir
 comp do
-  h <- FiberPool.task(fn -> expensive_calculation() end)
+  h <- Task.task(fn -> expensive_calculation() end)
   FiberPool.await(h)
 end
 |> FiberPool.with_handler()
+|> Task.with_handler()
+|> Task.with_task_supervisor()
 |> Comp.run!()
 ```
 
@@ -361,7 +363,7 @@ overhead. For **CPU-bound transforms**, the default chunking is better.
   message-passing overhead.
 - **GenStage** for CPU-bound pipelines needing true parallelism across
   cores. Each stage runs in its own process.
-- **Hybrid:** Use `FiberPool.task/1` within Brook to offload CPU-heavy
+- **Hybrid:** Use `Task.task/1` within Brook to offload CPU-heavy
   transforms to separate processes while keeping pipeline coordination
   in Brook.
 
