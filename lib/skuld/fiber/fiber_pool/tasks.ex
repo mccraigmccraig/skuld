@@ -26,7 +26,7 @@
 defmodule Skuld.Fiber.FiberPool.Tasks do
   @moduledoc false
 
-  alias Skuld.Fiber.FiberPool.SchedulerState
+  alias Skuld.Fiber.FiberPool.FiberPoolState
   alias Skuld.Fiber.Error
   alias Skuld.Comp.Throw
 
@@ -39,7 +39,7 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
   as an async task. The task results are sent back as messages and
   handled by `receive_message/1`.
   """
-  @spec spawn_pending(SchedulerState.t(), [task_info()]) :: SchedulerState.t()
+  @spec spawn_pending(FiberPoolState.t(), [task_info()]) :: FiberPoolState.t()
   def spawn_pending(state, []), do: state
 
   def spawn_pending(%{task_supervisor: nil}, [_ | _]) do
@@ -70,7 +70,7 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
         end)
 
       # Track the task by its ref
-      SchedulerState.add_task(acc, task.ref, handle_id)
+      FiberPoolState.add_task(acc, task.ref, handle_id)
     end)
   end
 
@@ -80,9 +80,9 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
   Blocks until all tracked tasks have sent their completion messages.
   Returns the updated state with all task results recorded.
   """
-  @spec wait_for_all(SchedulerState.t()) :: SchedulerState.t()
+  @spec wait_for_all(FiberPoolState.t()) :: FiberPoolState.t()
   def wait_for_all(state) do
-    if SchedulerState.has_tasks?(state) do
+    if FiberPoolState.has_tasks?(state) do
       {:task_completed, state} = receive_message(state)
       wait_for_all(state)
     else
@@ -98,7 +98,7 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
 
   Returns `{:task_completed, state}` with the updated state.
   """
-  @spec receive_message(SchedulerState.t()) :: {:task_completed, SchedulerState.t()}
+  @spec receive_message(FiberPoolState.t()) :: {:task_completed, FiberPoolState.t()}
   def receive_message(state) do
     receive do
       {ref, result} when is_reference(ref) ->
@@ -117,7 +117,7 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
   #############################################################################
 
   defp handle_task_result(state, ref, result) do
-    case SchedulerState.pop_task(state, ref) do
+    case FiberPoolState.pop_task(state, ref) do
       {nil, state} ->
         {:task_completed, state}
 
@@ -132,13 +132,13 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
               {:ok, result}
           end
 
-        state = SchedulerState.record_completion(state, handle_id, completion)
+        state = FiberPoolState.record_completion(state, handle_id, completion)
         {:task_completed, state}
     end
   end
 
   defp handle_task_crash(state, ref, reason) do
-    case SchedulerState.pop_task(state, ref) do
+    case FiberPoolState.pop_task(state, ref) do
       {nil, state} ->
         {:task_completed, state}
 
@@ -152,7 +152,7 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
               %Error{type: :exit, error: reason}
           end
 
-        state = SchedulerState.record_completion(state, handle_id, {:error, error})
+        state = FiberPoolState.record_completion(state, handle_id, {:error, error})
         {:task_completed, state}
     end
   end

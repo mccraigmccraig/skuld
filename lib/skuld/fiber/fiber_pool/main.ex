@@ -28,7 +28,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
-  alias Skuld.Fiber.FiberPool.SchedulerState
+  alias Skuld.Fiber.FiberPool.FiberPoolState
   alias Skuld.Fiber.FiberPool.Scheduler
   alias Skuld.Fiber.FiberPool.PendingWork
   alias Skuld.Fiber.FiberPool.Batching
@@ -53,12 +53,12 @@ defmodule Skuld.Fiber.FiberPool.Main do
       {result, env}
     else
       task_sup = Env.get_state(env, Skuld.Effects.Task.task_supervisor_key())
-      state = SchedulerState.new(task_supervisor: task_sup)
+      state = FiberPoolState.new(task_supervisor: task_sup)
 
       # Seed state.env_state from main computation's env.state,
       # clearing pending work since we've already extracted it
       clean_env_state = Map.put(env.state, PendingWork.env_key(), PendingWork.new())
-      state = SchedulerState.put_env_state(state, clean_env_state)
+      state = FiberPoolState.put_env_state(state, clean_env_state)
 
       run_with_fibers(state, env, result, pending_fibers, pending_tasks)
     end
@@ -71,7 +71,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
   defp run_with_fibers(state, env, main_result, pending_fibers, pending_tasks) do
     state =
       Enum.reduce(pending_fibers, state, fn {_id, fiber}, acc ->
-        {_id, acc} = SchedulerState.add_fiber(acc, fiber)
+        {_id, acc} = FiberPoolState.add_fiber(acc, fiber)
         acc
       end)
 
@@ -91,23 +91,23 @@ defmodule Skuld.Fiber.FiberPool.Main do
   # Drain remaining fibers when the main computation has already completed.
   # Delegates to Scheduler.run and handles batch rounds.
   defp run_fibers_to_completion(state, env, result) do
-    snapshot = SchedulerState.progress_snapshot(state)
+    snapshot = FiberPoolState.progress_snapshot(state)
 
     case Scheduler.run(state, env) do
       {:done, _results, final_state} ->
-        {result, %{env | state: SchedulerState.get_env_state(final_state)}}
+        {result, %{env | state: FiberPoolState.get_env_state(final_state)}}
 
       {:suspended, _fiber, final_state} ->
-        {result, %{env | state: SchedulerState.get_env_state(final_state)}}
+        {result, %{env | state: FiberPoolState.get_env_state(final_state)}}
 
       {:waiting_for_tasks, state} ->
         final_state = Tasks.wait_for_all(state)
-        {result, %{env | state: SchedulerState.get_env_state(final_state)}}
+        {result, %{env | state: FiberPoolState.get_env_state(final_state)}}
 
       {:batch_ready, state} ->
         {state, env} = Batching.execute_pending_batches(state, env)
 
-        if SchedulerState.progressed?(snapshot, SchedulerState.progress_snapshot(state)) do
+        if FiberPoolState.progressed?(snapshot, FiberPoolState.progress_snapshot(state)) do
           run_fibers_to_completion(state, env, result)
         else
           {{:error, {:deadlock, deadlock_diagnostic(state)}}, env}
@@ -139,7 +139,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
         :any -> :any
       end
 
-    case SchedulerState.suspend_awaiting(state, awaiter_id, fiber_ids, await_mode) do
+    case FiberPoolState.suspend_awaiting(state, awaiter_id, fiber_ids, await_mode) do
       {:ready, result, state} ->
         handle_await_result(state, env, result, resume, mode)
 
@@ -153,15 +153,15 @@ defmodule Skuld.Fiber.FiberPool.Main do
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_until_await_satisfied(state, env, awaiter_id, resume, mode) do
     state = Scheduler.process_channel_wakes(state)
-    snapshot = SchedulerState.progress_snapshot(state)
+    snapshot = FiberPoolState.progress_snapshot(state)
 
     case Scheduler.step(state, env) do
       {:continue, state} ->
-        {wake_result, state} = SchedulerState.pop_wake_result(state, awaiter_id)
+        {wake_result, state} = FiberPoolState.pop_wake_result(state, awaiter_id)
 
         case wake_result do
           nil ->
-            if SchedulerState.progressed?(snapshot, SchedulerState.progress_snapshot(state)) do
+            if FiberPoolState.progressed?(snapshot, FiberPoolState.progress_snapshot(state)) do
               run_until_await_satisfied(state, env, awaiter_id, resume, mode)
             else
               {{:error, {:deadlock, deadlock_diagnostic(state)}}, env}
@@ -172,11 +172,11 @@ defmodule Skuld.Fiber.FiberPool.Main do
         end
 
       {:done, state} ->
-        {wake_result, state} = SchedulerState.pop_wake_result(state, awaiter_id)
+        {wake_result, state} = FiberPoolState.pop_wake_result(state, awaiter_id)
 
         case wake_result do
           nil ->
-            if SchedulerState.has_tasks?(state) do
+            if FiberPoolState.has_tasks?(state) do
               wait_for_task_and_retry(state, env, awaiter_id, resume, mode)
             else
               {{:error, :await_never_satisfied}, env}
@@ -203,11 +203,11 @@ defmodule Skuld.Fiber.FiberPool.Main do
   defp wait_for_task_and_retry(state, env, awaiter_id, resume, mode) do
     {:task_completed, state} = Tasks.receive_message(state)
 
-    {wake_result, state} = SchedulerState.pop_wake_result(state, awaiter_id)
+    {wake_result, state} = FiberPoolState.pop_wake_result(state, awaiter_id)
 
     case wake_result do
       nil ->
-        if SchedulerState.has_tasks?(state) or not SchedulerState.queue_empty?(state) do
+        if FiberPoolState.has_tasks?(state) or not FiberPoolState.queue_empty?(state) do
           run_until_await_satisfied(state, env, awaiter_id, resume, mode)
         else
           {{:error, :await_never_satisfied}, env}
@@ -245,7 +245,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
 
     state =
       Enum.reduce(pending_fibers, state, fn {_id, fiber}, acc ->
-        {_id, acc} = SchedulerState.add_fiber(acc, fiber)
+        {_id, acc} = FiberPoolState.add_fiber(acc, fiber)
         acc
       end)
 
@@ -267,7 +267,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
   # was doing when no progress could be made.
   defp deadlock_diagnostic(state) do
     %{
-      counts: SchedulerState.counts(state),
+      counts: FiberPoolState.counts(state),
       suspended_awaiter_ids: Map.keys(state.suspended),
       batch_suspended_fiber_ids: Map.keys(state.batch_suspended),
       channel_suspended_fiber_ids: Map.keys(state.channel_suspended)
