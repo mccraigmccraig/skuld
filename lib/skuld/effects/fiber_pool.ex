@@ -707,74 +707,70 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   defp handle(%Scope{comp: scoped_comp, on_exit: on_exit}, env, k) do
-    # Capture current scope's fiber list
+    {env, scope_key} = setup_scope(env)
+
+    guarded_comp = wrap_scope_body(scoped_comp, scope_key, on_exit)
+    scoped = Comp.with_handler(guarded_comp, @sig, tracker_handler(scope_key))
+
+    Comp.call(scoped, env, k)
+  end
+
+  # Initialise scope tracking state in env.
+  defp setup_scope(env) do
     scope_key = {__MODULE__, :scope_fibers, make_ref()}
-
-    # Initialize scope's fiber tracking
     env = Env.put_state(env, scope_key, [])
+    {env, scope_key}
+  end
 
-    # Wrap scoped_comp with error handling:
-    # - On success: run on_exit callback, await all scope fibers, return body result
-    # - On error: cancel all scope fibers, re-throw
-    guarded_comp =
-      Throw.catch_error(
-        scoped_comp,
-        fn error ->
-          # Error path: cancel all fibers spawned in this scope, then re-throw
-          fn err_env, err_k ->
-            scope_handles = Env.get_state(err_env, scope_key, [])
+  # Wrap scope body with structured concurrency guarantees:
+  # - Error path: cancel all scope fibers, re-throw
+  # - Success path: run on_exit (if any), await all scope fibers, return body result
+  defp wrap_scope_body(comp, scope_key, on_exit) do
+    Throw.catch_error(comp, fn error ->
+      fn err_env, err_k ->
+        scope_handles = Env.get_state(err_env, scope_key, [])
 
-            cancel_and_rethrow =
-              Comp.bind(cancel_all(scope_handles), fn _ ->
-                Throw.throw(error)
-              end)
+        cancel_and_rethrow =
+          Comp.bind(cancel_all(scope_handles), fn _ ->
+            Throw.throw(error)
+          end)
 
-            Comp.call(cancel_and_rethrow, err_env, err_k)
-          end
-        end
-      )
-
-    # Create wrapped computation for the success path
-    wrapped =
-      Comp.bind(guarded_comp, fn result ->
-        # Get handles for fibers spawned in this scope
+        Comp.call(cancel_and_rethrow, err_env, err_k)
+      end
+    end)
+    |> then(fn guarded ->
+      Comp.bind(guarded, fn result ->
         fn inner_env, inner_k ->
           scope_handles = Env.get_state(inner_env, scope_key, [])
 
-          # Call on_exit callback if provided
           after_exit =
             if on_exit do
-              Comp.bind(on_exit.(result, scope_handles), fn _ ->
-                Comp.pure(result)
-              end)
+              Comp.bind(on_exit.(result, scope_handles), fn _ -> Comp.pure(result) end)
             else
               Comp.pure(result)
             end
 
-          # After on_exit, await all scope fibers (if any)
           final =
             if scope_handles == [] do
               after_exit
             else
               Comp.bind(after_exit, fn r ->
-                # Await all fibers spawned in this scope
-                Comp.bind(await_all(scope_handles), fn _results ->
-                  Comp.pure(r)
-                end)
+                Comp.bind(await_all(scope_handles), fn _results -> Comp.pure(r) end)
               end)
             end
 
           Comp.call(final, inner_env, inner_k)
         end
       end)
+    end)
+  end
 
-    # Override the FiberOp handler to also track in scope
-    scope_fiber_handler = fn
+  # Handler wrapper that intercepts FiberOp to track spawned fibers in scope.
+  defp tracker_handler(scope_key) do
+    fn
       %FiberOp{} = op, handler_env, handler_k ->
-        # First do the normal fiber spawn
         {result, new_env} = handle(op, handler_env, &Comp.identity_k/2)
 
-        # Track the handle in this scope
         case result do
           %Handle{} = h ->
             scope_handles = Env.get_state(new_env, scope_key, [])
@@ -788,13 +784,6 @@ defmodule Skuld.Effects.FiberPool do
       other_op, handler_env, handler_k ->
         handle(other_op, handler_env, handler_k)
     end
-
-    # Run wrapped with scope-aware handler
-    inner_comp =
-      wrapped
-      |> Comp.with_handler(@sig, scope_fiber_handler)
-
-    Comp.call(inner_comp, env, k)
   end
 
   # Cancel a list of handles sequentially
