@@ -27,12 +27,6 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   @type task_ref :: reference()
   @type result :: {:ok, term()} | {:error, term()}
 
-  @type suspension_info :: %{
-          waiting_for: [fiber_id()],
-          mode: :all | :any,
-          collected: %{fiber_id() => result()}
-        }
-
   defmodule Suspension do
     @moduledoc false
 
