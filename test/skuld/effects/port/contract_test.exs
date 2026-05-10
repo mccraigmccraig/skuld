@@ -776,22 +776,21 @@ defmodule Skuld.Effects.Port.ContractTest do
 
   describe "combined effectful contract and facade on same module" do
     test "compiles and works correctly" do
-      Code.compile_string("""
-      defmodule Skuld.Test.CombinedContract do
-        use DoubleDown.Contract
-        defcallback greet(name :: String.t()) :: String.t()
-        defcallback ping() :: :pong
-      end
+      [{_contract, _}, {mod, _}] =
+        Code.compile_string("""
+        defmodule Skuld.Test.CombinedContract do
+          use DoubleDown.Contract
+          defcallback greet(name :: String.t()) :: String.t()
+          defcallback ping() :: :pong
+        end
 
-      defmodule Skuld.Test.Combined do
-        use Skuld.Effects.Port.EffectfulContract,
-          double_down_contract: Skuld.Test.CombinedContract
-        use Skuld.Effects.Port.Facade,
-          contract: Skuld.Test.Combined
-      end
-      """)
-
-      mod = Skuld.Test.Combined
+        defmodule Skuld.Test.Combined do
+          use Skuld.Effects.Port.EffectfulContract,
+            double_down_contract: Skuld.Test.CombinedContract
+          use Skuld.Effects.Port.Facade,
+            contract: Skuld.Test.Combined
+        end
+        """)
 
       # Has effectful callbacks
       callbacks = apply(mod, :behaviour_info, [:callbacks])
@@ -811,21 +810,21 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
 
     test "dispatches correctly via Port handler" do
-      Code.compile_string("""
-      defmodule Skuld.Test.CombinedDispatchContract do
-        use DoubleDown.Contract
-        defcallback greet(name :: String.t()) :: String.t()
-      end
+      [{_contract, _}, {mod, _}] =
+        Code.compile_string("""
+        defmodule Skuld.Test.CombinedDispatchContract do
+          use DoubleDown.Contract
+          defcallback greet(name :: String.t()) :: String.t()
+        end
 
-      defmodule Skuld.Test.CombinedDispatch do
-        use Skuld.Effects.Port.EffectfulContract,
-          double_down_contract: Skuld.Test.CombinedDispatchContract
-        use Skuld.Effects.Port.Facade,
-          contract: Skuld.Test.CombinedDispatch
-      end
-      """)
+        defmodule Skuld.Test.CombinedDispatch do
+          use Skuld.Effects.Port.EffectfulContract,
+            double_down_contract: Skuld.Test.CombinedDispatchContract
+          use Skuld.Effects.Port.Facade,
+            contract: Skuld.Test.CombinedDispatch
+        end
+        """)
 
-      mod = Skuld.Test.CombinedDispatch
       handler = fn ^mod, :greet, ["Alice"] -> "Hello, Alice!" end
 
       comp =
@@ -843,20 +842,19 @@ defmodule Skuld.Effects.Port.ContractTest do
 
   describe "Facade with double_down_contract: shorthand" do
     test "compiles and works correctly" do
-      Code.compile_string("""
-      defmodule Skuld.Test.ShorthandContract do
-        use DoubleDown.Contract
-        defcallback greet(name :: String.t()) :: String.t()
-        defcallback ping() :: :pong
-      end
+      [{_contract, _}, {mod, _}] =
+        Code.compile_string("""
+        defmodule Skuld.Test.ShorthandContract do
+          use DoubleDown.Contract
+          defcallback greet(name :: String.t()) :: String.t()
+          defcallback ping() :: :pong
+        end
 
-      defmodule Skuld.Test.Shorthand do
-        use Skuld.Effects.Port.Facade,
-          double_down_contract: Skuld.Test.ShorthandContract
-      end
-      """)
-
-      mod = Skuld.Test.Shorthand
+        defmodule Skuld.Test.Shorthand do
+          use Skuld.Effects.Port.Facade,
+            double_down_contract: Skuld.Test.ShorthandContract
+        end
+        """)
 
       # Has effectful callbacks
       callbacks = apply(mod, :behaviour_info, [:callbacks])
@@ -876,19 +874,19 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
 
     test "dispatches correctly via Port handler" do
-      Code.compile_string("""
-      defmodule Skuld.Test.ShorthandDispatchContract do
-        use DoubleDown.Contract
-        defcallback greet(name :: String.t()) :: String.t()
-      end
+      [{_contract, _}, {mod, _}] =
+        Code.compile_string("""
+        defmodule Skuld.Test.ShorthandDispatchContract do
+          use DoubleDown.Contract
+          defcallback greet(name :: String.t()) :: String.t()
+        end
 
-      defmodule Skuld.Test.ShorthandDispatch do
-        use Skuld.Effects.Port.Facade,
-          double_down_contract: Skuld.Test.ShorthandDispatchContract
-      end
-      """)
+        defmodule Skuld.Test.ShorthandDispatch do
+          use Skuld.Effects.Port.Facade,
+            double_down_contract: Skuld.Test.ShorthandDispatchContract
+        end
+        """)
 
-      mod = Skuld.Test.ShorthandDispatch
       handler = fn ^mod, :greet, ["Alice"] -> "Hello, Alice!" end
 
       comp =
@@ -906,16 +904,15 @@ defmodule Skuld.Effects.Port.ContractTest do
 
   describe "single-module: use Skuld.Effects.Port.Facade (no options)" do
     test "compiles and has all required metadata" do
-      Code.compile_string("""
-      defmodule Skuld.Test.SingleMod do
-        use Skuld.Effects.Port.Facade
+      [{mod, _}] =
+        Code.compile_string("""
+        defmodule Skuld.Test.SingleMod do
+          use Skuld.Effects.Port.Facade
 
-        defcallback greet(name :: String.t()) :: String.t()
-        defcallback ping() :: :pong
-      end
-      """)
-
-      mod = Skuld.Test.SingleMod
+          defcallback greet(name :: String.t()) :: String.t()
+          defcallback ping() :: :pong
+        end
+        """)
 
       # Has effectful @callback declarations
       callbacks = apply(mod, :behaviour_info, [:callbacks])
@@ -944,15 +941,16 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
 
     test "__callbacks__/0 returns plain operation metadata (not effectful)" do
-      Code.compile_string("""
-      defmodule Skuld.Test.SingleModMeta do
-        use Skuld.Effects.Port.Facade
+      [{mod, _}] =
+        Code.compile_string("""
+        defmodule Skuld.Test.SingleModMeta do
+          use Skuld.Effects.Port.Facade
 
-        defcallback get_todo(id :: String.t()) :: {:ok, map()} | {:error, term()}
-      end
-      """)
+          defcallback get_todo(id :: String.t()) :: {:ok, map()} | {:error, term()}
+        end
+        """)
 
-      ops = Skuld.Test.SingleModMeta.__callbacks__()
+      ops = mod.__callbacks__()
       assert [op] = ops
       assert op.name == :get_todo
       assert op.params == [:id]
@@ -964,15 +962,15 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
 
     test "dispatches correctly via Port handler" do
-      Code.compile_string("""
-      defmodule Skuld.Test.SingleModDispatch do
-        use Skuld.Effects.Port.Facade
+      [{mod, _}] =
+        Code.compile_string("""
+        defmodule Skuld.Test.SingleModDispatch do
+          use Skuld.Effects.Port.Facade
 
-        defcallback greet(name :: String.t()) :: String.t()
-      end
-      """)
+          defcallback greet(name :: String.t()) :: String.t()
+        end
+        """)
 
-      mod = Skuld.Test.SingleModDispatch
       handler = fn ^mod, :greet, ["Alice"] -> "Hello from single-module!" end
 
       comp =
@@ -984,15 +982,14 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
 
     test "__key__ helper matches Port.key/3 output" do
-      Code.compile_string("""
-      defmodule Skuld.Test.SingleModKey do
-        use Skuld.Effects.Port.Facade
+      [{mod, _}] =
+        Code.compile_string("""
+        defmodule Skuld.Test.SingleModKey do
+          use Skuld.Effects.Port.Facade
 
-        defcallback find_user(id :: integer()) :: {:ok, map()} | {:error, term()}
-      end
-      """)
-
-      mod = Skuld.Test.SingleModKey
+          defcallback find_user(id :: integer()) :: {:ok, map()} | {:error, term()}
+        end
+        """)
 
       key_from_helper = apply(mod, :__key__, [:find_user, 42])
       key_from_port = Port.key(mod, :find_user, [42])
@@ -1000,15 +997,15 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
 
     test "zero-arg operation works complete flow" do
-      Code.compile_string("""
-      defmodule Skuld.Test.SingleModZero do
-        use Skuld.Effects.Port.Facade
+      [{mod, _}] =
+        Code.compile_string("""
+        defmodule Skuld.Test.SingleModZero do
+          use Skuld.Effects.Port.Facade
 
-        defcallback health_check() :: :ok
-      end
-      """)
+          defcallback health_check() :: :ok
+        end
+        """)
 
-      mod = Skuld.Test.SingleModZero
       handler = fn ^mod, :health_check, [] -> :ok end
 
       comp =
@@ -1032,15 +1029,15 @@ defmodule Skuld.Effects.Port.ContractTest do
     test "single-module is also the contract for handler dispatch" do
       # The single module serves as both contract and facade — handlers
       # pattern-match on the module itself.
-      Code.compile_string("""
-      defmodule Skuld.Test.SingleModAsContract do
-        use Skuld.Effects.Port.Facade
+      [{mod, _}] =
+        Code.compile_string("""
+        defmodule Skuld.Test.SingleModAsContract do
+          use Skuld.Effects.Port.Facade
 
-        defcallback add(a :: integer(), b :: integer()) :: integer()
-      end
-      """)
+          defcallback add(a :: integer(), b :: integer()) :: integer()
+        end
+        """)
 
-      mod = Skuld.Test.SingleModAsContract
       handler = fn ^mod, :add, [1, 2] -> 3 end
 
       comp =
@@ -1052,15 +1049,15 @@ defmodule Skuld.Effects.Port.ContractTest do
     end
 
     test "works with test_handler and key helpers" do
-      Code.compile_string("""
-      defmodule Skuld.Test.SingleModTestHandler do
-        use Skuld.Effects.Port.Facade
+      [{mod, _}] =
+        Code.compile_string("""
+        defmodule Skuld.Test.SingleModTestHandler do
+          use Skuld.Effects.Port.Facade
 
-        defcallback lookup(key :: String.t()) :: {:ok, term()} | {:error, term()}
-      end
-      """)
+          defcallback lookup(key :: String.t()) :: {:ok, term()} | {:error, term()}
+        end
+        """)
 
-      mod = Skuld.Test.SingleModTestHandler
       key = apply(mod, :__key__, [:lookup, "k1"])
 
       responses = %{key => {:ok, "value_for_k1"}}
