@@ -7,15 +7,13 @@
 # - `id` - Unique identifier for this pool instance
 # - `fibers` - Map of fiber_id => Fiber.t() for all managed fibers
 # - `run_queue` - FIFO queue of fiber_ids ready to run
-# - `suspended` - Map of fiber_id => suspension_info for awaiting fibers
+# - `suspensions` - Map of fiber_id => Suspension.t() for all suspended fibers
 # - `completed` - Map of fiber_id => result for completed fibers
 # - `wake_signals` - Map of awaiter_id => resume_value for fibers ready to wake
 # - `consume_ids` - Map of fiber_id => [fiber_id] for deferred result cleanup
 # - `awaiting` - Map of fiber_id => [awaiter_fiber_id] reverse index for wake-up
 # - `tasks` - Map of task_ref => handle_id for running BEAM tasks
 # - `task_supervisor` - Task.Supervisor pid for spawning tasks
-# - `batch_suspended` - Map of fiber_id => InternalSuspend.t() for batch-waiting fibers
-# - `channel_suspended` - Map of fiber_id => true for fibers waiting on channel operations
 # - `opts` - Configuration options
 defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   @moduledoc false
@@ -35,21 +33,53 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
           collected: %{fiber_id() => result()}
         }
 
-  # Note: channel_suspended uses %{fiber_id => true} instead of MapSet
-  # to avoid dialyzer warnings about MapSet's opaque type
+  defmodule Suspension do
+    @moduledoc false
+
+    defmodule Await do
+      @moduledoc false
+
+      @type t :: %__MODULE__{
+              waiting_for: [reference()],
+              mode: :all | :any,
+              collected: %{reference() => term()}
+            }
+
+      defstruct [:waiting_for, :mode, :collected]
+    end
+
+    defmodule Batch do
+      @moduledoc false
+
+      @type t :: %__MODULE__{
+              internal_suspend: InternalSuspend.t()
+            }
+
+      defstruct [:internal_suspend]
+    end
+
+    defmodule Channel do
+      @moduledoc false
+
+      @type t :: %__MODULE__{}
+
+      defstruct []
+    end
+
+    @type t :: Await.t() | Batch.t() | Channel.t()
+  end
+
   @type t :: %__MODULE__{
           id: reference(),
           fibers: %{fiber_id() => Fiber.t()},
           run_queue: :queue.queue(fiber_id()),
-          suspended: %{awaiter_id() => suspension_info()},
+          suspensions: %{awaiter_id() => Suspension.t()},
           completed: %{fiber_id() => result()},
           wake_signals: %{awaiter_id() => term()},
           consume_ids: %{fiber_id() => [fiber_id()]},
           awaiting: %{fiber_id() => [fiber_id()]},
           tasks: %{task_ref() => fiber_id()},
           task_supervisor: pid() | nil,
-          batch_suspended: %{fiber_id() => InternalSuspend.t()},
-          channel_suspended: %{fiber_id() => true},
           env_state: %{term() => term()},
           opts: keyword()
         }
@@ -58,15 +88,13 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
     :id,
     :fibers,
     :run_queue,
-    :suspended,
+    :suspensions,
     :completed,
     :wake_signals,
     :consume_ids,
     :awaiting,
     :tasks,
     :task_supervisor,
-    :batch_suspended,
-    :channel_suspended,
     :env_state,
     :opts
   ]
@@ -87,15 +115,13 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
       id: make_ref(),
       fibers: %{},
       run_queue: :queue.new(),
-      suspended: %{},
+      suspensions: %{},
       completed: %{},
       wake_signals: %{},
       consume_ids: %{},
       awaiting: %{},
       tasks: %{},
       task_supervisor: Keyword.get(opts, :task_supervisor),
-      batch_suspended: %{},
-      channel_suspended: %{},
       env_state: Keyword.get(opts, :env_state, %{}),
       opts: opts
     }
@@ -250,13 +276,12 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
 
       :waiting ->
         # Need to suspend
-        suspension = %{
-          waiting_for: waiting_for,
-          mode: mode,
-          collected: collected
-        }
-
-        state = put_in(state, [Access.key(:suspended), awaiter_id], suspension)
+        state =
+          put_in(state, [Access.key(:suspensions), awaiter_id], %Suspension.Await{
+            waiting_for: waiting_for,
+            mode: mode,
+            collected: collected
+          })
 
         # Add reverse index: for each fiber we're waiting on, record that we're awaiting it
         state =
@@ -276,11 +301,11 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   """
   @spec remove_suspension(t(), fiber_id()) :: t()
   def remove_suspension(state, fiber_id) do
-    case Map.get(state.suspended, fiber_id) do
+    case Map.get(state.suspensions, fiber_id) do
       nil ->
         state
 
-      %{waiting_for: waiting_for} ->
+      %Suspension.Await{waiting_for: waiting_for} ->
         # Remove from awaiting reverse index
         state =
           Enum.reduce(waiting_for, state, fn target_fid, acc ->
@@ -290,7 +315,10 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
             end)
           end)
 
-        %{state | suspended: Map.delete(state.suspended, fiber_id)}
+        %{state | suspensions: Map.delete(state.suspensions, fiber_id)}
+
+      _ ->
+        %{state | suspensions: Map.delete(state.suspensions, fiber_id)}
     end
   end
 
@@ -318,31 +346,27 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
 
   # Check if an awaiter is ready to wake
   defp wake_if_ready(state, awaiter_fid, completed_fid, result) do
-    case Map.get(state.suspended, awaiter_fid) do
+    case Map.get(state.suspensions, awaiter_fid) do
       nil ->
         # Already woken or cancelled
         state
 
-      suspension ->
-        # Add to collected
-        collected = Map.put(suspension.collected, completed_fid, result)
+      %Suspension.Await{waiting_for: waiting_for, mode: mode, collected: collected} ->
+        collected = Map.put(collected, completed_fid, result)
 
-        case check_wake_condition(suspension.mode, suspension.waiting_for, collected) do
+        case check_wake_condition(mode, waiting_for, collected) do
           {:ready, wake_result} ->
-            # Wake the fiber
             state = remove_suspension(state, awaiter_fid)
-
-            # Store wake result for the fiber to retrieve when dequeued
             state = put_in(state, [Access.key(:wake_signals), awaiter_fid], wake_result)
-
-            # Enqueue the fiber
             enqueue(state, awaiter_fid)
 
           :waiting ->
-            # Update collected but still waiting
-            updated = %{suspension | collected: collected}
-            put_in(state, [Access.key(:suspended), awaiter_fid], updated)
+            updated = %Suspension.Await{waiting_for: waiting_for, mode: mode, collected: collected}
+            put_in(state, [Access.key(:suspensions), awaiter_fid], updated)
         end
+
+      _ ->
+        state
     end
   end
 
@@ -433,12 +457,10 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
 
   @doc """
   Record a fiber as suspended waiting for batch execution.
-
-  The fiber will be resumed when batch results are available.
   """
   @spec add_batch_suspension(t(), fiber_id(), InternalSuspend.t()) :: t()
   def add_batch_suspension(state, fiber_id, batch_suspend) do
-    %{state | batch_suspended: Map.put(state.batch_suspended, fiber_id, batch_suspend)}
+    %{state | suspensions: Map.put(state.suspensions, fiber_id, %Suspension.Batch{internal_suspend: batch_suspend})}
   end
 
   @doc """
@@ -446,27 +468,21 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   """
   @spec get_batch_suspensions(t()) :: [{fiber_id(), InternalSuspend.t()}]
   def get_batch_suspensions(state) do
-    Map.to_list(state.batch_suspended)
-  end
-
-  @doc """
-  Remove a batch suspension (after fiber is resumed).
-  """
-  @spec remove_batch_suspension(t(), fiber_id()) :: t()
-  def remove_batch_suspension(state, fiber_id) do
-    %{state | batch_suspended: Map.delete(state.batch_suspended, fiber_id)}
+    for {fid, %Suspension.Batch{internal_suspend: s}} <- state.suspensions, do: {fid, s}
   end
 
   @doc """
   Clear all batch suspensions and return them.
-
-  Used when executing a batch - all suspended fibers are removed and will be
-  resumed with their results.
   """
   @spec pop_all_batch_suspensions(t()) :: {[{fiber_id(), InternalSuspend.t()}], t()}
   def pop_all_batch_suspensions(state) do
-    suspensions = Map.to_list(state.batch_suspended)
-    {suspensions, %{state | batch_suspended: %{}}}
+    {batch, rest} =
+      state.suspensions
+      |> Enum.split_with(fn {_, s} -> match?(%Suspension.Batch{}, s) end)
+
+    suspensions = for {fid, %Suspension.Batch{internal_suspend: s}} <- batch, do: {fid, s}
+    remaining = Map.new(rest)
+    {suspensions, %{state | suspensions: remaining}}
   end
 
   @doc """
@@ -474,7 +490,15 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   """
   @spec has_batch_suspensions?(t()) :: boolean()
   def has_batch_suspensions?(state) do
-    map_size(state.batch_suspended) > 0
+    Enum.any?(state.suspensions, fn {_, s} -> match?(%Suspension.Batch{}, s) end)
+  end
+
+  @doc """
+  Remove a batch suspension (after fiber is resumed).
+  """
+  @spec remove_batch_suspension(t(), fiber_id()) :: t()
+  def remove_batch_suspension(state, fiber_id) do
+    %{state | suspensions: Map.delete(state.suspensions, fiber_id)}
   end
 
   #############################################################################
@@ -483,12 +507,10 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
 
   @doc """
   Record a fiber as suspended waiting for a channel operation.
-
-  The fiber will be resumed when the channel state changes (item available or space freed).
   """
   @spec add_channel_suspension(t(), fiber_id()) :: t()
   def add_channel_suspension(state, fiber_id) do
-    %{state | channel_suspended: Map.put(state.channel_suspended, fiber_id, true)}
+    %{state | suspensions: Map.put(state.suspensions, fiber_id, %Suspension.Channel{})}
   end
 
   @doc """
@@ -496,7 +518,7 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   """
   @spec remove_channel_suspension(t(), fiber_id()) :: t()
   def remove_channel_suspension(state, fiber_id) do
-    %{state | channel_suspended: Map.delete(state.channel_suspended, fiber_id)}
+    %{state | suspensions: Map.delete(state.suspensions, fiber_id)}
   end
 
   @doc """
@@ -504,7 +526,7 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   """
   @spec channel_suspended?(t(), fiber_id()) :: boolean()
   def channel_suspended?(state, fiber_id) do
-    Map.has_key?(state.channel_suspended, fiber_id)
+    match?(%Suspension.Channel{}, Map.get(state.suspensions, fiber_id))
   end
 
   @doc """
@@ -512,7 +534,7 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   """
   @spec has_channel_suspensions?(t()) :: boolean()
   def has_channel_suspensions?(state) do
-    map_size(state.channel_suspended) > 0
+    Enum.any?(state.suspensions, fn {_, s} -> match?(%Suspension.Channel{}, s) end)
   end
 
   #############################################################################
@@ -525,11 +547,9 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   @spec active?(t()) :: boolean()
   def active?(state) do
     not :queue.is_empty(state.run_queue) or
-      map_size(state.suspended) > 0 or
+      map_size(state.suspensions) > 0 or
       map_size(state.fibers) > 0 or
-      map_size(state.tasks) > 0 or
-      map_size(state.batch_suspended) > 0 or
-      map_size(state.channel_suspended) > 0
+      map_size(state.tasks) > 0
   end
 
   @doc """
@@ -538,11 +558,9 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   @spec all_done?(t()) :: boolean()
   def all_done?(state) do
     :queue.is_empty(state.run_queue) and
-      map_size(state.suspended) == 0 and
+      map_size(state.suspensions) == 0 and
       map_size(state.fibers) == 0 and
-      map_size(state.tasks) == 0 and
-      map_size(state.batch_suspended) == 0 and
-      map_size(state.channel_suspended) == 0
+      map_size(state.tasks) == 0
   end
 
   @doc """
@@ -553,11 +571,9 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
     %{
       fibers: map_size(state.fibers),
       run_queue: :queue.len(state.run_queue),
-      suspended: map_size(state.suspended),
+      suspensions: map_size(state.suspensions),
       completed: map_size(state.completed),
-      tasks: map_size(state.tasks),
-      batch_suspended: map_size(state.batch_suspended),
-      channel_suspended: map_size(state.channel_suspended)
+      tasks: map_size(state.tasks)
     }
   end
 
@@ -571,23 +587,19 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
     @type t :: %__MODULE__{
             fibers: non_neg_integer(),
             run_queue: non_neg_integer(),
-            suspended: non_neg_integer(),
+            suspensions: non_neg_integer(),
             completed: non_neg_integer(),
             wake_signals: non_neg_integer(),
-            tasks: non_neg_integer(),
-            batch_suspended: non_neg_integer(),
-            channel_suspended: non_neg_integer()
+            tasks: non_neg_integer()
           }
 
     defstruct [
       :fibers,
       :run_queue,
-      :suspended,
+      :suspensions,
       :completed,
       :wake_signals,
-      :tasks,
-      :batch_suspended,
-      :channel_suspended
+      :tasks
     ]
   end
 
@@ -611,12 +623,10 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
     %ProgressSnapshot{
       fibers: map_size(state.fibers),
       run_queue: :queue.len(state.run_queue),
-      suspended: map_size(state.suspended),
+      suspensions: map_size(state.suspensions),
       completed: map_size(state.completed),
       wake_signals: map_size(state.wake_signals),
-      tasks: map_size(state.tasks),
-      batch_suspended: map_size(state.batch_suspended),
-      channel_suspended: map_size(state.channel_suspended)
+      tasks: map_size(state.tasks)
     }
   end
 

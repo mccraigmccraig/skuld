@@ -14,7 +14,7 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolStateTest do
       assert is_reference(state.id)
       assert state.fibers == %{}
       assert :queue.is_empty(state.run_queue)
-      assert state.suspended == %{}
+      assert state.suspensions == %{}
       assert state.completed == %{}
       assert state.awaiting == %{}
     end
@@ -130,7 +130,7 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolStateTest do
       # Should suspend
       {:suspended, state} = FiberPoolState.suspend_awaiting(state, fid2, [fid1], :all)
 
-      assert Map.has_key?(state.suspended, fid2)
+      assert Map.has_key?(state.suspensions, fid2)
       assert Map.has_key?(state.awaiting, fid1)
     end
 
@@ -209,12 +209,10 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolStateTest do
       assert snapshot == %ProgressSnapshot{
                fibers: 0,
                run_queue: 0,
-               suspended: 0,
+               suspensions: 0,
                completed: 0,
                wake_signals: 0,
-               tasks: 0,
-               batch_suspended: 0,
-               channel_suspended: 0
+               tasks: 0
              }
     end
 

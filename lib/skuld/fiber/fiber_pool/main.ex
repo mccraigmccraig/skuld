@@ -268,9 +268,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
   defp deadlock_diagnostic(state) do
     %{
       counts: FiberPoolState.counts(state),
-      suspended_awaiter_ids: Map.keys(state.suspended),
-      batch_suspended_fiber_ids: Map.keys(state.batch_suspended),
-      channel_suspended_fiber_ids: Map.keys(state.channel_suspended)
+      suspended_fiber_ids: Map.keys(state.suspensions)
     }
   end
 
