@@ -27,6 +27,7 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
   @moduledoc false
 
   alias Skuld.Fiber.FiberPool.SchedulerState
+  alias Skuld.Fiber.Error
   alias Skuld.Comp.Throw
 
   @type task_info :: {reference(), (-> term()), keyword()}
@@ -117,15 +118,14 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
   defp handle_task_result(state, ref, result) do
     case SchedulerState.pop_task(state, ref) do
       {nil, state} ->
-        # Unknown task ref, ignore
         {:task_completed, state}
 
       {handle_id, state} ->
-        # Check if result is a Throw sentinel (task computation raised/threw)
         completion =
           case result do
             %Throw{error: error} ->
-              {:error, {:task_throw, error}}
+              error = normalize_task_throw_error(error)
+              {:error, error}
 
             _ ->
               {:ok, result}
@@ -139,15 +139,36 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
   defp handle_task_crash(state, ref, reason) do
     case SchedulerState.pop_task(state, ref) do
       {nil, state} ->
-        # Unknown task, ignore
         {:task_completed, state}
 
       {handle_id, state} ->
-        # Record error
-        state =
-          SchedulerState.record_completion(state, handle_id, {:error, {:task_crashed, reason}})
+        error =
+          case reason do
+            {exception, stacktrace} when is_list(stacktrace) ->
+              %Error{type: :exception, error: exception, stacktrace: stacktrace}
 
+            _ ->
+              %Error{type: :exit, error: reason}
+          end
+
+        state = SchedulerState.record_completion(state, handle_id, {:error, error})
         {:task_completed, state}
     end
+  end
+
+  defp normalize_task_throw_error(%{kind: :error, payload: exception, stacktrace: stacktrace}) do
+    %Error{type: :exception, error: exception, stacktrace: stacktrace}
+  end
+
+  defp normalize_task_throw_error(%{kind: :throw, payload: value, stacktrace: stacktrace}) do
+    %Error{type: :throw, error: value, stacktrace: stacktrace}
+  end
+
+  defp normalize_task_throw_error(%{kind: :exit, payload: reason, stacktrace: stacktrace}) do
+    %Error{type: :exit, error: reason, stacktrace: stacktrace}
+  end
+
+  defp normalize_task_throw_error(plain_value) do
+    %Error{type: :throw, error: plain_value}
   end
 end

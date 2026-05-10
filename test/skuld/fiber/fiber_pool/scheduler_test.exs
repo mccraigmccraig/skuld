@@ -71,7 +71,7 @@ defmodule Skuld.Fiber.FiberPool.SchedulerTest do
 
       {:done, results, _state} = Scheduler.run(state, env)
 
-      assert {:error, {:throw, %{kind: :error, payload: %RuntimeError{message: "boom"}}}} =
+      assert {:error, %Fiber.Error{type: :exception, error: %RuntimeError{message: "boom"}}} =
                results[fid]
     end
   end

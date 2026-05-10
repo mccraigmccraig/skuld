@@ -39,6 +39,7 @@ defmodule Skuld.Fiber do
   alias Skuld.Comp.Types
   alias Skuld.Fiber.Cancelled
   alias Skuld.Fiber.Completed
+  alias Skuld.Fiber.Error
   alias Skuld.Fiber.Errored
   alias Skuld.Fiber.ExternalSuspended
   alias Skuld.Fiber.InternalSuspended
@@ -224,6 +225,23 @@ defmodule Skuld.Fiber do
     execute_and_handle(fiber, env, fn -> k.(value, env) end)
   end
 
+  # Normalize Comp.Throw error payload into a Fiber.Error struct
+  defp normalize_throw_error(%{kind: :error, payload: exception, stacktrace: stacktrace}) do
+    %Error{type: :exception, error: exception, stacktrace: stacktrace}
+  end
+
+  defp normalize_throw_error(%{kind: :throw, payload: value, stacktrace: stacktrace}) do
+    %Error{type: :throw, error: value, stacktrace: stacktrace}
+  end
+
+  defp normalize_throw_error(%{kind: :exit, payload: reason, stacktrace: stacktrace}) do
+    %Error{type: :exit, error: reason, stacktrace: stacktrace}
+  end
+
+  defp normalize_throw_error(plain_value) do
+    %Error{type: :throw, error: plain_value}
+  end
+
   # Execute an invocation and handle all result types.
   # Returns the fiber in its new state.
   defp execute_and_handle(fiber, env, invocation) do
@@ -235,23 +253,24 @@ defmodule Skuld.Fiber do
         handle_internal_suspend(fiber, internal_suspend, internal_env)
 
       {%Comp.Throw{} = throw, throw_env} ->
-        %Errored{id: fiber.id, error: {:throw, throw.error}, env: throw_env}
+        error = normalize_throw_error(throw.error)
+        %Errored{id: fiber.id, error: error, env: throw_env}
 
       {%Comp.Cancelled{} = cancelled, cancelled_env} ->
-        %Errored{id: fiber.id, error: {:cancelled, cancelled.reason}, env: cancelled_env}
+        %Errored{id: fiber.id, error: %Error{type: :cancelled, error: cancelled.reason}, env: cancelled_env}
 
       {value, %Env{} = final_env} ->
         %Completed{id: fiber.id, result: value, env: final_env}
     end
   rescue
     e ->
-      %Errored{id: fiber.id, error: {:exception, e, __STACKTRACE__}, env: env}
+      %Errored{id: fiber.id, error: %Error{type: :exception, error: e, stacktrace: __STACKTRACE__}, env: env}
   catch
     :throw, reason ->
-      %Errored{id: fiber.id, error: {:throw, reason}, env: env}
+      %Errored{id: fiber.id, error: %Error{type: :throw, error: reason}, env: env}
 
     :exit, reason ->
-      %Errored{id: fiber.id, error: {:exit, reason}, env: env}
+      %Errored{id: fiber.id, error: %Error{type: :exit, error: reason}, env: env}
   end
 
   # Handle an external Suspend sentinel (closes over env)

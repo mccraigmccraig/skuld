@@ -7,6 +7,7 @@ defmodule Skuld.FiberTest do
   alias Skuld.Fiber
   alias Skuld.Fiber.Cancelled
   alias Skuld.Fiber.Completed
+  alias Skuld.Fiber.Error
   alias Skuld.Fiber.Errored
   alias Skuld.Fiber.ExternalSuspended
   alias Skuld.Fiber.Pending
@@ -98,7 +99,7 @@ defmodule Skuld.FiberTest do
 
       fiber = Fiber.run_until_suspend(fiber)
       assert match?(%Errored{}, fiber)
-      assert fiber.error == {:throw, :my_error}
+      assert %Error{type: :throw, error: :my_error} = fiber.error
       assert fiber.env != nil
     end
 
@@ -112,7 +113,7 @@ defmodule Skuld.FiberTest do
 
       fiber = Fiber.run_until_suspend(fiber)
       assert match?(%Errored{}, fiber)
-      assert {:throw, %{kind: :error, payload: %RuntimeError{message: "boom"}}} = fiber.error
+      assert %Error{type: :exception, error: %RuntimeError{message: "boom"}} = fiber.error
       assert fiber.env != nil
     end
 
@@ -194,7 +195,7 @@ defmodule Skuld.FiberTest do
 
       fiber = Fiber.resume(fiber, :trigger_error)
       assert match?(%Errored{}, fiber)
-      assert fiber.error == {:throw, :triggered}
+      assert %Error{type: :throw, error: :triggered} = fiber.error
     end
 
     test "cannot resume non-suspended fiber" do
@@ -371,11 +372,11 @@ defmodule Skuld.FiberTest do
 
       fiber = Fiber.run_until_suspend(fiber)
       assert match?(%Errored{}, fiber)
-      assert fiber.error == {:throw, :boom}
+      assert %Error{type: :throw, error: :boom} = fiber.error
 
       same = Fiber.cancel(fiber)
       assert match?(%Errored{}, same)
-      assert same.error == {:throw, :boom}
+      assert %Error{type: :throw, error: :boom} = same.error
       assert same == fiber
     end
 

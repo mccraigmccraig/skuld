@@ -821,70 +821,10 @@ defmodule Skuld.Effects.FiberPool do
   # where Throw.catch_error can intercept it.
   defp unwrap_result({:ok, value}), do: {:ok, value}
 
-  # Raw Elixir exception caught by execute_and_handle's rescue clause
-  defp unwrap_result({:error, {:exception, exception, stacktrace}}) do
+  defp unwrap_result({:error, %Skuld.Fiber.Error{type: type, error: error, stacktrace: stacktrace}}) do
     {:throw,
      %Comp.Throw{
-       error: %AwaitError{type: :exception, error: exception, stacktrace: stacktrace}
+       error: %AwaitError{type: type, error: error, stacktrace: stacktrace}
      }}
-  end
-
-  # Elixir exception caught by Comp.call and wrapped as a Comp.Throw —
-  # execute_and_handle stores these as {:throw, throw.error} where throw.error
-  # is %{kind: :error, payload: exception, stacktrace: stacktrace}
-  defp unwrap_result(
-         {:error, {:throw, %{kind: :error, payload: exception, stacktrace: stacktrace}}}
-       ) do
-    {:throw,
-     %Comp.Throw{
-       error: %AwaitError{type: :exception, error: exception, stacktrace: stacktrace}
-     }}
-  end
-
-  # Elixir throw caught by Comp.call and wrapped as a Comp.Throw
-  defp unwrap_result({:error, {:throw, %{kind: :throw, payload: value, stacktrace: stacktrace}}}) do
-    {:throw,
-     %Comp.Throw{
-       error: %AwaitError{type: :throw, error: value, stacktrace: stacktrace}
-     }}
-  end
-
-  # Elixir exit caught by Comp.call and wrapped as a Comp.Throw
-  defp unwrap_result({:error, {:throw, %{kind: :exit, payload: reason, stacktrace: stacktrace}}}) do
-    {:throw,
-     %Comp.Throw{
-       error: %AwaitError{type: :exit, error: reason, stacktrace: stacktrace}
-     }}
-  end
-
-  # Skuld Throw.throw (user-level throw, not Elixir exception) —
-  # the error is the user's throw value directly
-  defp unwrap_result({:error, {:throw, reason}}) do
-    {:throw, %Comp.Throw{error: %AwaitError{type: :throw, error: reason, stacktrace: nil}}}
-  end
-
-  # Raw Elixir exit caught by execute_and_handle's catch clause
-  defp unwrap_result({:error, {:exit, reason}}) do
-    {:throw, %Comp.Throw{error: %AwaitError{type: :exit, error: reason, stacktrace: nil}}}
-  end
-
-  # Task crash — task raised an exception in a separate BEAM process
-  defp unwrap_result({:error, {:task_crashed, {exception, stacktrace}}}) do
-    {:throw,
-     %Comp.Throw{
-       error: %AwaitError{type: :exception, error: exception, stacktrace: stacktrace}
-     }}
-  end
-
-  # Task crash — other forms (e.g. task was killed)
-  defp unwrap_result({:error, {:task_crashed, reason}}) do
-    {:throw,
-     %Comp.Throw{
-       error: %AwaitError{type: :exit, error: reason, stacktrace: nil}
-     }}
-  end
-
-  defp unwrap_result({:error, {:cancelled, reason}}) do
-    {:throw, %Comp.Throw{error: %AwaitError{type: :cancelled, error: reason, stacktrace: nil}}}
   end
 end
