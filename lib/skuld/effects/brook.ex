@@ -286,9 +286,13 @@ defmodule Skuld.Effects.Brook do
 
   ## Options
 
-  - `:concurrency` - Maximum concurrent transforms (default: 1). Due to cooperative
-    scheduling, `concurrency: 1` has a floor of 2 concurrent transforms. Values >= 2
-    behave as specified.
+  - `:concurrency` - Maximum concurrent transforms (default: 1). Due to the
+    producer holding one chunk while spawning the next and the reorderer
+    holding one while reordering, actual concurrency has a floor of 2.
+    Values >= 2 behave as specified; `concurrency: 1` yields 2 concurrent
+    transforms in practice. Use a rendezvous channel (`concurrency: 2` and
+    a rewrite of the internal pipeline) if precise single-worker semantics
+    are required.
   - `:buffer` - Output channel capacity in chunks (default: 10)
 
   ## Example
@@ -316,9 +320,10 @@ defmodule Skuld.Effects.Brook do
     concurrency = Keyword.get(opts, :concurrency, 1)
     buffer = Keyword.get(opts, :buffer, 10)
 
-    # Adjust for "hidden" concurrency from spawn-before-put and reorderer consuming.
-    # With channel capacity C, actual concurrency is C+2, so we use max(C-2, 0).
-    # This means concurrency: 1 gives 2 concurrent (floor), but 2+ is accurate.
+    # Concurrency floor: the producer holds one chunk while spawning the next,
+    # and the reorderer holds one while reordering. With internal capacity C,
+    # actual concurrency is C+2. Subtract 2 to make the user-specified value
+    # accurate for concurrency >= 2. For concurrency: 1, the floor is 2.
     internal_capacity = max(concurrency - 2, 0)
 
     comp do
