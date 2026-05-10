@@ -5,6 +5,18 @@ defmodule Skuld.Comp.Env do
   The Env struct carries scope (handlers, leave-scope, transform-suspend)
   and effect state. Scope is embedded as a `ScopeEnv` sub-struct — mutate
   through `Env.*` functions rather than reaching into `env.scope` directly.
+
+  ## Effect State
+
+  Effect state lives exclusively in `env.state` via `put_state/3` and
+  `get_state/2,3`. This map is the only state bucket that survives across
+  fiber suspend/resume cycles — the scheduler threads `env.state` through
+  all fibers in a pool.
+
+  Do **not** add arbitrary top-level keys to the `%Env{}` struct itself.
+  Such keys will be lost during fiber execution because the scheduler only
+  preserves `scope` and `state` fields. Use `put_state/3` for any value
+  that needs to survive across suspensions.
   """
 
   alias Skuld.Comp.ScopeEnv
@@ -102,7 +114,16 @@ defmodule Skuld.Comp.Env do
     ScopeEnv.handler_sigs(env.scope)
   end
 
-  @doc "Update state for an effect"
+  @doc """
+  Update state for an effect.
+
+  Effect state lives in `env.state` — the only map that survives across
+  fiber suspend/resume cycles. Use module-specific keys (e.g. module attributes
+  or struct-based keys) to avoid collisions between effects.
+
+  See the moduledoc for guidance on what belongs in `state` vs on the `Env`
+  struct directly.
+  """
   @spec put_state(Skuld.Comp.Types.env(), term(), term()) :: Skuld.Comp.Types.env()
   def put_state(env, key, value) do
     %{env | state: Map.put(env.state, key, value)}
