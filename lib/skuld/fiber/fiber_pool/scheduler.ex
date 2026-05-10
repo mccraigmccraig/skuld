@@ -276,53 +276,36 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   # Also clears pending work from state.env_state to prevent re-collection
   # when the next fiber runs.
   defp collect_pending_fibers(state, env) do
-    pending_work = get_pending_work(env)
-
-    if PendingWork.has_fibers?(pending_work) do
-      {fibers, _pending_work} = PendingWork.take_fibers(pending_work)
-
-      # Add pending fibers to state
-      state =
-        Enum.reduce(fibers, state, fn {_id, fiber}, acc ->
-          {_id, acc} = FiberPoolState.add_fiber(acc, fiber)
-          acc
-        end)
-
-      # Clear from state.env_state to prevent re-collection when next fiber runs
-      clear_pending_work_in_env_state(state)
-    else
-      state
-    end
+    {state, _env} = drain_pending_fibers(state, env)
+    state
   end
 
   # Collect pending fibers and clear them from both the suspended fiber's env
-  # AND state.env_state to avoid collecting them again on resume or next fiber run
+  # AND state.env_state to avoid collecting them again on resume or next fiber run.
   defp collect_and_clear_pending_fibers(state, suspended_fiber) do
-    env = suspended_fiber.env
+    {state, cleaned_env} = drain_pending_fibers(state, suspended_fiber.env)
+    {state, %{suspended_fiber | env: cleaned_env}}
+  end
 
+  # Core extraction: take fibers from env, add to state, clear env's pending work.
+  # Returns {state, env} with pending work cleared.
+  defp drain_pending_fibers(state, env) do
     pending_work = get_pending_work(env)
 
     if PendingWork.has_fibers?(pending_work) do
       {fibers, _pending_work} = PendingWork.take_fibers(pending_work)
 
-      # Add pending fibers to state
       state =
         Enum.reduce(fibers, state, fn {_id, fiber}, acc ->
           {_id, acc} = FiberPoolState.add_fiber(acc, fiber)
           acc
         end)
 
-      # Clear pending work from the suspended fiber's env
       cleared_env = clear_pending_work(env)
-      suspended_fiber = %{suspended_fiber | env: cleared_env}
-
-      # Also clear from state.env_state (which was updated before this call)
-      # to prevent re-collection when next fiber runs
       state = clear_pending_work_in_env_state(state)
-
-      {state, suspended_fiber}
+      {state, cleared_env}
     else
-      {state, suspended_fiber}
+      {state, env}
     end
   end
 
