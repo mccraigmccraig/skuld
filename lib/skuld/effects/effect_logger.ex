@@ -609,7 +609,7 @@ defmodule Skuld.Effects.EffectLogger do
     |> put_state_keys(state_keys)
   end
 
-  defp sigs_to_wrap(:all, env), do: Map.keys(env.evidence)
+  defp sigs_to_wrap(:all, env), do: Env.handler_sigs(env)
   defp sigs_to_wrap(list, _env) when is_list(list), do: [@sig | list] |> Enum.uniq()
 
   defp install_wrapped_handlers(env, sigs, wrapper_fn) do
@@ -823,7 +823,7 @@ defmodule Skuld.Effects.EffectLogger do
       # Determine which handlers to wrap (including our own handler)
       sigs_to_wrap =
         case effects_to_log do
-          :all -> Map.keys(env_with_config.evidence)
+          :all -> Env.handler_sigs(env_with_config)
           list when is_list(list) -> [@sig | list] |> Enum.uniq()
         end
 

@@ -6,8 +6,10 @@ defmodule Skuld.Comp.Throw do
   defstruct [:error]
 
   defimpl Skuld.Comp.ISentinel do
+    alias Skuld.Comp.Env
+
     # Throw goes through leave_scope so Catch can intercept it
-    def run(result, env), do: env.leave_scope.(result, env)
+    def run(result, env), do: Env.run_leave_scope(env, result)
 
     # Elixir exception (raise) - reraise with original stacktrace
     def run!(%Skuld.Comp.Throw{

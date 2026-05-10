@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Skuld.Comp.ScopeEnv` — sub-struct for scope machinery (evidence, leave_scope,
+  transform_suspend) embedded in `Env.scope`. Extracts the three scope fields
+  that are installed/restored together in `scoped/2` into a single named struct,
+  making the boundary between scope and shared state explicit.
+- `Env.run_leave_scope/2` — convenience function for invoking the leave_scope
+  chain on a result without reaching into the Env struct directly.
+- `Env.handler_sigs/1` — accessor for all installed handler signatures,
+  previously exposed only by reaching into `env.evidence` directly.
+- `Env.get_scope/1` and `Env.with_scope/2` — accessors for the scope sub-struct.
+
+### Changed
+
+- `Env` struct simplified from four fields (`evidence`, `state`, `leave_scope`,
+  `transform_suspend`) to two (`scope`, `state`). The scope machinery is now
+  nested under `env.scope`. All existing `Env.*` functions continue to work
+  unchanged — they delegate into `ScopeEnv` internally.
+- All direct field accesses to `env.evidence`, `env.leave_scope`, and
+  `env.transform_suspend` replaced with `Env` accessor functions.
+
 ## [0.24.0] — 2026-05-04
 
 ### Added

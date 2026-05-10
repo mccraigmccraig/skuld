@@ -233,7 +233,7 @@ defmodule Skuld.Comp do
   @spec cancel(ExternalSuspend.t(), Types.env(), term()) :: {Cancelled.t(), Types.env()}
   def cancel(%ExternalSuspend{}, env, reason) do
     cancelled = %Cancelled{reason: reason}
-    env.leave_scope.(cancelled, env)
+    Env.run_leave_scope(env, cancelled)
   end
 
   #############################################################################

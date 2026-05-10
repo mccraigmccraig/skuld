@@ -62,6 +62,7 @@ defmodule Skuld.Effects.FxFasterList do
   """
 
   alias Skuld.Comp
+  alias Skuld.Comp.Env
   alias Skuld.Comp.ISentinel
   alias Skuld.Comp.Types
 
@@ -107,7 +108,7 @@ defmodule Skuld.Effects.FxFasterList do
           outer_k.(Enum.reverse(acc), final_env)
 
         {:error, error, err_env} ->
-          err_env.leave_scope.(error, err_env)
+          Env.run_leave_scope(err_env, error)
 
         {:suspended, suspend, suspend_env} ->
           {suspend, suspend_env}
@@ -155,7 +156,7 @@ defmodule Skuld.Effects.FxFasterList do
           outer_k.(final_acc, final_env)
 
         {:error, error, err_env} ->
-          err_env.leave_scope.(error, err_env)
+          Env.run_leave_scope(err_env, error)
 
         {:suspended, suspend, suspend_env} ->
           {suspend, suspend_env}
@@ -204,7 +205,7 @@ defmodule Skuld.Effects.FxFasterList do
           outer_k.(:ok, final_env)
 
         {:error, error, err_env} ->
-          err_env.leave_scope.(error, err_env)
+          Env.run_leave_scope(err_env, error)
 
         {:suspended, suspend, suspend_env} ->
           {suspend, suspend_env}
@@ -252,7 +253,7 @@ defmodule Skuld.Effects.FxFasterList do
           outer_k.(Enum.reverse(acc), final_env)
 
         {:error, error, err_env} ->
-          err_env.leave_scope.(error, err_env)
+          Env.run_leave_scope(err_env, error)
 
         {:suspended, suspend, suspend_env} ->
           {suspend, suspend_env}

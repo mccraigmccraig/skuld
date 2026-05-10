@@ -38,8 +38,10 @@ defmodule Skuld.Comp.Cancelled do
   defstruct [:reason]
 
   defimpl Skuld.Comp.ISentinel do
+    alias Skuld.Comp.Env
+
     # Cancelled goes through leave_scope so effects can clean up
-    def run(result, env), do: env.leave_scope.(result, env)
+    def run(result, env), do: Env.run_leave_scope(env, result)
 
     def run!(%Skuld.Comp.Cancelled{reason: reason}) do
       raise "Computation cancelled: #{inspect(reason)}"

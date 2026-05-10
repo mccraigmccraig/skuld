@@ -2,10 +2,12 @@ defmodule Skuld.Comp.Env do
   @moduledoc """
   Environment construction and manipulation.
 
-  The Env struct carries evidence (handlers), state, and the leave-scope chain.
-  It supports extension fields - arbitrary atom keys can be added via `Map.put/3`.
+  The Env struct carries scope (handlers, leave-scope, transform-suspend)
+  and effect state. Scope is embedded as a `ScopeEnv` sub-struct — mutate
+  through `Env.*` functions rather than reaching into `env.scope` directly.
   """
 
+  alias Skuld.Comp.ScopeEnv
   alias Skuld.Comp.Types
 
   @compile {:inline,
@@ -17,30 +19,39 @@ defmodule Skuld.Comp.Env do
             get_handler: 2,
             with_handler: 3,
             delete_handler: 2,
-            with_leave_scope: 2}
+            handler_sigs: 1,
+            with_leave_scope: 2,
+            get_leave_scope: 1,
+            run_leave_scope: 2,
+            with_transform_suspend: 2,
+            get_transform_suspend: 1,
+            get_scope: 1,
+            with_scope: 2}
 
   @typedoc """
-  The environment struct. Supports extension fields beyond the core struct keys
-  (structs are maps, so `Map.put(env, :custom_key, value)` works).
+  The environment struct.
+
+  ## Fields
+
+  - `scope` — scope machinery (evidence, leave_scope, transform_suspend)
+  - `state` — effect state (Writer accumulators, channel state, etc.)
   """
   @type t :: %__MODULE__{
-          evidence: %{Types.sig() => Types.handler()},
-          state: %{term() => term()},
-          leave_scope: Types.leave_scope() | nil,
-          transform_suspend: Types.transform_suspend() | nil
+          scope: ScopeEnv.t(),
+          state: %{term() => term()}
         }
 
-  defstruct evidence: %{},
-            state: %{},
-            leave_scope: nil,
-            transform_suspend: nil
+  defstruct scope: ScopeEnv.new(),
+            state: %{}
 
   @doc "Create a fresh environment with identity leave-scope and transform-suspend"
   @spec new() :: Skuld.Comp.Types.env()
   def new do
     %__MODULE__{
-      leave_scope: fn result, env -> {result, env} end,
-      transform_suspend: fn suspend, env -> {suspend, env} end
+      scope: %ScopeEnv{
+        leave_scope: fn result, env -> {result, env} end,
+        transform_suspend: fn suspend, env -> {suspend, env} end
+      }
     }
   end
 
@@ -48,15 +59,15 @@ defmodule Skuld.Comp.Env do
   @spec with_handler(Skuld.Comp.Types.env(), Skuld.Comp.Types.sig(), Skuld.Comp.Types.handler()) ::
           Skuld.Comp.Types.env()
   def with_handler(env, sig, handler) do
-    %{env | evidence: Map.put(env.evidence, sig, handler)}
+    %{env | scope: ScopeEnv.put_handler(env.scope, sig, handler)}
   end
 
   @doc "Get handler for an effect signature (raises if missing)"
   @spec get_handler!(Skuld.Comp.Types.env(), Skuld.Comp.Types.sig()) :: Skuld.Comp.Types.handler()
   def get_handler!(env, sig) do
-    case env.evidence[sig] do
+    case ScopeEnv.get_handler(env.scope, sig) do
       nil ->
-        available = Map.keys(env.evidence)
+        available = ScopeEnv.handler_sigs(env.scope)
 
         raise ArgumentError, """
         No handler installed for effect: #{inspect(sig)}
@@ -76,13 +87,19 @@ defmodule Skuld.Comp.Env do
   @spec get_handler(Skuld.Comp.Types.env(), Skuld.Comp.Types.sig()) ::
           Skuld.Comp.Types.handler() | nil
   def get_handler(env, sig) do
-    env.evidence[sig]
+    ScopeEnv.get_handler(env.scope, sig)
   end
 
   @doc "Remove a handler for an effect signature"
   @spec delete_handler(Skuld.Comp.Types.env(), Skuld.Comp.Types.sig()) :: Skuld.Comp.Types.env()
   def delete_handler(env, sig) do
-    %{env | evidence: Map.delete(env.evidence, sig)}
+    %{env | scope: ScopeEnv.delete_handler(env.scope, sig)}
+  end
+
+  @doc "Get all installed handler signatures"
+  @spec handler_sigs(Skuld.Comp.Types.env()) :: [Skuld.Comp.Types.sig()]
+  def handler_sigs(env) do
+    ScopeEnv.handler_sigs(env.scope)
   end
 
   @doc "Update state for an effect"
@@ -113,24 +130,43 @@ defmodule Skuld.Comp.Env do
   @spec with_leave_scope(Skuld.Comp.Types.env(), Skuld.Comp.Types.leave_scope()) ::
           Skuld.Comp.Types.env()
   def with_leave_scope(env, new_leave_scope) do
-    %{env | leave_scope: new_leave_scope}
+    %{env | scope: ScopeEnv.with_leave_scope(env.scope, new_leave_scope)}
   end
 
   @doc "Get the current leave-scope handler (returns identity if nil)"
   @spec get_leave_scope(Skuld.Comp.Types.env()) :: Skuld.Comp.Types.leave_scope()
   def get_leave_scope(env) do
-    env.leave_scope || fn result, e -> {result, e} end
+    ScopeEnv.get_leave_scope(env.scope)
+  end
+
+  @doc "Run the leave-scope chain on a result"
+  @spec run_leave_scope(Skuld.Comp.Types.env(), term()) ::
+          {Skuld.Comp.Types.result(), Skuld.Comp.Types.env()}
+  def run_leave_scope(env, result) do
+    get_leave_scope(env).(result, env)
   end
 
   @doc "Install a new transform-suspend handler"
   @spec with_transform_suspend(t(), Types.transform_suspend()) :: t()
   def with_transform_suspend(env, new_transform_suspend) do
-    %{env | transform_suspend: new_transform_suspend}
+    %{env | scope: ScopeEnv.with_transform_suspend(env.scope, new_transform_suspend)}
   end
 
   @doc "Get the current transform-suspend handler (returns identity if nil)"
   @spec get_transform_suspend(t()) :: Types.transform_suspend()
   def get_transform_suspend(env) do
-    env.transform_suspend || fn suspend, e -> {suspend, e} end
+    ScopeEnv.get_transform_suspend(env.scope)
+  end
+
+  @doc "Get the scope sub-struct (for inspection)"
+  @spec get_scope(t()) :: ScopeEnv.t()
+  def get_scope(env) do
+    env.scope
+  end
+
+  @doc "Replace the scope sub-struct (for initial construction; prefer with_* functions for mutation)"
+  @spec with_scope(t(), ScopeEnv.t()) :: t()
+  def with_scope(env, scope) do
+    %{env | scope: scope}
   end
 end

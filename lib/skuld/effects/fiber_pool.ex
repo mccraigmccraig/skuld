@@ -811,8 +811,8 @@ defmodule Skuld.Effects.FiberPool do
   defp fiber_env(env) do
     env
     |> Env.put_state(PendingWork.env_key(), PendingWork.new())
-    |> Map.put(:leave_scope, &Comp.identity_k/2)
-    |> Map.put(:transform_suspend, &Comp.identity_k/2)
+    |> Env.with_leave_scope(&Comp.identity_k/2)
+    |> Env.with_transform_suspend(&Comp.identity_k/2)
   end
 
   # Unwrap a fiber result into {:ok, value} or {:throw, %Comp.Throw{error: %AwaitError{}}}

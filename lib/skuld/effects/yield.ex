@@ -21,6 +21,7 @@ defmodule Skuld.Effects.Yield do
   use Skuld.Comp.DefOp
 
   alias Skuld.Comp
+  alias Skuld.Comp.Env
   alias Skuld.Comp.ISentinel
   alias Skuld.Comp.Types
 
@@ -302,7 +303,7 @@ defmodule Skuld.Effects.Yield do
 
         _ ->
           # Invoke leave_scope chain on completion
-          final_env.leave_scope.(result, final_env)
+          Env.run_leave_scope(final_env, result)
       end
     end
 

@@ -179,7 +179,7 @@ defmodule Skuld.Fiber do
   # Suspended with env — run leave_scope cleanup
   def cancel(%__MODULE__{status: :suspended, env: env} = fiber, reason) when env != nil do
     cancelled = %Comp.Cancelled{reason: reason}
-    {_result, final_env} = env.leave_scope.(cancelled, env)
+    {_result, final_env} = Env.run_leave_scope(env, cancelled)
 
     %{
       fiber

@@ -46,7 +46,9 @@ defprotocol Skuld.Comp.ISentinel do
 end
 
 defimpl Skuld.Comp.ISentinel, for: Any do
-  def run(result, env), do: env.leave_scope.(result, env)
+  alias Skuld.Comp.Env
+
+  def run(result, env), do: Env.run_leave_scope(env, result)
   def run!(value), do: value
   def sentinel?(_value), do: false
   def suspend?(_value), do: false
