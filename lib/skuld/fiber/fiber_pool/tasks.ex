@@ -44,13 +44,14 @@ defmodule Skuld.Fiber.FiberPool.Tasks do
 
   def spawn_pending(%{task_supervisor: nil}, [_ | _]) do
     raise ArgumentError, """
-    FiberPool.task/2 requires a Task.Supervisor, but none is installed.
+    FiberPool.Task.task/2 requires a Task.Supervisor, but none is installed.
 
-    Wrap your computation with FiberPool.with_task_supervisor/1:
+    Wrap your computation with FiberPool.Task.with_task_supervisor/1:
 
         comp
         |> FiberPool.with_handler()
-        |> FiberPool.with_task_supervisor()
+        |> FiberPool.Task.with_handler()
+        |> FiberPool.Task.with_task_supervisor()
         |> Comp.run!()
     """
   end

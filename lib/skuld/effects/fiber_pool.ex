@@ -86,11 +86,6 @@ defmodule Skuld.Effects.FiberPool do
     defstruct [:handle]
   end
 
-  defmodule TaskOp do
-    @moduledoc false
-    defstruct [:thunk, :opts]
-  end
-
   defmodule Scope do
     @moduledoc false
     defstruct [:comp, :on_exit]
@@ -173,75 +168,6 @@ defmodule Skuld.Effects.FiberPool do
   @spec fiber(Comp.Types.computation(), keyword()) :: Comp.Types.computation()
   def fiber(computation, opts \\ []) do
     Comp.effect(@sig, %FiberOp{comp: computation, opts: opts})
-  end
-
-  @doc """
-  Run a thunk as a BEAM Task (parallel, separate process).
-
-  The thunk runs in a separate BEAM process, allowing true parallelism
-  for CPU-bound work. Returns a handle that can be awaited just like
-  fiber handles.
-
-  **Important:** The thunk is a zero-arity function, not a computation.
-  Effects do not work inside tasks because they run in a different process.
-  Extract any values you need from Reader/State before constructing the thunk.
-
-  ## Why thunks, not computations?
-
-  Tasks run in a separate BEAM process. While an effectful computation *could*
-  be shipped to the other process and executed there, the modified environment
-  it returns would then need to be integrated back into the calling process's
-  environment. There is no general way to do this — environment changes from
-  effects (State mutations, Writer accumulations, handler installations, etc.)
-  have no guarantee of commutativity, so a task's environment modifications
-  cannot be safely merged with whatever the calling process has done in the
-  meantime.
-
-  Restricting tasks to plain thunks forces the caller to explicitly extract
-  any needed values from the environment *before* spawning the task, and to
-  explicitly handle the task's return value *after* awaiting it. This makes
-  the cross-process boundary visible and avoids the need for an unsound
-  automatic environment merge.
-
-  ## Options
-
-  - `:timeout` - Task timeout in milliseconds (default: 5000)
-
-  ## Example
-
-      comp do
-        # Extract any needed values from effects first
-        config <- Reader.ask(:config)
-
-        # CPU-bound work runs in parallel - thunk captures what it needs
-        h1 <- FiberPool.task(fn -> expensive_cpu_work(config) end)
-        h2 <- FiberPool.task(fn -> another_cpu_work(config) end)
-
-        # Await results
-        r1 <- FiberPool.await!(h1)
-        r2 <- FiberPool.await!(h2)
-
-        {r1, r2}
-      end
-  """
-  @spec task((-> term()), keyword()) :: Comp.Types.computation()
-  def task(thunk, opts \\ [])
-
-  def task(thunk, opts) when is_function(thunk, 0) do
-    Comp.effect(@sig, %TaskOp{thunk: thunk, opts: opts})
-  end
-
-  def task(thunk, _opts) when is_function(thunk, 2) do
-    raise ArgumentError, """
-    FiberPool.task/2 requires a zero-arity thunk, but a 2-arity function (a computation) was given.
-
-    Tasks run in a separate BEAM process, so effects (Reader, State, Writer, etc.)
-    do not work inside them. Extract any values you need from the effect environment
-    before constructing the thunk:
-
-        config <- Reader.ask(:config)
-        h <- FiberPool.task(fn -> expensive_work(config) end)
-    """
   end
 
   @doc """
@@ -550,60 +476,6 @@ defmodule Skuld.Effects.FiberPool do
     |> Comp.with_handler(@sig, &handle/3)
   end
 
-  @doc """
-  Install a Task.Supervisor for BEAM task support.
-
-  This starts a `Task.Supervisor` process before the computation runs and
-  stops it after completion. Required for `FiberPool.task/2` — calling
-  `task/2` without this will raise an error.
-
-  ## Example
-
-      comp do
-        h <- FiberPool.task(fn -> expensive_cpu_work() end)
-        FiberPool.await!(h)
-      end
-      |> FiberPool.with_handler()
-      |> FiberPool.with_task_supervisor()
-      |> Comp.run!()
-
-  ## Options
-
-  - `:supervisor` - An existing `Task.Supervisor` pid to use instead of
-    starting a new one. The caller is responsible for its lifecycle.
-  """
-  @task_supervisor_key {__MODULE__, :task_supervisor}
-
-  @spec with_task_supervisor(Comp.Types.computation(), keyword()) :: Comp.Types.computation()
-  def with_task_supervisor(comp, opts \\ []) do
-    Comp.scoped(comp, fn env ->
-      {sup, should_stop} =
-        case Keyword.get(opts, :supervisor) do
-          nil ->
-            {:ok, sup} = Task.Supervisor.start_link()
-            {sup, true}
-
-          sup when is_pid(sup) ->
-            {sup, false}
-        end
-
-      modified_env = Env.put_state(env, @task_supervisor_key, sup)
-
-      finally_k = fn value, final_env ->
-        if should_stop do
-          Supervisor.stop(sup)
-        end
-
-        {value, final_env}
-      end
-
-      {modified_env, finally_k}
-    end)
-  end
-
-  @doc false
-  def task_supervisor_key, do: @task_supervisor_key
-
   #############################################################################
   ## Handler Implementation
   #############################################################################
@@ -702,23 +574,6 @@ defmodule Skuld.Effects.FiberPool do
     env = Env.put_state(env, {__MODULE__, :cancelled}, [handle.id | cancelled])
 
     k.(:ok, env)
-  end
-
-  defp handle(%TaskOp{thunk: thunk, opts: opts}, env, k) do
-    # Create a unique handle_id for this task (like a fiber_id)
-    handle_id = make_ref()
-    pool_id = Env.get_state(env, {__MODULE__, :pool_id}, make_ref())
-    handle = Handle.new(handle_id, pool_id)
-
-    # Store pending task for the scheduler to spawn
-    # We don't spawn here because we need the scheduler's Task.Supervisor
-    pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())
-    task_info = {handle_id, thunk, opts}
-    pending_work = PendingWork.add_task(pending_work, task_info)
-    env = Env.put_state(env, PendingWork.env_key(), pending_work)
-
-    # Return handle immediately
-    k.(handle, env)
   end
 
   defp handle(%Scope{comp: scoped_comp, on_exit: on_exit}, env, k) do

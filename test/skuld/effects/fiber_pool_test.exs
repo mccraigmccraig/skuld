@@ -4,6 +4,7 @@ defmodule Skuld.Effects.FiberPoolTest do
 
   alias Skuld.Comp
   alias Skuld.Effects.FiberPool
+  alias Skuld.Effects.FiberPool.Task
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
   alias Skuld.Effects.Writer
@@ -413,11 +414,11 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "runs and awaits a task" do
       result =
         comp do
-          h <- FiberPool.task(fn -> 42 end)
+          h <- Task.task(fn -> 42 end)
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.with_task_supervisor()
+        |> Task.with_handler() |> Task.with_task_supervisor()
         |> Comp.run!()
 
       assert result == 42
@@ -429,11 +430,11 @@ defmodule Skuld.Effects.FiberPoolTest do
 
       result =
         comp do
-          h <- FiberPool.task(fn -> self() != parent end)
+          h <- Task.task(fn -> self() != parent end)
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.with_task_supervisor()
+        |> Task.with_handler() |> Task.with_task_supervisor()
         |> Comp.run!()
 
       # Task should have run in a different process
@@ -443,14 +444,14 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "runs multiple tasks and awaits all" do
       result =
         comp do
-          h1 <- FiberPool.task(fn -> 10 end)
-          h2 <- FiberPool.task(fn -> 20 end)
-          h3 <- FiberPool.task(fn -> 12 end)
+          h1 <- Task.task(fn -> 10 end)
+          h2 <- Task.task(fn -> 20 end)
+          h3 <- Task.task(fn -> 12 end)
 
           FiberPool.await_all!([h1, h2, h3])
         end
         |> FiberPool.with_handler()
-        |> FiberPool.with_task_supervisor()
+        |> Task.with_handler() |> Task.with_task_supervisor()
         |> Comp.run!()
 
       assert result == [10, 20, 12]
@@ -465,11 +466,11 @@ defmodule Skuld.Effects.FiberPoolTest do
         error =
           assert_raise Skuld.Comp.ThrowError, fn ->
             comp do
-              h <- FiberPool.task(fn -> raise "task crashed!" end)
+              h <- Task.task(fn -> raise "task crashed!" end)
               FiberPool.await!(h)
             end
             |> FiberPool.with_handler()
-            |> FiberPool.with_task_supervisor()
+            |> Task.with_handler() |> Task.with_task_supervisor()
             |> Comp.run!()
           end
 
@@ -485,7 +486,7 @@ defmodule Skuld.Effects.FiberPoolTest do
         comp do
           # Submit both fibers and tasks
           fiber_h <- FiberPool.fiber(Comp.pure(:fiber_result))
-          task_h <- FiberPool.task(fn -> :task_result end)
+          task_h <- Task.task(fn -> :task_result end)
 
           # Await both
           fiber_r <- FiberPool.await!(fiber_h)
@@ -494,7 +495,7 @@ defmodule Skuld.Effects.FiberPoolTest do
           {fiber_r, task_r}
         end
         |> FiberPool.with_handler()
-        |> FiberPool.with_task_supervisor()
+        |> Task.with_handler() |> Task.with_task_supervisor()
         |> Comp.run!()
 
       assert result == {:fiber_result, :task_result}
@@ -505,13 +506,13 @@ defmodule Skuld.Effects.FiberPoolTest do
       # to trigger the scheduler to wait for task completion
       result =
         comp do
-          h1 <- FiberPool.task(fn -> 100 end)
-          _ <- FiberPool.task(fn -> :ignored end)
+          h1 <- Task.task(fn -> 100 end)
+          _ <- Task.task(fn -> :ignored end)
           # Only await h1
           FiberPool.await!(h1)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.with_task_supervisor()
+        |> Task.with_handler() |> Task.with_task_supervisor()
         |> Comp.run!()
 
       assert result == 100
@@ -520,39 +521,41 @@ defmodule Skuld.Effects.FiberPoolTest do
     test "await_any with tasks" do
       {_handle, result} =
         comp do
-          h1 <- FiberPool.task(fn -> :first end)
-          h2 <- FiberPool.task(fn -> :second end)
+          h1 <- Task.task(fn -> :first end)
+          h2 <- Task.task(fn -> :second end)
 
           FiberPool.await_any!([h1, h2])
         end
         |> FiberPool.with_handler()
-        |> FiberPool.with_task_supervisor()
+        |> Task.with_handler() |> Task.with_task_supervisor()
         |> Comp.run!()
 
       assert result in [:first, :second]
     end
 
     test "task without supervisor raises clear error" do
-      assert_raise ArgumentError, ~r/FiberPool.task\/2 requires a Task.Supervisor/, fn ->
+      assert_raise ArgumentError, ~r/FiberPool\.Task\.task\/2 requires a Task.Supervisor/, fn ->
         comp do
-          h <- FiberPool.task(fn -> 42 end)
+          h <- Task.task(fn -> 42 end)
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
+        |> Task.with_handler()
         |> Comp.run!()
       end
     end
 
     test "with_task_supervisor with provided supervisor" do
-      {:ok, sup} = Task.Supervisor.start_link()
+      {:ok, sup} = Elixir.Task.Supervisor.start_link()
 
       result =
         comp do
-          h <- FiberPool.task(fn -> 42 end)
+          h <- Task.task(fn -> 42 end)
           FiberPool.await!(h)
         end
         |> FiberPool.with_handler()
-        |> FiberPool.with_task_supervisor(supervisor: sup)
+        |> Task.with_handler()
+        |> Task.with_task_supervisor(supervisor: sup)
         |> Comp.run!()
 
       assert result == 42

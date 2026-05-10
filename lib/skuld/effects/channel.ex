@@ -594,6 +594,21 @@ defmodule Skuld.Effects.Channel do
   @spec with_handler(Comp.Types.computation()) :: Comp.Types.computation()
   def with_handler(comp) do
     fn env, k ->
+      unless Env.get_handler(env, Skuld.Effects.FiberPool) do
+        raise ArgumentError, """
+        Channel.with_handler/1 requires FiberPool.with_handler/1 to be installed first.
+
+        Channels rely on the FiberPool scheduler for suspending and resuming
+        fibers on put/take operations. Install the FiberPool handler above
+        the Channel handler:
+
+            comp
+            |> FiberPool.with_handler()
+            |> Channel.with_handler()
+            |> Comp.run()
+        """
+      end
+
       # Initialize ChannelCoordinationState in env.state if not present
       env =
         if Env.get_state(env, ChannelCoordinationState.env_key()) == nil do
