@@ -112,6 +112,10 @@ defmodule Skuld.Fiber do
     do_run(fiber, comp, env)
   end
 
+  def run_until_suspend(fiber) do
+    raise ArgumentError, "Cannot run fiber: expected %Fiber.Pending{}, got #{inspect(fiber.__struct__)}"
+  end
+
   @doc """
   Resume a suspended fiber with a value.
 
@@ -142,6 +146,10 @@ defmodule Skuld.Fiber do
 
   def resume(%ExternalSuspended{k: k, env: env} = fiber, value) do
     do_resume(fiber, k, value, env)
+  end
+
+  def resume(fiber, _value) do
+    raise ArgumentError, "Cannot resume fiber: expected %Fiber.InternalSuspended{} or %Fiber.ExternalSuspended{}, got #{inspect(fiber.__struct__)}"
   end
 
   @doc """

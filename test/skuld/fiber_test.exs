@@ -123,7 +123,7 @@ defmodule Skuld.FiberTest do
       fiber = Fiber.run_until_suspend(fiber)
       assert match?(%Completed{}, fiber)
 
-      assert_raise FunctionClauseError, fn ->
+      assert_raise ArgumentError, ~r/Cannot run fiber/, fn ->
         Fiber.run_until_suspend(fiber)
       end
     end
@@ -201,7 +201,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(Comp.pure(42), env)
 
-      assert_raise FunctionClauseError, fn ->
+      assert_raise ArgumentError, ~r/Cannot resume fiber/, fn ->
         Fiber.resume(fiber, :value)
       end
     end
