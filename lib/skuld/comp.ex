@@ -65,6 +65,18 @@ defmodule Skuld.Comp do
   end
 
   @doc """
+  Check whether a value is a computation.
+
+  A computation in Skuld is a 2-arity function `(env, k) -> {result, env}`.
+  This is a runtime heuristic — any 2-arity function will return true. In
+  contexts where precision matters (e.g., stream combinators), prefer an
+  explicit tagged return value.
+  """
+  @spec computation?(term()) :: boolean()
+  def computation?(value) when is_function(value, 2), do: true
+  def computation?(_value), do: false
+
+  @doc """
   Lift a pure value into a computation.
 
   Alias for `pure/1`. Provided for ergonomic use both inside and outside

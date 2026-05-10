@@ -411,7 +411,7 @@ defmodule Skuld.Effects.Brook do
   defp safe_transform(transform_fn, value) do
     result = transform_fn.(value)
 
-    if is_function(result, 2) do
+    if Comp.computation?(result) do
       # It's a computation - run it and wrap result
       comp do
         transformed <- result
@@ -640,7 +640,7 @@ defmodule Skuld.Effects.Brook do
   defp apply_consumer(consumer_fn, item) do
     result = consumer_fn.(item)
 
-    if is_function(result, 2) do
+    if Comp.computation?(result) do
       comp do
         _consumer_value <- result
         Comp.pure(:ok)
