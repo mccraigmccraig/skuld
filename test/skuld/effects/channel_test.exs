@@ -1017,6 +1017,64 @@ defmodule Skuld.Effects.ChannelTest do
 
       assert :empty = result
     end
+
+    test "error wakes waiting taker on rendezvous channel" do
+      result =
+        comp do
+          ch <- Channel.new(0)
+
+          taker <- FiberPool.fiber(Channel.take(ch))
+          errorer <- FiberPool.fiber(Channel.error(ch, :test_error))
+
+          error_result <- FiberPool.await(errorer)
+          take_result <- FiberPool.await(taker)
+
+          {error_result, take_result}
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert {{:ok, :ok}, {:ok, {:error, :test_error}}} = result
+    end
+
+    test "close wakes waiting putter on rendezvous channel" do
+      result =
+        comp do
+          ch <- Channel.new(0)
+
+          putter <- FiberPool.fiber(Channel.put(ch, :item))
+          closer <- FiberPool.fiber(Channel.close(ch))
+
+          close_result <- FiberPool.await(closer)
+          put_result <- FiberPool.await(putter)
+
+          {close_result, put_result}
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert {{:ok, :ok}, {:ok, {:error, :closed}}} = result
+    end
+
+    test "errored rendezvous channel rejects put and take" do
+      result =
+        comp do
+          ch <- Channel.new(0)
+
+          _ <- Channel.error(ch, :test_error)
+          put_result <- Channel.put(ch, :item)
+          take_result <- Channel.take(ch)
+
+          {put_result, take_result}
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert {{:error, :test_error}, {:error, :test_error}} = result
+    end
   end
 
   defp take_until_closed(ch, acc) do

@@ -94,6 +94,10 @@ defmodule Skuld.Effects.Channel do
   The capacity must be a positive integer. Returns a `Channel.Handle`
   that can be used for put/take operations.
 
+  A capacity of `0` creates a rendezvous channel — put always blocks
+  until there is a matching take (direct handoff, no buffering). This
+  is useful when you want strict producer-consumer pairing.
+
   ## Example
 
       comp do
