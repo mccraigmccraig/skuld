@@ -322,6 +322,44 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
     end
   end
 
+  @doc """
+  Record a fiber suspension (generic — no type-specific logic).
+  """
+  @spec put_suspension(t(), fiber_id(), Suspension.t()) :: t()
+  def put_suspension(state, fiber_id, suspension) do
+    %{state | suspensions: Map.put(state.suspensions, fiber_id, suspension)}
+  end
+
+  @doc """
+  Check if a fiber has a suspension entry.
+  """
+  @spec suspended?(t(), fiber_id()) :: boolean()
+  def suspended?(state, fiber_id) do
+    Map.has_key?(state.suspensions, fiber_id)
+  end
+
+  @doc """
+  Remove a suspension generically, with Await cleanup.
+  """
+  @spec delete_suspension(t(), fiber_id()) :: t()
+  def delete_suspension(state, fiber_id) do
+    case Map.get(state.suspensions, fiber_id) do
+      %Suspension.Await{waiting_for: waiting_for} ->
+        state =
+          Enum.reduce(waiting_for, state, fn target_fid, acc ->
+            update_in(acc, [Access.key(:awaiting), target_fid], fn
+              nil -> nil
+              list -> List.delete(list, fiber_id)
+            end)
+          end)
+
+        %{state | suspensions: Map.delete(state.suspensions, fiber_id)}
+
+      _ ->
+        %{state | suspensions: Map.delete(state.suspensions, fiber_id)}
+    end
+  end
+
   #############################################################################
   ## Wake Logic
   #############################################################################
@@ -499,42 +537,6 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   @spec remove_batch_suspension(t(), fiber_id()) :: t()
   def remove_batch_suspension(state, fiber_id) do
     %{state | suspensions: Map.delete(state.suspensions, fiber_id)}
-  end
-
-  #############################################################################
-  ## Channel Suspension Management
-  #############################################################################
-
-  @doc """
-  Record a fiber as suspended waiting for a channel operation.
-  """
-  @spec add_channel_suspension(t(), fiber_id()) :: t()
-  def add_channel_suspension(state, fiber_id) do
-    %{state | suspensions: Map.put(state.suspensions, fiber_id, %Suspension.Channel{})}
-  end
-
-  @doc """
-  Remove a channel suspension (after fiber is resumed).
-  """
-  @spec remove_channel_suspension(t(), fiber_id()) :: t()
-  def remove_channel_suspension(state, fiber_id) do
-    %{state | suspensions: Map.delete(state.suspensions, fiber_id)}
-  end
-
-  @doc """
-  Check if a fiber is channel-suspended.
-  """
-  @spec channel_suspended?(t(), fiber_id()) :: boolean()
-  def channel_suspended?(state, fiber_id) do
-    match?(%Suspension.Channel{}, Map.get(state.suspensions, fiber_id))
-  end
-
-  @doc """
-  Check if there are any channel-suspended fibers.
-  """
-  @spec has_channel_suspensions?(t()) :: boolean()
-  def has_channel_suspensions?(state) do
-    Enum.any?(state.suspensions, fn {_, s} -> match?(%Suspension.Channel{}, s) end)
   end
 
   #############################################################################

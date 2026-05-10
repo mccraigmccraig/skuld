@@ -26,7 +26,6 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   alias Skuld.Fiber.ExternalSuspended
   alias Skuld.Fiber.InternalSuspended
   alias Skuld.Fiber.FiberPool.FiberPoolState
-  alias Skuld.Fiber.FiberPool.ChannelCoordinationState
   alias Skuld.Fiber.FiberPool.PendingWork
   alias Skuld.Comp.Types
   alias Skuld.Comp.Env
@@ -111,29 +110,35 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   end
 
   @doc """
-  Process pending channel wakes from env_state.
+  Process pending external wakes from env_state.
 
-  Channel operations (put/take) may wake suspended fibers by adding entries
-  to the channel_wakes list in env_state. This function processes those wakes,
-  enqueueing the fibers to run with their results.
+  Channel operations and other external code wake suspended fibers by
+  adding {fiber_id, result} entries to `:fiber_pool_wakes` in env_state.
+  This function drains that list, removes the suspension, and enqueues
+  the fiber with the wake result.
 
-  Called internally by `run/2`, but also available for use when calling
-  `step/2` directly (which does not process wakes automatically).
+  Called internally by `run/2`; also available for use when calling
+  `step/2` directly.
   """
-  @spec process_channel_wakes(FiberPoolState.t()) :: FiberPoolState.t()
-  def process_channel_wakes(state) do
-    env_state = get_env_state(state)
+  @spec process_external_wakes(FiberPoolState.t()) :: FiberPoolState.t()
+  def process_external_wakes(state) do
+    wakes = Map.get(state.env_state, :fiber_pool_wakes, [])
 
-    if ChannelCoordinationState.has_channel_wakes?(env_state) do
-      # Pop wakes and update env_state
-      {wakes, env_state} = ChannelCoordinationState.pop_channel_wakes(env_state)
-      state = put_env_state(state, env_state)
+    if wakes == [] do
+      state
+    else
+      state = FiberPoolState.put_env_state(state, Map.delete(state.env_state, :fiber_pool_wakes))
 
       Enum.reduce(wakes, state, fn {fiber_id, result}, acc_state ->
-        resume_channel_fiber(acc_state, fiber_id, result)
+        if FiberPoolState.suspended?(acc_state, fiber_id) do
+          acc_state
+          |> FiberPoolState.delete_suspension(fiber_id)
+          |> then(fn s -> put_in(s, [Access.key(:wake_signals), fiber_id], {:external_wake, result}) end)
+          |> then(&FiberPoolState.enqueue(&1, fiber_id))
+        else
+          acc_state
+        end
       end)
-    else
-      state
     end
   end
 
@@ -143,7 +148,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
   defp run_loop(state, env) do
     # Process any pending channel wakes before each step
-    state = process_channel_wakes(state)
+    state = process_external_wakes(state)
 
     case step(state, env) do
       {:continue, state} ->
@@ -151,7 +156,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
 
       {:done, state} ->
         # Process any final channel wakes
-        state = process_channel_wakes(state)
+        state = process_external_wakes(state)
 
         # Check if we now have work to do
         if FiberPoolState.queue_empty?(state) do
@@ -199,8 +204,8 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
             # Fiber is being resumed with batch result (unwrap the tuple)
             resume_fiber(state, fiber, result)
 
-          {:channel_wake, result} ->
-            # Fiber is being resumed with channel result (unwrap the tuple)
+          {:external_wake, result} ->
+            # Fiber is being resumed with external wake result (unwrap the tuple)
             resume_fiber(state, fiber, result)
 
           result ->
@@ -215,8 +220,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   defp run_pending_fiber(state, fiber, _env) do
     fiber_env = %{fiber.env | state: state.env_state}
 
-    fiber_env =
-      update_env_state_in_env(fiber_env, &ChannelCoordinationState.set_fiber_id(&1, fiber.id))
+    fiber_env = Env.put_state(fiber_env, :current_fiber_id, fiber.id)
 
     fiber = %{fiber | env: fiber_env}
 
@@ -230,8 +234,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     # Also set the current fiber ID (env_state may have the previous fiber's ID)
     fiber_env = %{fiber.env | state: state.env_state}
 
-    fiber_env =
-      update_env_state_in_env(fiber_env, &ChannelCoordinationState.set_fiber_id(&1, fiber.id))
+    fiber_env = Env.put_state(fiber_env, :current_fiber_id, fiber.id)
 
     fiber = %{fiber | env: fiber_env}
 
@@ -334,7 +337,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   defp handle_internal_suspension(state, fiber, _internal_suspend, %InternalSuspend.Channel{}) do
     # Store the fiber and add to channel-suspended tracking
     state = FiberPoolState.put_fiber(state, fiber)
-    state = FiberPoolState.add_channel_suspension(state, fiber.id)
+    state = FiberPoolState.put_suspension(state, fiber.id, %FiberPoolState.Suspension.Channel{})
     {:continue, state}
   end
 
@@ -394,39 +397,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     state.completed
   end
 
-  # Resume a fiber that was waiting on a channel operation
-  defp resume_channel_fiber(state, fiber_id, result) do
-    if FiberPoolState.channel_suspended?(state, fiber_id) do
-      # Remove from channel_suspended and enqueue with result
-      state = FiberPoolState.remove_channel_suspension(state, fiber_id)
-
-      # Store wake result wrapped in :channel_wake tuple and enqueue
-      state =
-        put_in(state, [Access.key(:wake_signals), fiber_id], {:channel_wake, result})
-
-      FiberPoolState.enqueue(state, fiber_id)
-    else
-      # Fiber not found in channel suspensions - might have been cancelled
-      state
-    end
-  end
-
   #############################################################################
-  ## ChannelCoordinationState and PendingWork Helpers
+  ## PendingWork Helpers
   #############################################################################
-
-  # Get the ChannelCoordinationState from state.env_state, defaulting to a new one
-  defp get_env_state(state) do
-    Map.get(state.env_state, ChannelCoordinationState.env_key(), ChannelCoordinationState.new())
-  end
-
-  # Put the ChannelCoordinationState back into state.env_state
-  defp put_env_state(state, env_state) do
-    FiberPoolState.put_env_state(
-      state,
-      Map.put(state.env_state, ChannelCoordinationState.env_key(), env_state)
-    )
-  end
 
   # Get the PendingWork from an env, defaulting to empty
   defp get_pending_work(env) do
@@ -445,11 +418,4 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   end
 
   # Update the ChannelCoordinationState in an env (for setting fiber_id before running)
-  defp update_env_state_in_env(env, fun) do
-    env_state =
-      Env.get_state(env, ChannelCoordinationState.env_key(), ChannelCoordinationState.new())
-
-    env_state = fun.(env_state)
-    Env.put_state(env, ChannelCoordinationState.env_key(), env_state)
-  end
 end

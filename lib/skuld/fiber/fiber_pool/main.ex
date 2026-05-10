@@ -152,7 +152,7 @@ defmodule Skuld.Fiber.FiberPool.Main do
   # the main computation's await is satisfied.
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_until_await_satisfied(state, env, awaiter_id, resume, mode) do
-    state = Scheduler.process_channel_wakes(state)
+    state = Scheduler.process_external_wakes(state)
     snapshot = FiberPoolState.progress_snapshot(state)
 
     case Scheduler.step(state, env) do

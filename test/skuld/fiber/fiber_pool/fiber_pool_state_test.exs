@@ -6,6 +6,7 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolStateTest do
   alias Skuld.Fiber
   alias Skuld.Fiber.FiberPool.FiberPoolState
   alias Skuld.Fiber.FiberPool.FiberPoolState.ProgressSnapshot
+  alias Skuld.Fiber.FiberPool.FiberPoolState.Suspension
 
   describe "new/1" do
     test "creates empty state" do
@@ -314,7 +315,7 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolStateTest do
 
       before = FiberPoolState.progress_snapshot(state)
       fiber_id = make_ref()
-      state = FiberPoolState.add_channel_suspension(state, fiber_id)
+      state = FiberPoolState.put_suspension(state, fiber_id, %Suspension.Channel{})
       after_ = FiberPoolState.progress_snapshot(state)
 
       assert FiberPoolState.progressed?(before, after_)

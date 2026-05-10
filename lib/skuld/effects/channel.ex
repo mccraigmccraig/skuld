@@ -644,14 +644,14 @@ defmodule Skuld.Effects.Channel do
 
   # Get the current fiber ID from the environment
   defp get_fiber_id(env) do
-    env_state = get_env_state(env)
-    ChannelCoordinationState.get_fiber_id!(env_state)
+    Env.get_state!(env, :current_fiber_id)
   end
 
-  # Add a channel wake request to env.state
-  # The FiberPool scheduler will process these to wake suspended fibers
+  # Add a channel wake request to env.state via the generic FiberPool wake list.
+  # The FiberPool scheduler processes these to resume suspended fibers.
   defp add_channel_wake(env, fiber_id, result) do
-    update_env_state(env, &ChannelCoordinationState.add_channel_wake(&1, fiber_id, result))
+    wakes = Env.get_state(env, :fiber_pool_wakes, [])
+    Env.put_state(env, :fiber_pool_wakes, [{fiber_id, result} | wakes])
   end
 
   # Wake a putter if one is waiting (after a take frees space)
