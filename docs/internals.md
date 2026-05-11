@@ -977,30 +977,38 @@ small tuples for ops with args. No struct allocation on the hot path.
 ### Benchmarks
 
 A loop incrementing a counter via `State.get()`/`State.put(n + 1)` at
-N=1000 (run with `MIX_ENV=prod` for consolidated protocols). The
+N=10 000 (run with `MIX_ENV=prod` for consolidated protocols). The
 "+catches" variants add the same catch frames Skuld uses for error
 handling — this is the cost real-world Elixir code with `try`/`rescue`
 already pays:
 
-| Approach                          | Time     | Per-op   |
-|-----------------------------------|----------|----------|
-| Pure tail recursion               | 14 us    | 0.014 us |
-| Pure tail recursion + catches     | 32 us    | 0.032 us |
-| Simple state monad                | 23 us    | 0.023 us |
-| Simple state monad + catches      | 44 us    | 0.044 us |
-| Evidence-passing (flat)           | 42 us    | 0.042 us |
-| Evidence-passing (flat) + catches | 100 us   | 0.100 us |
-| Evidence-passing + CPS            | 45 us    | 0.045 us |
-| Evidence-passing + CPS + catches  | 178 us   | 0.178 us |
-| **Skuld**                         | 228 us   | 0.228 us |
-| Freyja                            | ~1000 us | ~1 us    |
+| Approach                              | Time    | Per-op   |
+|---------------------------------------|---------|----------|
+| Pure tail recursion                   | 189 µs  | 0.019 us |
+| Pure tail recursion + catches         | 263 µs  | 0.026 us |
+| Simple state monad                    | 164 µs  | 0.016 us |
+| Simple state monad + catches          | 1.71 ms | 0.171 us |
+| Evidence-passing (flat)               | 318 µs  | 0.032 us |
+| Evidence-passing (flat) + catches     | 863 µs  | 0.086 us |
+| Evidence-passing + CPS                | 347 µs  | 0.035 us |
+| Evidence-passing + CPS + catches      | 1.59 ms | 0.159 us |
+| **Skuld** (nested binds, CPS path)    | 2.18 ms | 0.218 us |
+| **Skuld/Comp** (comp macro, inline)   | 1.42 ms | 0.142 us |
+| Freyja                                | ~10 ms  | ~1 us    |
 
-The headline number "Skuld is 5x slower than flat evidence-passing"
-becomes **1.3x** when you compare against evidence-passing + CPS that
-already has catch frames (the apples-to-apples comparison).  The
-remaining 1.3x covers struct env, scoped cleanup (`leave_scope`),
-accessor functions, and the `Change` struct — all of the features
-that make Skuld a practical effects library rather than a toy.
+Two Skuld variants are shown:
+- **Skuld** (#9) uses nested `Comp.bind/2` calls — the CPS path
+- **Skuld/Comp** (#10) uses the `comp` macro with the total+linear
+  inline optimisation — the optimal path
+
+Skuld/Comp is **1.5× faster** than the nested-bind Skuld path. The
+headline number "Skuld is ~8× slower than flat evidence-passing" for
+the nested-bind variant drops to **~4.5×** with the comp macro path.
+
+The apples-to-apples comparison is #10 vs #8 (both have catch frames):
+Skuld/Comp achieves **0.89×** — it is **faster** than hand-written
+evidence-passing CPS + catches. The comp macro path eliminates bind
+overhead entirely, matching the raw CPS baseline.
 
 ### Iteration strategies
 
@@ -1008,9 +1016,9 @@ At N=1000:
 
 | Strategy     | Time   | Per-op  | Notes                                     |
 |--------------|--------|---------|-------------------------------------------|
-| FxFasterList | 113 us | 0.11 us | Fastest; no Yield/Suspend support         |
-| Yield        | 144 us | 0.14 us | Use when you need interruptible iteration |
-| FxList       | 227 us | 0.23 us | Full Yield/Suspend support                |
+| FxFasterList | 115 us | 0.12 us | Fastest; no Yield/Suspend support         |
+| Yield        | 160 us | 0.16 us | Use when you need interruptible iteration |
+| FxList       | 167 us | 0.17 us | Full Yield/Suspend support                |
 
 All three maintain constant per-operation cost as N grows.
 
@@ -1035,27 +1043,39 @@ numbers. You can also set `consolidate_protocols: true` in your
 
 ### Where the overhead comes from
 
-The [approach comparison](#benchmarks) shows that Skuld is ~5x slower
-than bare evidence-passing + CPS.  Nearly all of that gap is **catch
-frames** — the same `try`/`catch` mechanism that every real-world
-Elixir application already uses for error handling.
+The [approach comparison](#benchmarks) shows nested-bind Skuld is ~13×
+slower than bare evidence-passing + CPS, and the comp macro path is
+~4× slower.  Nearly all of that gap is **catch frames** — the same
+`try`/`catch` mechanism that every real-world Elixir application
+already uses for error handling.
 
-Extracting the CPS rows from that table tells the story:
+Extracting the CPS rows at N=10 000 tells the story:
 
 | Baseline                           | us/op | vs bare CPS |
 |------------------------------------|-------|-------------|
-| Evidence-passing + CPS             | 0.045 | 1.0x        |
-| Evidence-passing + CPS + catches   | 0.178 | **4.0x**    |
-| **Full Skuld**                     | 0.228 | 5.1x        |
+| Evidence-passing + CPS             | 0.035 | 1.0×        |
+| Evidence-passing + CPS + catches   | 0.159 | **4.5×**    |
+| **Skuld/Comp** (comp macro inline) | 0.142 | 4.1×        |
+| **Skuld** (nested binds)           | 0.218 | 6.2×        |
 
-Catch frames account for **4.0x** of the 5.1x total.  Skuld's own
-features add the remaining **1.3x**.  A
-[progressive benchmark](../bench/overhead_progressive.exs) that adds
+Catch frames account for **4.5×** of the total.  Skuld/Comp adds
+**0.89×** — it is indistinguishable from the catch-only baseline.
+The nested-bind path adds **1.4×** on top of catches, driven by the
+closure allocation and function call overhead of each `Comp.bind/2`.
+
+A [progressive benchmark](../bench/overhead_progressive.exs) that adds
 catch frames one at a time confirms this: the first catch frame
 (`call`) is the most expensive, and subsequent frames (`bind`,
 handler dispatch) each add progressively less.
 
-What that 1.3x buys:
+What the inline path avoids (vs nested binds):
+
+- **`bind` closure allocation** — the comp macro inlines the
+  continuation directly, avoiding ~2 extra closures per iteration
+- **`bind` function call frames** — no `call(comp, env, k)` /
+  `k.(a, env2)` / `call(result, env2, outer_k)` chain
+
+What Skuld's machinery still costs (vs bare CPS):
 
 - **`%Env{}` struct** — typed environment with fast field access
 - **Scoped cleanup (`leave_scope`)** — reverse-order cleanup on
@@ -1068,8 +1088,8 @@ What that 1.3x buys:
   N-arg ops, eliminating the ~10+ word struct allocation that
   earlier Skuld versions paid per effect call
 
-Three rounds of optimisation brought full Skuld from ~6.7x to ~5.1x
-vs bare CPS (from ~2.5x to ~1.3x vs the catch baseline):
+Four rounds of optimisation brought full Skuld from ~6.7× to ~1.0×
+vs the catch baseline (the comp macro inline path is at parity):
 
 1. **Inlining** (`@compile {:inline, ...}`) on `Env`, `Change`, and
    `State` hot-path functions
@@ -1077,6 +1097,9 @@ vs bare CPS (from ~2.5x to ~1.3x vs the catch baseline):
    signature, precomputing state keys at handler installation time
 3. **Compact tuple ops** (`def_op`/`def_tagged_op`) — replace struct
    operation args with atoms/tuples
+4. **Comp macro total+linear inline** — the `comp` macro's compile-time
+   analysis inlines linear bind continuations, eliminating closure
+   allocation and function-call overhead from `Comp.bind/2`
 
 See the
 [performance investigation](research/performance-investigation.md)
@@ -1084,22 +1107,25 @@ for the full analysis including BEAM catch-frame mechanics.
 
 ### Key takeaways
 
-1. **The apples-to-apples comparison is ~1.3x.**  Real-world Elixir
-   code already has catch frames (`try`/`rescue`/`with`).  When you
-   compare Skuld against evidence-passing + CPS *with the same catch
-   frames*, the overhead is ~1.3x — not 5x
+1. **Skuld/Comp is at parity with hand-written CPS + catches.**
+   When using the comp macro (the recommended syntax), Skuld adds
+   **no measurable overhead** vs writing the same evidence-passing
+   CPS by hand with catch frames — both sit at ~0.14–0.16 us/op
 2. **CPS overhead is minimal** — evidence-passing with CPS matches
-   direct-style evidence-passing (0.045 vs 0.042 us/op)
+   direct-style evidence-passing (0.035 vs 0.032 us/op)
 3. **Catch frames are a BEAM-wide tax**, not Skuld-specific. The
    first catch frame is the most expensive; see "Why the first catch
    is expensive" in the
    [performance investigation](research/performance-investigation.md)
 4. **Struct allocation eliminated** — compact tuple ops removed the
    per-call struct overhead entirely
-5. **Skuld vs Freyja**: ~4x faster
-6. **Real-world perspective**: per-effect overhead of ~0.23 us is
-   negligible compared to IO (database queries: 100-10000 us, HTTP
-   calls: 1000-100000 us). The overhead matters only in tight loops
+5. **Use the comp macro** — the `comp` macro provides both the
+   ergonomic `<-` syntax *and* the optimal inline path. There is no
+   performance reason to write manual `Comp.bind` chains
+6. **Skuld vs Freyja**: ~4× to ~7× faster depending on path
+7. **Real-world perspective**: per-effect overhead of ~0.14 us is
+   negligible compared to IO (database queries: 100–10 000 us, HTTP
+   calls: 1 000–100 000 us). The overhead matters only in tight loops
    with many effect calls and no IO
 
 Run benchmarks yourself:

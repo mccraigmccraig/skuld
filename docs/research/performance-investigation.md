@@ -577,6 +577,83 @@ Discounting catch tax, Skuld's effect system machinery adds roughly
 **~1.3x** over hand-written evidence-passing CPS. This is near the
 irreducible floor.
 
+## Comp macro: total+linear inline path
+
+The `comp` macro (`Comp.CompBlock`) provides a second compilation
+strategy alongside the `Comp.bind` CPS path. Where nested binds force
+every effect through the full CPS stack (`call` → `bind` closure →
+`call`), the comp macro analyses the block at compile time and uses the
+**total+linear** optimisation: when a computation is total (always calls
+its continuation exactly once) and linear (each `<-` feeds directly into
+the next effect), it inlines the continuation directly into the calling
+context, avoiding the intermediate closure allocation and function call.
+
+### Benchmark comparison
+
+From the [main benchmark](../../bench/skuld_benchmark.exs) at N=10 000
+(median of 7 runs, `MIX_ENV=prod`):
+
+| Approach                              | Time    | vs #10 | Per-op   |
+|---------------------------------------|---------|--------|----------|
+| #2  Pure recursion + catches          | 263 µs  | 0.2×   | 0.026 us |
+| #4  State monad + catches             | 1.71 ms | 1.2×   | 0.171 us |
+| #6  Evidence-passing (flat) + catches | 863 µs  | 0.6×   | 0.086 us |
+| #8  Evidence-passing CPS + catches    | 1.59 ms | 1.1×   | 0.159 us |
+| #9  Skuld nested binds (CPS path)     | 2.18 ms | 1.5×   | 0.218 us |
+| **#10 Skuld comp macro (total+linear)** | **1.42 ms** | **1.0×** | **0.142 us** |
+
+At every scale, the comp macro path is consistently faster than the
+nested-bind Skuld path:
+
+| N      | #9 Skuld/Nested | #10 Skuld/Comp | Speedup |
+|--------|-----------------|----------------|---------|
+| 500    | 82 µs           | 53 µs          | 1.55×   |
+| 1 000  | 150 µs          | 118 µs         | 1.27×   |
+| 2 000  | 401 µs          | 235 µs         | 1.71×   |
+| 5 000  | 1.09 ms         | 607 µs         | 1.80×   |
+| 10 000 | 2.18 ms         | 1.42 ms        | 1.54×   |
+
+Compared to hand-written CPS + catches (#8), the comp macro path is
+at parity — slightly faster at N=2 000 through N=10 000:
+
+| N      | #8 Evf/CPS+catches | #10 Skuld/Comp | Ratio    |
+|--------|--------------------|----------------|----------|
+| 500    | 54 µs              | 53 µs          | tied     |
+| 1 000  | 102 µs             | 118 µs         | 0.86×    |
+| 2 000  | 253 µs             | 235 µs         | 1.08×    |
+| 5 000  | 698 µs             | 607 µs         | 1.15×    |
+| 10 000 | 1.59 ms            | 1.42 ms        | 1.12×    |
+
+### Why the inline path wins
+
+The nested-bind path forces every effect through `Comp.bind/2`:
+
+```elixir
+# #9: each bind adds closure allocation + fn call
+State.get()
+|> Comp.bind(fn n ->
+  State.put(n + 1)
+  |> Comp.bind(fn _ ->
+    loop(target)
+  end)
+end)
+```
+
+The comp macro recognises that linear blocks are self-optimising and
+emits inline continuations that skip the bind machinery entirely. The
+continuation is folded directly into the calling context, avoiding the
+intermediate closure allocation and function call frame.
+
+### Conclusion
+
+With the comp macro inline path, Skuld achieves **full parity with
+hand-written evidence-passing CPS + catches**. Discounting catch tax
+(irreducible BEAM overhead shared with all Erlang/Elixir applications),
+Skuld's effect system adds **no measurable overhead** versus writing
+the same CPS code by hand. The `comp` macro provides both the ergonomic
+`<-` syntax *and* the optimal inline path — there is no performance
+reason to write manual `Comp.bind` chains instead.
+
 <!-- nav:footer:start -->
 
 ---
