@@ -43,7 +43,6 @@ defmodule Skuld.Effects.State do
   - `put` → `Comp.effect(sig, {State.Put, value})` — minimal 2-tuple
   """
 
-  @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall
   @behaviour Skuld.Comp.ITotalLinearHandler
 
@@ -239,25 +238,6 @@ defmodule Skuld.Effects.State do
   end
 
   #############################################################################
-  ## IHandle Implementation (kept for IHandle contract — handler closures
-  ## are used directly in with_handler, but this satisfies the behaviour)
-  #############################################################################
-
-  @impl Skuld.Comp.IHandle
-  def handle(@get_op, env, k) do
-    value = Env.get_state!(env, state_key(@default_tag))
-    k.(value, env)
-  end
-
-  @impl Skuld.Comp.IHandle
-  def handle({@put_op, value}, env, k) do
-    key = state_key(@default_tag)
-    old_value = Env.get_state!(env, key)
-    new_env = Env.put_state(env, key, value)
-    k.(Change.new(old_value, value), new_env)
-  end
-
-  #############################################################################
   ## ITotalLinearHandler Implementation
   #############################################################################
 
@@ -273,6 +253,17 @@ defmodule Skuld.Effects.State do
     old_value = Env.get_state!(env, key)
     new_env = Env.put_state(env, key, value)
     {Change.new(old_value, value), new_env}
+  end
+
+  #############################################################################
+  ## 3-arity delegation (for external consumers like EffectLogger that need
+  ## a 3-arity handler reference)
+  #############################################################################
+
+  @doc false
+  def handle(args, env, k) do
+    {value, env2} = handle(args, env)
+    k.(value, env2)
   end
 
   #############################################################################
