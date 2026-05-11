@@ -464,15 +464,11 @@ defmodule SkuldBenchmark do
       if n >= target do
         Comp.pure(n)
       else
-        skuld_comp_put_and_loop(target, n)
+        comp do
+          _ <- SkuldState.put(n + 1)
+          skuld_comp_nested_loop(target)
+        end
       end
-    end
-  end
-
-  defp skuld_comp_put_and_loop(target, n) do
-    comp do
-      _ <- SkuldState.put(n + 1)
-      skuld_comp_nested_loop(target)
     end
   end
 
