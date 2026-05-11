@@ -856,14 +856,14 @@ defmodule Skuld.Comp.CompBlock do
       else
         _ -> :error
       end
-    rescue
-      _ -> :error
     end
 
     defp resolve_module(caller, module_parts) do
-      expanded = Macro.expand({:__aliases__, [alias: false], module_parts}, caller)
-      Code.ensure_compiled!(expanded)
-      expanded
+      expanded = Macro.expand({:__aliases__, [], module_parts}, caller)
+
+      if Code.ensure_loaded?(expanded) do
+        expanded
+      end
     rescue
       _ -> nil
     end
@@ -893,7 +893,10 @@ defmodule Skuld.Comp.CompBlock do
       end
     end
 
-    # Emit the optimised computation: lookup handler, call 2-arity, inline bind, continue
+    # Emit the optimised computation: lookup handler, call via call_handler
+    # (which handles both 2-arity and 3-arity), inline bind, continue.
+    # Uses &identity_k/2 as a zero-allocation continuation for the 3-arity
+    # fallback (e.g. EffectLogger-wrapped handlers).
     defp emit_total_linear_bind(lhs, sig_ast, op_ast, body, has_else) do
       bind_fn =
         if has_else do
@@ -917,7 +920,14 @@ defmodule Skuld.Comp.CompBlock do
           handler = Skuld.Comp.Env.get_handler!(env, unquote(sig_ast))
 
           try do
-            {value, env2} = handler.(unquote(op_ast), env)
+            {value, env2} =
+              Skuld.Comp.call_handler(
+                handler,
+                unquote(op_ast),
+                env,
+                &Skuld.Comp.identity_k/2
+              )
+
             result = unquote(bind_fn).(value)
             Skuld.Comp.call(result, env2, k)
           catch
