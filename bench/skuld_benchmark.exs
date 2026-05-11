@@ -15,9 +15,10 @@
 # 6. Evf/Nested + catches    - Same with catch frames
 # 7. Evf/CPS                 - Flat evidence-passing with CPS (isolates CPS overhead)
 # 8. Evf/CPS + catches       - Same with catch frames
-# 9. Skuld/Nested            - Skuld with nested binds
-# 10. Skuld/FxFL             - Skuld with FxFasterList iteration
-# 11. Skuld/Yield            - Skuld with coroutine-style iteration
+# 9.  Skuld/Nested            - Skuld with nested binds (CPS path via Comp.bind)
+# 10. Skuld/Comp              - Skuld with comp macro binds (total+linear inline path)
+# 11. Skuld/FxFL              - Skuld with FxFasterList iteration
+# 12. Skuld/Yield             - Skuld with coroutine-style iteration
 
 alias Skuld.Comp
 alias Skuld.Effects.State, as: SkuldState
@@ -29,6 +30,8 @@ defmodule SkuldBenchmark do
   # ============================================================
   # Pure baselines - no effects, just computation
   # ============================================================
+
+  import Skuld.Comp.CompBlock
 
   def pure_reduce(target) do
     initial_state = %{counter: 0}
@@ -452,6 +455,27 @@ defmodule SkuldBenchmark do
     end)
   end
 
+  # Same logic via comp macro — exercises the total+linear inline path
+  def skuld_comp_nested(target), do: skuld_comp_nested_loop(target)
+
+  defp skuld_comp_nested_loop(target) do
+    comp do
+      n <- SkuldState.get()
+      if n >= target do
+        Comp.pure(n)
+      else
+        skuld_comp_put_and_loop(target, n)
+      end
+    end
+  end
+
+  defp skuld_comp_put_and_loop(target, n) do
+    comp do
+      _ <- SkuldState.put(n + 1)
+      skuld_comp_nested_loop(target)
+    end
+  end
+
   def skuld_chained(target) do
     base = SkuldState.get()
 
@@ -587,6 +611,7 @@ defmodule SkuldBenchmark do
       _ = time_evf_cps(evf_cps_nested(100))
       _ = time_evf_cps(evf_cps_catches_nested(100))
       _ = time_skuld_wrapped(skuld_wrap(skuld_nested(100), 0))
+      _ = time_skuld_wrapped(skuld_wrap(skuld_comp_nested(100), 0))
       _ = time_skuld_wrapped(skuld_wrap(skuld_chained(100), 0))
       _ = time_skuld_wrapped(skuld_wrap(skuld_fxfasterlist(100), 0))
       _ = time_skuld_yield(100)
@@ -606,10 +631,11 @@ defmodule SkuldBenchmark do
         String.pad_trailing("+catches", 12) <>
         String.pad_trailing("Evf/CPS", 12) <>
         String.pad_trailing("+catches", 12) <>
-        String.pad_trailing("Skuld", 12)
+        String.pad_trailing("Skuld", 12) <>
+        String.pad_trailing("Skuld/Comp", 12)
     )
 
-    IO.puts(String.duplicate("-", 116))
+    IO.puts(String.duplicate("-", 128))
 
     for target <- targets do
       monad_nested_comp = monad_nested(target)
@@ -619,6 +645,7 @@ defmodule SkuldBenchmark do
       evf_cps_nested_comp = evf_cps_nested(target)
       evf_cps_catches_comp = evf_cps_catches_nested(target)
       skuld_nested_wrapped = skuld_wrap(skuld_nested(target), 0)
+      skuld_comp_nested_wrapped = skuld_wrap(skuld_comp_nested(target), 0)
 
       pure_recurse_time =
         median_time(iterations, fn -> time_pure(fn -> pure_recurse(target) end) end)
@@ -641,6 +668,9 @@ defmodule SkuldBenchmark do
       skuld_nested_time =
         median_time(iterations, fn -> time_skuld_wrapped(skuld_nested_wrapped) end)
 
+      skuld_comp_nested_time =
+        median_time(iterations, fn -> time_skuld_wrapped(skuld_comp_nested_wrapped) end)
+
       IO.puts(
         String.pad_trailing("#{target}", 8) <>
           String.pad_trailing(format_time(pure_recurse_time), 12) <>
@@ -651,7 +681,8 @@ defmodule SkuldBenchmark do
           String.pad_trailing(format_time(evf_catches_time), 12) <>
           String.pad_trailing(format_time(evf_cps_nested_time), 12) <>
           String.pad_trailing(format_time(evf_cps_catches_time), 12) <>
-          String.pad_trailing(format_time(skuld_nested_time), 12)
+          String.pad_trailing(format_time(skuld_nested_time), 12) <>
+          String.pad_trailing(format_time(skuld_comp_nested_time), 12)
       )
     end
 
@@ -663,7 +694,8 @@ defmodule SkuldBenchmark do
     IO.puts("- Monad: Simple state monad (fn state -> {val, state} end)")
     IO.puts("- Evf: Flat evidence-passing, direct-style (no CPS)")
     IO.puts("- Evf/CPS: Flat evidence-passing with CPS (isolates CPS overhead)")
-    IO.puts("- Skuld: Skuld with nested binds (typical usage)")
+    IO.puts("- Skuld: Skuld with nested binds (CPS path via Comp.bind)")
+    IO.puts("- Skuld/Comp: Skuld with comp macro binds (total+linear inline path)")
     IO.puts("")
     IO.puts("The +catches columns show what each approach costs when you add")
     IO.puts("the same catch frames that Skuld uses for error handling.")
