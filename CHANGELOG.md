@@ -5,6 +5,34 @@ All notable changes to Skuld will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.26.0] — 2026-05-11
+
+### Added
+
+- `Skuld.Comp.ITotalLinearHandler` — behaviour for effects whose handlers are
+  total (always call `k` exactly once) and whose operations are linear (each
+  `<-` feeds directly into the next). Enables the comp macro's inline
+  continuation optimisation.
+- Comp macro total+linear inline path — when a `comp` block consists entirely
+  of `ITotalLinearHandler` effect calls in linear sequence, the macro emits
+  inline continuations that skip the `Comp.bind/2` machinery entirely,
+  eliminating closure allocation and function-call overhead.
+
+### Changed
+
+- `Skuld.Effects.State` — removed `IHandle` behaviour delegation; the handler
+  is now built as a closure in `with_handler` that pattern-matches on compact
+  op atoms directly. Conforms to `ITotalLinearHandler`.
+
+### Improved
+
+- Performance: the comp macro inline path brings Skuld to **full parity** with
+  hand-written evidence-passing CPS + catch frames. In the main state loop
+  benchmark at N=10 000, Skuld/Comp is 1.5–1.8× faster than the nested-bind
+  Skuld path and matches the raw CPS+catches baseline within noise.
+
 ## [0.25.0] — 2026-05-10
 
 ### Added
