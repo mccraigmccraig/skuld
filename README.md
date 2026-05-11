@@ -48,6 +48,8 @@ See [What Skuld Solves](docs/pain-points.md) for worked examples of each.
 defmodule Onboarding do
   use Skuld.Syntax
 
+  alias Skuld.Effects.Port.Repo
+
   defcomp register(params) do
     # Read configuration from the environment
     config <- Reader.ask()
@@ -55,8 +57,8 @@ defmodule Onboarding do
     # Generate a deterministic ID
     id <- Fresh.fresh_uuid()
 
-    # Use a port for the database call
-    user <- UserRepo.EffectPort.create_user!(%{id: id, name: params.name, tier: config.default_tier})
+    # Database call via the built-in Repo contract/facade
+    {:ok, user} <- Repo.insert(User.changeset(%{id: id, name: params.name, tier: config.default_tier}))
 
     # Accumulate domain events
     _ <- EventAccumulator.emit(%UserRegistered{user_id: id})
@@ -69,10 +71,16 @@ end
 Run with production handlers:
 
 ```elixir
+# Generate an Ecto adapter for the Repo contract (one-time setup):
+defmodule MyApp.Repo.Port do
+  use Skuld.Effects.Port.Repo.Ecto, repo: MyApp.Repo
+end
+
+# Wire everything up:
 Onboarding.register(%{name: "Alice"})
 |> Reader.with_handler(%{default_tier: :free})
 |> Fresh.with_uuid7_handler()
-|> Port.with_handler(%{UserRepo => UserRepo.Ecto})
+|> Port.with_handler(%{Port.Repo => MyApp.Repo.Port})
 |> EventAccumulator.with_handler(output: fn r, events ->
   MyApp.EventBus.publish(events)
   r
@@ -81,20 +89,25 @@ end)
 |> Comp.run!()
 ```
 
-Run with test handlers - same code, no database, fully deterministic:
+Run with test handlers — same code, fully deterministic, no database:
 
 ```elixir
+alias Skuld.Effects.Port.Repo
+
 Onboarding.register(%{name: "Alice"})
 |> Reader.with_handler(%{default_tier: :free})
 |> Fresh.with_test_handler()
-|> Port.with_test_handler(%{
-   UserRepo.EffectPort.key(:create_user, %{id: _, name: "Alice", tier: :free}) =>
-    {:ok, %User{id: "test-uuid", name: "Alice", tier: :free}}
-})
+|> Repo.InMemory.with_handler(Repo.InMemory.new())
 |> EventAccumulator.with_handler(output: fn r, events -> {r, events} end)
 |> Throw.with_handler()
 |> Comp.run!()
 ```
+
+`Repo.InMemory` wraps `DoubleDown.Repo.InMemory` — a closed-world in-memory
+store with read-after-write consistency. Records created during the test
+are immediately readable by subsequent `Repo.get` / `Repo.get_by` calls.
+No match patterns to maintain, no ad-hoc port keys — the same `Repo.insert`,
+`Repo.get`, and `Repo.update` functions used in production.
 
 ## Installation
 
