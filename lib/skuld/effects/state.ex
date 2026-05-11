@@ -45,8 +45,15 @@ defmodule Skuld.Effects.State do
 
   @behaviour Skuld.Comp.IHandle
   @behaviour Skuld.Comp.IInstall
+  @behaviour Skuld.Comp.ITotalLinearHandler
 
   use Skuld.Comp.DefTaggedOp
+
+  Module.register_attribute(__MODULE__, :total, persist: true)
+  Module.register_attribute(__MODULE__, :linear, persist: true)
+
+  @total [get: 0, put: 1]
+  @linear [get: 0, put: 1]
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
@@ -194,16 +201,16 @@ defmodule Skuld.Effects.State do
     get_op = @get_op
     put_op = @put_op
 
-    handler = fn args, env, k ->
+    handler = fn args, env ->
       case args do
         ^get_op ->
           value = Env.get_state!(env, sk)
-          k.(value, env)
+          {value, env}
 
         {^put_op, value} ->
           old_value = Env.get_state!(env, sk)
           new_env = Env.put_state(env, sk, value)
-          k.(Change.new(old_value, value), new_env)
+          {Change.new(old_value, value), new_env}
       end
     end
 
@@ -249,6 +256,33 @@ defmodule Skuld.Effects.State do
     new_env = Env.put_state(env, key, value)
     k.(Change.new(old_value, value), new_env)
   end
+
+  #############################################################################
+  ## ITotalLinearHandler Implementation
+  #############################################################################
+
+  @impl Skuld.Comp.ITotalLinearHandler
+  def handle(@get_op, env) do
+    value = Env.get_state!(env, state_key(@default_tag))
+    {value, env}
+  end
+
+  @impl Skuld.Comp.ITotalLinearHandler
+  def handle({@put_op, value}, env) do
+    key = state_key(@default_tag)
+    old_value = Env.get_state!(env, key)
+    new_env = Env.put_state(env, key, value)
+    {Change.new(old_value, value), new_env}
+  end
+
+  #############################################################################
+  ## Total-Linear Metadata (queried by comp macro at expansion time)
+  #############################################################################
+
+  @doc false
+  def __total_linear__(:get), do: {:ok, :get_op, 0}
+  def __total_linear__(:put), do: {:ok, :put_op, 1}
+  def __total_linear__(_other), do: :error
 
   #############################################################################
   ## Op Atom Accessors (for EffectLogger tests etc.)

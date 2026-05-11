@@ -767,15 +767,18 @@ defmodule Skuld.Comp.CompBlock do
     defp rewrite_exprs(caller, [{:<-, _meta, [lhs, rhs]} | rest], has_else, is_first) do
       rest_rewritten = rewrite_exprs(caller, rest, has_else, _is_first = false)
 
-      # Only wrap RHS if this is the first expression
-      rhs_expr = if is_first, do: Skuld.Comp.ConvertThrow.wrap_expr(rhs), else: rhs
+      case maybe_total_linear_bind(caller, lhs, rhs, rest_rewritten, has_else, is_first) do
+        {:ok, optimized} ->
+          optimized
 
-      if has_else and complex_pattern?(lhs) do
-        # Generate multi-clause bind with match failure throw
-        binder_with_else(lhs, rhs_expr, rest_rewritten)
-      else
-        # Simple pattern or no else - regular bind
-        binder(lhs, rhs_expr, rest_rewritten)
+        :error ->
+          rhs_expr = if is_first, do: Skuld.Comp.ConvertThrow.wrap_expr(rhs), else: rhs
+
+          if has_else and complex_pattern?(lhs) do
+            binder_with_else(lhs, rhs_expr, rest_rewritten)
+          else
+            binder(lhs, rhs_expr, rest_rewritten)
+          end
       end
     end
 
@@ -831,6 +834,102 @@ defmodule Skuld.Comp.CompBlock do
           __skuld_nomatch__ ->
             Skuld.Effects.Throw.throw(%Skuld.Comp.MatchFailed{value: __skuld_nomatch__})
         end)
+      end
+    end
+
+    ##########################################################################
+    ## Total-Linear Call-Site Optimisation
+    ##########################################################################
+
+    # Detect direct Module.func(args) calls on total+linear effects and emit
+    # an optimised 2-arity handler call path that skips closure allocation
+    # and CPS indirection.
+    defp maybe_total_linear_bind(caller, lhs, rhs, body, has_else, _is_first) do
+      with {{:., _, [{:__aliases__, _, module_parts}, func]}, _, args} <- rhs,
+           mod when is_atom(mod) <- resolve_module(caller, module_parts),
+           true <- function_exported?(mod, :__total_linear__, 1),
+           {:ok, op_attr, value_count} <- mod.__total_linear__(func),
+           true <- length(args) in [value_count, value_count + 1] do
+        sig_ast = total_linear_sig_ast(mod, args, value_count)
+        op_ast = total_linear_op_ast(mod, op_attr, args, value_count)
+        {:ok, emit_total_linear_bind(lhs, sig_ast, op_ast, body, has_else)}
+      else
+        _ -> :error
+      end
+    rescue
+      _ -> :error
+    end
+
+    defp resolve_module(caller, module_parts) do
+      expanded = Macro.expand({:__aliases__, [alias: false], module_parts}, caller)
+      Code.ensure_compiled!(expanded)
+      expanded
+    rescue
+      _ -> nil
+    end
+
+    # sig for default tag (arity == value_count): module atom itself
+    # sig for tagged call (arity == value_count + 1): module.sig(first_arg)
+    defp total_linear_sig_ast(mod, args, value_count) when length(args) == value_count do
+      quote do: unquote(mod)
+    end
+
+    defp total_linear_sig_ast(mod, [tag_arg | _], _value_count) do
+      quote do
+        unquote(mod).sig(unquote(tag_arg))
+      end
+    end
+
+    # Build the operation args AST for passing to handler.(op, env)
+    # Ops from def_tagged_op are atoms for 0-value-arg functions (like get)
+    # and {op_atom, value} tuples for 1-value-arg functions (like put)
+    defp total_linear_op_ast(mod, op_attr, args, value_count) do
+      op_atom = apply(mod, op_attr, [])
+      value_args = if length(args) == value_count, do: args, else: tl(args)
+
+      case value_args do
+        [] -> quote(do: unquote(op_atom))
+        [val] -> {:{}, [], [op_atom, val]}
+      end
+    end
+
+    # Emit the optimised computation: lookup handler, call 2-arity, inline bind, continue
+    defp emit_total_linear_bind(lhs, sig_ast, op_ast, body, has_else) do
+      bind_fn =
+        if has_else do
+          quote do
+            fn
+              unquote(lhs) ->
+                unquote(body)
+
+              __skuld_nomatch__ ->
+                Skuld.Effects.Throw.throw(%Skuld.Comp.MatchFailed{value: __skuld_nomatch__})
+            end
+          end
+        else
+          quote do
+            fn unquote(lhs) -> unquote(body) end
+          end
+        end
+
+      quote do
+        fn env, k ->
+          handler = Skuld.Comp.Env.get_handler!(env, unquote(sig_ast))
+
+          try do
+            {value, env2} = handler.(unquote(op_ast), env)
+            result = unquote(bind_fn).(value)
+            Skuld.Comp.call(result, env2, k)
+          catch
+            kind, payload ->
+              Skuld.Comp.ConvertThrow.handle_exception(
+                kind,
+                payload,
+                __STACKTRACE__,
+                env
+              )
+          end
+        end
       end
     end
   end

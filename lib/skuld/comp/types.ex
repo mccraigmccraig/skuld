@@ -14,8 +14,10 @@ defmodule Skuld.Comp.Types do
   @typedoc "The environment carrying evidence, state, and leave-scope"
   @type env :: Skuld.Comp.Env.t()
 
-  @typedoc "A handler interprets effect operations"
-  @type handler :: (args :: term(), env(), k() -> {result(), env()})
+  @typedoc "A handler interprets effect operations. Total+linear handlers are 2-arity; general handlers are 3-arity."
+  @type handler ::
+          (args :: term(), env() -> {result(), env()})
+          | (args :: term(), env(), k() -> {result(), env()})
 
   @typedoc "Continuation after an effect"
   @type k :: (term(), env() -> {result(), env()})

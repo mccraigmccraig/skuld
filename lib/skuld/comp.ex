@@ -255,11 +255,19 @@ defmodule Skuld.Comp do
   @doc """
   Call an effect handler with exception handling.
 
-  Similar to `call/3` but for 3-arity handlers. Exceptions in handler code
-  are caught and converted to Throw effects.
+  Supports both 2-arity total+linear handlers and 3-arity general handlers.
+  Exceptions in handler code are caught and converted to Throw effects.
   """
   @spec call_handler(Types.handler(), term(), Types.env(), Types.k()) ::
           {Types.result(), Types.env()}
+  def call_handler(handler, args, env, k) when is_function(handler, 2) do
+    {value, env2} = handler.(args, env)
+    k.(value, env2)
+  catch
+    kind, payload ->
+      ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, env)
+  end
+
   def call_handler(handler, args, env, k) when is_function(handler, 3) do
     handler.(args, env, k)
   catch
