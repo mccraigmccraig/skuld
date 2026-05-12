@@ -140,30 +140,35 @@ Swapping any of these requires changing domain code - the very code that
 encodes your business rules. In theory, you could use behaviours and
 dependency injection. In practice:
 
-### Dependency injection helps, but doesn't compose
+### Application config helps, but doesn't compose
 
-You could restructure the code to accept injected dependencies:
+The Elixir way to swap dependencies is `Application.get_env/2`:
 
 ```elixir
-def renew_subscription(user_id, opts \\ []) do
-  repo = Keyword.get(opts, :repo, Repo)
-  payment = Keyword.get(opts, :payment, PaymentProvider)
-  mailer = Keyword.get(opts, :mailer, Mailer)
+def renew_subscription(user_id) do
+  repo = Application.get_env(:my_app, :repo, Repo)
+  payment = Application.get_env(:my_app, :payment, PaymentProvider)
+  mailer = Application.get_env(:my_app, :mailer, Mailer)
   # ...
 end
 ```
 
 This works for one or two dependencies. But real orchestration code
-touches many services, and the plumbing becomes unwieldy:
+touches many services, and config-based dispatch has sharp edges:
 
-- Every function signature grows with each new dependency
-- Passing dependencies through multiple layers of function calls is
-  tedious and error-prone
-- Dependencies don't compose - there's no clean way to say "use these
-  five test doubles together" without threading them everywhere
-- DI can swap *implementations*, but it can't change *control flow* -
-  what if you want to retry a failed payment? suspend the operation and
-  resume it later? batch database reads across concurrent operations?
+- **Global state.** `Application.get_env` reads from a process-wide
+  dictionary. One test's config change can leak into another test
+  running concurrently, producing hard-to-debug failures.
+- **No scoping.** You can't say "use the test repo only for this
+  computation." `Application.put_env` changes config globally, for
+  every concurrent process.
+- **Non-determinism.** If a dependency is resolved at call time via
+  `get_env`, the behaviour of a function depends on what was last
+  `put_env`'d — not on its arguments.
+- **Config can't change control flow.** What if you want to retry a
+  failed payment? suspend the operation and resume it later? batch
+  database reads across concurrent operations? A config map can swap
+  an implementation, but it can't alter *when* or *how often* code runs.
 
 ### The determinism problem
 
