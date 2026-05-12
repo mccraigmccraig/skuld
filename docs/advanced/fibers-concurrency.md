@@ -373,6 +373,95 @@ processing. GenStage catches up and wins when stage count exceeds ~15-20
 for trivial transforms, because its parallel process execution has
 constant overhead regardless of stage count.
 
+### Streaming from external sources
+
+Use `from_function` when data comes from an external API or incremental
+source:
+
+```elixir
+comp do
+  source <- Brook.from_function(fn ->
+    case ExternalAPI.fetch_page(cursor) do
+      {:ok, %{items: items, next: nil}} -> {:items, items}
+      {:ok, %{items: items, next: next}} ->
+        Process.put(:cursor, next)
+        {:items, items}
+      {:error, e} -> {:error, e}
+    end
+  end, chunk_size: 50)
+
+  Brook.each(source, fn item ->
+    comp do
+      _ <- RecordRepo.insert_record!(item)
+      :ok
+    end
+  end)
+end
+|> Port.with_handler(%{RecordRepo => RecordRepo.Ecto})
+|> Channel.with_handler()
+|> FiberPool.with_handler()
+|> Comp.run!()
+```
+
+`{:items, items}` emits a batch. `{:error, e}` terminates the stream
+with an error.
+
+### ETL with automatic I/O batching
+
+Combine Brook with Query contracts and N+1 queries are eliminated
+automatically across concurrent pipeline stages:
+
+```elixir
+defcomp enrich_order(raw_order) do
+  customer <- ETL.Queries.lookup_customer(raw_order.customer_ref)
+  product <- ETL.Queries.lookup_product(raw_order.product_sku)
+  %{order: raw_order, customer: customer, product: product}
+end
+
+comp do
+  source <- Brook.from_enum(raw_orders, chunk_size: 10)
+  enriched <- Brook.map(source, &enrich_order/1, concurrency: 5)
+  valid <- Brook.filter(enriched, fn o -> o.customer != nil end)
+  Brook.each(valid, fn order ->
+    comp do
+      _ <- OrderRepo.insert_enriched_order!(order)
+      :ok
+    end
+  end)
+end
+|> ETL.Queries.with_executor(ETL.Queries.EctoExecutor)
+|> Port.with_handler(%{OrderRepo => OrderRepo.Ecto})
+|> Channel.with_handler()
+|> FiberPool.with_handler()
+|> Comp.run!()
+```
+
+With `chunk_size: 10` and `concurrency: 5`, up to 50 orders are in
+flight at once. All `lookup_customer` calls across those 50 orders
+batch into a single executor invocation.
+
+### Side effects per item
+
+Use `Brook.each` for fire-and-forget:
+```elixir
+Brook.each(stream, fn item ->
+  comp do
+    _ <- Writer.tell(%{processed: item.id})
+    :ok
+  end
+end)
+```
+
+Use `Brook.run` when consuming items with a callback:
+```elixir
+Brook.run(stream, fn item ->
+  comp do
+    _ <- ItemRepo.insert_item!(item)
+    :ok
+  end
+end)
+```
+
 <!-- nav:footer:start -->
 
 ---

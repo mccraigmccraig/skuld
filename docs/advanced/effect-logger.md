@@ -225,6 +225,118 @@ This is Temporal-style durable execution as a composable library
 primitive, without infrastructure services, RPC, or giving up algebraic
 effect composition.
 
+## Patterns
+
+### Approval workflow
+
+Write a computation that yields at interaction points. Run it with
+`EffectLogger.with_logging()` to capture the effect log. When the
+computation suspends, persist the log. Later, cold-resume from the
+persisted log:
+
+```elixir
+# Start the workflow
+{suspended, env} =
+  ApprovalWorkflow.run(request)
+  |> EffectLogger.with_logging()
+  |> Yield.with_handler()
+  |> State.with_handler(initial_state)
+  |> Writer.with_handler([], tag: :events, output: fn r, raw -> {r, Enum.reverse(raw)} end)
+  |> Throw.with_handler()
+  |> Comp.run()
+
+# Persist the log
+log = EffectLogger.get_log(env) |> Log.finalize()
+json = Jason.encode!(log)
+
+# Later, resume with the approval decision
+cold_log = json |> Jason.decode!() |> Log.from_json()
+{result, _env} =
+  ApprovalWorkflow.run(request)
+  |> EffectLogger.with_resume(cold_log, :approved)
+  |> Yield.with_handler()
+  |> State.with_handler(nil)                  # ignored — restored from log
+  |> Writer.with_handler([], tag: :events, output: fn r, raw -> {r, Enum.reverse(raw)} end)
+  |> Throw.with_handler()
+  |> Comp.run()
+```
+
+During resume, completed effects replay from logged values (fast-forward).
+At the suspension point, the resume value is injected and execution
+continues live.
+
+### LLM conversations with bounded logs
+
+For workflows with many interaction cycles, use `mark_loop` to keep
+the log bounded:
+
+```elixir
+defcomp conversation_loop() do
+  _ <- EffectLogger.mark_loop(ConversationLoop)
+  history <- State.get()
+  user_msg <- Yield.yield(%{type: :user_input, history: history})
+  response <- LLM.chat!(history ++ [%{role: :user, content: user_msg}])
+  _ <- State.put(history ++ [
+    %{role: :user, content: user_msg},
+    %{role: :assistant, content: response}
+  ])
+  case response do
+    %{done: true} -> {:done, response}
+    _ -> conversation_loop()
+  end
+end
+```
+
+Each cycle: suspend → serialize → persist → resume → next cycle.
+`mark_loop` prunes completed iterations so the log stays O(current
+iteration) regardless of conversation length.
+
+### Surviving deployments
+
+When code changes between suspend and resume:
+
+```elixir
+|> EffectLogger.with_resume(cold_log, value, allow_divergence: true)
+```
+
+With `allow_divergence`, completed effects replay from logged values. If
+the code path diverges, execution continues fresh from the divergence
+point — you can deploy bug fixes and the workflow picks up from where it
+left off.
+
+### Persistence strategies
+
+**Database:**
+```elixir
+Repo.insert!(%Workflow{id: workflow_id, log: Jason.encode!(Log.finalize(log))})
+cold_log = workflow.log |> Jason.decode!() |> Log.from_json()
+```
+
+**Message queue:**
+```elixir
+Broadway.produce(Jason.encode!(%{workflow_id: id, log: Log.finalize(log)}))
+```
+
+**File system (development):**
+```elixir
+File.write!("workflows/#{id}.json", Jason.encode!(Log.finalize(log)))
+```
+
+### Comparison with Temporal
+
+| Aspect | Skuld EffectLogger | Temporal.io |
+|--------|-------------------|-------------|
+| Infrastructure | Library (no server) | Server cluster required |
+| Language | Elixir only | Multi-language SDKs |
+| Serialization | JSON log of effects | Protobuf event history |
+| Resume mechanism | Source replay + log | Worker polling + replay |
+| Composition | Algebraic effect stacking | Workflow/activity split |
+| Deployment | Your app process | Separate service |
+
+Skuld is much lighter-weight: no infrastructure, no RPC, and full
+algebraic effect composition. Temporal is more mature for production
+distributed workflows.
+
 See [Durable Workflows](../recipes/durable-workflows.md) for practical
 patterns using EffectLogger.
 
