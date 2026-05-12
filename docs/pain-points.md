@@ -1,12 +1,13 @@
 # What Skuld Solves
 
 <!-- nav:header:start -->
-[< What Are Algebraic Effects?](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Getting Started >](getting-started.md)
+[< How Effects Work](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Getting Started >](getting-started.md)
 <!-- nav:header:end -->
 
-You don't need to care about algebraic effects theory to benefit from
-Skuld. Here are the concrete problems it addresses, framed as pain
-you've probably already felt.
+Skuld addresses real problems every Elixir application faces — from
+untestable orchestration through to N+1 queries, concurrent workflows,
+and operations that need to survive restarts. Here are the concrete
+pain points and how the effect system solves them.
 
 ## Testing orchestration code
 
@@ -191,7 +192,7 @@ log_json = Jason.encode!(suspend.data[EffectLogger])
 store_workflow_state(workflow_id, log_json)
 
 # Later (maybe after a restart), resume from the stored log
-stored_log = load_workflow_state(workflow_id) |> Jason.decode!() |> EffectLogger.Log.deserialize()
+stored_log = load_workflow_state(workflow_id) |> Jason.decode!() |> EffectLogger.Log.from_json()
 
 {result, _env} =
   onboarding_workflow(user_id)
