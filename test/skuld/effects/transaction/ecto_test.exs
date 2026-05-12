@@ -9,7 +9,9 @@ defmodule Skuld.Effects.Transaction.EctoTest do
   alias Skuld.Effects.Writer
 
   defp emit(tag, event), do: Writer.tell(tag, event) |> Comp.then_do(Comp.pure(:ok))
-  defp events_handler(comp, tag \\ :events), do: Writer.with_handler(comp, [], tag: tag, output: &{&1, Enum.reverse(&2)})
+
+  defp events_handler(comp, tag \\ :events),
+    do: Writer.with_handler(comp, [], tag: tag, output: &{&1, Enum.reverse(&2)})
 
   # Mock Repo for testing — mirrors Ecto.Repo transaction behaviour
   defmodule MockRepo do

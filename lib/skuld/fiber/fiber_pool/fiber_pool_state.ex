@@ -393,7 +393,12 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
             enqueue(state, awaiter_fid)
 
           :waiting ->
-            updated = %Suspension.Await{waiting_for: waiting_for, mode: mode, collected: collected}
+            updated = %Suspension.Await{
+              waiting_for: waiting_for,
+              mode: mode,
+              collected: collected
+            }
+
             put_in(state, [Access.key(:suspensions), awaiter_fid], updated)
         end
 
@@ -492,7 +497,11 @@ defmodule Skuld.Fiber.FiberPool.FiberPoolState do
   """
   @spec add_batch_suspension(t(), fiber_id(), InternalSuspend.t()) :: t()
   def add_batch_suspension(state, fiber_id, batch_suspend) do
-    %{state | suspensions: Map.put(state.suspensions, fiber_id, %Suspension.Batch{internal_suspend: batch_suspend})}
+    %{
+      state
+      | suspensions:
+          Map.put(state.suspensions, fiber_id, %Suspension.Batch{internal_suspend: batch_suspend})
+    }
   end
 
   @doc """

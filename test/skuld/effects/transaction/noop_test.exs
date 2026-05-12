@@ -9,7 +9,9 @@ defmodule Skuld.Effects.Transaction.NoopTest do
   alias Skuld.Effects.Writer
 
   defp emit(tag, event), do: Writer.tell(tag, event) |> Comp.then_do(Comp.pure(:ok))
-  defp events_handler(comp, tag \\ :events), do: Writer.with_handler(comp, [], tag: tag, output: &{&1, Enum.reverse(&2)})
+
+  defp events_handler(comp, tag \\ :events),
+    do: Writer.with_handler(comp, [], tag: tag, output: &{&1, Enum.reverse(&2)})
 
   describe "transact" do
     test "normal completion returns result" do

@@ -133,7 +133,9 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
         if FiberPoolState.suspended?(acc_state, fiber_id) do
           acc_state
           |> FiberPoolState.delete_suspension(fiber_id)
-          |> then(fn s -> put_in(s, [Access.key(:wake_signals), fiber_id], {:external_wake, result}) end)
+          |> then(fn s ->
+            put_in(s, [Access.key(:wake_signals), fiber_id], {:external_wake, result})
+          end)
           |> then(&FiberPoolState.enqueue(&1, fiber_id))
         else
           acc_state

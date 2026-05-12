@@ -241,14 +241,22 @@ defmodule Skuld.Fiber do
         %Errored{id: fiber.id, error: error, env: throw_env}
 
       {%Comp.Cancelled{} = cancelled, cancelled_env} ->
-        %Errored{id: fiber.id, error: %Error{type: :cancelled, error: cancelled.reason}, env: cancelled_env}
+        %Errored{
+          id: fiber.id,
+          error: %Error{type: :cancelled, error: cancelled.reason},
+          env: cancelled_env
+        }
 
       {value, %Env{} = final_env} ->
         %Completed{id: fiber.id, result: value, env: final_env}
     end
   rescue
     e ->
-      %Errored{id: fiber.id, error: %Error{type: :exception, error: e, stacktrace: __STACKTRACE__}, env: env}
+      %Errored{
+        id: fiber.id,
+        error: %Error{type: :exception, error: e, stacktrace: __STACKTRACE__},
+        env: env
+      }
   catch
     :throw, reason ->
       %Errored{id: fiber.id, error: %Error{type: :throw, error: reason}, env: env}

@@ -682,7 +682,9 @@ defmodule Skuld.Effects.FiberPool do
   # where Throw.catch_error can intercept it.
   defp unwrap_result({:ok, value}), do: {:ok, value}
 
-  defp unwrap_result({:error, %Skuld.Fiber.Error{type: type, error: error, stacktrace: stacktrace}}) do
+  defp unwrap_result(
+         {:error, %Skuld.Fiber.Error{type: type, error: error, stacktrace: stacktrace}}
+       ) do
     {:throw,
      %Comp.Throw{
        error: %AwaitError{type: type, error: error, stacktrace: stacktrace}
