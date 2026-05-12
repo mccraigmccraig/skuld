@@ -24,25 +24,25 @@ defmodule Skuld.MixProject do
           "docs/what.md",
           "docs/pain-points.md",
           "docs/getting-started.md",
+          "docs/quick-reference.md",
           "docs/syntax.md",
+          "docs/testing.md",
           "docs/effects/state-environment.md",
           "docs/effects/error-handling.md",
           "docs/effects/value-generation.md",
           "docs/effects/collections.md",
           "docs/effects/concurrency.md",
           "docs/effects/persistence.md",
+          "docs/effects/repo.md",
           "docs/effects/external-integration.md",
           "docs/advanced/yield.md",
           "docs/advanced/fibers-concurrency.md",
           "docs/advanced/query-batching.md",
           "docs/advanced/effect-logger.md",
-          "docs/recipes/testing.md",
           "docs/recipes/hexagonal-architecture.md",
           "docs/recipes/decider-pattern.md",
           "docs/recipes/handler-stacks.md",
           "docs/recipes/liveview.md",
-          "docs/recipes/durable-workflows.md",
-          "docs/recipes/data-pipelines.md",
           "docs/recipes/batch-loading.md",
           "docs/internals.md",
           "docs/reference.md",
@@ -55,31 +55,31 @@ defmodule Skuld.MixProject do
             "docs/what.md",
             "docs/pain-points.md",
             "docs/getting-started.md",
+            "docs/quick-reference.md",
             "docs/syntax.md"
           ],
-          "Foundational Effects": [
+          "Core Concepts": [
+            "docs/testing.md"
+          ],
+          Effects: [
             "docs/effects/state-environment.md",
             "docs/effects/error-handling.md",
             "docs/effects/value-generation.md",
             "docs/effects/collections.md",
             "docs/effects/concurrency.md",
             "docs/effects/persistence.md",
-            "docs/effects/external-integration.md"
-          ],
-          "Advanced Effects": [
+            "docs/effects/repo.md",
+            "docs/effects/external-integration.md",
             "docs/advanced/yield.md",
             "docs/advanced/fibers-concurrency.md",
             "docs/advanced/query-batching.md",
             "docs/advanced/effect-logger.md"
           ],
-          "Patterns & Recipes": [
-            "docs/recipes/testing.md",
+          Patterns: [
             "docs/recipes/hexagonal-architecture.md",
             "docs/recipes/decider-pattern.md",
             "docs/recipes/handler-stacks.md",
             "docs/recipes/liveview.md",
-            "docs/recipes/durable-workflows.md",
-            "docs/recipes/data-pipelines.md",
             "docs/recipes/batch-loading.md"
           ],
           Internals: [
@@ -121,6 +121,7 @@ defmodule Skuld.MixProject do
             Skuld.Effects.Channel,
             Skuld.Effects.Brook,
             Skuld.Effects.Parallel,
+            Skuld.Effects.Task,
             Skuld.Fiber
           ],
           "Persistence & Data": [
@@ -128,6 +129,7 @@ defmodule Skuld.MixProject do
             Skuld.Query.Contract,
             Skuld.Effects.Port,
             Skuld.Effects.Command,
+            Skuld.Repo,
             Skuld.Data.Change
           ],
           "Replay & Logging": [
