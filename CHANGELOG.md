@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- `Skuld.Effects.EventAccumulator` — thin `emit`/`with_handler` wrapper over Writer
+  that added only `Enum.reverse`. Superseded by direct `Writer.tell/2` and
+  `Writer.with_handler/3` usage.
+- `Skuld.Effects.EventAccumulator.IEvent` — protocol for tagging events by
+  module name; an application-layer concern, not an effects library primitive.
+- `Skuld.Effects.ChangeEvent` — generic changeset wrapper struct
+  (`insert`/`update`/`delete`/`upsert`); an application-layer concern.
+
+### Changed
+
+- `Skuld.Effects.Port.Repo` → `Skuld.Repo` — moved the built-in Repo contract,
+  facade, and handlers (`InMemory`, `Ecto`, `Stub`, `OpenInMemory`, `Test`) to
+  the top-level `Skuld.Repo` namespace, matching DoubleDown's
+  `DoubleDown.Repo` convention. Usage is now `alias Skuld.Repo` /
+  `Repo.InMemory.with_handler(...)`.
+- README quick example updated: uses `Writer.tell(:events, ...)` for domain
+  events and `Repo.InMemory.with_handler(...)` for testing, replacing the
+  removed EventAccumulator and old Port-based handler installation.
+
 ## [0.26.0] — 2026-05-11
 
 ### Added
