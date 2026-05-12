@@ -1,7 +1,7 @@
 # Serializable Coroutines (EffectLogger)
 
 <!-- nav:header:start -->
-[< Query & Batching](query-batching.md) | [Up: Advanced Effects](yield.md) | [Index](../../README.md) | [Testing Effectful Code >](../recipes/testing.md)
+[< Query & Batching](query-batching.md) | [Up: Advanced Effects](yield.md) | [Index](../../README.md) | [Testing Effectful Code >](../testing.md)
 <!-- nav:header:end -->
 
 EffectLogger enables **serializable coroutines** - computations that can
@@ -232,5 +232,5 @@ patterns using EffectLogger.
 
 ---
 
-[< Query & Batching](query-batching.md) | [Up: Advanced Effects](yield.md) | [Index](../../README.md) | [Testing Effectful Code >](../recipes/testing.md)
+[< Query & Batching](query-batching.md) | [Up: Advanced Effects](yield.md) | [Index](../../README.md) | [Testing Effectful Code >](../testing.md)
 <!-- nav:footer:end -->

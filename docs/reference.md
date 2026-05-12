@@ -312,7 +312,7 @@ no `Eff '[State, Reader, Throw] a` to track.
 | 6 | [Fibers & Concurrency](advanced/fibers-concurrency.md) | FiberPool, Channel, Brook |
 | 6 | [Query Batching](advanced/query-batching.md) | query macro, deffetch, Cache |
 | 6 | [EffectLogger](advanced/effect-logger.md) | Serializable coroutines, replay |
-| 7 | [Testing](recipes/testing.md) | Testing patterns, property-based testing |
+| 7 | [Testing](../testing.md) | Testing patterns, property-based testing |
 | 7 | [Hexagonal Architecture](recipes/hexagonal-architecture.md) | Port.Contract + Port.Adapter.Effectful |
 | 7 | [Decider Pattern](recipes/decider-pattern.md) | Command + Writer |
 | 7 | [Handler Stacks](recipes/handler-stacks.md) | Production vs test stacks |

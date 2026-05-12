@@ -43,7 +43,7 @@ This unlocks **property-based testing** for orchestration code: generate
 hundreds of random inputs and verify business invariants hold, something
 that's impractical when every test run hits real infrastructure.
 
-See: [Testing Effectful Code](recipes/testing.md),
+See: [Testing Effectful Code](../testing.md),
 [Handler Stacks](recipes/handler-stacks.md)
 
 ### Reusable stateful test doubles
