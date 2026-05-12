@@ -254,9 +254,6 @@ defmodule Skuld.Comp do
   def call_handler(handler, args, env, k) when is_function(handler, 2) do
     {value, env2} = handler.(args, env)
     k.(value, env2)
-  catch
-    kind, payload ->
-      ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, env)
   end
 
   def call_handler(handler, args, env, k) when is_function(handler, 3) do
