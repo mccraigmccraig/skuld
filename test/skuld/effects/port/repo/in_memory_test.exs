@@ -6,7 +6,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
   alias Skuld.Comp
   alias Skuld.Effects.Port
   alias Skuld.Effects.Port.Repo
-  alias Skuld.Effects.Port.Repo.OpenInMemory, as: InMemory
+  alias Skuld.Effects.Port.Repo.OpenInMemory
   alias Skuld.Effects.Throw
   alias Skuld.Comp.Throw, as: ThrowResult
 
@@ -47,12 +47,12 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
   # Helper
   # -------------------------------------------------------------------
 
-  defp with_in_memory(comp, initial \\ InMemory.new(), opts \\ []) do
-    InMemory.with_handler(comp, initial, opts)
+  defp with_in_memory(comp, initial \\ OpenInMemory.new(), opts \\ []) do
+    OpenInMemory.with_handler(comp, initial, opts)
   end
 
-  defp with_store_output(comp, initial \\ InMemory.new()) do
-    InMemory.with_handler(comp, initial,
+  defp with_store_output(comp, initial \\ OpenInMemory.new()) do
+    OpenInMemory.with_handler(comp, initial,
       output: fn result, state -> {result, state.handler_state} end
     )
   end
@@ -66,7 +66,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
       alice = %User{id: 1, name: "Alice"}
       bob = %User{id: 2, name: "Bob"}
 
-      store = InMemory.seed([alice, bob])
+      store = OpenInMemory.seed([alice, bob])
 
       assert %{User => %{1 => ^alice, 2 => ^bob}} = store
     end
@@ -75,30 +75,30 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
       user = %User{id: 1, name: "Alice"}
       post = %Post{id: 1, title: "Hello"}
 
-      store = InMemory.seed([user, post])
+      store = OpenInMemory.seed([user, post])
 
       assert %{User => %{1 => ^user}, Post => %{1 => ^post}} = store
     end
 
     test "empty list returns empty map" do
-      assert %{} = InMemory.seed([])
+      assert %{} = OpenInMemory.seed([])
     end
   end
 
   describe "new/1" do
     test "returns empty state with no options" do
-      assert %{} = InMemory.new()
+      assert %{} = OpenInMemory.new()
     end
 
     test "seeds records via :seed option" do
       alice = %User{id: 1, name: "Alice"}
-      state = InMemory.new(seed: [alice])
+      state = OpenInMemory.new(seed: [alice])
       assert %{User => %{1 => ^alice}} = state
     end
 
     test "stores fallback_fn via :fallback_fn option" do
       fallback = fn :all, [User], _state -> [] end
-      state = InMemory.new(fallback_fn: fallback)
+      state = OpenInMemory.new(fallback_fn: fallback)
       assert %{__fallback_fn__: stored_fn} = state
       assert is_function(stored_fn)
     end
@@ -106,7 +106,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
     test "combines seed and fallback_fn" do
       alice = %User{id: 1, name: "Alice"}
       fallback = fn :all, [User], _state -> [alice] end
-      state = InMemory.new(seed: [alice], fallback_fn: fallback)
+      state = OpenInMemory.new(seed: [alice], fallback_fn: fallback)
       assert %{User => %{1 => ^alice}, __fallback_fn__: stored_fn} = state
       assert is_function(stored_fn)
     end
@@ -153,7 +153,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
     end
 
     test "auto-id increments based on existing records" do
-      initial = InMemory.new(seed: [%User{id: 5, name: "Existing"}])
+      initial = OpenInMemory.new(seed: [%User{id: 5, name: "Existing"}])
 
       {result, _store} =
         comp do
@@ -180,7 +180,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
 
   describe "update" do
     test "updates an existing record" do
-      initial = InMemory.new(seed: [%User{id: 1, name: "Alice", email: "old@example.com"}])
+      initial = OpenInMemory.new(seed: [%User{id: 1, name: "Alice", email: "old@example.com"}])
       cs = User.changeset(%User{id: 1, name: "Alice"}, %{email: "new@example.com"})
 
       {result, store} =
@@ -193,12 +193,12 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
     end
 
     test "update returns {:ok, struct}" do
-      initial = InMemory.new(seed: [%User{id: 1, name: "Alice"}])
+      initial = OpenInMemory.new(seed: [%User{id: 1, name: "Alice"}])
       cs = User.changeset(%User{id: 1, name: "Alice"}, %{name: "Bob"})
 
       result =
         Repo.update(cs)
-        |> InMemory.with_handler(initial)
+        |> OpenInMemory.with_handler(initial)
         |> Comp.run!()
 
       assert {:ok, %User{id: 1, name: "Bob"}} = result
@@ -208,7 +208,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
   describe "delete" do
     test "removes record from store" do
       alice = %User{id: 1, name: "Alice"}
-      initial = InMemory.new(seed: [alice])
+      initial = OpenInMemory.new(seed: [alice])
 
       {result, store} =
         Repo.delete(alice)
@@ -222,11 +222,11 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
 
     test "delete returns {:ok, struct}" do
       alice = %User{id: 1, name: "Alice"}
-      initial = InMemory.new(seed: [alice])
+      initial = OpenInMemory.new(seed: [alice])
 
       result =
         Repo.delete(alice)
-        |> InMemory.with_handler(initial)
+        |> OpenInMemory.with_handler(initial)
         |> Comp.run!()
 
       assert {:ok, ^alice} = result
@@ -240,7 +240,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
   describe "get (3-stage)" do
     test "returns record from state when found" do
       alice = %User{id: 1, name: "Alice"}
-      initial = InMemory.new(seed: [alice])
+      initial = OpenInMemory.new(seed: [alice])
 
       result =
         Repo.get(User, 1)
@@ -265,7 +265,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
       bob = %User{id: 99, name: "Fallback Bob"}
 
       state =
-        InMemory.new(
+        OpenInMemory.new(
           seed: [%User{id: 1, name: "Alice"}],
           fallback_fn: fn :get, [User, 99], _state -> bob end
         )
@@ -286,7 +286,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
   describe "get! (3-stage)" do
     test "returns record from state when found" do
       alice = %User{id: 1, name: "Alice"}
-      initial = InMemory.new(seed: [alice])
+      initial = OpenInMemory.new(seed: [alice])
 
       result =
         Repo.get!(User, 1)
@@ -317,7 +317,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
       alice = %User{id: 1, name: "Alice", email: "alice@example.com"}
 
       state =
-        InMemory.new(
+        OpenInMemory.new(
           fallback_fn: fn
             :get_by, [User, [name: "Alice"]], _state -> alice
             :get_by, [User, [name: "Alice", email: "alice@example.com"]], _state -> alice
@@ -353,7 +353,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
 
     test "one dispatches to fallback" do
       alice = %User{id: 1, name: "Alice"}
-      state = InMemory.new(fallback_fn: fn :one, [User], _state -> alice end)
+      state = OpenInMemory.new(fallback_fn: fn :one, [User], _state -> alice end)
 
       result =
         Repo.one(User)
@@ -376,7 +376,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
 
     test "all dispatches to fallback" do
       users = [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}]
-      state = InMemory.new(fallback_fn: fn :all, [User], _state -> users end)
+      state = OpenInMemory.new(fallback_fn: fn :all, [User], _state -> users end)
 
       result =
         Repo.all(User)
@@ -398,7 +398,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
     end
 
     test "exists? dispatches to fallback" do
-      state = InMemory.new(fallback_fn: fn :exists?, [User], _state -> true end)
+      state = OpenInMemory.new(fallback_fn: fn :exists?, [User], _state -> true end)
 
       result =
         Repo.exists?(User)
@@ -423,7 +423,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
 
     test "aggregate dispatches to fallback" do
       state =
-        InMemory.new(
+        OpenInMemory.new(
           fallback_fn: fn
             :aggregate, [User, :count, :id], _state -> 3
             :aggregate, [User, :sum, :age], _state -> 55
@@ -466,7 +466,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
 
   describe "bulk operations require fallback" do
     test "delete_all dispatches to fallback" do
-      state = InMemory.new(fallback_fn: fn :delete_all, [User, []], _state -> {2, nil} end)
+      state = OpenInMemory.new(fallback_fn: fn :delete_all, [User, []], _state -> {2, nil} end)
 
       result =
         Repo.delete_all(User, [])
@@ -491,7 +491,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
 
     test "update_all dispatches to fallback" do
       state =
-        InMemory.new(
+        OpenInMemory.new(
           fallback_fn: fn :update_all, [User, [set: [name: "bulk"]], []], _state -> {3, nil} end
         )
 
@@ -581,7 +581,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
     test "seeded records are available via PK read" do
       alice = %User{id: 1, name: "Alice"}
       bob = %User{id: 2, name: "Bob"}
-      initial = InMemory.new(seed: [alice, bob])
+      initial = OpenInMemory.new(seed: [alice, bob])
 
       result =
         comp do
@@ -596,7 +596,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
     end
 
     test "can add to seeded state and read back by PK" do
-      initial = InMemory.new(seed: [%User{id: 1, name: "Alice"}])
+      initial = OpenInMemory.new(seed: [%User{id: 1, name: "Alice"}])
       cs = User.changeset(%{name: "Bob"})
 
       result =
@@ -628,7 +628,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
           {:ok, user} <- Repo.insert(cs)
           Repo.get(User, user.id)
         end
-        |> InMemory.with_handler(InMemory.new(),
+        |> OpenInMemory.with_handler(OpenInMemory.new(),
           log: true,
           output: fn result, state -> {result, state.log} end
         )
@@ -649,7 +649,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
     test "composes with State effect" do
       alias Skuld.Effects.State
 
-      initial = InMemory.new(seed: [%User{id: 1, name: "Alice"}])
+      initial = OpenInMemory.new(seed: [%User{id: 1, name: "Alice"}])
 
       result =
         comp do
@@ -687,7 +687,7 @@ defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
         def do_thing(x), do: {:ok, {:did, x}}
       end
 
-      initial = InMemory.new(seed: [%User{id: 1, name: "Alice"}])
+      initial = OpenInMemory.new(seed: [%User{id: 1, name: "Alice"}])
 
       result =
         comp do
