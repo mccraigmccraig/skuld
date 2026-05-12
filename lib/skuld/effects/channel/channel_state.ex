@@ -35,7 +35,7 @@
 # :closed when           {:error, reason}
 # buffer empty           (error is sticky!)
 # ```
-defmodule Skuld.Effects.Channel.State do
+defmodule Skuld.Effects.Channel.ChannelState do
   @moduledoc false
 
   @type channel_id :: reference()

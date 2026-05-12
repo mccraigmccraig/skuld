@@ -59,7 +59,7 @@ defmodule Skuld.Effects.Channel do
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Fiber.FiberPool.ChannelCoordinationState
-  alias Skuld.Effects.Channel.State
+  alias Skuld.Effects.Channel.ChannelState
 
   #############################################################################
   ## Handle Struct
@@ -108,7 +108,7 @@ defmodule Skuld.Effects.Channel do
   @spec new(non_neg_integer()) :: Comp.Types.computation()
   def new(capacity) when is_integer(capacity) and capacity >= 0 do
     fn env, k ->
-      state = State.new(capacity)
+      state = ChannelState.new(capacity)
       env = register_channel(env, state)
       k.(Handle.new(state.id), env)
     end
@@ -155,9 +155,9 @@ defmodule Skuld.Effects.Channel do
 
         :open ->
           cond do
-            State.has_waiting_takes?(state) ->
+            ChannelState.has_waiting_takes?(state) ->
               # Direct handoff to waiting taker
-              {:ok, taker_fid, state} = State.pop_waiting_take(state)
+              {:ok, taker_fid, state} = ChannelState.pop_waiting_take(state)
               env = update_channel(env, channel_id, state)
 
               # Create a wake request for the taker
@@ -166,12 +166,12 @@ defmodule Skuld.Effects.Channel do
               # Put succeeds immediately
               k.(:ok, env)
 
-            State.buffer_full?(state) ->
+            ChannelState.buffer_full?(state) ->
               # Buffer full - suspend until space available
               fiber_id = get_fiber_id(env)
 
               # Add to waiting puts list so take() can find and wake us
-              state = State.add_waiting_put(state, fiber_id, item)
+              state = ChannelState.add_waiting_put(state, fiber_id, item)
               env = update_channel(env, channel_id, state)
 
               # Resume fn is stored in fiber.suspended_k, not duplicated here
@@ -182,7 +182,7 @@ defmodule Skuld.Effects.Channel do
 
             true ->
               # Add to buffer
-              state = State.enqueue(state, item)
+              state = ChannelState.enqueue(state, item)
               env = update_channel(env, channel_id, state)
               k.(:ok, env)
           end
@@ -227,9 +227,9 @@ defmodule Skuld.Effects.Channel do
 
         _ ->
           cond do
-            not State.buffer_empty?(state) ->
+            not ChannelState.buffer_empty?(state) ->
               # Take from buffer
-              {:ok, item, state} = State.dequeue(state)
+              {:ok, item, state} = ChannelState.dequeue(state)
 
               # Maybe wake a waiting putter
               {state, env} = maybe_wake_putter(state, channel_id, env)
@@ -237,9 +237,9 @@ defmodule Skuld.Effects.Channel do
               env = update_channel(env, channel_id, state)
               k.({:ok, item}, env)
 
-            State.has_waiting_puts?(state) ->
+            ChannelState.has_waiting_puts?(state) ->
               # Direct handoff from waiting putter
-              {:ok, {putter_fid, item}, state} = State.pop_waiting_put(state)
+              {:ok, {putter_fid, item}, state} = ChannelState.pop_waiting_put(state)
               env = update_channel(env, channel_id, state)
 
               # Wake the putter with success
@@ -256,7 +256,7 @@ defmodule Skuld.Effects.Channel do
               fiber_id = get_fiber_id(env)
 
               # Add to waiting takes list so put() can find and wake us
-              state = State.add_waiting_take(state, fiber_id)
+              state = ChannelState.add_waiting_take(state, fiber_id)
               env = update_channel(env, channel_id, state)
 
               # Resume fn is stored in fiber.suspended_k, not duplicated here
@@ -413,7 +413,7 @@ defmodule Skuld.Effects.Channel do
           k.({:error, reason}, env)
 
         _ ->
-          case State.peek(state) do
+          case ChannelState.peek(state) do
             {:ok, item} ->
               k.({:ok, item}, env)
 
@@ -456,12 +456,12 @@ defmodule Skuld.Effects.Channel do
 
       case state.status do
         :open ->
-          state = State.close(state)
+          state = ChannelState.close(state)
 
           # If buffer is empty, wake all waiting takers with :closed
           env =
-            if State.buffer_empty?(state) do
-              {waiting_takes, state_cleared} = State.pop_all_waiting_takes(state)
+            if ChannelState.buffer_empty?(state) do
+              {waiting_takes, state_cleared} = ChannelState.pop_all_waiting_takes(state)
               state = state_cleared
 
               Enum.reduce(waiting_takes, update_channel(env, channel_id, state), fn fid,
@@ -510,10 +510,10 @@ defmodule Skuld.Effects.Channel do
 
       case state.status do
         :open ->
-          state = State.error(state, reason)
+          state = ChannelState.error(state, reason)
 
           # Wake all waiting takers with the error
-          {waiting_takes, state} = State.pop_all_waiting_takes(state)
+          {waiting_takes, state} = ChannelState.pop_all_waiting_takes(state)
 
           env =
             Enum.reduce(waiting_takes, env, fn fid, acc_env ->
@@ -521,7 +521,7 @@ defmodule Skuld.Effects.Channel do
             end)
 
           # Wake all waiting putters with the error
-          {waiting_puts, state} = State.pop_all_waiting_puts(state)
+          {waiting_puts, state} = ChannelState.pop_all_waiting_puts(state)
 
           env =
             Enum.reduce(waiting_puts, env, fn {fid, _item}, acc_env ->
@@ -549,7 +549,7 @@ defmodule Skuld.Effects.Channel do
   def closed?(%Handle{id: channel_id}) do
     fn env, k ->
       state = get_channel(env, channel_id)
-      k.(State.closed?(state), env)
+      k.(ChannelState.closed?(state), env)
     end
   end
 
@@ -560,7 +560,7 @@ defmodule Skuld.Effects.Channel do
   def errored?(%Handle{id: channel_id}) do
     fn env, k ->
       state = get_channel(env, channel_id)
-      k.(State.errored?(state), env)
+      k.(ChannelState.errored?(state), env)
     end
   end
 
@@ -571,7 +571,7 @@ defmodule Skuld.Effects.Channel do
   def stats(%Handle{id: channel_id}) do
     fn env, k ->
       state = get_channel(env, channel_id)
-      k.(State.stats(state), env)
+      k.(ChannelState.stats(state), env)
     end
   end
 
@@ -616,7 +616,11 @@ defmodule Skuld.Effects.Channel do
       # Initialize ChannelCoordinationState in env.state if not present
       env =
         if Env.get_state(env, ChannelCoordinationState.env_key()) == nil do
-          Env.put_state(env, ChannelCoordinationState.env_key(), ChannelCoordinationState.new())
+          Env.put_state(
+            env,
+            ChannelCoordinationState.env_key(),
+            ChannelCoordinationState.new()
+          )
         else
           env
         end
@@ -660,10 +664,10 @@ defmodule Skuld.Effects.Channel do
 
   # Wake a putter if one is waiting (after a take frees space)
   defp maybe_wake_putter(state, _channel_id, env) do
-    if State.has_waiting_puts?(state) and not State.buffer_full?(state) do
-      {:ok, {putter_fid, item}, state} = State.pop_waiting_put(state)
+    if ChannelState.has_waiting_puts?(state) and not ChannelState.buffer_full?(state) do
+      {:ok, {putter_fid, item}, state} = ChannelState.pop_waiting_put(state)
       # Add the item to the buffer
-      state = State.enqueue(state, item)
+      state = ChannelState.enqueue(state, item)
       # Wake the putter
       env = add_channel_wake(env, putter_fid, :ok)
       {state, env}
@@ -677,7 +681,11 @@ defmodule Skuld.Effects.Channel do
   #############################################################################
 
   defp get_env_state(env) do
-    Env.get_state(env, ChannelCoordinationState.env_key(), ChannelCoordinationState.new())
+    Env.get_state(
+      env,
+      ChannelCoordinationState.env_key(),
+      ChannelCoordinationState.new()
+    )
   end
 
   defp update_env_state(env, fun) do

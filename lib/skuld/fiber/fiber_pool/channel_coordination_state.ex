@@ -9,7 +9,7 @@
 defmodule Skuld.Fiber.FiberPool.ChannelCoordinationState do
   @moduledoc false
 
-  alias Skuld.Effects.Channel
+  alias Skuld.Effects.Channel.ChannelState
 
   @doc """
   The key under which ChannelCoordinationState is stored in env.state.
@@ -18,7 +18,7 @@ defmodule Skuld.Fiber.FiberPool.ChannelCoordinationState do
   def env_key, do: __MODULE__
 
   @type t :: %__MODULE__{
-          channel_states: %{reference() => Channel.State.t()}
+          channel_states: %{reference() => ChannelState.t()}
         }
 
   defstruct channel_states: %{}
@@ -38,7 +38,7 @@ defmodule Skuld.Fiber.FiberPool.ChannelCoordinationState do
   @doc """
   Register a new channel. Called when Channel.new() creates a channel.
   """
-  @spec register_channel(t(), Channel.State.t()) :: t()
+  @spec register_channel(t(), ChannelState.t()) :: t()
   def register_channel(%__MODULE__{channel_states: channels} = env_state, state) do
     %{env_state | channel_states: Map.put(channels, state.id, state)}
   end
@@ -46,7 +46,7 @@ defmodule Skuld.Fiber.FiberPool.ChannelCoordinationState do
   @doc """
   Get a channel's state by ID. Raises if channel not found.
   """
-  @spec get_channel!(t(), reference()) :: Channel.State.t()
+  @spec get_channel!(t(), reference()) :: ChannelState.t()
   def get_channel!(%__MODULE__{channel_states: channels}, channel_id) do
     case Map.get(channels, channel_id) do
       nil -> raise "Channel not found: #{inspect(channel_id)}"
@@ -57,7 +57,7 @@ defmodule Skuld.Fiber.FiberPool.ChannelCoordinationState do
   @doc """
   Get a channel's state by ID. Returns nil if not found.
   """
-  @spec get_channel(t(), reference()) :: Channel.State.t() | nil
+  @spec get_channel(t(), reference()) :: ChannelState.t() | nil
   def get_channel(%__MODULE__{channel_states: channels}, channel_id) do
     Map.get(channels, channel_id)
   end
@@ -65,7 +65,7 @@ defmodule Skuld.Fiber.FiberPool.ChannelCoordinationState do
   @doc """
   Update a channel's state. Called after channel operations modify state.
   """
-  @spec put_channel(t(), reference(), Channel.State.t()) :: t()
+  @spec put_channel(t(), reference(), ChannelState.t()) :: t()
   def put_channel(%__MODULE__{channel_states: channels} = env_state, channel_id, state) do
     %{env_state | channel_states: Map.put(channels, channel_id, state)}
   end
