@@ -4,7 +4,7 @@
 # effect-based handler API.
 #
 if Code.ensure_loaded?(Ecto) do
-  defmodule Skuld.Effects.Port.Repo.Stub do
+  defmodule Skuld.Repo.Stub do
     @moduledoc """
     Stateless stub Repo handler for tests.
 
@@ -16,7 +16,7 @@ if Code.ensure_loaded?(Ecto) do
     ## Usage
 
         alias Skuld.Effects.Port
-        alias Skuld.Effects.Port.Repo
+        alias Skuld.Repo
 
         # Writes only — reads will raise:
         comp

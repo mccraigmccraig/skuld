@@ -4,7 +4,7 @@
 # effect-based `with_handler/3` API.
 #
 if Code.ensure_loaded?(Ecto) do
-  defmodule Skuld.Effects.Port.Repo.InMemory do
+  defmodule Skuld.Repo.InMemory do
     @moduledoc """
     Closed-world stateful in-memory Repo handler for tests. **Recommended default.**
 
@@ -16,7 +16,7 @@ if Code.ensure_loaded?(Ecto) do
 
     ## Usage
 
-        alias Skuld.Effects.Port.Repo
+        alias Skuld.Repo
 
         # Basic — all bare-schema reads work without fallback:
         comp

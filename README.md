@@ -48,7 +48,7 @@ See [What Skuld Solves](docs/pain-points.md) for worked examples of each.
 defmodule Onboarding do
   use Skuld.Syntax
 
-  alias Skuld.Effects.Port.Repo
+  alias Skuld.Repo
   alias Skuld.Effects.Writer
 
   defcomp register(params) do
@@ -74,7 +74,7 @@ Run with production handlers:
 ```elixir
 # Generate an Ecto adapter for the Repo contract (one-time setup):
 defmodule MyApp.Repo.Port do
-  use Skuld.Effects.Port.Repo.Ecto, repo: MyApp.Repo
+  use Skuld.Repo.Ecto, repo: MyApp.Repo
 end
 
 # Wire everything up:
@@ -93,7 +93,7 @@ end)
 Run with test handlers — same code, fully deterministic, no database:
 
 ```elixir
-alias Skuld.Effects.Port.Repo
+alias Skuld.Repo
 alias Skuld.Effects.Writer
 
 Onboarding.register(%{name: "Alice"})

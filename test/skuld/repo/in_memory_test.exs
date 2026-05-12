@@ -1,12 +1,12 @@
-defmodule Skuld.Effects.Port.Repo.OpenInMemoryTest do
+defmodule Skuld.Repo.OpenInMemoryTest do
   use ExUnit.Case, async: true
 
   use Skuld.Syntax
 
   alias Skuld.Comp
   alias Skuld.Effects.Port
-  alias Skuld.Effects.Port.Repo
-  alias Skuld.Effects.Port.Repo.OpenInMemory
+  alias Skuld.Repo
+  alias Skuld.Repo.OpenInMemory
   alias Skuld.Effects.Throw
   alias Skuld.Comp.Throw, as: ThrowResult
 

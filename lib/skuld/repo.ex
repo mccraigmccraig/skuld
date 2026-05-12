@@ -2,7 +2,7 @@
 #
 # ## Usage
 #
-#     alias Skuld.Effects.Port.Repo
+#     alias Skuld.Repo
 #
 #     comp do
 #       {:ok, user} <- Repo.insert(changeset)
@@ -11,16 +11,16 @@
 #     end
 #
 if Code.ensure_loaded?(Ecto) do
-  defmodule Skuld.Effects.Port.Repo do
+  defmodule Skuld.Repo do
     @moduledoc """
-    Effectful dispatch facade for `Skuld.Effects.Port.Repo.Effectful`.
+    Effectful dispatch facade for `Skuld.Repo.Effectful`.
 
     Provides effectful caller functions, bang variants, and key helpers
     for the standard Ecto Repo operations.
 
     ## Usage
 
-        alias Skuld.Effects.Port.Repo
+        alias Skuld.Repo
 
         comp do
           user <- Repo.insert!(changeset)
@@ -32,6 +32,6 @@ if Code.ensure_loaded?(Ecto) do
         |> Comp.run!()
     """
 
-    use Skuld.Effects.Port.Facade, contract: Skuld.Effects.Port.Repo.Effectful
+    use Skuld.Effects.Port.Facade, contract: Skuld.Repo.Effectful
   end
 end

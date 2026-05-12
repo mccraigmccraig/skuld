@@ -13,7 +13,7 @@ Database persistence is handled via domain-specific
 [Port.Contract](external-integration.md) modules (e.g. `UserRepo`,
 `OrderRepo`), which provide typed boundaries and swappable handlers.
 For common Ecto Repo operations (insert, update, delete, get, etc.),
-Skuld provides a built-in [Port.Repo](#portrepo) contract so you don't
+Skuld provides a built-in [Skuld.Repo](#skuldrepo) contract so you don't
 need to redeclare identical boilerplate in every domain.
 
 Transaction is orthogonal — it wraps any computation in transactional
@@ -25,7 +25,7 @@ For read queries and external service calls, see
 with automatic N+1 prevention, see
 [Query & Batching](../advanced/query-batching.md).
 
-## Port.Repo
+## Skuld.Repo
 
 A built-in Port contract providing standard Ecto Repo operations. Use
 it when your effectful code needs generic persistence (insert, update,
@@ -58,7 +58,7 @@ with auto-generated bang variants:
 ### Usage in computations
 
 ```elixir
-alias Skuld.Effects.Port.Repo
+alias Skuld.Repo
 
 defcomp create_and_fetch(attrs) do
   changeset = User.changeset(%User{}, attrs)
@@ -68,13 +68,13 @@ defcomp create_and_fetch(attrs) do
 end
 ```
 
-### Production handler (Port.Repo.Ecto)
+### Production handler (Skuld.Repo.Ecto)
 
 Generate a Behaviour implementation that delegates to your Ecto Repo:
 
 ```elixir
 defmodule MyApp.Repo.Ecto do
-  use Skuld.Effects.Port.Repo.Ecto, repo: MyApp.Repo
+  use Skuld.Repo.Ecto, repo: MyApp.Repo
 end
 ```
 
@@ -89,7 +89,7 @@ create_and_fetch(attrs)
 |> Comp.run!()
 ```
 
-### Test handler (Port.Repo.Test)
+### Test handler (Skuld.Repo.Test)
 
 A stateless test handler. `Repo.Test.new/1` returns a fn resolver
 that applies changeset changes for writes and delegates reads to an
@@ -99,7 +99,7 @@ a 4-tuple `{module, operation, args_list, return_value}`:
 
 ```elixir
 alias Skuld.Effects.Port
-alias Skuld.Effects.Port.Repo
+alias Skuld.Repo
 
 cs = User.changeset(%User{}, %{name: "Alice"})
 alice = %User{id: 42, name: "Alice"}
@@ -130,7 +130,7 @@ assert [
 ```
 
 Because logging happens at the Port level, the log captures **all**
-Port dispatches — not just `Port.Repo` operations. Register
+Port dispatches — not just `Skuld.Repo` operations. Register
 additional contracts in the same registry map and their dispatches
 appear in the same log:
 
@@ -145,7 +145,7 @@ Port.with_handler(
 
 ### Combining with domain-specific contracts
 
-Port.Repo handles generic persistence. Domain-specific operations
+Skuld.Repo handles generic persistence. Domain-specific operations
 (complex queries, business logic wrapped in persistence) should still
 use their own Port.Contract:
 
@@ -165,14 +165,14 @@ defcomp checkout(params) do
 end
 ```
 
-### When to use Port.Repo vs a domain contract
+### When to use Skuld.Repo vs a domain contract
 
 | Situation                         | Use                  |
 |-----------------------------------|----------------------|
-| Generic insert/update/delete/get  | `Port.Repo`          |
+| Generic insert/update/delete/get  | `Skuld.Repo`          |
 | Domain-specific queries           | Domain Port.Contract |
 | Business logic in persistence     | Domain Port.Contract |
-| Audit logs, simple CRUD           | `Port.Repo`          |
+| Audit logs, simple CRUD           | `Skuld.Repo`          |
 
 ## Transaction
 

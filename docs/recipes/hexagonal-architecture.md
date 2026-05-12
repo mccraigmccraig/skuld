@@ -673,9 +673,9 @@ for `Repo.InMemory` and verify business rules without database overhead.
   calls merge into a unified registry — you can mix runtime dispatch
   for some contracts with test stubs for others in the same stack
 - For generic Ecto Repo operations (insert, update, delete, get, etc.),
-  use the built-in `Port.Repo` contract instead of redeclaring them in
+  use the built-in `Skuld.Repo` contract instead of redeclaring them in
   every domain contract. See
-  [Persistence & Data](../effects/persistence.md#portrepo)
+  [Persistence & Data](../effects/persistence.md#skuldrepo)
 
 <!-- nav:footer:start -->
 

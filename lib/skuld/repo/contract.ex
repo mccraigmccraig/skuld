@@ -6,7 +6,7 @@
 #
 # ## Usage
 #
-#     alias Skuld.Effects.Port.Repo
+#     alias Skuld.Repo
 #
 #     comp do
 #       {:ok, record} <- Repo.insert(changeset)
@@ -17,7 +17,7 @@
 #
 #     # Production — delegates to your Ecto Repo
 #     defmodule MyApp.Repo.Port do
-#       use Skuld.Effects.Port.Repo.Ecto, repo: MyApp.Repo
+#       use Skuld.Repo.Ecto, repo: MyApp.Repo
 #     end
 #
 #     comp
@@ -34,7 +34,7 @@
 #     |> Comp.run!()
 #
 if Code.ensure_loaded?(Ecto) do
-  defmodule Skuld.Effects.Port.Repo.Contract do
+  defmodule Skuld.Repo.Contract do
     @moduledoc """
     Port contract for common Ecto Repo operations.
 

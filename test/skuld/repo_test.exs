@@ -1,11 +1,11 @@
-defmodule Skuld.Effects.Port.RepoTest do
+defmodule Skuld.RepoTest do
   use ExUnit.Case, async: true
 
   use Skuld.Syntax
 
   alias Skuld.Comp
   alias Skuld.Effects.Port
-  alias Skuld.Effects.Port.Repo
+  alias Skuld.Repo
   alias Skuld.Effects.Throw
 
   # -------------------------------------------------------------------
@@ -204,7 +204,7 @@ defmodule Skuld.Effects.Port.RepoTest do
   end
 
   defmodule TestRepoPort do
-    use Skuld.Effects.Port.Repo.Ecto, repo: MockRepo
+    use Skuld.Repo.Ecto, repo: MockRepo
   end
 
   describe "Port.Repo.Ecto executor" do

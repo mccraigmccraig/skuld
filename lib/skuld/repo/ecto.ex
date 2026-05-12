@@ -4,7 +4,7 @@
 # ## Usage
 #
 #     defmodule MyApp.Repo.Port do
-#       use Skuld.Effects.Port.Repo.Ecto, repo: MyApp.Repo
+#       use Skuld.Repo.Ecto, repo: MyApp.Repo
 #     end
 #
 #     # Then wire it up:
@@ -13,7 +13,7 @@
 #     |> Comp.run!()
 #
 if Code.ensure_loaded?(Ecto) do
-  defmodule Skuld.Effects.Port.Repo.Ecto do
+  defmodule Skuld.Repo.Ecto do
     @moduledoc """
     Macro for generating a `Port.Repo.Behaviour` implementation that delegates
     to a specific Ecto Repo module.
@@ -25,10 +25,10 @@ if Code.ensure_loaded?(Ecto) do
     ## Usage
 
         defmodule MyApp.Repo.Port do
-          use Skuld.Effects.Port.Repo.Ecto, repo: MyApp.Repo
+          use Skuld.Repo.Ecto, repo: MyApp.Repo
         end
 
-    This generates a module satisfying `Skuld.Effects.Port.Repo.Behaviour`
+    This generates a module satisfying `Skuld.Repo.Behaviour`
     with functions like:
 
         def insert(changeset), do: MyApp.Repo.insert(changeset)
@@ -47,7 +47,7 @@ if Code.ensure_loaded?(Ecto) do
     defmacro __using__(opts) do
       repo = Keyword.fetch!(opts, :repo)
 
-      operations = Skuld.Effects.Port.Repo.Contract.__callbacks__()
+      operations = Skuld.Repo.Contract.__callbacks__()
 
       delegations =
         Enum.map(operations, fn %{name: name, params: params, arity: arity} ->
@@ -64,7 +64,7 @@ if Code.ensure_loaded?(Ecto) do
         end)
 
       quote do
-        @behaviour Skuld.Effects.Port.Repo.Contract
+        @behaviour Skuld.Repo.Contract
 
         unquote_splicing(delegations)
       end

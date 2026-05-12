@@ -4,17 +4,17 @@
 # Repo.Contract, plus __callbacks__/0 and __port_effectful__?/0.
 #
 if Code.ensure_loaded?(Ecto) do
-  defmodule Skuld.Effects.Port.Repo.Effectful do
+  defmodule Skuld.Repo.Effectful do
     @moduledoc """
-    Effectful behaviour for `Skuld.Effects.Port.Repo.Contract`.
+    Effectful behaviour for `Skuld.Repo.Contract`.
 
     Defines computation-returning callbacks for each Repo operation.
-    Effectful implementations declare `@behaviour Skuld.Effects.Port.Repo.Effectful`.
+    Effectful implementations declare `@behaviour Skuld.Repo.Effectful`.
     """
 
-    require Skuld.Effects.Port.Repo.Contract
+    require Skuld.Repo.Contract
 
     use Skuld.Effects.Port.EffectfulContract,
-      double_down_contract: Skuld.Effects.Port.Repo.Contract
+      double_down_contract: Skuld.Repo.Contract
   end
 end

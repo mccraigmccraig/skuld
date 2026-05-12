@@ -137,8 +137,8 @@ Skuld provides test handlers for common effects:
 | Port   | `Port.with_fn_handler/2` | Pattern-matching function |
 | Port   | `Port.with_stateful_handler/4` | Stateful `fn(mod, name, args, state) -> {result, new_state}` |
 | Port   | Any handler + `log: true` | Dispatch logging in `Port.State.log` |
-| Port.Repo | `Repo.Test.new/1` (fn resolver) | Stateless Repo — writes apply changesets, reads use fallback or error |
-| Port.Repo | `Repo.InMemory.with_handler/3` | Stateful Repo — PK read-after-write, fallback for non-PK reads |
+| Skuld.Repo | `Repo.Test.new/1` (fn resolver) | Stateless Repo — writes apply changesets, reads use fallback or error |
+| Skuld.Repo | `Repo.InMemory.with_handler/3` | Stateful Repo — PK read-after-write, fallback for non-PK reads |
 | Transaction | `Transaction.Noop.with_handler/0` | Env state rollback, no database |
 | Fresh  | `Fresh.with_test_handler/0` | Deterministic UUIDs (UUID5) |
 | Random | `Random.with_handler/1` | Fixed sequence or seeded |
@@ -242,7 +242,7 @@ never silently returns `nil` or `[]` because it has no basis for
 claiming a record does or doesn't exist.
 
 ```elixir
-alias Skuld.Effects.Port.Repo
+alias Skuld.Repo
 
 # Writes only — reads will raise:
 comp
@@ -278,7 +278,7 @@ a `fallback_fn` or raises. All other reads go directly through the
 `fallback_fn` or raise.
 
 ```elixir
-alias Skuld.Effects.Port.Repo
+alias Skuld.Repo
 
 # Writes and PK reads — no fallback needed:
 result =

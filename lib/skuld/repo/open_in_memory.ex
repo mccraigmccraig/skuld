@@ -5,7 +5,7 @@
 # recommended closed-world variant.
 #
 if Code.ensure_loaded?(Ecto) do
-  defmodule Skuld.Effects.Port.Repo.OpenInMemory do
+  defmodule Skuld.Repo.OpenInMemory do
     @moduledoc """
     Open-world stateful in-memory Repo handler for tests.
 
@@ -20,7 +20,7 @@ if Code.ensure_loaded?(Ecto) do
 
     ## Usage
 
-        alias Skuld.Effects.Port.Repo
+        alias Skuld.Repo
 
         # Basic — PK reads only, no fallback:
         comp
