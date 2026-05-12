@@ -202,8 +202,12 @@ Traditional:               With effects:
                            +------------------+
 ```
 
-This is what algebraic effects provide. The [next section](what.md)
-explains how.
+This is what algebraic effects provide — and because effects are
+first-class data, the same representation that makes testing
+deterministic also enables automatic query batching, cooperative
+concurrency, and serialisable workflows that can pause and resume across
+restarts. The mechanism that replaces mocks in tests is the same one that
+eliminates N+1 queries in production.
 
 <!-- nav:footer:start -->
 
