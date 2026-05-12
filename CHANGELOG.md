@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README quick example updated: uses `Writer.tell(:events, ...)` for domain
   events and `Repo.InMemory.with_handler(...)` for testing, replacing the
   removed EventAccumulator and old Port-based handler installation.
+- `Fiber.run_until_suspend/1` and `Fiber.resume/2` collapsed into `Fiber.run/1,2`.
+  The sum type already encodes whether a fiber is pending vs. suspended —
+  `run/1` accepts `%Pending{}`, `run/2` accepts `%InternalSuspended{}` /
+  `%ExternalSuspended{}` with the resume value. This enables natural
+  accumulator-style loops: `fiber |> Fiber.run() |> Fiber.run(v1) |>
+  Fiber.run(v2) |> Fiber.cancel()`.
 - `InternalSuspend.ISentinel.run` now calls `FiberPool.Main.drain_pending`
   instead of raising. All `InternalSuspend` variants (Await, Batch, Channel)
   are drained through the scheduler at the `Comp.run` boundary via `ISentinel`

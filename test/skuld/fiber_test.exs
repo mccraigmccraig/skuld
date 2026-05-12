@@ -40,12 +40,12 @@ defmodule Skuld.FiberTest do
     end
   end
 
-  describe "Fiber.run_until_suspend/1" do
+  describe "Fiber.run/1" do
     test "pure computation completes immediately" do
       env = Env.new()
       fiber = Fiber.new(Comp.pure(42), env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%Completed{}, fiber)
       assert fiber.result == 42
       assert fiber.env != nil
@@ -64,7 +64,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%Completed{}, fiber)
       assert fiber.result == {5, 15}
     end
@@ -80,7 +80,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
       assert is_function(fiber.k, 2)
       assert fiber.env != nil
@@ -97,7 +97,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%Errored{}, fiber)
       assert %Error{type: :throw, error: :my_error} = fiber.error
       assert fiber.env != nil
@@ -111,7 +111,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%Errored{}, fiber)
       assert %Error{type: :exception, error: %RuntimeError{message: "boom"}} = fiber.error
       assert fiber.env != nil
@@ -121,16 +121,16 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(Comp.pure(42), env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%Completed{}, fiber)
 
       assert_raise ArgumentError, ~r/Cannot run fiber/, fn ->
-        Fiber.run_until_suspend(fiber)
+        Fiber.run(fiber)
       end
     end
   end
 
-  describe "Fiber.resume/2" do
+  describe "Fiber.run/2" do
     test "resumes suspended fiber to completion" do
       comp =
         comp do
@@ -142,10 +142,10 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
-      fiber = Fiber.resume(fiber, 21)
+      fiber = Fiber.run(fiber, 21)
       assert match?(%Completed{}, fiber)
       assert fiber.result == 42
     end
@@ -162,13 +162,13 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
-      fiber = Fiber.resume(fiber, 10)
+      fiber = Fiber.run(fiber, 10)
       assert match?(%ExternalSuspended{}, fiber)
 
-      fiber = Fiber.resume(fiber, 20)
+      fiber = Fiber.run(fiber, 20)
       assert match?(%Completed{}, fiber)
       assert fiber.result == 30
     end
@@ -190,20 +190,20 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
-      fiber = Fiber.resume(fiber, :trigger_error)
+      fiber = Fiber.run(fiber, :trigger_error)
       assert match?(%Errored{}, fiber)
       assert %Error{type: :throw, error: :triggered} = fiber.error
     end
 
-    test "cannot resume non-suspended fiber" do
+    test "cannot call run/2 on pending fiber" do
       env = Env.new()
       fiber = Fiber.new(Comp.pure(42), env)
 
-      assert_raise ArgumentError, ~r/Cannot resume fiber/, fn ->
-        Fiber.resume(fiber, :value)
+      assert_raise ArgumentError, ~r/Cannot run fiber/, fn ->
+        Fiber.run(fiber, :value)
       end
     end
   end
@@ -237,7 +237,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
       cancelled = Fiber.cancel(fiber)
@@ -266,7 +266,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       cancelled = Fiber.cancel(fiber, :timeout)
 
       assert match?(%Cancelled{}, cancelled)
@@ -302,7 +302,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
       _cancelled = Fiber.cancel(fiber, :shutdown)
@@ -322,7 +322,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
       cancelled = Fiber.cancel(fiber)
@@ -336,7 +336,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
       cancelled = Fiber.cancel(fiber)
@@ -349,7 +349,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(Comp.pure(42), env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%Completed{}, fiber)
       assert fiber.result == 42
 
@@ -370,7 +370,7 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       fiber = Fiber.new(comp, env)
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%Errored{}, fiber)
       assert %Error{type: :throw, error: :boom} = fiber.error
 
@@ -403,7 +403,7 @@ defmodule Skuld.FiberTest do
       comp = Yield.yield(:value) |> Yield.with_handler()
       fiber = Fiber.new(comp, Env.new())
 
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
       refute Fiber.terminal?(fiber)
     end

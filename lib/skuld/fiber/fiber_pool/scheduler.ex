@@ -225,7 +225,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     fiber = %{fiber | env: fiber_env}
 
     fiber
-    |> Fiber.run_until_suspend()
+    |> Fiber.run()
     |> handle_fiber_result(state)
   end
 
@@ -239,7 +239,7 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
     fiber = %{fiber | env: fiber_env}
 
     fiber
-    |> Fiber.resume(result)
+    |> Fiber.run(result)
     |> handle_fiber_result(state)
   end
 

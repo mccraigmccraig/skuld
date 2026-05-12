@@ -20,17 +20,21 @@ defmodule Skuld.Fiber do
   ## Lifecycle
 
   1. Create with `new/2` — returns `%Pending{}`
-  2. Run with `run_until_suspend/1` — returns `%Completed{}`, `%InternalSuspended{}`,
+  2. Run with `run/1` — returns `%Completed{}`, `%InternalSuspended{}`,
      `%ExternalSuspended{}`, or `%Errored{}`
-  3. Resume with `resume/2` — suspended fiber runs again until
-     completion/suspension/error
+  3. Resume with `run/2` — match on `%InternalSuspended{}` or
+     `%ExternalSuspended{}`, pass the resume value
   4. Cancel with `cancel/2` — invokes leave_scope cleanup, returns `%Cancelled{}`
 
-  ## Usage
+  The single `run` function with clauses on the fiber's sum type enables
+  natural accumulator-style loops:
 
-  Fibers are typically managed by a FiberPool, not used directly. The FiberPool
-  scheduler handles running fibers, tracking suspensions, and resuming when
-  results are available.
+      fiber
+      |> Fiber.new(comp, env)
+      |> Fiber.run()
+      |> Fiber.run(result1)
+      |> Fiber.run(result2)
+      |> Fiber.cancel()
   """
 
   alias Skuld.Comp
@@ -64,7 +68,7 @@ defmodule Skuld.Fiber do
   Create a new fiber from a computation.
 
   The fiber starts as `%Pending{}` with the computation and env stored,
-  ready to be run with `run_until_suspend/1`.
+  ready to be run with `run/1`.
 
   ## Parameters
 
@@ -86,73 +90,53 @@ defmodule Skuld.Fiber do
   end
 
   @doc """
-  Run a pending fiber until it completes, suspends, or errors.
+  Run a pending fiber, or resume a suspended fiber with a value.
 
-  Takes a `%Pending{}` fiber and runs its computation. Returns one of:
+  Clauses dispatch on the fiber's sum-type state:
 
-  - `%Completed{result, env}` — finished successfully
-  - `%InternalSuspended{k, suspend, env}` — suspended for scheduler
-  - `%ExternalSuspended{k, env}` — suspended for external callback
-  - `%Errored{error, env}` — finished with error
+  - `%Pending{}` — starts the computation, returns the fiber in its new state
+  - `%InternalSuspended{}` — resumes with `value`, returns the fiber in its new state
+  - `%ExternalSuspended{}` — resumes with `value`, returns the fiber in its new state
 
-  A suspended fiber can be resumed with `resume/2`.
+  Returns one of: `%Completed{}`, `%InternalSuspended{}`, `%ExternalSuspended{}`,
+  or `%Errored{}`. Raises for terminal or invalid states.
 
-  ## Example
+  ## Examples
 
       fiber = Fiber.new(my_comp, env)
-      fiber = Fiber.run_until_suspend(fiber)
+      fiber = Fiber.run(fiber)
+      # ... later, when we have a result ...
+      fiber = Fiber.run(fiber, result)
       case fiber do
-        %Fiber.Completed{result: result} -> IO.puts("Done: \#{inspect(result)}")
-        %Fiber.InternalSuspended{} -> IO.puts("Suspended, can resume later")
-        %Fiber.Errored{error: error} -> IO.puts("Error: \#{inspect(error)}")
+        %Fiber.Completed{result: result} -> result
+        %Fiber.InternalSuspended{} -> :still_waiting
+        %Fiber.Errored{error: error} -> {:error, error}
       end
   """
-  @spec run_until_suspend(Pending.t()) ::
+  @spec run(t()) ::
           Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
-  def run_until_suspend(%Pending{computation: comp, env: env} = fiber) do
+  def run(%Pending{computation: comp, env: env} = fiber) do
     do_run(fiber, comp, env)
   end
 
-  def run_until_suspend(fiber) do
+  def run(fiber) do
     raise ArgumentError,
-          "Cannot run fiber: expected %Fiber.Pending{}, got #{inspect(fiber.__struct__)}"
+          "Cannot run fiber without value: expected %Fiber.Pending{}, got #{inspect(fiber.__struct__)}"
   end
 
-  @doc """
-  Resume a suspended fiber with a value.
-
-  Takes a suspended fiber and resumes it by calling the suspended continuation
-  with the provided value. Returns the fiber with updated state — same contract
-  as `run_until_suspend/1`.
-
-  ## Parameters
-
-  - `fiber` - A fiber in suspended state (`%InternalSuspended{}` or `%ExternalSuspended{}`)
-  - `value` - The value to resume with (typically a result from an effect)
-
-  ## Example
-
-      fiber = Fiber.run_until_suspend(fiber)
-      # ... later, when we have a result ...
-      fiber = Fiber.resume(fiber, result)
-      case fiber do
-        %Fiber.Completed{result: result} -> result
-        _ -> # suspended again or errored
-      end
-  """
-  @spec resume(InternalSuspended.t() | ExternalSuspended.t(), term()) ::
+  @spec run(t(), term()) ::
           Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
-  def resume(%InternalSuspended{k: k, env: env} = fiber, value) do
+  def run(%InternalSuspended{k: k, env: env} = fiber, value) do
     do_resume(fiber, k, value, env)
   end
 
-  def resume(%ExternalSuspended{k: k, env: env} = fiber, value) do
+  def run(%ExternalSuspended{k: k, env: env} = fiber, value) do
     do_resume(fiber, k, value, env)
   end
 
-  def resume(fiber, _value) do
+  def run(fiber, _value) do
     raise ArgumentError,
-          "Cannot resume fiber: expected %Fiber.InternalSuspended{} or %Fiber.ExternalSuspended{}, got #{inspect(fiber.__struct__)}"
+          "Cannot run fiber: expected %Fiber.Pending{}, %Fiber.InternalSuspended{}, or %Fiber.ExternalSuspended{}, got #{inspect(fiber.__struct__)}"
   end
 
   @doc """
