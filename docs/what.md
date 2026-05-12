@@ -118,6 +118,35 @@ The pure functional core expands to include your orchestration layer. The
 imperative shell shrinks to just the handler implementations - thin,
 swappable adapters that connect your pure logic to the outside world.
 
+## Beyond purity
+
+Swappable handlers make testing deterministic — but that's just one thing
+you can do when effects are first-class data the runtime can inspect.
+
+Because every database read, every external call, every concurrent
+operation is an effect request (not a direct call), Skuld can also
+**reorder**, **schedule**, and **record** them:
+
+- **Automatic batching.** The query system analyses variable
+  dependencies across a block of effectful code and batches independent
+  data fetches into a single round trip. This eliminates N+1 query
+  patterns without manual optimisation — the same code that reads
+  cleanly one-at-a-time runs as a single batch.
+- **Cooperative concurrency.** The fiber system runs computations
+  cooperatively within a single process, with bounded channels for
+  backpressure, structured concurrency with automatic cancellation, and
+  deadlock detection. Effects like `FiberPool.fiber` and `Channel.put`
+  are just more operations in the same effect stack.
+- **Durable workflows.** The EffectLogger serialises each effect
+  invocation into a JSON log. A computation can be suspended (e.g., at a
+  `Yield` or `Channel.take` point), written to durable storage, and
+  resumed later — even after a restart — from exactly where it left off.
+
+These aren't separate tools bolted on top. They're natural consequences
+of effects being first-class: once side-effecting behaviour is data
+rather than a direct call, the runtime can decide *when* and *how* to
+fulfil it.
+
 ## A word about control flow
 
 Most effects are straightforward: the code requests something, the
@@ -146,7 +175,7 @@ documentation.
 
 ## How Skuld implements this
 
-Skuld is an algebraic effects library for Elixir. Its implementation
+Skuld is an effectful programming framework for Elixir. Its implementation
 choices are designed to feel natural in a dynamic language:
 
 - **Single type**: there's one computation type. You don't need to track
