@@ -178,8 +178,9 @@ defimpl Skuld.Comp.ISentinel, for: Skuld.Comp.InternalSuspend do
   alias Skuld.Comp.InternalSuspend.Batch
   alias Skuld.Comp.InternalSuspend.Channel
 
-  def run(_suspend, _env) do
-    raise "InternalSuspend must be handled by a scheduler"
+  def run(suspend, env) do
+    {drained, drained_env} = Skuld.Fiber.FiberPool.Main.drain_pending(suspend, env)
+    Skuld.Comp.ISentinel.run(drained, drained_env)
   end
 
   def run!(_suspend) do

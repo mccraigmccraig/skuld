@@ -7,7 +7,10 @@ defmodule Skuld.Comp do
   - **Computation**: `(env, k -> {result, env})` - a suspended computation
   - **Result**: Opaque value - framework doesn't impose shape
   - **Leave-scope**: Continuation chain for scope cleanup/control
-  - **ExternalSuspend**: Sentinel struct that bypasses leave-scope
+  - **ISentinel**: Protocol that dispatches terminal handling at the run boundary.
+    Each sentinel type (Throw, ExternalSuspend, InternalSuspend, Cancelled)
+    has its own `ISentinel.run/2` implementation. Comp.run is a clean
+    `call + ISentinel.run` pipeline with no sentinel-specific logic.
 
   ## Auto-Lifting
 
@@ -167,7 +170,7 @@ defmodule Skuld.Comp do
   @doc """
   Run a computation to completion.
 
-  Creates a fresh environment internally - all handler installation should
+  Creates a fresh environment internally — all handler installation should
   be done via `with_handler` on the computation.
 
   Uses ISentinel protocol to determine completion behavior:
@@ -185,19 +188,7 @@ defmodule Skuld.Comp do
   @spec run(Types.computation()) :: {Types.result(), Types.env()}
   def run(comp) do
     {result, env} = call(comp, Env.new(), &identity_k/2)
-
-    # Drive the FiberPool scheduler when the main computation has suspended
-    # with an InternalSuspend.Await — this is the execution engine that
-    # steps fibers until the await can be satisfied.
-    #
-    # Note: fire-and-forget fibers (spawned but not awaited) are drained
-    # separately inside FiberPool.with_handler, where scoped effect state
-    # (Writer, State, etc.) is still live. By the time we reach this point,
-    # those fibers have already been drained.
-    {final_result, final_env} =
-      Skuld.Fiber.FiberPool.Main.drain_pending(result, env)
-
-    ISentinel.run(final_result, final_env)
+    ISentinel.run(result, env)
   end
 
   @doc "Run a computation, extracting just the value (raises on ExternalSuspend/Throw)"

@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README quick example updated: uses `Writer.tell(:events, ...)` for domain
   events and `Repo.InMemory.with_handler(...)` for testing, replacing the
   removed EventAccumulator and old Port-based handler installation.
+- `InternalSuspend.ISentinel.run` now calls `FiberPool.Main.drain_pending`
+  instead of raising. All `InternalSuspend` variants (Await, Batch, Channel)
+  are drained through the scheduler at the `Comp.run` boundary via `ISentinel`
+  protocol dispatch. `Comp.run` is now a clean `call + ISentinel.run` pipeline
+  with no sentinel-specific logic and no dependency on any `Skuld.Fiber.*`
+  module.
 
 ## [0.26.0] — 2026-05-11
 

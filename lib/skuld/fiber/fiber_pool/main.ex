@@ -2,17 +2,15 @@ defmodule Skuld.Fiber.FiberPool.Main do
   @moduledoc """
   Main computation driver for the FiberPool.
 
-  Orchestrates fiber execution on behalf of the main computation — the
-  computation passed to `Comp.run/1`. Its responsibilities:
+  Orchestrates fiber execution on behalf of the main computation. Called from
+  two sites — each handling a different class of pending work:
 
-  - **Drain pending work**: `Comp.run/1` calls `drain_pending/2` after
-    `Comp.call/3` to schedule any fibers or tasks spawned during execution.
-  - **Drive the main computation's await/resume cycle**: when the main
-    computation suspends awaiting fiber results, this module steps the
-    Scheduler until the await is satisfied, then resumes the main computation.
-  - **Run fibers to completion**: when the main computation has already
-    finished but background fibers remain, delegates to `Scheduler.run/2`
-    to drain them.
+  - **`InternalSuspend.ISentinel.run`** — drains `InternalSuspend` sentinels
+    (Await, Batch, Channel) at the `Comp.run` boundary. When the main
+    computation awaits fiber results and suspends, the scheduler steps fibers
+    until the await is satisfied, then resumes the main computation.
+  - **`FiberPool.with_handler`** — drains fire-and-forget fibers (spawned but
+    not awaited) on normal completion, while scoped effect state is still live.
 
   This module does not schedule individual fibers — that's `Scheduler`'s job.
   It sits one level above, calling `Scheduler.step/2` in a loop while checking
@@ -20,9 +18,15 @@ defmodule Skuld.Fiber.FiberPool.Main do
 
   ## Dependency Layering
 
-  - `Comp` depends on this module (calls `drain_pending/2`)
-  - `Skuld.Effects.FiberPool` depends on `Comp` and `Skuld.Fiber.*`
-  - This module depends on `Skuld.Fiber.*` (infrastructure only)
+  - `InternalSuspend` depends on this module (via ISentinel.run → drain_pending)
+  - `Skuld.Effects.FiberPool` depends on this module (via with_handler)
+  - Both depend on `Comp` and `Skuld.Fiber.*`
+  - `Comp` does **not** depend on any Fiber module
+
+  InternalSuspend sentinels propagate through `Comp.bind` without firing
+  continuations, so `drain_comp` inside `FiberPool.with_handler` cannot
+  intercept them. `ISentinel` at the `Comp.run` boundary is the natural
+  dispatch point.
   """
 
   alias Skuld.Comp
