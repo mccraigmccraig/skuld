@@ -84,14 +84,14 @@ Wire it into the handler stack:
 create_and_fetch(attrs)
 |> Transaction.transact()
 |> Transaction.Ecto.with_handler(MyApp.Repo)
-|> Port.with_handler(%{Repo.Contract => MyApp.Repo.Ecto})
+|> Port.with_handler(%{Skuld.Repo.Effectful => MyApp.Repo.Ecto})
 |> Throw.with_handler()
 |> Comp.run!()
 ```
 
-### Test handler (Skuld.Repo.Test)
+### Test handler (Skuld.Repo.Stub)
 
-A stateless test handler. `Repo.Test.new/1` returns a fn resolver
+A stateless test handler. `Repo.Stub.new/1` returns a fn resolver
 that applies changeset changes for writes and delegates reads to an
 optional `fallback_fn` (or raises). Register it via `Port.with_handler`
 and use the `:log` option to capture a dispatch log. Each log entry is
@@ -111,10 +111,10 @@ alice = %User{id: 42, name: "Alice"}
     {user, found}
   end
   |> Port.with_handler(
-    %{Repo => Repo.Test.new(
+    %{Skuld.Repo.Effectful => Repo.Stub.new(
       fallback_fn: fn :get, [User, 42] -> alice end
     )},
-    # Note: Repo.Test fallback is 2-arity (stateless).
+    # Note: Repo.Stub fallback is 2-arity (stateless).
     # Repo.InMemory fallback is 3-arity (receives store state).
     log: true,
     output: fn result, state -> {result, state.log} end
@@ -137,7 +137,7 @@ appear in the same log:
 ```elixir
 Port.with_handler(
   comp,
-  %{Repo => Repo.Test.new(), MyApp.Queries => MyApp.Queries.TestImpl},
+  %{Skuld.Repo.Effectful => Repo.Stub.new(), MyApp.Queries => MyApp.Queries.TestImpl},
   log: true,
   output: fn r, state -> {r, state.log} end
 )
