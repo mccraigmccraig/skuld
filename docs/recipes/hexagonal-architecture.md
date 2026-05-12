@@ -244,7 +244,7 @@ defmodule MyApp.Effectful.OrderWorkflow do
 
   defcomp place_order(params) do
     order <- Orders.place_order!(params)
-    _ <- EventAccumulator.emit(%OrderPlaced{order_id: order.id})
+    _ <- Writer.tell(:events, %OrderPlaced{order_id: order.id}) |> Comp.then_do(Comp.pure(:ok))
     {:ok, order}
   end
 end
@@ -260,7 +260,7 @@ MyApp.Effectful.OrderWorkflow.place_order(params)
   MyApp.Effectful.Orders => MyApp.Effectful.OrderService,
   MyApp.Effectful.Inventory => MyApp.InventoryService
 })
-|> EventAccumulator.with_handler(output: fn r, events -> {r, events} end)
+|> Writer.with_handler([], tag: :events, output: fn r, raw -> {r, Enum.reverse(raw)} end)
 |> Throw.with_handler()
 |> Comp.run!()
 ```

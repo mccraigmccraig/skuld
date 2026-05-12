@@ -4,8 +4,8 @@
 [< Concurrency (Familiar Patterns)](concurrency.md) | [Up: Foundational Effects](state-environment.md) | [Index](../../README.md) | [External Integration >](external-integration.md)
 <!-- nav:header:end -->
 
-The Transaction, Command, and EventAccumulator effects handle
-transactions, mutation dispatch, and domain event collection. They work
+The Transaction and Command effects handle
+transactions and mutation dispatch. They work
 together to support patterns from simple CRUD through to event-sourced
 domain logic.
 
@@ -371,54 +371,42 @@ Command.with_handler(handler_fn)
 
 The handler function receives a command struct and returns a
 computation. This means commands can use other effects internally -
-Fresh for IDs, Port contracts for persistence, EventAccumulator for domain events.
+Fresh for IDs, Port contracts for persistence, Writer for domain events.
 
 ### Why Command?
 
 Command is a building block for the
 [Decider pattern](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider):
 decide (interpret commands) -> evolve (apply events to state) -> persist.
-Combined with EventAccumulator, you can express event-sourced domain
+Combined with Writer, you can express event-sourced domain
 logic as pure effectful code. See the
 [Decider Pattern recipe](../recipes/decider-pattern.md) for a full
 walkthrough.
 
-## EventAccumulator
+## Domain events with Writer
 
-Accumulate domain events during a computation. Built on Writer, it
-provides a focused API for collecting events that can be persisted or
-published after the computation completes.
-
-### Basic usage
+Writer can accumulate domain events during a computation. Use a
+consistent tag (e.g. `:events`) and reverse the output since Writer
+stores in reverse order:
 
 ```elixir
 comp do
-  _ <- EventAccumulator.emit(%{type: :user_created, id: 1})
-  _ <- EventAccumulator.emit(%{type: :email_sent, to: "user@example.com"})
+  _ <- Writer.tell(:events, %{type: :user_created, id: 1}) |> Comp.then_do(Comp.pure(:ok))
+  _ <- Writer.tell(:events, %{type: :email_sent, to: "user@example.com"}) |> Comp.then_do(Comp.pure(:ok))
   :ok
 end
-|> EventAccumulator.with_handler(output: fn result, events -> {result, events} end)
+|> Writer.with_handler([], tag: :events, output: fn result, events -> {result, Enum.reverse(events)} end)
 |> Comp.run!()
 #=> {:ok, [%{type: :user_created, id: 1}, %{type: :email_sent, to: "user@example.com"}]}
 ```
 
-### Operations
-
-- `EventAccumulator.emit(event)` - add an event to the accumulator
-
-### Handler
-
-```elixir
-EventAccumulator.with_handler(opts)
-```
-
-Options:
-- `:output` - `fn result, events -> transformed_result end` to extract
-  the accumulated events alongside the computation result
+Writer supports more operations than simple accumulation:
+`peek`, `listen`, `pass`, and `censor` for inspecting and transforming
+the event log mid-computation.
 
 ### Combining with Command and Port
 
-All three effects compose naturally for domain workflows:
+All three compose naturally for domain workflows:
 
 ```elixir
 defmodule PlaceOrderHandler do
@@ -429,7 +417,7 @@ defmodule PlaceOrderHandler do
       order <- OrderRepo.create_order!(%{
         user_id: uid, items: items, status: :placed
       })
-      _ <- EventAccumulator.emit(%OrderPlaced{
+      _ <- Writer.tell(:events, %OrderPlaced{
         order_id: order.id, user_id: uid, items: items
       })
       {:ok, order}
@@ -445,7 +433,7 @@ end
     order
   end
   |> Command.with_handler(&PlaceOrderHandler.handle/1)
-  |> EventAccumulator.with_handler(output: fn r, evts -> {r, evts} end)
+  |> Writer.with_handler([], tag: :events, output: fn r, evts -> {r, Enum.reverse(evts)} end)
   |> Port.with_handler(%{OrderRepo => OrderRepo.Ecto})
   |> Comp.run!()
 

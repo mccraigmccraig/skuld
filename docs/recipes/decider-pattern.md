@@ -12,7 +12,7 @@ domain behaviour into three pure functions:
 2. **Evolve** - apply events to state to produce new state
 3. **Persist** - store the events and/or updated state
 
-Skuld's Command and EventAccumulator effects map directly to this
+Skuld's Command effect and Writer map directly to this
 pattern, keeping the decide/evolve logic pure and effectful while
 persistence is handled by the handler stack.
 
@@ -78,7 +78,7 @@ defmodule Cart.State do
 end
 ```
 
-### Decide (effectful - uses Command + EventAccumulator)
+### Decide (effectful - uses Command + Writer)
 
 ```elixir
 defmodule Cart.Handler do
@@ -96,7 +96,7 @@ defmodule Cart.Handler do
         quantity: cmd.quantity,
         price: cmd.price
       }
-      _ <- EventAccumulator.emit(event)
+      _ <- Writer.tell(:events, event)
       new_state = State.evolve(state, event)
       _ <- State.put(new_state)
       {:ok, new_state}
@@ -113,7 +113,7 @@ defmodule Cart.Handler do
         cart_id: cmd.cart_id,
         item_id: cmd.item_id
       }
-      _ <- EventAccumulator.emit(event)
+      _ <- Writer.tell(:events, event)
       new_state = State.evolve(state, event)
       _ <- State.put(new_state)
       {:ok, new_state}
@@ -131,7 +131,7 @@ defmodule Cart.Handler do
                 acc + q * p
               end)
       event = %Events.CartCheckedOut{cart_id: cart_id, total: total}
-      _ <- EventAccumulator.emit(event)
+      _ <- Writer.tell(:events, event)
       new_state = State.evolve(state, event)
       _ <- State.put(new_state)
       {:ok, %{state: new_state, total: total}}
@@ -155,7 +155,7 @@ end
     checkout
   end
   |> Command.with_handler(&Cart.Handler.handle/1)
-  |> EventAccumulator.with_handler(output: fn r, evts -> {r, evts} end)
+  |> Writer.with_handler([], tag: :events, output: fn r, raw -> {r, Enum.reverse(raw)} end)
   |> State.with_handler(%Cart.State{})
   |> Throw.with_handler()
   |> Comp.run!()
@@ -166,12 +166,13 @@ end
 
 ### Persisting events
 
-The `output` function on EventAccumulator is where you'd publish
+The `output` function on the Writer handler is where you'd publish
 events to an event store, message bus, or database:
 
 ```elixir
-|> EventAccumulator.with_handler(
-  output: fn result, events ->
+|> Writer.with_handler([], tag: :events,
+  output: fn result, raw ->
+    events = Enum.reverse(raw)
     # Persist to event store
     MyApp.EventStore.append(events)
     # Publish to subscribers
@@ -197,7 +198,7 @@ test "checkout calculates correct total" do
       checkout
     end
     |> Command.with_handler(&Cart.Handler.handle/1)
-    |> EventAccumulator.with_handler(output: fn r, e -> {r, e} end)
+    |> Writer.with_handler([], tag: :events, output: fn r, raw -> {r, Enum.reverse(raw)} end)
     |> State.with_handler(%Cart.State{})
     |> Throw.with_handler()
     |> Comp.run!()
@@ -210,7 +211,7 @@ test "cannot checkout empty cart" do
   result =
     Command.execute(%Checkout{cart_id: "c1"})
     |> Command.with_handler(&Cart.Handler.handle/1)
-    |> EventAccumulator.with_handler(output: fn r, e -> {r, e} end)
+    |> Writer.with_handler([], tag: :events, output: fn r, raw -> {r, Enum.reverse(raw)} end)
     |> State.with_handler(%Cart.State{})
     |> Throw.with_handler()
     |> Comp.run()

@@ -41,7 +41,7 @@ defmodule MyAppWeb.WizardLive do
         user <- MyApp.UserService.create_user!(%{
           name: name, email: email, plan: plan
         })
-        _ <- EventAccumulator.emit(%UserOnboarded{user_id: user.id})
+        _ <- Writer.tell(:events, %UserOnboarded{user_id: user.id})
         {:ok, user}
       end
       |> MyApp.Stacks.with_handlers(mode: :production, tenant_id: "t1")

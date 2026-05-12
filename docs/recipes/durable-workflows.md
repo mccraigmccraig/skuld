@@ -36,13 +36,13 @@ defmodule ApprovalWorkflow do
       :approved ->
         # Step 3: execute the approved action
         result <- execute(validated)
-        _ <- EventAccumulator.emit(%RequestApproved{
+        _ <- Writer.tell(:events, %RequestApproved{
           request_id: validated.id
         })
         {:ok, result}
 
       :rejected ->
-        _ <- EventAccumulator.emit(%RequestRejected{
+        _ <- Writer.tell(:events, %RequestRejected{
           request_id: validated.id
         })
         {:rejected, validated.id}
@@ -62,7 +62,7 @@ alias Skuld.Effects.EffectLogger.Log
   |> EffectLogger.with_logging()
   |> Yield.with_handler()
   |> State.with_handler(initial_state)
-  |> EventAccumulator.with_handler(output: fn r, e -> {r, e} end)
+  |> Writer.with_handler([], tag: :events, output: fn r, raw -> {r, Enum.reverse(raw)} end)
   |> Throw.with_handler()
   |> Comp.run()
 
@@ -125,7 +125,7 @@ cold_log = workflow.log |> Jason.decode!() |> Log.from_json()
   |> EffectLogger.with_resume(cold_log, :approved)
   |> Yield.with_handler()
   |> State.with_handler(nil)                  # ignored - restored from log
-  |> EventAccumulator.with_handler(output: fn r, e -> {r, e} end)
+  |> Writer.with_handler([], tag: :events, output: fn r, raw -> {r, Enum.reverse(raw)} end)
   |> Throw.with_handler()
   |> Comp.run()
 

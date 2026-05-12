@@ -111,7 +111,6 @@ wrapped in `Comp.pure/1`. The final expression, bare `if` without
 |--------|--------|---------------|---------|---------------|
 | **Transaction** | `Skuld.Effects.Transaction` | `transact/1` `rollback/1` `try_transact/1` | `Transaction.Ecto.with_handler(comp, repo, opts)` | `Transaction.Noop.with_handler(comp, opts)` - env state rollback without database |
 | **Command** | `Skuld.Effects.Command` | `execute/1` | `with_handler(comp, handler_fn)` - fn receives command, returns computation | Provide test handler function |
-| **EventAccumulator** | `Skuld.Effects.EventAccumulator` | `emit/1` | `with_handler(comp, opts)` opts: `output:` | `output: &{&1, &2}` to capture events |
 
 #### External Integration
 
@@ -307,7 +306,7 @@ no `Eff '[State, Reader, Throw] a` to track.
 | 5 | [Value Generation](effects/value-generation.md) | Fresh, Random |
 | 5 | [Collections](effects/collections.md) | FxList, FxFasterList |
 | 5 | [Concurrency](effects/concurrency.md) | Parallel, AtomicState, AsyncComputation |
-| 5 | [Persistence](effects/persistence.md) | Transaction, Command, EventAccumulator |
+| 5 | [Persistence](effects/persistence.md) | Transaction, Command |
 | 5 | [External Integration](effects/external-integration.md) | Port, Port.Contract, Port.Adapter.Effectful |
 | 6 | [Yield](advanced/yield.md) | Coroutines, suspend/resume |
 | 6 | [Fibers & Concurrency](advanced/fibers-concurrency.md) | FiberPool, Channel, Brook |
@@ -315,7 +314,7 @@ no `Eff '[State, Reader, Throw] a` to track.
 | 6 | [EffectLogger](advanced/effect-logger.md) | Serializable coroutines, replay |
 | 7 | [Testing](recipes/testing.md) | Testing patterns, property-based testing |
 | 7 | [Hexagonal Architecture](recipes/hexagonal-architecture.md) | Port.Contract + Port.Adapter.Effectful |
-| 7 | [Decider Pattern](recipes/decider-pattern.md) | Command + EventAccumulator |
+| 7 | [Decider Pattern](recipes/decider-pattern.md) | Command + Writer |
 | 7 | [Handler Stacks](recipes/handler-stacks.md) | Production vs test stacks |
 | 7 | [LiveView Integration](recipes/liveview.md) | AsyncComputation in LiveView |
 | 7 | [Durable Workflows](recipes/durable-workflows.md) | EffectLogger persistence |

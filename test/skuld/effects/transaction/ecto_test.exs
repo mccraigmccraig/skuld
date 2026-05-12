@@ -4,10 +4,12 @@ defmodule Skuld.Effects.Transaction.EctoTest do
   import Skuld.Comp.CompBlock
 
   alias Skuld.Comp
-  alias Skuld.Effects.EventAccumulator
   alias Skuld.Effects.Throw
   alias Skuld.Effects.Transaction
   alias Skuld.Effects.Writer
+
+  defp emit(tag, event), do: Writer.tell(tag, event) |> Comp.then_do(Comp.pure(:ok))
+  defp events_handler(comp, tag \\ :events), do: Writer.with_handler(comp, [], tag: tag, output: &{&1, Enum.reverse(&2)})
 
   # Mock Repo for testing — mirrors Ecto.Repo transaction behaviour
   defmodule MockRepo do
@@ -269,23 +271,23 @@ defmodule Skuld.Effects.Transaction.EctoTest do
     test "explicit rollback restores env state to pre-transaction values" do
       computation =
         comp do
-          _ <- EventAccumulator.emit(:before_tx)
+          _ <- emit(:events, :before_tx)
 
           result <-
             Transaction.transact(
               comp do
-                _ <- EventAccumulator.emit(:inside_tx_1)
-                _ <- EventAccumulator.emit(:inside_tx_2)
+                _ <- emit(:events, :inside_tx_1)
+                _ <- emit(:events, :inside_tx_2)
                 _ <- Transaction.rollback(:test_reason)
                 return(:never_reached)
               end
             )
 
-          _ <- EventAccumulator.emit(:after_rollback)
+          _ <- emit(:events, :after_rollback)
           return(result)
         end
         |> Transaction.Ecto.with_handler(MockRepo)
-        |> EventAccumulator.with_handler(output: &{&1, &2})
+        |> events_handler()
 
       {result, events} = Comp.run!(computation)
       assert {:rolled_back, :test_reason} = result
@@ -296,12 +298,12 @@ defmodule Skuld.Effects.Transaction.EctoTest do
     test "throw rollback restores env state to pre-transaction values" do
       computation =
         comp do
-          _ <- EventAccumulator.emit(:before_tx)
+          _ <- emit(:events, :before_tx)
 
           result <-
             Transaction.transact(
               comp do
-                _ <- EventAccumulator.emit(:inside_tx)
+                _ <- emit(:events, :inside_tx)
                 _ <- Throw.throw(:something_failed)
                 return(:never_reached)
               end
@@ -310,10 +312,10 @@ defmodule Skuld.Effects.Transaction.EctoTest do
           return(result)
         end
         |> Transaction.Ecto.with_handler(MockRepo)
-        |> EventAccumulator.with_handler(output: &{&1, &2})
+        |> events_handler()
         |> Throw.with_handler()
 
-      # The throw propagates through EventAccumulator's with_handler scope,
+      # The throw propagates through the Writer scope,
       # which runs the output function via leave_scope, producing {throw, events}.
       # Events from inside the rolled-back transaction should be discarded.
       {result, _env} = Comp.run(computation)
@@ -324,21 +326,21 @@ defmodule Skuld.Effects.Transaction.EctoTest do
     test "successful commit preserves env state from transaction" do
       computation =
         comp do
-          _ <- EventAccumulator.emit(:before_tx)
+          _ <- emit(:events, :before_tx)
 
           result <-
             Transaction.transact(
               comp do
-                _ <- EventAccumulator.emit(:inside_tx)
+                _ <- emit(:events, :inside_tx)
                 return(:ok)
               end
             )
 
-          _ <- EventAccumulator.emit(:after_tx)
+          _ <- emit(:events, :after_tx)
           return(result)
         end
         |> Transaction.Ecto.with_handler(MockRepo)
-        |> EventAccumulator.with_handler(output: &{&1, &2})
+        |> events_handler()
 
       {result, events} = Comp.run!(computation)
       assert :ok = result
@@ -350,13 +352,13 @@ defmodule Skuld.Effects.Transaction.EctoTest do
 
       computation =
         comp do
-          _ <- EventAccumulator.emit(:before_tx)
+          _ <- emit(:events, :before_tx)
           _ <- Writer.tell(:metrics, :metric_before)
 
           result <-
             Transaction.transact(
               comp do
-                _ <- EventAccumulator.emit(:inside_tx)
+                _ <- emit(:events, :inside_tx)
                 _ <- Writer.tell(:metrics, :metric_inside)
                 _ <- Transaction.rollback(:test_reason)
                 return(:never_reached)
@@ -368,7 +370,7 @@ defmodule Skuld.Effects.Transaction.EctoTest do
         |> Transaction.Ecto.with_handler(MockRepo,
           preserve_state_on_rollback: [metrics_key]
         )
-        |> EventAccumulator.with_handler(output: &{&1, &2})
+        |> events_handler()
         |> Writer.with_handler([],
           tag: :metrics,
           output: fn {r, events}, metrics ->
@@ -378,7 +380,7 @@ defmodule Skuld.Effects.Transaction.EctoTest do
 
       {result, events, metrics} = Comp.run!(computation)
       assert {:rolled_back, :test_reason} = result
-      # EventAccumulator events rolled back (not in preserve list)
+      # Writer events rolled back (not in preserve list)
       assert events == [:before_tx]
       # Metrics preserved (in preserve list)
       assert metrics == [:metric_before, :metric_inside]
@@ -387,23 +389,23 @@ defmodule Skuld.Effects.Transaction.EctoTest do
     test "nested transaction rollback restores inner state only" do
       computation =
         comp do
-          _ <- EventAccumulator.emit(:outer_before)
+          _ <- emit(:events, :outer_before)
 
           result <-
             Transaction.transact(
               comp do
-                _ <- EventAccumulator.emit(:outer_inside)
+                _ <- emit(:events, :outer_inside)
 
                 inner_result <-
                   Transaction.transact(
                     comp do
-                      _ <- EventAccumulator.emit(:inner_tx)
+                      _ <- emit(:events, :inner_tx)
                       _ <- Transaction.rollback(:inner_reason)
                       return(:never_reached)
                     end
                   )
 
-                _ <- EventAccumulator.emit(:outer_after_inner)
+                _ <- emit(:events, :outer_after_inner)
                 return({:outer_ok, inner_result})
               end
             )
@@ -411,7 +413,7 @@ defmodule Skuld.Effects.Transaction.EctoTest do
           return(result)
         end
         |> Transaction.Ecto.with_handler(MockRepo)
-        |> EventAccumulator.with_handler(output: &{&1, &2})
+        |> events_handler()
 
       {result, events} = Comp.run!(computation)
       assert {:outer_ok, {:rolled_back, :inner_reason}} = result

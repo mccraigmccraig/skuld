@@ -49,6 +49,7 @@ defmodule Onboarding do
   use Skuld.Syntax
 
   alias Skuld.Effects.Port.Repo
+  alias Skuld.Effects.Writer
 
   defcomp register(params) do
     # Read configuration from the environment
@@ -61,7 +62,7 @@ defmodule Onboarding do
     {:ok, user} <- Repo.insert(User.changeset(%{id: id, name: params.name, tier: config.default_tier}))
 
     # Accumulate domain events
-    _ <- EventAccumulator.emit(%UserRegistered{user_id: id})
+    _ <- Writer.tell(:events, %UserRegistered{user_id: id}) |> Comp.then_do(Comp.pure(:ok))
 
     {:ok, user}
   end
@@ -81,8 +82,8 @@ Onboarding.register(%{name: "Alice"})
 |> Reader.with_handler(%{default_tier: :free})
 |> Fresh.with_uuid7_handler()
 |> Port.with_handler(%{Port.Repo => MyApp.Repo.Port})
-|> EventAccumulator.with_handler(output: fn r, events ->
-  MyApp.EventBus.publish(events)
+|> Writer.with_handler([], tag: :events, output: fn r, raw ->
+  MyApp.EventBus.publish(Enum.reverse(raw))
   r
 end)
 |> Throw.with_handler()
@@ -93,12 +94,13 @@ Run with test handlers — same code, fully deterministic, no database:
 
 ```elixir
 alias Skuld.Effects.Port.Repo
+alias Skuld.Effects.Writer
 
 Onboarding.register(%{name: "Alice"})
 |> Reader.with_handler(%{default_tier: :free})
 |> Fresh.with_test_handler()
 |> Repo.InMemory.with_handler(Repo.InMemory.new())
-|> EventAccumulator.with_handler(output: fn r, events -> {r, events} end)
+|> Writer.with_handler([], tag: :events, output: fn r, raw -> {r, Enum.reverse(raw)} end)
 |> Throw.with_handler()
 |> Comp.run!()
 ```
@@ -138,7 +140,7 @@ like well-structured Elixir code with better testability.
 | Blocking calls to external code | Port, Port.Contract          |
 | Effectful code from plain code  | Port.Adapter.Effectful       |
 | Mutation dispatch               | Command                      |
-| Domain event collection         | EventAccumulator             |
+| Domain event collection         | Writer (tell, listen, peek, censor) |
 | Fork-join concurrency           | Parallel                     |
 | Thread-safe state               | AtomicState                  |
 | Effects from LiveView           | AsyncComputation             |
@@ -184,7 +186,7 @@ get value from Skuld - the foundational effects stand on their own.
 |   | [Value Generation](docs/effects/value-generation.md) | Fresh, Random |
 |   | [Collections](docs/effects/collections.md) | FxList, FxFasterList |
 |   | [Concurrency](docs/effects/concurrency.md) | Parallel, AtomicState, AsyncComputation |
-|   | [Persistence](docs/effects/persistence.md) | Transaction, Command, EventAccumulator |
+|   | [Persistence](docs/effects/persistence.md) | Transaction, Command |
 |   | [External Integration](docs/effects/external-integration.md) | Port, Port.Contract, Port.Adapter.Effectful |
 | 6 | **Advanced Effects** | |
 |   | [Yield](docs/advanced/yield.md) | Coroutines |

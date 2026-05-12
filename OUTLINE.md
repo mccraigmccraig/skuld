@@ -78,7 +78,7 @@ stops here has already gotten substantial value.
 - State, Reader, Writer
 - Throw, Bracket
 - Fresh, Random
-- DB, Command, EventAccumulator
+- DB, Command
 - Port, Port.Contract, Port.Adapter.Effectful
 - Parallel, AtomicState, AsyncComputation
 - FxList, FxFasterList
@@ -336,7 +336,7 @@ Each effect section follows the pattern:
   transactions. Three handler types (Ecto, Noop, Test).
 - **Command** - Dispatch mutation structs through a handler. The Decider
   pattern.
-- **EventAccumulator** - Accumulate domain events via Writer pattern.
+- **Writer** - Accumulate domain events.
 
 ### 5g: External Integration
 
@@ -404,7 +404,7 @@ recipe is a self-contained how-to guide.
   swap handlers for tests. Property-based testing with `stream_data`.
 - **Hexagonal architecture** - Structuring an app with Port.Contract
   (outbound), Port.Adapter.Effectful (inbound), and effect-based domain logic.
-- **The Decider pattern** - Command + EventAccumulator for event-sourced
+- **The Decider pattern** - Command + Writer for event-sourced
   domain logic.
 - **Nested / composed handler stacks** - Production vs test handler stacks,
   parameterised by mode.

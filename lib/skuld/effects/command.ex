@@ -15,7 +15,7 @@ defmodule Skuld.Effects.Command do
         def handle(%CreateTodo{title: title}) do
           comp do
             {:ok, todo} <- EctoPersist.insert(changeset(title))
-            _ <- EventAccumulator.emit(%TodoCreated{id: todo.id})
+            _ <- Writer.tell(:events, %TodoCreated{id: todo.id}) |> Comp.then_do(Comp.pure(:ok))
             {:ok, todo}
           end
         end
@@ -24,7 +24,7 @@ defmodule Skuld.Effects.Command do
           comp do
             todo <- EctoPersist.get!(Todo, id)
             _ <- EctoPersist.delete(todo)
-            _ <- EventAccumulator.emit(%TodoDeleted{id: id})
+            _ <- Writer.tell(:events, %TodoDeleted{id: id}) |> Comp.then_do(Comp.pure(:ok))
             :ok
           end
         end
@@ -37,7 +37,7 @@ defmodule Skuld.Effects.Command do
       end
       |> Command.with_handler(&MyCommandHandler.handle/1)
       |> EctoPersist.with_handler(Repo)
-      |> EventAccumulator.with_handler()
+      |> Writer.with_handler([], tag: :events, output: &{&1, Enum.reverse(&2)})
       |> Comp.run!()
 
   ## Handler Function

@@ -30,7 +30,7 @@ defcomp process_order(order_params) do
   id <- Fresh.fresh_uuid()
   price <- PricingService.calculate!(user, order_params.items)
   _ <- OrderRepo.create_order!(%{id: id, user_id: user.id, total: price})
-  _ <- EventAccumulator.emit(%OrderPlaced{order_id: id, total: price})
+  _ <- Writer.tell(:events, %OrderPlaced{order_id: id, total: price}) |> Comp.then_do(Comp.pure(:ok))
   {:ok, id}
 end
 ```
@@ -78,7 +78,7 @@ result =
   process_order(%{user_id: "u1", items: items})
   |> Repo.InMemory.with_handler(state)
   |> Fresh.with_test_handler()
-  |> EventAccumulator.with_handler(output: &{&1, &2})
+  |> Writer.with_handler([], tag: :events, output: fn r, raw -> {r, Enum.reverse(raw)} end)
   |> Throw.with_handler()
   |> Comp.run!()
 ```

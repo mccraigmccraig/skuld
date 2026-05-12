@@ -128,8 +128,6 @@ defmodule Skuld.MixProject do
             Skuld.Query.Contract,
             Skuld.Effects.Port,
             Skuld.Effects.Command,
-            Skuld.Effects.ChangeEvent,
-            Skuld.Effects.EventAccumulator,
             Skuld.Data.Change
           ],
           "Replay & Logging": [
@@ -149,8 +147,7 @@ defmodule Skuld.MixProject do
             Skuld.Comp.IHandle,
             Skuld.Comp.IInstall,
             Skuld.Comp.IIntercept,
-            Skuld.Comp.IThrowable,
-            Skuld.Effects.EventAccumulator.IEvent
+            Skuld.Comp.IThrowable
           ],
           Exceptions: [
             Skuld.Comp.ThrowError,
@@ -162,7 +159,6 @@ defmodule Skuld.MixProject do
         ],
         nest_modules_by_prefix: [
           Skuld.Effects.EffectLogger,
-          Skuld.Effects.EventAccumulator,
           Skuld.Effects.Transaction
         ]
       ]
