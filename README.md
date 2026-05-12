@@ -36,14 +36,14 @@ fibers, and serialise execution for later replay.
 defmodule Onboarding do
   use Skuld.Syntax
 
-  alias Skuld.{Comp, Repo}
-  alias Skuld.Effects.{Fresh, Reader, Throw, Writer}
+  alias Skuld.Repo
+  alias Skuld.Effects.{Fresh, Reader, Writer}
 
   defcomp register(params) do
     config <- Reader.ask()
     id <- Fresh.fresh_uuid()
     {:ok, user} <- Repo.insert(User.changeset(%{id: id, name: params.name, tier: config.default_tier}))
-    _ <- Writer.tell(:events, %UserRegistered{user_id: id}) |> Comp.then_do(Comp.pure(:ok))
+    _ <- Writer.tell(:events, %UserRegistered{user_id: id})
     {:ok, user}
   end
 end
