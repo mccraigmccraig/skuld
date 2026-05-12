@@ -25,6 +25,7 @@ defmodule Skuld.MixProject do
           "docs/pain-points.md",
           "docs/getting-started.md",
           "docs/quick-reference.md",
+          "docs/architecture.md",
           "docs/syntax.md",
           "docs/testing.md",
           "docs/effects/state-environment.md",
@@ -56,6 +57,7 @@ defmodule Skuld.MixProject do
             "docs/pain-points.md",
             "docs/getting-started.md",
             "docs/quick-reference.md",
+            "docs/architecture.md",
             "docs/syntax.md"
           ],
           "Core Concepts": [
