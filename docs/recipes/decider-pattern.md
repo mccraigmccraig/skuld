@@ -1,7 +1,7 @@
 # The Decider Pattern
 
 <!-- nav:header:start -->
-[< Hexagonal Architecture](hexagonal-architecture.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Handler Stacks >](handler-stacks.md)
+[< Hexagonal Architecture](hexagonal-architecture.md) | [Up: Patterns](../testing.md) | [Index](../../README.md) | [Handler Stacks >](handler-stacks.md)
 <!-- nav:header:end -->
 
 The [Decider pattern](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider)
@@ -235,5 +235,5 @@ It's overkill for simple CRUD - use Port contracts directly for that.
 
 ---
 
-[< Hexagonal Architecture](hexagonal-architecture.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Handler Stacks >](handler-stacks.md)
+[< Hexagonal Architecture](hexagonal-architecture.md) | [Up: Patterns](../testing.md) | [Index](../../README.md) | [Handler Stacks >](handler-stacks.md)
 <!-- nav:footer:end -->

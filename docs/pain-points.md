@@ -205,7 +205,7 @@ Loop marking and log pruning keep the serialised state bounded for
 long-running conversations.
 
 See: [EffectLogger](advanced/effect-logger.md),
-[Durable Workflows](recipes/durable-workflows.md)
+[Durable Workflows](../advanced/effect-logger.md)
 
 ### LiveView multi-step operations
 

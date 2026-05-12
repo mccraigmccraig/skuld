@@ -1,7 +1,7 @@
 # LiveView Integration
 
 <!-- nav:header:start -->
-[< Handler Stacks](handler-stacks.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Durable Workflows >](durable-workflows.md)
+[< Handler Stacks](handler-stacks.md) | [Up: Patterns](../testing.md) | [Index](../../README.md) | [Data Pipelines >](../advanced/fibers-concurrency.md)
 <!-- nav:header:end -->
 
 AsyncComputation bridges effectful computations into Phoenix LiveView,
@@ -151,12 +151,12 @@ computation =
 
 When the computation suspends, extract and persist the log from
 `Suspend.data[EffectLogger]`. On page reload, cold-resume from the
-persisted log. See [Durable Workflows](durable-workflows.md) for the
+persisted log. See [Durable Workflows](../advanced/effect-logger.md) for the
 full pattern.
 
 <!-- nav:footer:start -->
 
 ---
 
-[< Handler Stacks](handler-stacks.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [Durable Workflows >](durable-workflows.md)
+[< Handler Stacks](handler-stacks.md) | [Up: Patterns](../testing.md) | [Index](../../README.md) | [Data Pipelines >](../advanced/fibers-concurrency.md)
 <!-- nav:footer:end -->

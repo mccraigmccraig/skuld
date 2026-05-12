@@ -1,7 +1,7 @@
 # Hexagonal Architecture
 
 <!-- nav:header:start -->
-[< Testing Effectful Code](testing.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [The Decider Pattern >](decider-pattern.md)
+[< Testing Effectful Code](../testing.md) | [Up: Patterns](../testing.md) | [Index](../../README.md) | [The Decider Pattern >](decider-pattern.md)
 <!-- nav:header:end -->
 
 Hexagonal architecture (ports and adapters) separates domain logic from
@@ -681,5 +681,5 @@ for `Repo.InMemory` and verify business rules without database overhead.
 
 ---
 
-[< Testing Effectful Code](testing.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [The Decider Pattern >](decider-pattern.md)
+[< Testing Effectful Code](../testing.md) | [Up: Patterns](../testing.md) | [Index](../../README.md) | [The Decider Pattern >](decider-pattern.md)
 <!-- nav:footer:end -->

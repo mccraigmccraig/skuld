@@ -1,7 +1,7 @@
 # Batch Data Loading
 
 <!-- nav:header:start -->
-[< Data Pipelines](data-pipelines.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [How It Works >](../internals.md)
+[< Data Pipelines](../advanced/fibers-concurrency.md) | [Up: Patterns](../testing.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:header:end -->
 
 Skuld's query system eliminates N+1 queries by automatically batching
@@ -180,5 +180,5 @@ It's less useful for:
 
 ---
 
-[< Data Pipelines](data-pipelines.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [How It Works >](../internals.md)
+[< Data Pipelines](../advanced/fibers-concurrency.md) | [Up: Patterns](../testing.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:footer:end -->

@@ -337,9 +337,6 @@ Skuld is much lighter-weight: no infrastructure, no RPC, and full
 algebraic effect composition. Temporal is more mature for production
 distributed workflows.
 
-See [Durable Workflows](../recipes/durable-workflows.md) for practical
-patterns using EffectLogger.
-
 <!-- nav:footer:start -->
 
 ---

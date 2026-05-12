@@ -1,7 +1,7 @@
 # Handler Stacks
 
 <!-- nav:header:start -->
-[< The Decider Pattern](decider-pattern.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [LiveView Integration >](liveview.md)
+[< The Decider Pattern](decider-pattern.md) | [Up: Patterns](../testing.md) | [Index](../../README.md) | [LiveView Integration >](liveview.md)
 <!-- nav:header:end -->
 
 Handler stacks are the composition point where you wire effects to
@@ -229,5 +229,5 @@ correctness of effect dispatch itself.
 
 ---
 
-[< The Decider Pattern](decider-pattern.md) | [Up: Patterns & Recipes](testing.md) | [Index](../../README.md) | [LiveView Integration >](liveview.md)
+[< The Decider Pattern](decider-pattern.md) | [Up: Patterns](../testing.md) | [Index](../../README.md) | [LiveView Integration >](liveview.md)
 <!-- nav:footer:end -->

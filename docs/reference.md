@@ -317,8 +317,8 @@ no `Eff '[State, Reader, Throw] a` to track.
 | 7 | [Decider Pattern](recipes/decider-pattern.md) | Command + Writer |
 | 7 | [Handler Stacks](recipes/handler-stacks.md) | Production vs test stacks |
 | 7 | [LiveView Integration](recipes/liveview.md) | AsyncComputation in LiveView |
-| 7 | [Durable Workflows](recipes/durable-workflows.md) | EffectLogger persistence |
-| 7 | [Data Pipelines](recipes/data-pipelines.md) | Brook streaming |
+| 7 | [Durable Workflows](../advanced/effect-logger.md) | EffectLogger persistence |
+| 7 | [Data Pipelines](../advanced/fibers-concurrency.md) | Brook streaming |
 | 7 | [Batch Loading](recipes/batch-loading.md) | Query contracts, FiberPool |
 | 8 | [How It Works](internals.md) | Implementation, CPS, custom effects |
 | 9 | Reference (this page) | Quick-reference tables, glossary |
