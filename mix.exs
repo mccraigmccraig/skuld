@@ -191,11 +191,13 @@ defmodule Skuld.MixProject do
 
   defp description do
     """
-    Skuld: Evidence-passing algebraic effects for Elixir.
+    An effectful programming framework for Elixir.
 
-    A clean, efficient implementation of algebraic effects using evidence-passing
-    style with CPS for control effects. Supports scoped handlers, coroutines via
-    Yield, and composable effect stacks.
+    Write business logic as pure effect descriptions — database access,
+    concurrency, error handling, and workflow orchestration — then swap handlers
+    between production and deterministic test implementations. Built on algebraic
+    effects with cooperative fibers, automatic N+1 query batching, hexagonal
+    architecture support, and durable serialisable workflows.
     """
   end
 

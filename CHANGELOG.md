@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `mix.exs` description reframed from "algebraic effects" to "effectful programming
+  framework" — reflects the library's full scope: fibers, query batching, hexagonal
+  architecture, durable workflows, and deterministic testing.
+- `Skuld.Effects.Channel.State` → `Skuld.Effects.Channel.ChannelState` — renamed
+  to avoid confusion with the `Skuld.Effects.State` effect when searching the
+  codebase.
 - `Skuld.Effects.Helpers.TaskHelpers` → `Skuld.Effects.Parallel.TaskHelpers` —
   moved the private task supervisor helper into the Parallel effect's namespace
   since it's only used there.
