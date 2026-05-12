@@ -1,7 +1,4 @@
-# Shared utilities for effects that use Task.Supervisor for concurrency.
-#
-# Used by `Async` and `Parallel` effects.
-defmodule Skuld.Effects.Helpers.TaskHelpers do
+defmodule Skuld.Effects.Parallel.TaskHelpers do
   @moduledoc false
 
   @doc """

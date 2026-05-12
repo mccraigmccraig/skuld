@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `Skuld.Effects.Helpers.TaskHelpers` → `Skuld.Effects.Parallel.TaskHelpers` —
+  moved the private task supervisor helper into the Parallel effect's namespace
+  since it's only used there.
+
 ### Removed
 
 - `Skuld.Effects.EventAccumulator` — thin `emit`/`with_handler` wrapper over Writer
