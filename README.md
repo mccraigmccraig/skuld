@@ -8,7 +8,7 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/skuld.svg)](https://hex.pm/packages/skuld)
 [![Documentation](https://img.shields.io/badge/documentation-gray)](https://hexdocs.pm/skuld/)
 
-Evidence-passing Algebraic Effects for Elixir.
+An effectful programming framework for Elixir.
 
 ## The problem
 
@@ -26,7 +26,11 @@ code. Domain logic *requests* effects (database access, randomness, error
 handling) without performing them. Handlers decide what those requests
 mean. The same orchestration code runs with real handlers in production
 and pure in-memory handlers in tests - fully deterministic, trivially
-testable.
+testable. And because effects are first-class data that the runtime
+can inspect, Skuld can also batch independent queries automatically,
+run computations cooperatively in fibers, and serialise execution for
+later replay. The handler-swapping that makes testing deterministic is
+just the first step.
 
 ## What Skuld solves
 
