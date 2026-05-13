@@ -32,16 +32,18 @@ boundaries — plus cross-cutting effects that work with any computation.
                                        via FiberPool fibers)
 
 
+   Cross-cutting:  Yield   EffectLogger   Parallel   AtomicState
+                    Transaction   AsyncComputation
 ```
 
-Most branches are independent — you can use foundational effects without
-FiberPool, or Port boundaries without State or Reader. The branches
-compose when you need them to: a single computation can use effects from
-all three.
-
-`Query.Contract` and `QueryBlock` are the notable inter-branch
-connection: they define typed fetch contracts (Port/Boundaries style) but
-use `FiberPool` fibers to batch independent fetches concurrently.
+Every module shown depends on Comp. Cross-cutting effects depend *only*
+on Comp and work with any computation, regardless of branch.
+`EffectLogger` provides serializable execution logs for durable
+workflows; `Yield` provides coroutine suspend/resume. Together they
+enable pause-serialize-resume workflows — `Fiber` owns the "resumable
+computation" concept (wrapping a Comp into a self-contained lifecycle
+unit), while `EffectLogger` provides the JSON-serializable log that
+makes it durable.
 
 ## Comp — the root
 
