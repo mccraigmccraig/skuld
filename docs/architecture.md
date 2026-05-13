@@ -18,7 +18,7 @@ boundaries — plus cross-cutting effects that work with any computation.
             │                │                             │
        //Foundational    Coroutine                 //Boundaries
        //Effects             │                             │
-             │          ┌────┴─────────┐          ┌────────┴────────┐
+            │           ┌────┴─────────┐          ┌────────┴────────┐
   State, Reader,        │              │          │                 │
   Writer, Throw,  Serializable-   //Concurrency   │                Port
   Bracket, Fresh,  Coroutine           │          │                 │
@@ -29,9 +29,9 @@ boundaries — plus cross-cutting effects that work with any computation.
                                 Channel    Task   │
                                   │               │
                                Brook              │
-                                             Query.Contract (Haxl)
+                                             Query.Contract
                                              QueryBlock
-                                             (auto-batches fetches
+                                             (Haxl: auto-batches fetches
                                              via Coroutine fibers)
 
 
