@@ -5,7 +5,7 @@
 <!-- nav:header:end -->
 
 Skuld components form a DAG rooted at `Skuld.Comp`. There are three main
-branches — foundational effects, fiber concurrency, and external
+branches — foundational effects, coroutine concurrency, and external
 boundaries — plus cross-cutting effects that work with any computation.
 
 ```
@@ -16,10 +16,10 @@ boundaries — plus cross-cutting effects that work with any computation.
                              │
              ┌───────────────┼────────────────────────┐
              │               │                        │
-    Foundational          Fiber /                 Boundaries
+    Foundational          Coroutine /                Boundaries
      Effects            Concurrency                   │
              │               │               ┌────────┴────────┐
-   State, Reader,         Fiber              │                 │
+   State, Reader,        Coroutine             │                 │
    Writer, Throw,            │               │               Port
    Bracket, Fresh,       FiberPool ──────────┤                 │
    Random, FxList            │               │          Port.EffectfulContract
@@ -29,7 +29,7 @@ boundaries — plus cross-cutting effects that work with any computation.
                         │              Query.Contract
                       Brook            QueryBlock
                                        (auto-batches fetches
-                                       via FiberPool fibers)
+                                       via Coroutine fibers)
 
 
    Cross-cutting:  Yield   EffectLogger   Parallel   AtomicState
@@ -40,7 +40,7 @@ Every module shown depends on Comp. Cross-cutting effects depend *only*
 on Comp and work with any computation, regardless of branch.
 `EffectLogger` provides serializable execution logs for durable
 workflows; `Yield` provides coroutine suspend/resume. Together they
-enable pause-serialize-resume workflows — `Fiber` owns the "resumable
+enable pause-serialize-resume workflows — `Coroutine` owns the "resumable
 computation" concept (wrapping a Comp into a self-contained lifecycle
 unit), while `EffectLogger` provides the JSON-serializable log that
 makes it durable.
@@ -76,27 +76,31 @@ A computation with just `State.with_handler(0)` and
 `Throw.with_handler()` is a fully functional program. No scheduler, no
 fibers, no ports.
 
-## Fiber / Concurrency
+## Coroutine / Concurrency
 
 The cooperative concurrency branch. These components depend on Comp but
 not on foundational effects or port boundaries:
 
-### Fiber
+### Coroutine
 
-`Skuld.Fiber` wraps a Comp and manages its evolving state across
-incremental execution. A fiber is a sum type — `Pending`, `InternalSuspended`,
-`ExternalSuspended`, `Completed`, `Errored`, `Cancelled`. Fibers can
-suspend (yield, await, channel block), be resumed with a value, and be
-cancelled with cleanup. Fiber itself has no scheduler — it just provides
-the state machine.
+`Skuld.Coroutine` wraps a Comp and manages its evolving state across
+incremental execution. A coroutine is a sum type — `Pending`,
+`InternalSuspended`, `ExternalSuspended`, `Completed`, `Errored`,
+`Cancelled`. Coroutines can suspend (yield, await, channel block), be
+resumed with a value, and be cancelled with cleanup. Coroutine itself has
+no scheduler — it just provides the state machine.
+
+FiberPool uses Coroutines as its cooperative concurrency primitive, but
+Coroutine is useful anywhere you need run-suspend-resume-cancel semantics
+for a computation — no scheduler required.
 
 ### FiberPool
 
-`Skuld.Effects.FiberPool` provides cooperative scheduling of fibers within
-a single BEAM process. When an `await` suspends a fiber, the scheduler
-runs other fibers. When the awaited fiber completes, the awaiter is woken.
-The pool also coordinates BEAM `Task` processes, tracks completion, and
-detects deadlock.
+`Skuld.Effects.FiberPool` provides cooperative scheduling of coroutines
+within a single BEAM process. When an `await` suspends a coroutine, the
+scheduler runs others. When the awaited coroutine completes, the awaiter
+is woken. The pool also coordinates BEAM `Task` processes, tracks
+completion, and detects deadlock.
 
 ### Channel
 
@@ -161,7 +165,7 @@ on Port or FiberPool.
 
 Typed fetch contracts with automatic N+1 prevention. `deffetch` declares
 operations; executors receive batches. The `query` macro analyses variable
-dependencies and groups independent fetches into concurrent fiber batches.
+dependencies and groups independent fetches into concurrent coroutine batches.
 This is the main inter-branch component — it uses Port-style typed
 contracts at the contract layer and FiberPool for concurrent execution.
 
