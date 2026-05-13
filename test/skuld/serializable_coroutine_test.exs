@@ -5,7 +5,11 @@ defmodule Skuld.SerializableCoroutineTest do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Coroutine
-  alias Skuld.Effects.{EffectLogger, State, Throw, Yield, Writer}
+  alias Skuld.Effects.EffectLogger
+  alias Skuld.Effects.State
+  alias Skuld.Effects.Throw
+  alias Skuld.Effects.Yield
+  alias Skuld.Effects.Writer
   alias Skuld.Effects.EffectLogger.Log
   alias Skuld.SerializableCoroutine
 
