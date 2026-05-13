@@ -16,23 +16,25 @@ boundaries — plus cross-cutting effects that work with any computation.
                              │
             ┌────────────────┼─────────────────────────────┐
             │                │                             │
-       //Foundational    Coroutine                 //Boundaries
-       //Effects             │                             │
-            │           ┌────┴─────────┐          ┌────────┴────────┐
-  State, Reader,        │              │          │                 │
-  Writer, Throw,  Serializable-   //Concurrency   │                Port
-  Bracket, Fresh,  Coroutine           │          │                 │
-  Random, FxList                       │          │     Port.EffectfulContract
-                                    FiberPool─────┤     Port.Facade
-                                       │          │     Command
-                                  ┌────┴────┐     │     Repo
-                                Channel    Task   │
-                                  │               │
-                               Brook              │
-                                             Query.Contract
-                                             QueryBlock
-                                             (Haxl: auto-batches fetches
-                                             via Coroutine fibers)
+       //Foundational  //Coroutines &             //Boundaries
+       //Effects       //Concurrency                │
+            │               Coroutine          ┌────────┴────────┐
+            │               │                 │                 │
+  State, Reader,     ┌──────┴───────┐         │                Port
+  Writer, Throw,     │              │         │                 │
+  Bracket, Fresh,  Serializable-    │         │     Port.EffectfulContract
+  Random, FxList   Coroutine        │         │     Port.Facade
+                                    │         │     Command
+                                 FiberPool─────┤     Repo
+                                    │         │
+                               ┌────┴────┐    │
+                            Channel    Task   │
+                               │             │
+                             Brook           │
+                                        Query.Contract
+                                        QueryBlock
+                                        (Haxl: auto-batches fetches
+                                        via Coroutine fibers)
 
 
    Cross-cutting:  Yield   EffectLogger   Parallel   AtomicState
