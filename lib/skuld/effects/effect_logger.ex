@@ -488,6 +488,8 @@ defmodule Skuld.Effects.EffectLogger do
         state_keys: [Skuld.Effects.State.state_key(MyApp.Counter)]
 
     This only captures the specified State keys, excluding Reader/other constant state.
+  - `:output` - Optional function `(result, log) -> transformed_result` to transform
+    the result using the final log before returning. Default: `fn result, log -> {result, log} end`.
   - `:decorate_suspend` - If true (default), attach the current finalized log to
     `ExternalSuspend.data[EffectLogger]` when yielding. This allows AsyncComputation callers to
     access the log without needing the full env. Set to `false` to disable.
@@ -535,6 +537,8 @@ defmodule Skuld.Effects.EffectLogger do
     prune_loops = Keyword.get(opts, :prune_loops, true)
     state_keys = Keyword.get(opts, :state_keys, :all)
     decorate_suspend = Keyword.get(opts, :decorate_suspend, true)
+    output = Keyword.get(opts, :output, &default_output/2)
+    suspend_fn = Keyword.get(opts, :suspend)
 
     Comp.scoped(comp, fn env ->
       env_with_config = setup_logging_env(env, state_keys)
@@ -547,9 +551,9 @@ defmodule Skuld.Effects.EffectLogger do
       env_with_log = put_log(env_with_wrapped, initial_log)
 
       {env_final, previous_transform} =
-        maybe_setup_suspend_decoration(env_with_log, decorate_suspend)
+        if suspend_fn, do: maybe_setup_suspend_decoration(env_with_log, suspend_fn), else: maybe_setup_suspend_decoration(env_with_log, decorate_suspend)
 
-      finally_k = build_finally_k(prune_loops, original_handlers, previous_transform)
+      finally_k = build_finally_k(prune_loops, original_handlers, previous_transform, output)
 
       {env_final, finally_k}
     end)
@@ -564,6 +568,8 @@ defmodule Skuld.Effects.EffectLogger do
     prune_loops = Keyword.get(opts, :prune_loops, true)
     state_keys = Keyword.get(opts, :state_keys, :all)
     decorate_suspend = Keyword.get(opts, :decorate_suspend, true)
+    output = Keyword.get(opts, :output, &default_output/2)
+    suspend_fn = Keyword.get(opts, :suspend)
 
     Comp.scoped(comp, fn env ->
       env_with_config = setup_logging_env(env, state_keys)
@@ -576,9 +582,9 @@ defmodule Skuld.Effects.EffectLogger do
       env_with_log = put_log(env_with_wrapped, replay_log)
 
       {env_final, previous_transform} =
-        maybe_setup_suspend_decoration(env_with_log, decorate_suspend)
+        if suspend_fn, do: maybe_setup_suspend_decoration(env_with_log, suspend_fn), else: maybe_setup_suspend_decoration(env_with_log, decorate_suspend)
 
-      finally_k = build_finally_k(prune_loops, original_handlers, previous_transform)
+      finally_k = build_finally_k(prune_loops, original_handlers, previous_transform, output)
 
       {env_final, finally_k}
     end)
@@ -651,7 +657,18 @@ defmodule Skuld.Effects.EffectLogger do
     {Env.with_transform_suspend(env, new_transform), old_transform}
   end
 
-  defp build_finally_k(prune_loops, original_handlers, previous_transform) do
+  defp maybe_setup_suspend_decoration(env, suspend_fn) when is_function(suspend_fn, 2) do
+    old_transform = Env.get_transform_suspend(env)
+
+    new_transform = fn suspend, e ->
+      {suspend1, e1} = old_transform.(suspend, e)
+      suspend_fn.(suspend1, e1)
+    end
+
+    {Env.with_transform_suspend(env, new_transform), old_transform}
+  end
+
+  defp build_finally_k(prune_loops, original_handlers, previous_transform, output) do
     fn value, final_env ->
       log = get_log(final_env) || Log.new()
       finalized_log = Log.finalize(log)
@@ -661,7 +678,7 @@ defmodule Skuld.Effects.EffectLogger do
       restored_env = restore_original_handlers(cleaned_env, original_handlers)
       restored_env = maybe_restore_transform(restored_env, previous_transform)
 
-      {{value, output_log}, restored_env}
+      {output.(value, output_log), restored_env}
     end
   end
 
@@ -680,6 +697,8 @@ defmodule Skuld.Effects.EffectLogger do
 
   defp maybe_restore_transform(env, nil), do: env
   defp maybe_restore_transform(env, transform), do: Env.with_transform_suspend(env, transform)
+
+  defp default_output(result, log), do: {result, log}
 
   #############################################################################
   ## Replay Handler
@@ -812,6 +831,7 @@ defmodule Skuld.Effects.EffectLogger do
     allow_divergence = Keyword.get(opts, :allow_divergence, false)
     prune_loops = Keyword.get(opts, :prune_loops, true)
     state_keys = Keyword.get(opts, :state_keys, :all)
+    output = Keyword.get(opts, :output, &default_output/2)
 
     Comp.scoped(comp, fn env ->
       # Install EffectLogger's own handler (for mark_loop operations)
@@ -883,7 +903,7 @@ defmodule Skuld.Effects.EffectLogger do
           end)
 
         # Return result paired with log
-        {{value, output_log}, restored_env}
+        {output.(value, output_log), restored_env}
       end
 
       {env_with_resume, finally_k}

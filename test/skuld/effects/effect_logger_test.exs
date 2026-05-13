@@ -882,4 +882,52 @@ defmodule Skuld.Effects.EffectLoggerTest do
       assert outer_data == nil
     end
   end
+
+  describe ":output option" do
+    test "default wraps result with log" do
+      {{result, log}, _env} =
+        State.get()
+        |> EffectLogger.with_logging()
+        |> State.with_handler(42)
+        |> Comp.run()
+
+      assert result == 42
+      assert log != nil
+    end
+
+    test "custom output transforms result" do
+      {result, _env} =
+        State.get()
+        |> EffectLogger.with_logging(output: fn _result, _log -> :just_the_result end)
+        |> State.with_handler(99)
+        |> Comp.run()
+
+      assert result == :just_the_result
+    end
+  end
+
+  describe ":suspend option" do
+    test "custom suspend decorates ExternalSuspend" do
+      comp =
+        comp do
+          _ <- State.put(1)
+          result <- Yield.yield(:paused)
+          Comp.pure(result)
+        end
+
+      {%Comp.ExternalSuspend{data: data} = _suspend, _env} =
+        comp
+        |> EffectLogger.with_logging(
+          suspend: fn s, e ->
+            _log = EffectLogger.get_log(e)
+            {%{s | data: Map.put(s.data || %{}, :my_key, "attached")}, e}
+          end
+        )
+        |> State.with_handler(0)
+        |> Yield.with_handler()
+        |> Comp.run()
+
+      assert data[:my_key] == "attached"
+    end
+  end
 end
