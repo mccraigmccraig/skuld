@@ -16,10 +16,10 @@ boundaries — plus cross-cutting effects that work with any computation.
                              │
              ┌───────────────┼────────────────────────┐
              │               │                        │
-    Foundational          Coroutine /                Boundaries
-     Effects            Concurrency                   │
+       Foundational     Concurrency               Boundaries
+        Effects              │                        │
              │               │               ┌────────┴────────┐
-   State, Reader,        Coroutine             │                 │
+   State, Reader,        Coroutine           │                 │
    Writer, Throw,            │               │               Port
    Bracket, Fresh,       FiberPool ──────────┤                 │
    Random, FxList            │               │          Port.EffectfulContract
