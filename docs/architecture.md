@@ -21,18 +21,28 @@ boundaries — plus cross-cutting effects that work with any computation.
              │                   │                   │
    State, Reader,         Fiber               Port
    Writer, Throw,            │                   │
-   Bracket, Fresh,       FiberPool        Port.EffectfulContract
-   Random, FxList            │              Port.Facade
-                        ┌────┴────┐         Command
-                     Channel    Task         Repo
-                        │
-                      Brook
+   Bracket, Fresh,       FiberPool ──────┐  Port.EffectfulContract
+   Random, FxList            │           │  Port.Facade
+                        ┌────┴────┐      │  Command
+                     Channel    Task     │  Repo
+                        │                │
+                      Brook              │
+                                         │
+                                    Query.Contract
+                                    QueryBlock
+                                         │
+                              (auto-batches fetches
+                               via FiberPool fibers)
 ```
 
-None of these branches depend on each other. You can use foundational
-effects without FiberPool. You can use Port boundaries without State or
-Reader. The branches compose when you need them to — a single computation
-can use effects from all three.
+Most branches are independent — you can use foundational effects without
+FiberPool, or Port boundaries without State or Reader. The branches
+compose when you need them to: a single computation can use effects from
+all three.
+
+`Query.Contract` and `QueryBlock` are the notable inter-branch
+connection: they define typed fetch contracts (Port/Boundaries style) but
+use `FiberPool` fibers to batch independent fetches concurrently.
 
 ## Comp — the root
 
@@ -148,8 +158,8 @@ on Port or FiberPool.
 Typed fetch contracts with automatic N+1 prevention. `deffetch` declares
 operations; executors receive batches. The `query` macro analyses variable
 dependencies and groups independent fetches into concurrent fiber batches.
-Straddles both the concurrency branch (uses FiberPool) and the boundaries
-branch (uses Port-style typed contracts).
+This is the main inter-branch component — it uses Port-style typed
+contracts at the contract layer and FiberPool for concurrent execution.
 
 ## Cross-cutting effects
 
