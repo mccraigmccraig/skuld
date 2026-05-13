@@ -781,7 +781,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
     end
   end
 
-  describe "decorate_suspend option" do
+  describe "suspend option" do
     alias Skuld.Comp.ExternalSuspend
 
     test "by default, suspends are decorated with effect log" do
@@ -811,12 +811,12 @@ defmodule Skuld.Effects.EffectLoggerTest do
       assert put_op == State.put_op()
     end
 
-    test "decorate_suspend: false disables decoration" do
+    test "suspend: nil disables decoration" do
       computation = Yield.yield(:waiting)
 
       {%ExternalSuspend{value: :waiting, data: data}, _env} =
         computation
-        |> EffectLogger.with_logging(decorate_suspend: false)
+        |> EffectLogger.with_logging(suspend: nil)
         |> Yield.with_handler()
         |> Comp.run()
 
