@@ -9,26 +9,29 @@ branches — foundational effects, fiber concurrency, and external
 boundaries — plus cross-cutting effects that work with any computation.
 
 ```
-                               Comp
-                            (lazy computation,
-                             evidence-passing,
-                             scoped handlers)
-                                 │
-             ┌───────────────────┼───────────────────┐
-             │                   │                   │
-    Foundational            Fiber /              Boundaries
-     Effects              Concurrency               │
-             │                   │          ┌────────┴────────┐
-   State, Reader,         Fiber          Port          Query.Contract
-   Writer, Throw,            │            │            QueryBlock
-   Bracket, Fresh,       FiberPool ──────┤              │
-   Random, FxList            │           │     (auto-batches fetches
-                        ┌────┴────┐      │      via FiberPool fibers)
-                     Channel    Task     │
-                        │              Port.EffectfulContract
-                      Brook            Port.Facade
-                                       Command
-                                       Repo
+                           Comp
+                       (lazy computation,
+                        evidence-passing,
+                        scoped handlers)
+                             │
+             ┌───────────────┼────────────────────────┐
+             │               │                        │
+    Foundational          Fiber /                 Boundaries
+     Effects            Concurrency                   │
+             │               │               ┌────────┴────────┐
+   State, Reader,         Fiber              │                 │
+   Writer, Throw,            │               │               Port
+   Bracket, Fresh,       FiberPool ──────────┤                 │
+   Random, FxList            │               │          Port.EffectfulContract
+                        ┌────┴────┐          │          Port.Facade
+                     Channel    Task         │          Command
+                        │                    │          Repo
+                        │              Query.Contract
+                      Brook            QueryBlock
+                                       (auto-batches fetches
+                                       via FiberPool fibers)
+
+
 ```
 
 Most branches are independent — you can use foundational effects without
@@ -43,11 +46,12 @@ use `FiberPool` fibers to batch independent fetches concurrently.
 ## Comp — the root
 
 `Skuld.Comp` is the sole dependency of everything else. Every computation
-is a 2-arity function `(env, k) -> {result, env}` that carries effect
-handlers in an evidence map, maintains a leave-scope chain for cleanup,
-and threads mutable state through the environment. Handlers are installed
-via `with_handler` and `with_scoped_state`, which save/restore on scope
-entry/exit.
+is a 2-arity function `(env, k) -> {result, env}` of its environment and a
+continuation. Environment carries effect handlers in an evidence Map,
+maintains a leave-scope chain for cleanup, and a Map of mutable effect states.
+Handlers are installed via `with_handler` and `with_scoped_state`,
+which save/restore on scope entry/exit. A computation returns a result value,
+and a modified environment.
 
 ## Foundational Effects
 
@@ -55,16 +59,16 @@ Built directly on Comp. These are the effects you can use in any
 computation with no additional machinery — just install a handler and
 `Comp.run!()`:
 
-| Effect | What it provides |
-|--------|-----------------|
-| `State` | Mutable state threaded through computation |
-| `Reader` | Immutable environment value access |
-| `Writer` | Append-only log accumulation |
-| `Throw` | Typed error throwing and catching |
-| `Bracket` | Safe resource acquire/release (try/finally) |
-| `Fresh` | UUID generation with deterministic test handler |
-| `Random` | Random values with seeded/fixed test handlers |
-| `FxList` / `FxFasterList` | Effectful list map/reduce/filter |
+| Effect                    | What it provides                                |
+|---------------------------|-------------------------------------------------|
+| `State`                   | Mutable state threaded through computation      |
+| `Reader`                  | Immutable environment value access              |
+| `Writer`                  | Append-only log accumulation                    |
+| `Throw`                   | Typed error throwing and catching               |
+| `Bracket`                 | Safe resource acquire/release (try/finally)     |
+| `Fresh`                   | UUID generation with deterministic test handler |
+| `Random`                  | Random values with seeded/fixed test handlers   |
+| `FxList` / `FxFasterList` | Effectful list map/reduce/filter                |
 
 A computation with just `State.with_handler(0)` and
 `Throw.with_handler()` is a fully functional program. No scheduler, no
