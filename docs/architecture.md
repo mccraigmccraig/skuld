@@ -16,14 +16,14 @@ boundaries — plus cross-cutting effects that work with any computation.
                              │
             ┌────────────────┼─────────────────────────────┐
             │                │                             │
-       Foundational      Coroutine                     Boundaries
-        Effects              │                             │
-            │           ┌────┴─────────┐          ┌────────┴────────┐
+       // Foundational   // Coroutine                // Boundaries
+       // Effects           │                             │
+             │         ┌────┴─────────┐          ┌────────┴────────┐
   State, Reader,        │              │          │                 │
   Writer, Throw,  Serializable-   Concurrency     │                Port
   Bracket, Fresh,  Coroutine           │          │                 │
   Random, FxList                       │          │     Port.EffectfulContract
-                                    FiberPool ───┤     Port.Facade
+                                    FiberPool─────┤     Port.Facade
                                        │          │     Command
                                   ┌────┴────┐     │     Repo
                                 Channel    Task   │
