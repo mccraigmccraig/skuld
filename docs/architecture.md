@@ -16,23 +16,19 @@ boundaries — plus cross-cutting effects that work with any computation.
                                  │
              ┌───────────────────┼───────────────────┐
              │                   │                   │
-    Foundational            Fiber /              Port /
-     Effects              Concurrency           Boundaries
-             │                   │                   │
-   State, Reader,         Fiber               Port
-   Writer, Throw,            │                   │
-   Bracket, Fresh,       FiberPool ──────┐  Port.EffectfulContract
-   Random, FxList            │           │  Port.Facade
-                        ┌────┴────┐      │  Command
-                     Channel    Task     │  Repo
-                        │                │
-                      Brook              │
-                                         │
-                                    Query.Contract
-                                    QueryBlock
-                                         │
-                              (auto-batches fetches
-                               via FiberPool fibers)
+    Foundational            Fiber /              Boundaries
+     Effects              Concurrency               │
+             │                   │          ┌────────┴────────┐
+   State, Reader,         Fiber          Port          Query.Contract
+   Writer, Throw,            │            │            QueryBlock
+   Bracket, Fresh,       FiberPool ──────┤              │
+   Random, FxList            │           │     (auto-batches fetches
+                        ┌────┴────┐      │      via FiberPool fibers)
+                     Channel    Task     │
+                        │              Port.EffectfulContract
+                      Brook            Port.Facade
+                                       Command
+                                       Repo
 ```
 
 Most branches are independent — you can use foundational effects without
@@ -115,11 +111,13 @@ through channels.
 BEAM task integration within FiberPool. `Task.task/2` spawns work in a
 separate process; `FiberPool.await!/1` suspends until it completes.
 
-## Port / Boundaries
+## Boundaries
 
-These components depend on Comp (and the Port effect) but not on fibers
-or foundational effects. They provide typed boundaries between effectful
-and non-effectful code:
+These components provide typed boundaries between effectful and
+non-effectful code. All depend on Comp. `Port` and its children are
+independent of fibers. `Query.Contract`/`QueryBlock` bridge both worlds —
+they define typed fetch contracts (Port-style) but use `FiberPool` to
+batch independent fetches concurrently:
 
 ### Port
 
