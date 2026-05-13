@@ -20,8 +20,8 @@ boundaries — plus cross-cutting effects that work with any computation.
          Effects              │                        │
               │          ┌────┴────┐          ┌────────┴────────┐
    State, Reader,        │         │           │                 │
-   Writer, Throw,   Concurrency  SerializableCoroutine         Port
-   Bracket, Fresh,        │                                   │
+   Writer, Throw,  Serializable- Concurrency                  Port
+   Bracket, Fresh,  Coroutine     │                           │
    Random, FxList    FiberPool ──────┐          Port.EffectfulContract
                          │           │          Port.Facade
                     ┌────┴────┐      │          Command
