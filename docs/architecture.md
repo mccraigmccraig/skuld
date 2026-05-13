@@ -16,20 +16,22 @@ boundaries — plus cross-cutting effects that work with any computation.
                              │
              ┌───────────────┼────────────────────────┐
              │               │                        │
-       Foundational     Concurrency               Boundaries
-        Effects              │                        │
-             │               │               ┌────────┴────────┐
-   State, Reader,        Coroutine           │                 │
-   Writer, Throw,            │               │               Port
-   Bracket, Fresh,       FiberPool ──────────┤                 │
-   Random, FxList            │               │          Port.EffectfulContract
-                        ┌────┴────┐          │          Port.Facade
-                     Channel    Task         │          Command
-                        │                    │          Repo
-                        │              Query.Contract
-                      Brook            QueryBlock
-                                       (auto-batches fetches
-                                       via Coroutine fibers)
+        Foundational      Coroutine               Boundaries
+         Effects              │                        │
+              │          ┌────┴────┐          ┌────────┴────────┐
+   State, Reader,        │         │           │                 │
+   Writer, Throw,   Concurrency  SerializableCoroutine         Port
+   Bracket, Fresh,        │                                   │
+   Random, FxList    FiberPool ──────┐          Port.EffectfulContract
+                         │           │          Port.Facade
+                    ┌────┴────┐      │          Command
+                 Channel    Task     │          Repo
+                    │                │
+                  Brook              │
+                               Query.Contract
+                               QueryBlock
+                                (auto-batches fetches
+                                via Coroutine fibers)
 
 
    Cross-cutting:  Yield   EffectLogger   Parallel   AtomicState
@@ -93,6 +95,16 @@ no scheduler — it just provides the state machine.
 FiberPool uses Coroutines as its cooperative concurrency primitive, but
 Coroutine is useful anywhere you need run-suspend-resume-cancel semantics
 for a computation — no scheduler required.
+
+### SerializableCoroutine
+
+`Skuld.SerializableCoroutine` builds on `Coroutine` and `EffectLogger` to
+provide pause-serialize-resume workflows. `new/2` constructs a Coroutine
+with `EffectLogger` installed innermost so every effect invocation is
+captured in a JSON-serializable log. `serialize/1` and `deserialize/1`
+convert the log to/from JSON. Resume uses a new Coroutine built with
+`EffectLogger.with_resume/4` — completed effects fast-forward from the
+log and execution continues from the suspension point.
 
 ### FiberPool
 
