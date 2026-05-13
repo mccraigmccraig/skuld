@@ -16,11 +16,11 @@ boundaries — plus cross-cutting effects that work with any computation.
                              │
             ┌────────────────┼─────────────────────────────┐
             │                │                             │
-       // Foundational   // Coroutine                // Boundaries
-       // Effects           │                             │
-             │         ┌────┴─────────┐          ┌────────┴────────┐
+       //Foundational    Coroutine                 //Boundaries
+       //Effects             │                             │
+             │          ┌────┴─────────┐          ┌────────┴────────┐
   State, Reader,        │              │          │                 │
-  Writer, Throw,  Serializable-   Concurrency     │                Port
+  Writer, Throw,  Serializable-   //Concurrency   │                Port
   Bracket, Fresh,  Coroutine           │          │                 │
   Random, FxList                       │          │     Port.EffectfulContract
                                     FiberPool─────┤     Port.Facade
@@ -29,7 +29,7 @@ boundaries — plus cross-cutting effects that work with any computation.
                                 Channel    Task   │
                                   │               │
                                Brook              │
-                                             Query.Contract
+                                             Query.Contract (Haxl)
                                              QueryBlock
                                              (auto-batches fetches
                                              via Coroutine fibers)
