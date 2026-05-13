@@ -1,4 +1,4 @@
-defmodule Skuld.Fiber.Error do
+defmodule Skuld.Coroutine.Error do
   @moduledoc """
   Canonical error representation for fiber failures.
 

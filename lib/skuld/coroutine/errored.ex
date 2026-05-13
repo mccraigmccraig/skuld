@@ -1,4 +1,4 @@
-defmodule Skuld.Fiber.Errored do
+defmodule Skuld.Coroutine.Errored do
   @moduledoc """
   Fiber that terminated with an error.
 

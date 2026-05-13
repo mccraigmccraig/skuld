@@ -25,7 +25,7 @@
 defmodule Skuld.FiberPool.PendingWork do
   @moduledoc false
 
-  alias Skuld.Fiber
+  alias Skuld.Coroutine
 
   @doc """
   The key under which PendingWork is stored in env.state.
@@ -37,7 +37,7 @@ defmodule Skuld.FiberPool.PendingWork do
   @type task_info :: {fiber_id(), (-> term()), keyword()}
 
   @type t :: %__MODULE__{
-          fibers: [{fiber_id(), Fiber.t()}],
+          fibers: [{fiber_id(), Coroutine.t()}],
           tasks: [task_info()]
         }
 
@@ -59,7 +59,7 @@ defmodule Skuld.FiberPool.PendingWork do
   @doc """
   Add a fiber to pending work. Called by FiberPool.fiber() handler.
   """
-  @spec add_fiber(t(), fiber_id(), Fiber.t()) :: t()
+  @spec add_fiber(t(), fiber_id(), Coroutine.t()) :: t()
   def add_fiber(%__MODULE__{fibers: fibers} = pending, fiber_id, fiber) do
     %{pending | fibers: [{fiber_id, fiber} | fibers]}
   end
@@ -67,7 +67,7 @@ defmodule Skuld.FiberPool.PendingWork do
   @doc """
   Take all pending fibers, returning them and an updated PendingWork with empty fibers.
   """
-  @spec take_fibers(t()) :: {[{fiber_id(), Fiber.t()}], t()}
+  @spec take_fibers(t()) :: {[{fiber_id(), Coroutine.t()}], t()}
   def take_fibers(%__MODULE__{fibers: fibers} = pending) do
     {fibers, %{pending | fibers: []}}
   end
@@ -120,7 +120,7 @@ defmodule Skuld.FiberPool.PendingWork do
   @doc """
   Take all pending work, returning fibers, tasks, and an empty PendingWork.
   """
-  @spec take_all(t()) :: {[{fiber_id(), Fiber.t()}], [task_info()], t()}
+  @spec take_all(t()) :: {[{fiber_id(), Coroutine.t()}], [task_info()], t()}
   def take_all(%__MODULE__{fibers: fibers, tasks: tasks}) do
     {fibers, tasks, %__MODULE__{}}
   end

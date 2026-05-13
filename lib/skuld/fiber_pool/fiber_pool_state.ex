@@ -5,7 +5,7 @@
 # ## State Fields
 #
 # - `id` - Unique identifier for this pool instance
-# - `fibers` - Map of fiber_id => Fiber.t() for all managed fibers
+# - `fibers` - Map of fiber_id => Coroutine.t() for all managed fibers
 # - `run_queue` - FIFO queue of fiber_ids ready to run
 # - `suspensions` - Map of fiber_id => Suspension.t() for all suspended fibers
 # - `completed` - Map of fiber_id => result for completed fibers
@@ -18,7 +18,7 @@
 defmodule Skuld.FiberPool.FiberPoolState do
   @moduledoc false
 
-  alias Skuld.Fiber
+  alias Skuld.Coroutine
   alias Skuld.Comp.InternalSuspend
 
   @type fiber_id :: reference()
@@ -65,7 +65,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
 
   @type t :: %__MODULE__{
           id: reference(),
-          fibers: %{fiber_id() => Fiber.t()},
+          fibers: %{fiber_id() => Coroutine.t()},
           run_queue: :queue.queue(fiber_id()),
           suspensions: %{awaiter_id() => Suspension.t()},
           completed: %{fiber_id() => result()},
@@ -130,7 +130,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
 
   Returns `{fiber_id, updated_state}`.
   """
-  @spec add_fiber(t(), Fiber.t()) :: {fiber_id(), t()}
+  @spec add_fiber(t(), Coroutine.t()) :: {fiber_id(), t()}
   def add_fiber(state, fiber) do
     fiber_id = fiber.id
 
@@ -145,7 +145,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
   @doc """
   Get a fiber by ID.
   """
-  @spec get_fiber(t(), fiber_id()) :: Fiber.t() | nil
+  @spec get_fiber(t(), fiber_id()) :: Coroutine.t() | nil
   def get_fiber(state, fiber_id) do
     Map.get(state.fibers, fiber_id)
   end
@@ -153,7 +153,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
   @doc """
   Update a fiber in the pool.
   """
-  @spec put_fiber(t(), Fiber.t()) :: t()
+  @spec put_fiber(t(), Coroutine.t()) :: t()
   def put_fiber(state, fiber) do
     put_in(state, [Access.key(:fibers), fiber.id], fiber)
   end

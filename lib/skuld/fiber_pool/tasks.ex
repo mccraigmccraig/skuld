@@ -27,7 +27,7 @@ defmodule Skuld.FiberPool.Tasks do
   @moduledoc false
 
   alias Skuld.FiberPool.FiberPoolState
-  alias Skuld.Fiber.Error
+  alias Skuld.Coroutine.Error
   alias Skuld.Comp.Throw
 
   @type task_info :: {reference(), (-> term()), keyword()}

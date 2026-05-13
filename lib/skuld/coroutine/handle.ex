@@ -14,7 +14,7 @@
 #       result <- FiberPool.await!(handle)
 #       result
 #     end
-defmodule Skuld.Fiber.Handle do
+defmodule Skuld.Coroutine.Handle do
   @moduledoc false
 
   @type t :: %__MODULE__{

@@ -1,4 +1,4 @@
-defmodule Skuld.Fiber.Completed do
+defmodule Skuld.Coroutine.Completed do
   @moduledoc """
   Fiber that finished successfully.
 

@@ -124,7 +124,7 @@ defmodule Skuld.MixProject do
             Skuld.Effects.Brook,
             Skuld.Effects.Parallel,
             Skuld.Effects.Task,
-            Skuld.Fiber
+            Skuld.Coroutine
           ],
           "Persistence & Data": [
             Skuld.Effects.Transaction,

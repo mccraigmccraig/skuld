@@ -27,7 +27,7 @@ defmodule Skuld.Comp.InternalSuspend do
   """
 
   alias Skuld.Comp.Types
-  alias Skuld.Fiber.Handle
+  alias Skuld.Coroutine.Handle
 
   @type payload :: __MODULE__.Batch.t() | __MODULE__.Channel.t() | __MODULE__.Await.t()
 

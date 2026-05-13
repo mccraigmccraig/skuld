@@ -3,7 +3,7 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
-  alias Skuld.Fiber
+  alias Skuld.Coroutine
   alias Skuld.FiberPool.FiberPoolState
   alias Skuld.FiberPool.FiberPoolState.ProgressSnapshot
   alias Skuld.FiberPool.FiberPoolState.Suspension
@@ -30,7 +30,7 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
   describe "add_fiber/2" do
     test "adds fiber to state and enqueues it" do
       state = FiberPoolState.new()
-      fiber = Fiber.new(Comp.pure(42), Env.new())
+      fiber = Coroutine.new(Comp.pure(42), Env.new())
 
       {fiber_id, state} = FiberPoolState.add_fiber(state, fiber)
 
@@ -43,7 +43,7 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
   describe "get_fiber/2" do
     test "returns fiber by id" do
       state = FiberPoolState.new()
-      fiber = Fiber.new(Comp.pure(42), Env.new())
+      fiber = Coroutine.new(Comp.pure(42), Env.new())
       {fiber_id, state} = FiberPoolState.add_fiber(state, fiber)
 
       result = FiberPoolState.get_fiber(state, fiber_id)
@@ -61,9 +61,9 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
   describe "dequeue/1" do
     test "dequeues fiber in FIFO order" do
       state = FiberPoolState.new()
-      fiber1 = Fiber.new(Comp.pure(1), Env.new())
-      fiber2 = Fiber.new(Comp.pure(2), Env.new())
-      fiber3 = Fiber.new(Comp.pure(3), Env.new())
+      fiber1 = Coroutine.new(Comp.pure(1), Env.new())
+      fiber2 = Coroutine.new(Comp.pure(2), Env.new())
+      fiber3 = Coroutine.new(Comp.pure(3), Env.new())
 
       {id1, state} = FiberPoolState.add_fiber(state, fiber1)
       {id2, state} = FiberPoolState.add_fiber(state, fiber2)
@@ -88,7 +88,7 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
   describe "record_completion/3" do
     test "records completion result" do
       state = FiberPoolState.new()
-      fiber = Fiber.new(Comp.pure(42), Env.new())
+      fiber = Coroutine.new(Comp.pure(42), Env.new())
       {fiber_id, state} = FiberPoolState.add_fiber(state, fiber)
 
       state = FiberPoolState.record_completion(state, fiber_id, {:ok, 42})
@@ -103,12 +103,12 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
       state = FiberPoolState.new()
 
       # Add and complete a fiber
-      fiber1 = Fiber.new(Comp.pure(1), Env.new())
+      fiber1 = Coroutine.new(Comp.pure(1), Env.new())
       {fid1, state} = FiberPoolState.add_fiber(state, fiber1)
       state = FiberPoolState.record_completion(state, fid1, {:ok, 1})
 
       # Add awaiting fiber
-      fiber2 = Fiber.new(Comp.pure(2), Env.new())
+      fiber2 = Coroutine.new(Comp.pure(2), Env.new())
       {fid2, state} = FiberPoolState.add_fiber(state, fiber2)
 
       # Awaiting already completed fiber should return :ready
@@ -121,11 +121,11 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
       state = FiberPoolState.new()
 
       # Add a fiber (not completed)
-      fiber1 = Fiber.new(Comp.pure(1), Env.new())
+      fiber1 = Coroutine.new(Comp.pure(1), Env.new())
       {fid1, state} = FiberPoolState.add_fiber(state, fiber1)
 
       # Add awaiting fiber
-      fiber2 = Fiber.new(Comp.pure(2), Env.new())
+      fiber2 = Coroutine.new(Comp.pure(2), Env.new())
       {fid2, state} = FiberPoolState.add_fiber(state, fiber2)
 
       # Should suspend
@@ -139,14 +139,14 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
       state = FiberPoolState.new()
 
       # Add a fiber (not completed)
-      fiber1 = Fiber.new(Comp.pure(1), Env.new())
+      fiber1 = Coroutine.new(Comp.pure(1), Env.new())
       {fid1, state} = FiberPoolState.add_fiber(state, fiber1)
 
       # Dequeue fiber1 to clear the run queue
       {:ok, ^fid1, state} = FiberPoolState.dequeue(state)
 
       # Add awaiting fiber
-      fiber2 = Fiber.new(Comp.pure(2), Env.new())
+      fiber2 = Coroutine.new(Comp.pure(2), Env.new())
       {fid2, state} = FiberPoolState.add_fiber(state, fiber2)
 
       # Dequeue fiber2 to clear the run queue
@@ -177,7 +177,7 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
 
     test "returns false when fibers exist" do
       state = FiberPoolState.new()
-      fiber = Fiber.new(Comp.pure(42), Env.new())
+      fiber = Coroutine.new(Comp.pure(42), Env.new())
       {_id, state} = FiberPoolState.add_fiber(state, fiber)
 
       refute FiberPoolState.all_done?(state)
@@ -187,8 +187,8 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
   describe "counts/1" do
     test "returns correct counts" do
       state = FiberPoolState.new()
-      fiber1 = Fiber.new(Comp.pure(1), Env.new())
-      fiber2 = Fiber.new(Comp.pure(2), Env.new())
+      fiber1 = Coroutine.new(Comp.pure(1), Env.new())
+      fiber2 = Coroutine.new(Comp.pure(2), Env.new())
 
       {fid1, state} = FiberPoolState.add_fiber(state, fiber1)
       {_fid2, state} = FiberPoolState.add_fiber(state, fiber2)
@@ -219,7 +219,7 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
 
     test "reflects added fibers and completions" do
       state = FiberPoolState.new()
-      fiber = Fiber.new(Comp.pure(42), Env.new())
+      fiber = Coroutine.new(Comp.pure(42), Env.new())
       {fid, state} = FiberPoolState.add_fiber(state, fiber)
       state = FiberPoolState.record_completion(state, fid, {:ok, 42})
 
@@ -241,7 +241,7 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
 
     test "returns true when a fiber completes" do
       state = FiberPoolState.new()
-      fiber = Fiber.new(Comp.pure(42), Env.new())
+      fiber = Coroutine.new(Comp.pure(42), Env.new())
       {fid, state} = FiberPoolState.add_fiber(state, fiber)
 
       before = FiberPoolState.progress_snapshot(state)
@@ -256,7 +256,7 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
 
       before = FiberPoolState.progress_snapshot(state)
 
-      fiber = Fiber.new(Comp.pure(1), Env.new())
+      fiber = Coroutine.new(Comp.pure(1), Env.new())
       {_fid, state} = FiberPoolState.add_fiber(state, fiber)
       after_ = FiberPoolState.progress_snapshot(state)
 
@@ -265,8 +265,8 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
 
     test "returns true when a suspension is added" do
       state = FiberPoolState.new()
-      fiber1 = Fiber.new(Comp.pure(1), Env.new())
-      fiber2 = Fiber.new(Comp.pure(2), Env.new())
+      fiber1 = Coroutine.new(Comp.pure(1), Env.new())
+      fiber2 = Coroutine.new(Comp.pure(2), Env.new())
       {fid1, state} = FiberPoolState.add_fiber(state, fiber1)
       {fid2, state} = FiberPoolState.add_fiber(state, fiber2)
 
@@ -323,8 +323,8 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
 
     test "returns true when wake signals change" do
       state = FiberPoolState.new()
-      fiber1 = Fiber.new(Comp.pure(1), Env.new())
-      fiber2 = Fiber.new(Comp.pure(2), Env.new())
+      fiber1 = Coroutine.new(Comp.pure(1), Env.new())
+      fiber2 = Coroutine.new(Comp.pure(2), Env.new())
       {fid1, state} = FiberPoolState.add_fiber(state, fiber1)
       {fid2, state} = FiberPoolState.add_fiber(state, fiber2)
 

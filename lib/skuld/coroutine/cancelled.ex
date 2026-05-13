@@ -1,4 +1,4 @@
-defmodule Skuld.Fiber.Cancelled do
+defmodule Skuld.Coroutine.Cancelled do
   @moduledoc """
   Fiber that was cancelled before completion.
 

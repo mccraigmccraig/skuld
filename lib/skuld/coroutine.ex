@@ -1,4 +1,4 @@
-defmodule Skuld.Fiber do
+defmodule Skuld.Coroutine do
   @moduledoc """
   Cooperative fiber primitive for the FiberPool scheduler.
 
@@ -10,12 +10,12 @@ defmodule Skuld.Fiber do
 
   A fiber is always exactly one of these states — no `status` atom, no nil fields:
 
-  - `%Fiber.Pending{id, computation, env}` — ready to start
-  - `%Fiber.InternalSuspended{id, k, suspend, env}` — suspended, needs scheduler
-  - `%Fiber.ExternalSuspended{id, k, env}` — suspended, external callback
-  - `%Fiber.Completed{id, result, env}` — finished successfully
-  - `%Fiber.Errored{id, error, env}` — finished with error
-  - `%Fiber.Cancelled{id, reason, env}` — cancelled before completion
+  - `%Coroutine.Pending{id, computation, env}` — ready to start
+  - `%Coroutine.InternalSuspended{id, k, suspend, env}` — suspended, needs scheduler
+  - `%Coroutine.ExternalSuspended{id, k, env}` — suspended, external callback
+  - `%Coroutine.Completed{id, result, env}` — finished successfully
+  - `%Coroutine.Errored{id, error, env}` — finished with error
+  - `%Coroutine.Cancelled{id, reason, env}` — cancelled before completion
 
   ## Lifecycle
 
@@ -30,24 +30,24 @@ defmodule Skuld.Fiber do
   natural accumulator-style loops:
 
       fiber
-      |> Fiber.new(comp, env)
-      |> Fiber.run()
-      |> Fiber.run(result1)
-      |> Fiber.run(result2)
-      |> Fiber.cancel()
+      |> Coroutine.new(comp, env)
+      |> Coroutine.run()
+      |> Coroutine.run(result1)
+      |> Coroutine.run(result2)
+      |> Coroutine.cancel()
   """
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Comp.Types
-  alias Skuld.Fiber.Cancelled
-  alias Skuld.Fiber.Completed
-  alias Skuld.Fiber.Error
-  alias Skuld.Fiber.Errored
-  alias Skuld.Fiber.ExternalSuspended
-  alias Skuld.Fiber.InternalSuspended
-  alias Skuld.Fiber.Pending
+  alias Skuld.Coroutine.Cancelled
+  alias Skuld.Coroutine.Completed
+  alias Skuld.Coroutine.Error
+  alias Skuld.Coroutine.Errored
+  alias Skuld.Coroutine.ExternalSuspended
+  alias Skuld.Coroutine.InternalSuspended
+  alias Skuld.Coroutine.Pending
 
   @typedoc """
   A fiber in any state.
@@ -77,8 +77,8 @@ defmodule Skuld.Fiber do
 
   ## Example
 
-      fiber = Fiber.new(my_comp, env)
-      assert match?(%Fiber.Pending{}, fiber)
+      fiber = Coroutine.new(my_comp, env)
+      assert match?(%Coroutine.Pending{}, fiber)
   """
   @spec new(Types.computation(), Types.env()) :: Pending.t()
   def new(comp, env) do
@@ -103,14 +103,14 @@ defmodule Skuld.Fiber do
 
   ## Examples
 
-      fiber = Fiber.new(my_comp, env)
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.new(my_comp, env)
+      fiber = Coroutine.run(fiber)
       # ... later, when we have a result ...
-      fiber = Fiber.run(fiber, result)
+      fiber = Coroutine.run(fiber, result)
       case fiber do
-        %Fiber.Completed{result: result} -> result
-        %Fiber.InternalSuspended{} -> :still_waiting
-        %Fiber.Errored{error: error} -> {:error, error}
+        %Coroutine.Completed{result: result} -> result
+        %Coroutine.InternalSuspended{} -> :still_waiting
+        %Coroutine.Errored{error: error} -> {:error, error}
       end
   """
   @spec run(t()) ::
@@ -121,7 +121,7 @@ defmodule Skuld.Fiber do
 
   def run(fiber) do
     raise ArgumentError,
-          "Cannot run fiber without value: expected %Fiber.Pending{}, got #{inspect(fiber.__struct__)}"
+          "Cannot run fiber without value: expected %Coroutine.Pending{}, got #{inspect(fiber.__struct__)}"
   end
 
   @spec run(t(), term()) ::
@@ -136,7 +136,7 @@ defmodule Skuld.Fiber do
 
   def run(fiber, _value) do
     raise ArgumentError,
-          "Cannot run fiber: expected %Fiber.Pending{}, %Fiber.InternalSuspended{}, or %Fiber.ExternalSuspended{}, got #{inspect(fiber.__struct__)}"
+          "Cannot run fiber: expected %Coroutine.Pending{}, %Coroutine.InternalSuspended{}, or %Coroutine.ExternalSuspended{}, got #{inspect(fiber.__struct__)}"
   end
 
   @doc """
@@ -159,8 +159,8 @@ defmodule Skuld.Fiber do
 
   ## Example
 
-      fiber = Fiber.cancel(fiber, :timeout)
-      assert match?(%Fiber.Cancelled{}, fiber)
+      fiber = Coroutine.cancel(fiber, :timeout)
+      assert match?(%Coroutine.Cancelled{}, fiber)
   """
   @spec cancel(t(), term()) :: t()
   def cancel(fiber, reason \\ :cancelled)
@@ -209,7 +209,7 @@ defmodule Skuld.Fiber do
     execute_and_handle(fiber, env, fn -> k.(value, env) end)
   end
 
-  # Normalize Comp.Throw error payload into a Fiber.Error struct
+  # Normalize Comp.Throw error payload into a Coroutine.Error struct
   defp normalize_throw_error(%{kind: :error, payload: exception, stacktrace: stacktrace}) do
     %Error{type: :exception, error: exception, stacktrace: stacktrace}
   end

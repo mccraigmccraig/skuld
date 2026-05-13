@@ -20,11 +20,11 @@
 defmodule Skuld.FiberPool.Scheduler do
   @moduledoc false
 
-  alias Skuld.Fiber
-  alias Skuld.Fiber.Completed
-  alias Skuld.Fiber.Errored
-  alias Skuld.Fiber.ExternalSuspended
-  alias Skuld.Fiber.InternalSuspended
+  alias Skuld.Coroutine
+  alias Skuld.Coroutine.Completed
+  alias Skuld.Coroutine.Errored
+  alias Skuld.Coroutine.ExternalSuspended
+  alias Skuld.Coroutine.InternalSuspended
   alias Skuld.FiberPool.FiberPoolState
   alias Skuld.FiberPool.PendingWork
   alias Skuld.Comp.Types
@@ -34,13 +34,13 @@ defmodule Skuld.FiberPool.Scheduler do
   @type step_result ::
           {:continue, FiberPoolState.t()}
           | {:done, FiberPoolState.t()}
-          | {:suspended, Fiber.t(), FiberPoolState.t()}
+          | {:suspended, Coroutine.t(), FiberPoolState.t()}
           | {:batch_ready, FiberPoolState.t()}
           | {:error, term(), FiberPoolState.t()}
 
   @type run_result ::
           {:done, %{reference() => term()}, FiberPoolState.t()}
-          | {:suspended, Fiber.t(), FiberPoolState.t()}
+          | {:suspended, Coroutine.t(), FiberPoolState.t()}
           | {:waiting_for_tasks, FiberPoolState.t()}
           | {:batch_ready, FiberPoolState.t()}
           | {:error, term(), FiberPoolState.t()}
@@ -227,7 +227,7 @@ defmodule Skuld.FiberPool.Scheduler do
     fiber = %{fiber | env: fiber_env}
 
     fiber
-    |> Fiber.run()
+    |> Coroutine.run()
     |> handle_fiber_result(state)
   end
 
@@ -241,7 +241,7 @@ defmodule Skuld.FiberPool.Scheduler do
     fiber = %{fiber | env: fiber_env}
 
     fiber
-    |> Fiber.run(result)
+    |> Coroutine.run(result)
     |> handle_fiber_result(state)
   end
 

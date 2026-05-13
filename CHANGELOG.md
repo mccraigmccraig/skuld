@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `Skuld.Fiber` → `Skuld.Coroutine` — renamed to reflect that the resumable
+  computation wrapper is a general-purpose coroutine primitive, not inherently
+  tied to cooperative concurrency.
 - `Skuld.Fiber.FiberPool.*` → `Skuld.FiberPool.*` — extracted the FiberPool
   scheduler infrastructure to a top-level namespace, independent of the Fiber
   module it previously nested under.

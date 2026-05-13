@@ -20,7 +20,7 @@ defmodule Skuld.FiberPool.Main do
 
   - `InternalSuspend` depends on this module (via ISentinel.run → drain_pending)
   - `Skuld.Effects.FiberPool` depends on this module (via with_handler)
-  - Both depend on `Comp` and `Skuld.Fiber.*`
+  - Both depend on `Comp` and `Skuld.Coroutine.*`
   - `Comp` does **not** depend on any Fiber module
 
   InternalSuspend sentinels propagate through `Comp.bind` without firing

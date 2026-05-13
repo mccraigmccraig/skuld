@@ -1,4 +1,4 @@
-defmodule Skuld.Fiber.InternalSuspended do
+defmodule Skuld.Coroutine.InternalSuspended do
   @moduledoc """
   Fiber suspended with an internal scheduler dependency (channel, batch, await).
 

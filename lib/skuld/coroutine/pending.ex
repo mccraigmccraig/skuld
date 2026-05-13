@@ -1,4 +1,4 @@
-defmodule Skuld.Fiber.Pending do
+defmodule Skuld.Coroutine.Pending do
   @moduledoc """
   Fiber waiting to be run for the first time.
 

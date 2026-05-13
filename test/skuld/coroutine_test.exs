@@ -1,27 +1,27 @@
-defmodule Skuld.FiberTest do
+defmodule Skuld.CoroutineTest do
   use ExUnit.Case, async: true
   use Skuld.Syntax
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
-  alias Skuld.Fiber
-  alias Skuld.Fiber.Cancelled
-  alias Skuld.Fiber.Completed
-  alias Skuld.Fiber.Error
-  alias Skuld.Fiber.Errored
-  alias Skuld.Fiber.ExternalSuspended
-  alias Skuld.Fiber.Pending
-  alias Skuld.Fiber.Handle
+  alias Skuld.Coroutine
+  alias Skuld.Coroutine.Cancelled
+  alias Skuld.Coroutine.Completed
+  alias Skuld.Coroutine.Error
+  alias Skuld.Coroutine.Errored
+  alias Skuld.Coroutine.ExternalSuspended
+  alias Skuld.Coroutine.Pending
+  alias Skuld.Coroutine.Handle
   alias Skuld.Effects.Yield
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
 
-  describe "Fiber.new/2" do
+  describe "Coroutine.new/2" do
     test "creates a pending fiber" do
       env = Env.new()
       comp = Comp.pure(42)
 
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
       assert match?(%Pending{}, fiber)
       assert fiber.computation == comp
@@ -33,19 +33,19 @@ defmodule Skuld.FiberTest do
       env = Env.new()
       comp = Comp.pure(42)
 
-      fiber1 = Fiber.new(comp, env)
-      fiber2 = Fiber.new(comp, env)
+      fiber1 = Coroutine.new(comp, env)
+      fiber2 = Coroutine.new(comp, env)
 
       refute fiber1.id == fiber2.id
     end
   end
 
-  describe "Fiber.run/1" do
+  describe "Coroutine.run/1" do
     test "pure computation completes immediately" do
       env = Env.new()
-      fiber = Fiber.new(Comp.pure(42), env)
+      fiber = Coroutine.new(Comp.pure(42), env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%Completed{}, fiber)
       assert fiber.result == 42
       assert fiber.env != nil
@@ -62,9 +62,9 @@ defmodule Skuld.FiberTest do
         |> State.with_handler(5)
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%Completed{}, fiber)
       assert fiber.result == {5, 15}
     end
@@ -78,9 +78,9 @@ defmodule Skuld.FiberTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
       assert is_function(fiber.k, 2)
       assert fiber.env != nil
@@ -95,9 +95,9 @@ defmodule Skuld.FiberTest do
         |> Throw.with_handler()
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%Errored{}, fiber)
       assert %Error{type: :throw, error: :my_error} = fiber.error
       assert fiber.env != nil
@@ -109,9 +109,9 @@ defmodule Skuld.FiberTest do
       end
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%Errored{}, fiber)
       assert %Error{type: :exception, error: %RuntimeError{message: "boom"}} = fiber.error
       assert fiber.env != nil
@@ -119,18 +119,18 @@ defmodule Skuld.FiberTest do
 
     test "cannot run non-pending fiber" do
       env = Env.new()
-      fiber = Fiber.new(Comp.pure(42), env)
+      fiber = Coroutine.new(Comp.pure(42), env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%Completed{}, fiber)
 
       assert_raise ArgumentError, ~r/Cannot run fiber/, fn ->
-        Fiber.run(fiber)
+        Coroutine.run(fiber)
       end
     end
   end
 
-  describe "Fiber.run/2" do
+  describe "Coroutine.run/2" do
     test "resumes suspended fiber to completion" do
       comp =
         comp do
@@ -140,12 +140,12 @@ defmodule Skuld.FiberTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
-      fiber = Fiber.run(fiber, 21)
+      fiber = Coroutine.run(fiber, 21)
       assert match?(%Completed{}, fiber)
       assert fiber.result == 42
     end
@@ -160,15 +160,15 @@ defmodule Skuld.FiberTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
-      fiber = Fiber.run(fiber, 10)
+      fiber = Coroutine.run(fiber, 10)
       assert match?(%ExternalSuspended{}, fiber)
 
-      fiber = Fiber.run(fiber, 20)
+      fiber = Coroutine.run(fiber, 20)
       assert match?(%Completed{}, fiber)
       assert fiber.result == 30
     end
@@ -188,32 +188,32 @@ defmodule Skuld.FiberTest do
         |> Throw.with_handler()
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
-      fiber = Fiber.run(fiber, :trigger_error)
+      fiber = Coroutine.run(fiber, :trigger_error)
       assert match?(%Errored{}, fiber)
       assert %Error{type: :throw, error: :triggered} = fiber.error
     end
 
     test "cannot call run/2 on pending fiber" do
       env = Env.new()
-      fiber = Fiber.new(Comp.pure(42), env)
+      fiber = Coroutine.new(Comp.pure(42), env)
 
       assert_raise ArgumentError, ~r/Cannot run fiber/, fn ->
-        Fiber.run(fiber, :value)
+        Coroutine.run(fiber, :value)
       end
     end
   end
 
-  describe "Fiber.cancel/1" do
+  describe "Coroutine.cancel/1" do
     test "cancels pending fiber without leave_scope (no scopes entered)" do
       env = Env.new()
-      fiber = Fiber.new(Comp.pure(42), env)
+      fiber = Coroutine.new(Comp.pure(42), env)
 
-      cancelled = Fiber.cancel(fiber)
+      cancelled = Coroutine.cancel(fiber)
 
       assert match?(%Cancelled{}, cancelled)
       assert cancelled.env == nil
@@ -235,12 +235,12 @@ defmodule Skuld.FiberTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
-      cancelled = Fiber.cancel(fiber)
+      cancelled = Coroutine.cancel(fiber)
 
       assert match?(%Cancelled{}, cancelled)
       assert cancelled.env != nil
@@ -264,10 +264,10 @@ defmodule Skuld.FiberTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
-      cancelled = Fiber.cancel(fiber, :timeout)
+      fiber = Coroutine.run(fiber)
+      cancelled = Coroutine.cancel(fiber, :timeout)
 
       assert match?(%Cancelled{}, cancelled)
       assert_received {:cleanup_reason, %Comp.Cancelled{reason: :timeout}}
@@ -300,12 +300,12 @@ defmodule Skuld.FiberTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
-      _cancelled = Fiber.cancel(fiber, :shutdown)
+      _cancelled = Coroutine.cancel(fiber, :shutdown)
 
       assert_received {:inner_cleanup, %Comp.Cancelled{reason: :shutdown}}
       assert_received {:outer_cleanup, %Comp.Cancelled{reason: :shutdown}}
@@ -320,12 +320,12 @@ defmodule Skuld.FiberTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
-      cancelled = Fiber.cancel(fiber)
+      cancelled = Coroutine.cancel(fiber)
 
       assert match?(%Cancelled{}, cancelled)
       assert Env.get_state(cancelled.env, State.state_key(State)) == nil
@@ -334,12 +334,12 @@ defmodule Skuld.FiberTest do
     test "cancel without leave_scope (simple suspend, no scoped effects)" do
       comp = Yield.yield(:value) |> Yield.with_handler()
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
 
-      cancelled = Fiber.cancel(fiber)
+      cancelled = Coroutine.cancel(fiber)
 
       assert match?(%Cancelled{}, cancelled)
       assert cancelled.env != nil
@@ -347,13 +347,13 @@ defmodule Skuld.FiberTest do
 
     test "cancel is no-op on completed fiber" do
       env = Env.new()
-      fiber = Fiber.new(Comp.pure(42), env)
+      fiber = Coroutine.new(Comp.pure(42), env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%Completed{}, fiber)
       assert fiber.result == 42
 
-      same = Fiber.cancel(fiber)
+      same = Coroutine.cancel(fiber)
       assert match?(%Completed{}, same)
       assert same.result == 42
       assert same == fiber
@@ -368,13 +368,13 @@ defmodule Skuld.FiberTest do
         |> Throw.with_handler()
 
       env = Env.new()
-      fiber = Fiber.new(comp, env)
+      fiber = Coroutine.new(comp, env)
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%Errored{}, fiber)
       assert %Error{type: :throw, error: :boom} = fiber.error
 
-      same = Fiber.cancel(fiber)
+      same = Coroutine.cancel(fiber)
       assert match?(%Errored{}, same)
       assert %Error{type: :throw, error: :boom} = same.error
       assert same == fiber
@@ -382,36 +382,36 @@ defmodule Skuld.FiberTest do
 
     test "cancel is no-op on already-cancelled fiber" do
       env = Env.new()
-      fiber = Fiber.new(Comp.pure(42), env)
+      fiber = Coroutine.new(Comp.pure(42), env)
 
-      cancelled = Fiber.cancel(fiber)
+      cancelled = Coroutine.cancel(fiber)
       assert match?(%Cancelled{}, cancelled)
 
-      same = Fiber.cancel(cancelled, :different_reason)
+      same = Coroutine.cancel(cancelled, :different_reason)
       assert match?(%Cancelled{}, same)
       assert same == cancelled
     end
   end
 
-  describe "Fiber.terminal?/1" do
+  describe "Coroutine.terminal?/1" do
     test "pending is not terminal" do
-      fiber = Fiber.new(Comp.pure(42), Env.new())
-      refute Fiber.terminal?(fiber)
+      fiber = Coroutine.new(Comp.pure(42), Env.new())
+      refute Coroutine.terminal?(fiber)
     end
 
     test "suspended is not terminal" do
       comp = Yield.yield(:value) |> Yield.with_handler()
-      fiber = Fiber.new(comp, Env.new())
+      fiber = Coroutine.new(comp, Env.new())
 
-      fiber = Fiber.run(fiber)
+      fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
-      refute Fiber.terminal?(fiber)
+      refute Coroutine.terminal?(fiber)
     end
 
     test "cancelled is terminal" do
-      fiber = Fiber.new(Comp.pure(42), Env.new())
-      cancelled = Fiber.cancel(fiber)
-      assert Fiber.terminal?(cancelled)
+      fiber = Coroutine.new(Comp.pure(42), Env.new())
+      cancelled = Coroutine.cancel(fiber)
+      assert Coroutine.terminal?(cancelled)
     end
   end
 

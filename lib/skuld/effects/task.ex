@@ -21,7 +21,7 @@ defmodule Skuld.Effects.Task do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
-  alias Skuld.Fiber.Handle
+  alias Skuld.Coroutine.Handle
   alias Skuld.FiberPool.PendingWork
 
   @sig __MODULE__

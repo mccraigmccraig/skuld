@@ -3,7 +3,7 @@ defmodule Skuld.FiberPool.SchedulerTest do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
-  alias Skuld.Fiber
+  alias Skuld.Coroutine
   alias Skuld.FiberPool.FiberPoolState
   alias Skuld.FiberPool.Scheduler
 
@@ -11,7 +11,7 @@ defmodule Skuld.FiberPool.SchedulerTest do
     test "runs one fiber and returns :continue" do
       state = FiberPoolState.new()
       env = Env.new()
-      fiber = Fiber.new(Comp.pure(42), env)
+      fiber = Coroutine.new(Comp.pure(42), env)
       {_fid, state} = FiberPoolState.add_fiber(state, fiber)
 
       {:continue, state} = Scheduler.step(state, env)
@@ -33,9 +33,9 @@ defmodule Skuld.FiberPool.SchedulerTest do
       state = FiberPoolState.new()
       env = Env.new()
 
-      fiber1 = Fiber.new(Comp.pure(1), env)
-      fiber2 = Fiber.new(Comp.pure(2), env)
-      fiber3 = Fiber.new(Comp.pure(3), env)
+      fiber1 = Coroutine.new(Comp.pure(1), env)
+      fiber2 = Coroutine.new(Comp.pure(2), env)
+      fiber3 = Coroutine.new(Comp.pure(3), env)
 
       {fid1, state} = FiberPoolState.add_fiber(state, fiber1)
       {fid2, state} = FiberPoolState.add_fiber(state, fiber2)
@@ -66,12 +66,12 @@ defmodule Skuld.FiberPool.SchedulerTest do
         raise "boom"
       end
 
-      fiber = Fiber.new(error_comp, env)
+      fiber = Coroutine.new(error_comp, env)
       {fid, state} = FiberPoolState.add_fiber(state, fiber)
 
       {:done, results, _state} = Scheduler.run(state, env)
 
-      assert {:error, %Fiber.Error{type: :exception, error: %RuntimeError{message: "boom"}}} =
+      assert {:error, %Coroutine.Error{type: :exception, error: %RuntimeError{message: "boom"}}} =
                results[fid]
     end
   end
@@ -81,8 +81,8 @@ defmodule Skuld.FiberPool.SchedulerTest do
       state = FiberPoolState.new()
       env = Env.new()
 
-      fiber1 = Fiber.new(Comp.pure(1), env)
-      fiber2 = Fiber.new(Comp.pure(2), env)
+      fiber1 = Coroutine.new(Comp.pure(1), env)
+      fiber2 = Coroutine.new(Comp.pure(2), env)
 
       {_fid1, state} = FiberPoolState.add_fiber(state, fiber1)
       {_fid2, state} = FiberPoolState.add_fiber(state, fiber2)

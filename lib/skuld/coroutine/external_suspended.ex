@@ -1,4 +1,4 @@
-defmodule Skuld.Fiber.ExternalSuspended do
+defmodule Skuld.Coroutine.ExternalSuspended do
   @moduledoc """
   Fiber suspended for an external caller (e.g. Yield).
 

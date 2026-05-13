@@ -46,9 +46,9 @@ defmodule Skuld.Effects.FiberPool do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
-  alias Skuld.Fiber
+  alias Skuld.Coroutine
   alias Skuld.Comp.InternalSuspend
-  alias Skuld.Fiber.Handle
+  alias Skuld.Coroutine.Handle
   alias Skuld.FiberPool.Main, as: FiberPoolMain
   alias Skuld.FiberPool.PendingWork
   alias Skuld.Effects.Throw
@@ -487,7 +487,7 @@ defmodule Skuld.Effects.FiberPool do
     pool_id = Env.get_state(env, {__MODULE__, :pool_id}, make_ref())
 
     fiber_env = fiber_env(env)
-    fiber = Fiber.new(comp, fiber_env)
+    fiber = Coroutine.new(comp, fiber_env)
     handle = Handle.new(fiber.id, pool_id)
 
     # Add to pending fibers list (scheduler will pick them up)
@@ -683,7 +683,7 @@ defmodule Skuld.Effects.FiberPool do
   defp unwrap_result({:ok, value}), do: {:ok, value}
 
   defp unwrap_result(
-         {:error, %Skuld.Fiber.Error{type: type, error: error, stacktrace: stacktrace}}
+         {:error, %Skuld.Coroutine.Error{type: type, error: error, stacktrace: stacktrace}}
        ) do
     {:throw,
      %Comp.Throw{
