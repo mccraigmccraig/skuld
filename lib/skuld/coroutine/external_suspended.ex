@@ -16,9 +16,10 @@ defmodule Skuld.Coroutine.ExternalSuspended do
 
   @type t :: %__MODULE__{
           id: reference(),
+          value: term(),
           k: Types.k(),
           env: Env.t()
         }
 
-  defstruct [:id, :k, :env]
+  defstruct [:id, :value, :k, :env]
 end

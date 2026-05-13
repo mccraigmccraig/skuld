@@ -82,6 +82,7 @@ defmodule Skuld.CoroutineTest do
 
       fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
+      assert fiber.value == :get_value
       assert is_function(fiber.k, 2)
       assert fiber.env != nil
     end

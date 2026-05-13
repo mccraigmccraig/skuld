@@ -266,12 +266,12 @@ defmodule Skuld.Coroutine do
   end
 
   # Handle an external Suspend sentinel (closes over env)
-  defp handle_external_suspend(fiber, %Comp.ExternalSuspend{resume: resume}, env) do
-    k = fn value, _env ->
-      resume.(value)
+  defp handle_external_suspend(fiber, %Comp.ExternalSuspend{value: value, resume: resume}, env) do
+    k = fn resume_value, _env ->
+      resume.(resume_value)
     end
 
-    %ExternalSuspended{id: fiber.id, k: k, env: env}
+    %ExternalSuspended{id: fiber.id, value: value, k: k, env: env}
   end
 
   # Handle an internal suspend (receives env at resume time)
