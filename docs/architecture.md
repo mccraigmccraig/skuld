@@ -9,7 +9,7 @@ branches — foundational effects, coroutine concurrency, and external
 boundaries — plus cross-cutting effects that work with any computation.
 
 ```
-                         Comp
+                          Comp
                      (lazy computation,
                       evidence-passing,
                       scoped handlers)
