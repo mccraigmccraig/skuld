@@ -63,7 +63,8 @@ defmodule Skuld.SerializableCoroutineTest do
           |> Throw.with_handler()
         end)
 
-      %Coroutine.ExternalSuspended{value: value} = suspended =
+      %Coroutine.ExternalSuspended{value: value} =
+        suspended =
         Coroutine.run(coroutine)
 
       assert value == :paused
