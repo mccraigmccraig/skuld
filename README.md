@@ -10,6 +10,41 @@
 
 An effectful programming framework for Elixir.
 
+```
+                          Comp
+                     (lazy computation,
+                      evidence-passing,
+                      scoped handlers)
+                            │
+      ┌─────────────────────┼─────────────────────────────┐
+      │                     │                             │
+ //Foundational       //Coroutines &                 //Boundaries
+ //Effects            //Concurrency                       │
+      │                     │                             │
+      │                 Coroutine                ┌────────┴────────┐
+      │                     │                    │                 │
+ State, Reader,        ┌────┴──────┐             │                Port
+ Writer, Throw,        │           │             │                 │
+ Bracket, Fresh,  Serializable-    │             │      Port.EffectfulContract
+ Random, FxList,   Coroutine       │             │      Port.Facade
+ Yield,                            │             │      Repo
+ EffectLogger,                     │             │      Command
+ Parallel,                      FiberPool        │
+ AtomicState,                      │             │
+ Transaction,                      │             │
+ AsyncComputation                  │             │
+                                   ├────────────┐│
+                                   │            ││
+                              ┌────┴────┐       ││
+                           Channel    Task      ││
+                              │                 ││
+                            Brook               ││
+                                           Query.Contract
+                                           QueryBlock
+                                           (Haxl-like: auto-batches fetches
+                                           via Coroutine fibers)
+```
+
 ## The problem
 
 Between your pure business logic and your side-effecting infrastructure

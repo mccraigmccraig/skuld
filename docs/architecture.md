@@ -21,12 +21,17 @@ boundaries — plus cross-cutting effects that work with any computation.
       │                     │                             │
       │                 Coroutine                ┌────────┴────────┐
       │                     │                    │                 │
- State, Reader,     ┌───────┴──────┐             │                Port
- Writer, Throw,     │              │             │                 │
+ State, Reader,        ┌────┴──────┐             │                Port
+ Writer, Throw,        │           │             │                 │
  Bracket, Fresh,  Serializable-    │             │      Port.EffectfulContract
- Random, FxList   Coroutine        │             │      Port.Facade
-                                FiberPool        │      Command
-                                   ├────────────┐│      Repo
+ Random, FxList,   Coroutine       │             │      Port.Facade
+ Yield,                            │             │      Repo
+ EffectLogger,                     │             │      Command
+ Parallel,                      FiberPool        │
+ AtomicState,                      │             │
+ Transaction,                      │             │
+ AsyncComputation                  │             │
+                                   ├────────────┐│
                                    │            ││
                               ┌────┴────┐       ││
                            Channel    Task      ││
@@ -36,20 +41,9 @@ boundaries — plus cross-cutting effects that work with any computation.
                                            QueryBlock
                                            (Haxl-like: auto-batches fetches
                                            via Coroutine fibers)
-
-
-   Cross-cutting:  Yield   EffectLogger   Parallel   AtomicState
-                    Transaction   AsyncComputation
 ```
 
-Every module shown depends on Comp. Cross-cutting effects depend *only*
-on Comp and work with any computation, regardless of branch.
-`EffectLogger` provides serializable execution logs for durable
-workflows; `Yield` provides coroutine suspend/resume. Together they
-enable pause-serialize-resume workflows — `Coroutine` owns the "resumable
-computation" concept (wrapping a Comp into a self-contained lifecycle
-unit), while `EffectLogger` provides the JSON-serializable log that
-makes it durable.
+Every module shown depends on Comp.
 
 ## Comp — the root
 
@@ -77,6 +71,12 @@ computation with no additional machinery — just install a handler and
 | `Fresh`                   | UUID generation with deterministic test handler |
 | `Random`                  | Random values with seeded/fixed test handlers   |
 | `FxList` / `FxFasterList` | Effectful list map/reduce/filter                |
+| `Yield`                   | Coroutine suspend/resume                        |
+| `EffectLogger`            | Serializable execution log for durable workflows |
+| `Parallel`                | Fork-join concurrency via BEAM tasks            |
+| `AtomicState`             | Thread-safe mutable state                       |
+| `Transaction`             | Env state rollback + optional DB wrapping       |
+| `AsyncComputation`        | LiveView process bridge                         |
 
 A computation with just `State.with_handler(0)` and
 `Throw.with_handler()` is a fully functional program. No scheduler, no
@@ -184,19 +184,6 @@ operations; executors receive batches. The `query` macro analyses variable
 dependencies and groups independent fetches into concurrent coroutine batches.
 This is the main inter-branch component — it uses Port-style typed
 contracts at the contract layer and FiberPool for concurrent execution.
-
-## Cross-cutting effects
-
-These effects work with any computation, regardless of branch:
-
-| Effect | What it provides | Dependencies |
-|--------|-----------------|-------------|
-| `Yield` | Coroutine suspend/resume | Comp only |
-| `EffectLogger` | Serializable execution log for durable workflows | Comp only |
-| `Parallel` | Fork-join concurrency via BEAM tasks | Comp + Task.Supervisor |
-| `AtomicState` | Thread-safe mutable state | Comp + Agent |
-| `Transaction` | Env state rollback + optional DB wrapping | Comp + (optional) Ecto |
-| `AsyncComputation` | LiveView process bridge | Comp |
 
 <!-- nav:footer:start -->
 
