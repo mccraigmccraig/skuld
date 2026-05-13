@@ -9,32 +9,33 @@ branches — foundational effects, coroutine concurrency, and external
 boundaries — plus cross-cutting effects that work with any computation.
 
 ```
-                          Comp
-                      (lazy computation,
-                       evidence-passing,
-                       scoped handlers)
-                             │
-            ┌────────────────┼─────────────────────────────┐
-            │                │                             │
-       //Foundational  //Coroutines &             //Boundaries
-       //Effects       //Concurrency                │
-            │               Coroutine          ┌────────┴────────┐
-            │               │                 │                 │
-  State, Reader,     ┌──────┴───────┐         │                Port
-  Writer, Throw,     │              │         │                 │
-  Bracket, Fresh,  Serializable-    │         │     Port.EffectfulContract
-  Random, FxList   Coroutine        │         │     Port.Facade
-                                    │         │     Command
-                                 FiberPool─────┤     Repo
-                                    │         │
-                               ┌────┴────┐    │
-                            Channel    Task   │
-                               │             │
-                             Brook           │
-                                        Query.Contract
-                                        QueryBlock
-                                        (Haxl: auto-batches fetches
-                                        via Coroutine fibers)
+                         Comp
+                     (lazy computation,
+                      evidence-passing,
+                      scoped handlers)
+                            │
+           ┌────────────────┼─────────────────────────────┐
+           │                │                             │
+      //Foundational  //Coroutines &                 //Boundaries
+      //Effects       //Concurrency                       │
+           │                │                             │
+           │            Coroutine                ┌────────┴────────┐
+           │                │                    │                 │
+ State, Reader,     ┌───────┴──────┐             │                Port
+ Writer, Throw,     │              │             │                 │
+ Bracket, Fresh,  Serializable-    │             │      Port.EffectfulContract
+ Random, FxList   Coroutine        │             │      Port.Facade
+                                FiberPool        │      Command
+                                   ├────────────┐│      Repo
+                                   │            ││
+                              ┌────┴────┐       ││
+                           Channel    Task      ││
+                              │                 ││
+                            Brook               ││
+                                           Query.Contract
+                                           QueryBlock
+                                           (Haxl: auto-batches fetches
+                                           via Coroutine fibers)
 
 
    Cross-cutting:  Yield   EffectLogger   Parallel   AtomicState
