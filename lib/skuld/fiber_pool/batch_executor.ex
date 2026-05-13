@@ -34,7 +34,7 @@
 #       Comp.pure(Map.new(ops, fn {ref, _op} -> {ref, %User{id: 1}} end))
 #     end)
 #     |> Comp.run()
-defmodule Skuld.Fiber.FiberPool.BatchExecutor do
+defmodule Skuld.FiberPool.BatchExecutor do
   @moduledoc false
 
   alias Skuld.Comp

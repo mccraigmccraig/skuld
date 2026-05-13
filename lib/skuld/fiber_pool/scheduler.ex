@@ -17,7 +17,7 @@
 #     state = FiberPoolState.new()
 #     {fiber_id, state} = FiberPoolState.add_fiber(state, fiber)
 #     {:done, results, state} = Scheduler.run(state, env)
-defmodule Skuld.Fiber.FiberPool.Scheduler do
+defmodule Skuld.FiberPool.Scheduler do
   @moduledoc false
 
   alias Skuld.Fiber
@@ -25,8 +25,8 @@ defmodule Skuld.Fiber.FiberPool.Scheduler do
   alias Skuld.Fiber.Errored
   alias Skuld.Fiber.ExternalSuspended
   alias Skuld.Fiber.InternalSuspended
-  alias Skuld.Fiber.FiberPool.FiberPoolState
-  alias Skuld.Fiber.FiberPool.PendingWork
+  alias Skuld.FiberPool.FiberPoolState
+  alias Skuld.FiberPool.PendingWork
   alias Skuld.Comp.Types
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend

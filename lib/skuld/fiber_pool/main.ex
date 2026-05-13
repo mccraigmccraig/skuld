@@ -1,4 +1,4 @@
-defmodule Skuld.Fiber.FiberPool.Main do
+defmodule Skuld.FiberPool.Main do
   @moduledoc """
   Main computation driver for the FiberPool.
 
@@ -32,11 +32,11 @@ defmodule Skuld.Fiber.FiberPool.Main do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
-  alias Skuld.Fiber.FiberPool.FiberPoolState
-  alias Skuld.Fiber.FiberPool.Scheduler
-  alias Skuld.Fiber.FiberPool.PendingWork
-  alias Skuld.Fiber.FiberPool.Batching
-  alias Skuld.Fiber.FiberPool.Tasks
+  alias Skuld.FiberPool.FiberPoolState
+  alias Skuld.FiberPool.Scheduler
+  alias Skuld.FiberPool.PendingWork
+  alias Skuld.FiberPool.Batching
+  alias Skuld.FiberPool.Tasks
 
   @doc """
   Drain any pending fibers and tasks accumulated during computation execution.

@@ -58,7 +58,7 @@ defmodule Skuld.Query.Cache do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
-  alias Skuld.Fiber.FiberPool.BatchExecutor
+  alias Skuld.FiberPool.BatchExecutor
 
   @cache_key {__MODULE__, :cache}
 

@@ -15,7 +15,7 @@
 # - `tasks` - Map of task_ref => handle_id for running BEAM tasks
 # - `task_supervisor` - Task.Supervisor pid for spawning tasks
 # - `opts` - Configuration options
-defmodule Skuld.Fiber.FiberPool.FiberPoolState do
+defmodule Skuld.FiberPool.FiberPoolState do
   @moduledoc false
 
   alias Skuld.Fiber

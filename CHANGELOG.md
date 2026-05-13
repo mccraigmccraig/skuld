@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `Skuld.Fiber.FiberPool.*` → `Skuld.FiberPool.*` — extracted the FiberPool
+  scheduler infrastructure to a top-level namespace, independent of the Fiber
+  module it previously nested under.
 - `mix.exs` description reframed from "algebraic effects" to "effectful programming
   framework" — reflects the library's full scope: fibers, query batching, hexagonal
   architecture, durable workflows, and deterministic testing.

@@ -5,14 +5,14 @@
 # - Execute batch groups using registered executors
 # - Match results back to the requesting fibers
 # - Pop batch suspensions from state, execute them, and resume fibers with results
-defmodule Skuld.Fiber.FiberPool.Batching do
+defmodule Skuld.FiberPool.Batching do
   @moduledoc false
 
   alias Skuld.Comp
   alias Skuld.Comp.Throw
   alias Skuld.Comp.InternalSuspend
-  alias Skuld.Fiber.FiberPool.BatchExecutor
-  alias Skuld.Fiber.FiberPool.FiberPoolState
+  alias Skuld.FiberPool.BatchExecutor
+  alias Skuld.FiberPool.FiberPoolState
 
   @type fiber_id :: reference()
   @type batch_key :: term()

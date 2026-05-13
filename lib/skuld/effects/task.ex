@@ -22,7 +22,7 @@ defmodule Skuld.Effects.Task do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Fiber.Handle
-  alias Skuld.Fiber.FiberPool.PendingWork
+  alias Skuld.FiberPool.PendingWork
 
   @sig __MODULE__
 

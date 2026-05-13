@@ -6,7 +6,7 @@
 # ## Key
 #
 # Use `env_key/0` to get the key under which this struct is stored in env.state.
-defmodule Skuld.Fiber.FiberPool.ChannelCoordinationState do
+defmodule Skuld.FiberPool.ChannelCoordinationState do
   @moduledoc false
 
   alias Skuld.Effects.Channel.ChannelState

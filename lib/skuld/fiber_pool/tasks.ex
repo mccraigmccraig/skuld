@@ -23,10 +23,10 @@
 # 1. Spawn pending tasks after the main computation runs
 # 2. Wait for task completion messages
 # 3. Record task results for await satisfaction
-defmodule Skuld.Fiber.FiberPool.Tasks do
+defmodule Skuld.FiberPool.Tasks do
   @moduledoc false
 
-  alias Skuld.Fiber.FiberPool.FiberPoolState
+  alias Skuld.FiberPool.FiberPoolState
   alias Skuld.Fiber.Error
   alias Skuld.Comp.Throw
 

@@ -459,7 +459,7 @@ defmodule Skuld.Query.Contract do
       @spec with_executor(Skuld.Comp.Types.computation(), module()) ::
               Skuld.Comp.Types.computation()
       def with_executor(comp, executor_module) do
-        Skuld.Fiber.FiberPool.BatchExecutor.with_executors(
+        Skuld.FiberPool.BatchExecutor.with_executors(
           comp,
           Enum.map(
             unquote(Macro.escape(Enum.map(operations, & &1.name))),

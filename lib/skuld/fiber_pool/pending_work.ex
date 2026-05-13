@@ -22,7 +22,7 @@
 # ## Key
 #
 # Use `env_key/0` to get the key under which this struct is stored in env.state.
-defmodule Skuld.Fiber.FiberPool.PendingWork do
+defmodule Skuld.FiberPool.PendingWork do
   @moduledoc false
 
   alias Skuld.Fiber

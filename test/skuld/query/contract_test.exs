@@ -5,7 +5,7 @@ defmodule Skuld.Query.ContractTest do
   alias Skuld.Comp
   alias Skuld.Effects.FiberPool
   alias Skuld.Effects.Throw
-  alias Skuld.Fiber.FiberPool.BatchExecutor
+  alias Skuld.FiberPool.BatchExecutor
 
   # ---------------------------------------------------------------
   # Test contract modules — defined at compile time

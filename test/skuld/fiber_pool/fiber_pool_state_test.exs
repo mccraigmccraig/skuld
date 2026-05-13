@@ -1,12 +1,12 @@
-defmodule Skuld.Fiber.FiberPool.FiberPoolStateTest do
+defmodule Skuld.FiberPool.FiberPoolStateTest do
   use ExUnit.Case, async: true
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Fiber
-  alias Skuld.Fiber.FiberPool.FiberPoolState
-  alias Skuld.Fiber.FiberPool.FiberPoolState.ProgressSnapshot
-  alias Skuld.Fiber.FiberPool.FiberPoolState.Suspension
+  alias Skuld.FiberPool.FiberPoolState
+  alias Skuld.FiberPool.FiberPoolState.ProgressSnapshot
+  alias Skuld.FiberPool.FiberPoolState.Suspension
 
   describe "new/1" do
     test "creates empty state" do

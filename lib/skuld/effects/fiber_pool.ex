@@ -49,8 +49,8 @@ defmodule Skuld.Effects.FiberPool do
   alias Skuld.Fiber
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Fiber.Handle
-  alias Skuld.Fiber.FiberPool.Main, as: FiberPoolMain
-  alias Skuld.Fiber.FiberPool.PendingWork
+  alias Skuld.FiberPool.Main, as: FiberPoolMain
+  alias Skuld.FiberPool.PendingWork
   alias Skuld.Effects.Throw
 
   @sig __MODULE__
