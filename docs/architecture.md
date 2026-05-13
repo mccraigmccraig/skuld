@@ -4,53 +4,50 @@
 [< Quick Reference](quick-reference.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Internals >](internals.md)
 <!-- nav:header:end -->
 
-Skuld is built in layers. Each layer depends on the one below it and
-provides capabilities to the one above.
-
-## The stack
+Skuld components form a DAG rooted at `Skuld.Comp`. There are three main
+branches — foundational effects, fiber concurrency, and external
+boundaries — plus cross-cutting effects that work with any computation.
 
 ```
-  ┌─────────────────────────────────────────────────────────┐
-  │                    Boundaries                           │
-  │  Port.EffectfulContract   Port.Facade   Query.Contract  │
-  │  AsyncComputation         Command                       │
-  ├─────────────────────────────────────────────────────────┤
-  │              Concurrency & Streaming                    │
-  │  Channel (bounded, backpressure)    Brook (streaming)   │
-  ├─────────────────────────────────────────────────────────┤
-  │                 FiberPool                                │
-  │  Cooperative scheduler for fibers + BEAM task coord     │
-  ├─────────────────────────────────────────────────────────┤
-  │                   Fiber                                  │
-  │  Resumable computation wrapper — sum-type lifecycle     │
-  │  Pending → InternalSuspended/ExternalSuspended          │
-  │         → Completed | Errored | Cancelled               │
-  ├─────────────────────────────────────────────────────────┤
-  │              Foundational Effects                        │
-  │  State    Reader    Writer    Throw    Bracket           │
-  │  Fresh    Random   FxList                             │
-  ├─────────────────────────────────────────────────────────┤
-  │                    Comp                                  │
-  │  Lazy computation: (env, k) → {result, env}             │
-  │  Evidence-passing handler dispatch   CPS for control    │
-  │  Scope / leave-scope chain / scoped state               │
-  └─────────────────────────────────────────────────────────┘
+                               Comp
+                            (lazy computation,
+                             evidence-passing,
+                             scoped handlers)
+                                 │
+             ┌───────────────────┼───────────────────┐
+             │                   │                   │
+    Foundational            Fiber /              Port /
+     Effects              Concurrency           Boundaries
+             │                   │                   │
+   State, Reader,         Fiber               Port
+   Writer, Throw,            │                   │
+   Bracket, Fresh,       FiberPool        Port.EffectfulContract
+   Random, FxList            │              Port.Facade
+                        ┌────┴────┐         Command
+                     Channel    Task         Repo
+                        │
+                      Brook
 ```
 
-## Layer by layer
+None of these branches depend on each other. You can use foundational
+effects without FiberPool. You can use Port boundaries without State or
+Reader. The branches compose when you need them to — a single computation
+can use effects from all three.
 
-### Comp — the lazy computation
+## Comp — the root
 
-`Skuld.Comp` is the foundation. Every computation is a 2-arity function
-`(env, k) -> {result, env}` that carries effect handlers in an evidence
-map, maintains a leave-scope chain for cleanup on exit, and threads
-mutable state through the environment. Handlers are installed via
-`with_handler` and `with_scoped_state`, which save/restore on scope
+`Skuld.Comp` is the sole dependency of everything else. Every computation
+is a 2-arity function `(env, k) -> {result, env}` that carries effect
+handlers in an evidence map, maintains a leave-scope chain for cleanup,
+and threads mutable state through the environment. Handlers are installed
+via `with_handler` and `with_scoped_state`, which save/restore on scope
 entry/exit.
 
-### Foundational Effects
+## Foundational Effects
 
-These effects are built directly on Comp with no additional machinery:
+Built directly on Comp. These are the effects you can use in any
+computation with no additional machinery — just install a handler and
+`Comp.run!()`:
 
 | Effect | What it provides |
 |--------|-----------------|
@@ -63,29 +60,25 @@ These effects are built directly on Comp with no additional machinery:
 | `Random` | Random values with seeded/fixed test handlers |
 | `FxList` / `FxFasterList` | Effectful list map/reduce/filter |
 
-These effects work independently — you can `Comp.run!()` a computation
-with just `State.with_handler(0)` and `Throw.with_handler()` and have a
-fully functional program. No FiberPool, no channels, no ports needed.
+A computation with just `State.with_handler(0)` and
+`Throw.with_handler()` is a fully functional program. No scheduler, no
+fibers, no ports.
 
-### Fiber — the resumable computation
+## Fiber / Concurrency
+
+The cooperative concurrency branch. These components depend on Comp but
+not on foundational effects or port boundaries:
+
+### Fiber
 
 `Skuld.Fiber` wraps a Comp and manages its evolving state across
-incremental execution. A fiber is a sum type:
+incremental execution. A fiber is a sum type — `Pending`, `InternalSuspended`,
+`ExternalSuspended`, `Completed`, `Errored`, `Cancelled`. Fibers can
+suspend (yield, await, channel block), be resumed with a value, and be
+cancelled with cleanup. Fiber itself has no scheduler — it just provides
+the state machine.
 
-```
-Pending ──run()──→ Completed | InternalSuspended | ExternalSuspended | Errored
-                      ↑                  │                     │
-                      │            run(value)            run(value)
-                      │                  │                     │
-                      └──────────────────┴─────────────────────┘
-```
-
-Fibers can suspend (when a computation yields, awaits, or blocks on a
-channel), be resumed with a value, and be cancelled with cleanup. This is
-the primitive that enables cooperative concurrency — but Fiber itself
-has no scheduler. It just provides the state machine.
-
-### FiberPool — the scheduler
+### FiberPool
 
 `Skuld.Effects.FiberPool` provides cooperative scheduling of fibers within
 a single BEAM process. When an `await` suspends a fiber, the scheduler
@@ -93,82 +86,83 @@ runs other fibers. When the awaited fiber completes, the awaiter is woken.
 The pool also coordinates BEAM `Task` processes, tracks completion, and
 detects deadlock.
 
-### Concurrency & Streaming
+### Channel
 
-`Channel` and `Brook` are built on FiberPool:
+Bounded buffer with suspending `put`/`take`. When full, `put` suspends.
+When empty, `take` suspends. Error state is sticky and propagates to all
+waiters. Rendezvous channels (capacity 0) provide direct
+producer-consumer pairing. Depends on FiberPool (channels suspend fibers).
 
-- **Channel** — bounded buffer with suspending `put`/`take`. When full,
-  `put` suspends. When empty, `take` suspends. Error state is sticky and
-  propagates to all waiters. Rendezvous channels (capacity 0) provide
-  direct producer-consumer pairing.
+### Brook
 
-- **Brook** — streaming combinator library built on Channel. Provides
-  `map`, `filter`, `flat_map`, `to_list`, `each`, and `run` with optional
-  concurrent transforms and automatic chunking. Error propagation flows
-  downstream through the channel.
+Streaming combinator library built on Channel and FiberPool. Provides
+`map`, `filter`, `to_list`, `each`, and `run` with optional concurrent
+transforms and automatic chunking. Error propagation flows downstream
+through channels.
 
-### Boundaries — interfacing with the outside world
+### Task
 
-- **`Port.EffectfulContract`** — generates typed effectful behaviours from
-  `DoubleDown.Contract` declarations. Plain code (Ecto adapters, HTTP
-  clients) implements the behaviour; effectful code calls through the
-  facade.
+BEAM task integration within FiberPool. `Task.task/2` spawns work in a
+separate process; `FiberPool.await!/1` suspends until it completes.
 
-- **`Port.Facade`** — single-module contract + effectful dispatch. Defines
-  operations inline and generates both the contract and the effectful
-  caller functions.
+## Port / Boundaries
 
-- **`Query.Contract`** — typed fetch contracts with automatic batching.
-  `deffetch` declares operations; executors receive batches. The `query`
-  macro analyses dependencies and groups independent fetches into
-  concurrent fiber batches.
+These components depend on Comp (and the Port effect) but not on fibers
+or foundational effects. They provide typed boundaries between effectful
+and non-effectful code:
 
-- **`AsyncComputation`** — bridge from Skuld effects into LiveView's
-  process model. Start a computation in a separate process, receive
-  messages on yield/completion, resume with user input.
+### Port
 
-- **`Command`** — fire-and-forget effect dispatch. `Command.execute(cmd)`
-  delegates to a handler function installed at the handler boundary.
+`Skuld.Effects.Port` is the dispatch effect. `Port.request(contract, name, args)`
+looks up the contract in a handler registry and delegates to the
+registered implementation. Handlers can be plain functions, stateful
+functions, or module-based (with `DoubleDown.Contract` dispatch).
+
+### Port.EffectfulContract
+
+Generates typed effectful behaviours from `DoubleDown.Contract`
+declarations. Plain code (Ecto adapters, HTTP clients) implements the
+behaviour; effectful code calls through the facade.
+
+### Port.Facade
+
+Single-module contract + effectful dispatch. `use Skuld.Effects.Port.Facade`
+defines operations inline and generates both the contract and the
+effectful caller functions.
+
+### Repo
+
+Built-in Ecto Repo contract (30+ operations) dispatched through Port.
+Production: `Repo.Ecto` delegates to a real Ecto Repo. Testing:
+`Repo.InMemory` (stateful, authoritative), `Repo.Stub` (stateless),
+`Repo.OpenInMemory` (partial authority).
+
+### Command
+
+Fire-and-forget effect dispatch. `Command.execute(cmd)` delegates to a
+handler function installed at the handler boundary. Depends on Comp, not
+on Port or FiberPool.
+
+### Query.Contract / QueryBlock
+
+Typed fetch contracts with automatic N+1 prevention. `deffetch` declares
+operations; executors receive batches. The `query` macro analyses variable
+dependencies and groups independent fetches into concurrent fiber batches.
+Straddles both the concurrency branch (uses FiberPool) and the boundaries
+branch (uses Port-style typed contracts).
 
 ## Cross-cutting effects
 
-Some effects operate at multiple layers:
+These effects work with any computation, regardless of branch:
 
-| Effect | Where it operates |
-|--------|------------------|
-| `Yield` | Coroutine suspend/resume — works with any Comp, enables pause/resume in EffectLogger |
-| `EffectLogger` | Wraps any computation, serialises effect invocation log to JSON for durable workflows |
-| `Parallel` | Fork-join BEAM tasks — independent of FiberPool, works with any Comp |
-| `Task` | BEAM tasks within FiberPool — bridges fiber scheduling to process parallelism |
-| `Transaction` | Env state rollback + optional DB transactions via separate Noop/Ecto handlers |
-| `AtomicState` | Thread-safe mutable state for concurrent contexts (Parallel, AsyncComputation) |
-
-## Dependency summary
-
-```
-Comp
- ├── State, Reader, Writer, Throw, Bracket, Fresh, Random, FxList
- │
- ├── Fiber
- │    └── FiberPool
- │         ├── Channel
- │         │    └── Brook
- │         ├── Task
- │         └── (schedules fibers, coordinates BEAM tasks)
- │
- ├── Port
- │    ├── Port.EffectfulContract
- │    ├── Port.Facade
- │    ├── Repo (Ecto, InMemory, Stub, OpenInMemory)
- │    └── Command
- │
- ├── Yield (used by EffectLogger, AsyncComputation)
- ├── EffectLogger (wraps any computation)
- ├── Parallel (fork-join, uses Task.Supervisor)
- ├── AtomicState (Agent-backed, for Parallel/AsyncComputation contexts)
- ├── Transaction (env rollback + optional Ecto wrapping)
- └── Query.Contract / Query.QueryBlock (uses FiberPool for concurrent batching)
-```
+| Effect | What it provides | Dependencies |
+|--------|-----------------|-------------|
+| `Yield` | Coroutine suspend/resume | Comp only |
+| `EffectLogger` | Serializable execution log for durable workflows | Comp only |
+| `Parallel` | Fork-join concurrency via BEAM tasks | Comp + Task.Supervisor |
+| `AtomicState` | Thread-safe mutable state | Comp + Agent |
+| `Transaction` | Env state rollback + optional DB wrapping | Comp + (optional) Ecto |
+| `AsyncComputation` | LiveView process bridge | Comp |
 
 <!-- nav:footer:start -->
 
