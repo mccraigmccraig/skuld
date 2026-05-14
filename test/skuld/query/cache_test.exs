@@ -43,7 +43,7 @@ defmodule Skuld.Query.CacheTest do
     An executor that counts invocations via message passing.
     Each batch call sends {:executor_called, query_name, ops_count} to the test process.
     """
-    @behaviour TestQueries.Executor
+    @behaviour TestQueries
 
     @impl true
     def get_user(ops) do
@@ -65,7 +65,7 @@ defmodule Skuld.Query.CacheTest do
   end
 
   defmodule CacheOptExecutor do
-    @behaviour CacheOptQueries.Executor
+    @behaviour CacheOptQueries
 
     @impl true
     def get_user(ops) do
@@ -87,7 +87,7 @@ defmodule Skuld.Query.CacheTest do
   end
 
   defmodule OrderExecutor do
-    @behaviour OrderQueries.Executor
+    @behaviour OrderQueries
 
     @impl true
     def get_order(ops) do
@@ -100,7 +100,7 @@ defmodule Skuld.Query.CacheTest do
   end
 
   defmodule FailingExecutor do
-    @behaviour TestQueries.Executor
+    @behaviour TestQueries
 
     @impl true
     def get_user(ops) do

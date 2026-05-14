@@ -25,7 +25,7 @@ defmodule Skuld.Query.QueryBlockTest do
   end
 
   defmodule TestExecutor do
-    @behaviour TestQueries.Executor
+    @behaviour TestQueries
 
     @impl true
     def get_user(ops) do

@@ -7,8 +7,7 @@ defmodule Skuld.Query.Contract do
     * **Operation structs** — nested struct modules per fetch (e.g., `MyContract.GetUser`)
     * **Caller functions** — typed public API returning `computation(return_type)`,
       which suspend the current fiber for batched execution
-    * **Executor behaviour** (`__MODULE__.Executor`) — typed callbacks for batch
-      execution, one per fetch
+    * **Executor behaviour** — typed callbacks for batch execution, one per fetch
     * **Dispatch function** — `__dispatch__/3` routes from batch key to executor callback
     * **Introspection** — `__query_operations__/0`
   """
@@ -145,7 +144,7 @@ defmodule Skuld.Query.Contract do
     # Generate all artefacts
     struct_modules = Enum.map(operations, &generate_struct_module(env.module, &1))
     callers = Enum.map(operations, &generate_caller(env.module, &1))
-    executor_module = generate_executor_module(env.module, operations)
+    callbacks = generate_contract_callbacks(env.module, operations)
     dispatch_fns = Enum.map(operations, &generate_dispatch/1)
     introspection = generate_introspection(operations)
 
@@ -153,11 +152,11 @@ defmodule Skuld.Query.Contract do
       # Operation struct modules (must be defined before use in caller bodies)
       (unquote_splicing(struct_modules))
 
-      # Executor behaviour module
-      unquote(executor_module)
-
       # Caller functions
       unquote_splicing(callers)
+
+      # Callback declarations
+      unquote_splicing(callbacks)
 
       # Dispatch functions
       unquote_splicing(dispatch_fns)
@@ -268,34 +267,22 @@ defmodule Skuld.Query.Contract do
   end
 
   # -------------------------------------------------------------------
-  # Executor Behaviour Generation (skuld-azy)
+  # Callback Generation (skuld-azy)
   # -------------------------------------------------------------------
 
-  defp generate_executor_module(contract_module, operations) do
-    executor_module = Module.concat(contract_module, Executor)
+  defp generate_contract_callbacks(contract_module, operations) do
+    Enum.map(operations, fn %{name: name, return_type: return_type} ->
+      struct_module_name = to_pascal_case(name)
+      struct_module = Module.concat(contract_module, struct_module_name)
 
-    callbacks =
-      Enum.map(operations, fn %{name: name, param_names: _param_names, return_type: return_type} ->
-        struct_module_name = to_pascal_case(name)
-        struct_module = Module.concat(contract_module, struct_module_name)
+      result_map_type = {:%{}, [], [{{:reference, [], []}, return_type}]}
+      comp_type = {:computation, [], [result_map_type]}
 
-        # @callback name(ops :: [{reference(), StructModule.t()}]) ::
-        #   Skuld.Comp.Types.computation(%{reference() => return_type})
-        result_map_type = {:%{}, [], [{{:reference, [], []}, return_type}]}
-        comp_type = {:computation, [], [result_map_type]}
-
-        quote do
-          @callback unquote(name)(ops :: [{reference(), unquote(struct_module).t()}]) ::
-                      Skuld.Comp.Types.unquote(comp_type)
-        end
-      end)
-
-    quote do
-      defmodule unquote(executor_module) do
-        @moduledoc "Executor behaviour for `#{inspect(unquote(contract_module))}` queries."
-        unquote_splicing(callbacks)
+      quote do
+        @callback unquote(name)(ops :: [{reference(), unquote(struct_module).t()}]) ::
+                    Skuld.Comp.Types.unquote(comp_type)
       end
-    end
+    end)
   end
 
   # -------------------------------------------------------------------

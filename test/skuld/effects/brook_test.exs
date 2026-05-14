@@ -496,7 +496,7 @@ defmodule Skuld.Effects.BrookTest do
     alias Skuld.Comp
 
     defmodule BrookBatchExecutor do
-      @behaviour Skuld.Effects.BrookTest.Queries.Executor
+      @behaviour Skuld.Effects.BrookTest.Queries
 
       @impl true
       def fetch_user(ops) do

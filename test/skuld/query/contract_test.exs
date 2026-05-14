@@ -56,11 +56,11 @@ defmodule Skuld.Query.ContractTest do
   end
 
   # ---------------------------------------------------------------
-  # Test executor — implements the TestQueries.Executor behaviour
+  # Test executor — implements the TestQueries behaviour
   # ---------------------------------------------------------------
 
   defmodule TestExecutor do
-    @behaviour TestQueries.Executor
+    @behaviour TestQueries
 
     @impl true
     def get_user(ops) do
@@ -89,7 +89,7 @@ defmodule Skuld.Query.ContractTest do
   end
 
   defmodule PostExecutor do
-    @behaviour PostQueries.Executor
+    @behaviour PostQueries
 
     @impl true
     def get_post(ops) do
@@ -142,8 +142,8 @@ defmodule Skuld.Query.ContractTest do
   end
 
   describe "executor behaviour" do
-    test "Executor behaviour module exists" do
-      assert Code.ensure_loaded?(TestQueries.Executor)
+    test "contract module has callback declarations" do
+      assert Code.ensure_loaded?(TestQueries)
     end
 
     test "executor module compiles with @behaviour" do
