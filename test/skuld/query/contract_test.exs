@@ -185,7 +185,7 @@ defmodule Skuld.Query.ContractTest do
           h <- FiberPool.fiber(TestQueries.get_user("1"))
           FiberPool.await!(h)
         end
-        |> TestQueries.with_executor(TestExecutor)
+        |> Skuld.Query.with_executor(TestQueries, TestExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -277,7 +277,7 @@ defmodule Skuld.Query.ContractTest do
           h3 <- FiberPool.fiber(TestQueries.get_user_count("org-1"))
           FiberPool.await_all!([h1, h2, h3])
         end
-        |> TestQueries.with_executor(TestExecutor)
+        |> Skuld.Query.with_executor(TestQueries, TestExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 

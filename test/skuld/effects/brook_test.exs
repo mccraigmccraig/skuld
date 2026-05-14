@@ -539,7 +539,7 @@ defmodule Skuld.Effects.BrookTest do
 
       result =
         User.fetch_users_with_orders([1, 2, 3, 4, 5])
-        |> Queries.with_executor(BrookBatchExecutor)
+        |> Skuld.Query.with_executor(Queries, BrookBatchExecutor)
         |> Channel.with_handler()
         |> FiberPool.with_handler()
         |> Comp.run!()

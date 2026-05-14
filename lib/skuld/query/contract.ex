@@ -10,7 +10,6 @@ defmodule Skuld.Query.Contract do
     * **Executor behaviour** (`__MODULE__.Executor`) — typed callbacks for batch
       execution, one per fetch
     * **Dispatch function** — `__dispatch__/3` routes from batch key to executor callback
-    * **Wiring function** — `with_executor/2` installs an executor module for all fetches
     * **Introspection** — `__query_operations__/0`
   """
 
@@ -47,7 +46,14 @@ defmodule Skuld.Query.Contract do
 
   def with_executors(comp, pairs) when is_list(pairs) do
     Enum.reduce(pairs, comp, fn {contract, executor}, acc ->
-      contract.with_executor(acc, executor)
+      operations = contract.__query_operations__()
+
+      entries =
+        Enum.map(operations, fn %{name: query_name} ->
+          {{contract, query_name}, fn ops -> contract.__dispatch__(executor, query_name, ops) end}
+        end)
+
+      Skuld.FiberPool.BatchExecutor.with_executors(acc, entries)
     end)
   end
 
@@ -141,7 +147,6 @@ defmodule Skuld.Query.Contract do
     callers = Enum.map(operations, &generate_caller(env.module, &1))
     executor_module = generate_executor_module(env.module, operations)
     dispatch_fns = Enum.map(operations, &generate_dispatch/1)
-    with_executor_fn = generate_with_executor(operations)
     introspection = generate_introspection(operations)
 
     quote do
@@ -156,9 +161,6 @@ defmodule Skuld.Query.Contract do
 
       # Dispatch functions
       unquote_splicing(dispatch_fns)
-
-      # with_executor/2
-      unquote(with_executor_fn)
 
       # Introspection
       unquote(introspection)
@@ -305,41 +307,6 @@ defmodule Skuld.Query.Contract do
       @doc false
       def __dispatch__(executor_impl, unquote(name), ops) do
         executor_impl.unquote(name)(ops)
-      end
-    end
-  end
-
-  # -------------------------------------------------------------------
-  # with_executor/2 Generation (skuld-avo)
-  # -------------------------------------------------------------------
-
-  defp generate_with_executor(operations) do
-    quote do
-      @doc """
-      Install an executor module for all queries in this contract.
-
-      The executor module must implement the `Executor` behaviour for this contract.
-
-      ## Example
-
-          comp
-          |> MyContract.with_executor(MyContract.EctoExecutor)
-          |> FiberPool.with_handler()
-          |> Comp.run()
-      """
-      @spec with_executor(Skuld.Comp.Types.computation(), module()) ::
-              Skuld.Comp.Types.computation()
-      def with_executor(comp, executor_module) do
-        Skuld.FiberPool.BatchExecutor.with_executors(
-          comp,
-          Enum.map(
-            unquote(Macro.escape(Enum.map(operations, & &1.name))),
-            fn query_name ->
-              {{__MODULE__, query_name},
-               fn ops -> __MODULE__.__dispatch__(executor_module, query_name, ops) end}
-            end
-          )
-        )
       end
     end
   end
