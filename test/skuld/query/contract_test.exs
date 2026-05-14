@@ -76,33 +76,27 @@ defmodule Skuld.Query.ContractTest do
 
     @impl true
     def get_user(ops) do
-      Comp.pure(
-        Map.new(ops, fn {ref, %TestQueries.GetUser{id: id}} ->
-          {ref, %User{id: id, name: "User #{id}"}}
-        end)
-      )
+      Map.new(ops, fn {ref, %TestQueries.GetUser{id: id}} ->
+        {ref, %User{id: id, name: "User #{id}"}}
+      end)
     end
 
     @impl true
     def get_users_by_org(ops) do
-      Comp.pure(
-        Map.new(ops, fn {ref, %TestQueries.GetUsersByOrg{org_id: org_id}} ->
-          {ref,
-           [
-             %User{id: "#{org_id}-1", name: "User A", org_id: org_id},
-             %User{id: "#{org_id}-2", name: "User B", org_id: org_id}
-           ]}
-        end)
-      )
+      Map.new(ops, fn {ref, %TestQueries.GetUsersByOrg{org_id: org_id}} ->
+        {ref,
+         [
+           %User{id: "#{org_id}-1", name: "User A", org_id: org_id},
+           %User{id: "#{org_id}-2", name: "User B", org_id: org_id}
+         ]}
+      end)
     end
 
     @impl true
     def get_user_count(ops) do
-      Comp.pure(
-        Map.new(ops, fn {ref, %TestQueries.GetUserCount{org_id: _org_id}} ->
-          {ref, 42}
-        end)
-      )
+      Map.new(ops, fn {ref, %TestQueries.GetUserCount{org_id: _org_id}} ->
+        {ref, 42}
+      end)
     end
   end
 
@@ -111,20 +105,16 @@ defmodule Skuld.Query.ContractTest do
 
     @impl true
     def get_post(ops) do
-      Comp.pure(
-        Map.new(ops, fn {ref, %PostQueries.GetPost{id: id}} ->
-          {ref, %Post{id: id, title: "Post #{id}"}}
-        end)
-      )
+      Map.new(ops, fn {ref, %PostQueries.GetPost{id: id}} ->
+        {ref, %Post{id: id, title: "Post #{id}"}}
+      end)
     end
 
     @impl true
     def get_posts_by_user(ops) do
-      Comp.pure(
-        Map.new(ops, fn {ref, %PostQueries.GetPostsByUser{user_id: user_id}} ->
-          {ref, [%Post{id: "#{user_id}-p1", title: "Post 1", user_id: user_id}]}
-        end)
-      )
+      Map.new(ops, fn {ref, %PostQueries.GetPostsByUser{user_id: user_id}} ->
+        {ref, [%Post{id: "#{user_id}-p1", title: "Post 1", user_id: user_id}]}
+      end)
     end
   end
 
@@ -222,11 +212,9 @@ defmodule Skuld.Query.ContractTest do
         get_user: fn ops ->
           send(test_pid, {:batch_size, length(ops)})
 
-          Comp.pure(
-            Map.new(ops, fn {ref, %TestQueries.GetUser{id: id}} ->
-              {ref, %User{id: id, name: "User #{id}"}}
-            end)
-          )
+          Map.new(ops, fn {ref, %TestQueries.GetUser{id: id}} ->
+            {ref, %User{id: id, name: "User #{id}"}}
+          end)
         end
       }
 
@@ -261,21 +249,17 @@ defmodule Skuld.Query.ContractTest do
       user_executor = fn ops ->
         send(test_pid, {:user_batch, length(ops)})
 
-        Comp.pure(
-          Map.new(ops, fn {ref, %TestQueries.GetUser{id: id}} ->
-            {ref, %User{id: id, name: "User #{id}"}}
-          end)
-        )
+        Map.new(ops, fn {ref, %TestQueries.GetUser{id: id}} ->
+          {ref, %User{id: id, name: "User #{id}"}}
+        end)
       end
 
       count_executor = fn ops ->
         send(test_pid, {:count_batch, length(ops)})
 
-        Comp.pure(
-          Map.new(ops, fn {ref, _op} ->
-            {ref, 42}
-          end)
-        )
+        Map.new(ops, fn {ref, _op} ->
+          {ref, 42}
+        end)
       end
 
       result =
@@ -360,21 +344,17 @@ defmodule Skuld.Query.ContractTest do
       user_exec = fn ops ->
         send(test_pid, {:user_exec, length(ops)})
 
-        Comp.pure(
-          Map.new(ops, fn {ref, %TestQueries.GetUser{id: id}} ->
-            {ref, %User{id: id, name: "User #{id}"}}
-          end)
-        )
+        Map.new(ops, fn {ref, %TestQueries.GetUser{id: id}} ->
+          {ref, %User{id: id, name: "User #{id}"}}
+        end)
       end
 
       post_exec = fn ops ->
         send(test_pid, {:post_exec, length(ops)})
 
-        Comp.pure(
-          Map.new(ops, fn {ref, %PostQueries.GetPost{id: id}} ->
-            {ref, %Post{id: id, title: "Post #{id}"}}
-          end)
-        )
+        Map.new(ops, fn {ref, %PostQueries.GetPost{id: id}} ->
+          {ref, %Post{id: id, title: "Post #{id}"}}
+        end)
       end
 
       result =
@@ -493,11 +473,9 @@ defmodule Skuld.Query.ContractTest do
 
     test "standard bang unwraps :ok and returns value" do
       ok_executor = fn ops ->
-        Comp.pure(
-          Map.new(ops, fn {ref, _op} ->
-            {ref, {:ok, %User{id: "1", name: "Found"}}}
-          end)
-        )
+        Map.new(ops, fn {ref, _op} ->
+          {ref, {:ok, %User{id: "1", name: "Found"}}}
+        end)
       end
 
       result =
@@ -515,11 +493,9 @@ defmodule Skuld.Query.ContractTest do
 
     test "standard bang throws on :error" do
       error_executor = fn ops ->
-        Comp.pure(
-          Map.new(ops, fn {ref, _op} ->
-            {ref, {:error, :not_found}}
-          end)
-        )
+        Map.new(ops, fn {ref, _op} ->
+          {ref, {:error, :not_found}}
+        end)
       end
 
       # Bang dispatches Throw inside the fiber, causing fiber failure.
@@ -537,11 +513,9 @@ defmodule Skuld.Query.ContractTest do
 
     test "custom bang unwrap function works" do
       found_executor = fn ops ->
-        Comp.pure(
-          Map.new(ops, fn {ref, _op} ->
-            {ref, %User{id: "1", name: "Found"}}
-          end)
-        )
+        Map.new(ops, fn {ref, _op} ->
+          {ref, %User{id: "1", name: "Found"}}
+        end)
       end
 
       # non-nil → :ok via custom unwrap — should succeed
@@ -559,7 +533,7 @@ defmodule Skuld.Query.ContractTest do
 
     test "custom bang unwrap function throws on nil" do
       nil_executor = fn ops ->
-        Comp.pure(Map.new(ops, fn {ref, _op} -> {ref, nil} end))
+        Map.new(ops, fn {ref, _op} -> {ref, nil} end)
       end
 
       # nil → custom unwrap → {:error, :not_found} → Throw.throw
