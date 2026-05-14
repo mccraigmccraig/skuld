@@ -272,19 +272,19 @@ deduplication.
 
 ### Wiring with cache
 
-Use `QueryCache.with_executor/3` instead of `Contract.with_executor/2`:
+Use `QueryCache.with_cached_executor/3` instead of `Skuld.Query.with_executor/3`: 
 
 ```elixir
 alias Skuld.Query.Cache, as: QueryCache
 
 my_comp
-|> QueryCache.with_executor(Users, Users.EctoExecutor)
+|> QueryCache.with_cached_executor(Users, Users.EctoExecutor)
 |> FiberPool.with_handler()
 |> Comp.run()
 
 # Multiple contracts with shared cache scope
 my_comp
-|> QueryCache.with_executors([
+|> QueryCache.with_cached_executors([
   {Users, Users.EctoExecutor},
   {Orders, Orders.EctoExecutor}
 ])

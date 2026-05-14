@@ -123,7 +123,7 @@ defmodule Skuld.Query.CacheTest do
           h <- FiberPool.fiber(TestQueries.get_user("1"))
           FiberPool.await!(h)
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -146,7 +146,7 @@ defmodule Skuld.Query.CacheTest do
 
           return({r1, r2})
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -174,7 +174,7 @@ defmodule Skuld.Query.CacheTest do
 
           return({r1, r2})
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -202,7 +202,7 @@ defmodule Skuld.Query.CacheTest do
 
           return({r1, r2})
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -224,7 +224,7 @@ defmodule Skuld.Query.CacheTest do
           h <- FiberPool.fiber(TestQueries.get_user("1"))
           FiberPool.await!(h)
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -237,7 +237,7 @@ defmodule Skuld.Query.CacheTest do
           h <- FiberPool.fiber(TestQueries.get_user("1"))
           FiberPool.await!(h)
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -257,7 +257,7 @@ defmodule Skuld.Query.CacheTest do
           h2 <- FiberPool.fiber(TestQueries.get_user("X"))
           FiberPool.await_all!([h1, h2])
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -277,7 +277,7 @@ defmodule Skuld.Query.CacheTest do
           h3 <- FiberPool.fiber(TestQueries.get_user("Y"))
           FiberPool.await_all!([h1, h2, h3])
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -307,7 +307,7 @@ defmodule Skuld.Query.CacheTest do
 
           return({r1, r2, r3})
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -330,7 +330,7 @@ defmodule Skuld.Query.CacheTest do
           h4 <- FiberPool.fiber(TestQueries.get_user("Z"))
           FiberPool.await_all!([h1, h2, h3, h4])
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -359,7 +359,7 @@ defmodule Skuld.Query.CacheTest do
 
           return({r1, r2})
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -386,7 +386,7 @@ defmodule Skuld.Query.CacheTest do
 
           return({r1, r2})
         end
-        |> QueryCache.with_executor(CacheOptQueries, CacheOptExecutor)
+        |> QueryCache.with_cached_executor(CacheOptQueries, CacheOptExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -421,7 +421,7 @@ defmodule Skuld.Query.CacheTest do
 
           return({r1, r2, r3, r4})
         end
-        |> QueryCache.with_executor(CacheOptQueries, CacheOptExecutor)
+        |> QueryCache.with_cached_executor(CacheOptQueries, CacheOptExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -449,7 +449,7 @@ defmodule Skuld.Query.CacheTest do
           h <- FiberPool.fiber(TestQueries.get_user("1"))
           FiberPool.await!(h)
         end
-        |> QueryCache.with_executor(TestQueries, FailingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, FailingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
       end
@@ -463,7 +463,7 @@ defmodule Skuld.Query.CacheTest do
           h <- FiberPool.fiber(TestQueries.get_user("1"))
           FiberPool.await!(h)
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -488,7 +488,7 @@ defmodule Skuld.Query.CacheTest do
 
           return({r1, r2, r3, r4})
         end
-        |> QueryCache.with_executors([
+        |> QueryCache.with_cached_executors([
           {TestQueries, CountingExecutor},
           {OrderQueries, OrderExecutor}
         ])
@@ -525,8 +525,8 @@ defmodule Skuld.Query.CacheTest do
 
           return({r1, r2, r3, r4})
         end
-        |> QueryCache.with_executor(TestQueries, CountingExecutor)
-        |> QueryCache.with_executor(OrderQueries, OrderExecutor)
+        |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
+        |> QueryCache.with_cached_executor(OrderQueries, OrderExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -551,7 +551,7 @@ defmodule Skuld.Query.CacheTest do
           h2 <- FiberPool.fiber(CacheOptQueries.get_user("1"))
           FiberPool.await_all!([h1, h2])
         end
-        |> QueryCache.with_executors([
+        |> QueryCache.with_cached_executors([
           {TestQueries, CountingExecutor},
           {CacheOptQueries, CacheOptExecutor}
         ])

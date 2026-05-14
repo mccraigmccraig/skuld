@@ -12,13 +12,13 @@ defmodule Skuld.Query.Cache do
   ## Usage
 
       comp
-      |> QueryCache.with_executor(Users, Users.EctoExecutor)
+      |> QueryCache.with_cached_executor(Users, Users.EctoExecutor)
       |> FiberPool.with_handler()
       |> Comp.run()
 
       # Multiple contracts (shared cache scope):
       comp
-      |> QueryCache.with_executors([
+      |> QueryCache.with_cached_executors([
         {Users, Users.EctoExecutor},
         {Orders, Orders.EctoExecutor}
       ])
@@ -30,7 +30,7 @@ defmodule Skuld.Query.Cache do
   The cache is scoped per computation run. It's initialised as an empty map
   by `Comp.scoped` and cleaned up on scope exit. No TTL, no eviction.
 
-  Multiple `with_executors`/`with_executor` calls share a single cache scope.
+  Multiple `with_cached_executors`/`with_cached_executor` calls share a single cache scope.
   The first call creates the cache; subsequent calls reuse the existing cache
   and register their executors against it. Only the outermost scope performs
   cleanup.
@@ -73,16 +73,16 @@ defmodule Skuld.Query.Cache do
   ## Example
 
       comp
-      |> QueryCache.with_executors([
+      |> QueryCache.with_cached_executors([
         {Users, Users.EctoExecutor},
         {Orders, Orders.EctoExecutor}
       ])
       |> FiberPool.with_handler()
       |> Comp.run()
   """
-  @spec with_executors(Comp.Types.computation(), [{module(), module()}]) ::
+  @spec with_cached_executors(Comp.Types.computation(), [{module(), module()}]) ::
           Comp.Types.computation()
-  def with_executors(comp, contract_executor_pairs) do
+  def with_cached_executors(comp, contract_executor_pairs) do
     # Build the list of {batch_key, caching_wrapper} tuples for all operations
     executor_entries =
       Enum.flat_map(contract_executor_pairs, fn {contract_module, executor_module} ->
@@ -111,12 +111,12 @@ defmodule Skuld.Query.Cache do
   @doc """
   Install a caching-wrapped executor for a single contract.
 
-  Shorthand for `with_executors(comp, [{contract_module, executor_module}])`.
+  Shorthand for `with_cached_executors(comp, [{contract_module, executor_module}])`.
   """
-  @spec with_executor(Comp.Types.computation(), module(), module()) ::
+  @spec with_cached_executor(Comp.Types.computation(), module(), module()) ::
           Comp.Types.computation()
-  def with_executor(comp, contract_module, executor_module) do
-    with_executors(comp, [{contract_module, executor_module}])
+  def with_cached_executor(comp, contract_module, executor_module) do
+    with_cached_executors(comp, [{contract_module, executor_module}])
   end
 
   # -------------------------------------------------------------------

@@ -115,7 +115,7 @@ Wrap with `Query.Cache` for cross-batch deduplication:
 alias Skuld.Query.Cache, as: QueryCache
 
 FiberPool.map(user_ids, &user_with_details/1)
-|> QueryCache.with_executor(MyApp.Queries, MyApp.Queries.EctoExecutor)
+|> QueryCache.with_cached_executor(MyApp.Queries, MyApp.Queries.EctoExecutor)
 |> FiberPool.with_handler()
 |> Comp.run!()
 ```
