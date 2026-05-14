@@ -140,4 +140,75 @@ defmodule Skuld.Integration.StreamingBatchingTest do
       items: items
     }
   end
+
+  # ---------------------------------------------------------------
+  # Query block — builds a monthly account summary for one user
+  # ---------------------------------------------------------------
+
+  defquery build_user_summary(user_id, month) do
+    user <- Queries.fetch_user(user_id)
+    orders <- Queries.fetch_user_orders(user_id, month)
+    order_ids = Enum.map(orders, & &1.id)
+
+    details_list <-
+      Comp.sequence(Enum.map(order_ids, fn oid -> Queries.fetch_order_details(oid) end))
+
+    Comp.pure(build_summary(user, orders, details_list))
+  end
+
+  # ---------------------------------------------------------------
+  # Tests
+  # ---------------------------------------------------------------
+
+  describe "streaming with brook and query batching" do
+    test "maps user IDs through a query block, batches deffetch calls automatically" do
+      user_ids = ["u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8", "u9", "u10"]
+      month = "2026-01"
+
+      result =
+        comp do
+          source <- Brook.from_enum(user_ids, chunk_size: 5, buffer: 5)
+          summaries <- Brook.map(source, fn user_id -> build_user_summary(user_id, month) end)
+          Brook.to_list(summaries)
+        end
+        |> Skuld.Query.with_executor(Queries, Executor)
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert length(result) == 10
+
+      Enum.with_index(user_ids, 1)
+      |> Enum.each(fn {id, idx} ->
+        summary = Enum.at(result, idx - 1)
+        assert %AccountSummary{} = summary
+        assert summary.user == "User #{id}"
+        assert summary.email == "user#{id}@test.com"
+        assert summary.order_count == 2
+        assert summary.total_spent == 250
+        assert summary.items == ["Item A", "Item B"]
+      end)
+
+      # Batching: Brook processes 2 transforms concurrently by default.
+      # Each transform runs a query block with 1 fetch_user + 1 fetch_user_orders
+      # + 2 fetch_order_details (2 orders per user). The FiberPool scheduler
+      # groups these across fibers by batch key.
+      assert_received {:batch, :fetch_user, 2}
+      assert_received {:batch, :fetch_user, 2}
+      assert_received {:batch, :fetch_user, 2}
+      assert_received {:batch, :fetch_user, 2}
+      assert_received {:batch, :fetch_user, 2}
+
+      assert_received {:batch, :fetch_user_orders, 2}
+      assert_received {:batch, :fetch_user_orders, 2}
+      assert_received {:batch, :fetch_user_orders, 2}
+      assert_received {:batch, :fetch_user_orders, 2}
+      assert_received {:batch, :fetch_user_orders, 2}
+
+      # 10 users × 2 orders = 20 detail fetches, batched in pairs
+      Enum.each(1..10, fn _ ->
+        assert_received {:batch, :fetch_order_details, 2}
+      end)
+    end
+  end
 end
