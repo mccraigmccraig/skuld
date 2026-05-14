@@ -19,9 +19,9 @@ defmodule Skuld.Query.QueryBlockTest do
   defmodule TestQueries do
     use Skuld.Query.Contract
 
-    deffetch(get_user(id :: String.t()) :: map())
-    deffetch(get_orders(user_id :: String.t()) :: [map()])
-    deffetch(get_recent() :: [map()])
+    deffetch get_user(id :: String.t()) :: map()
+    deffetch get_orders(user_id :: String.t()) :: [map()]
+    deffetch get_recent() :: [map()]
   end
 
   defmodule TestExecutor do
