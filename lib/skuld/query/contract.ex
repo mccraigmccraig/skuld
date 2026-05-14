@@ -11,78 +11,7 @@ defmodule Skuld.Query.Contract do
       execution, one per fetch
     * **Dispatch function** — `__dispatch__/3` routes from batch key to executor callback
     * **Wiring function** — `with_executor/2` installs an executor module for all fetches
-    * **Bang variants** — unwrap `{:ok, v}` or dispatch Throw (when applicable)
     * **Introspection** — `__query_operations__/0`
-
-  ## Example
-
-      defmodule MyApp.Queries.Users do
-        use Skuld.Query.Contract
-
-        deffetch get_user(id :: String.t()) :: User.t() | nil
-        deffetch get_users_by_org(org_id :: String.t()) :: [User.t()]
-        deffetch get_user_count(org_id :: String.t()) :: non_neg_integer()
-      end
-
-  This generates:
-
-      # Operation struct
-      MyApp.Queries.Users.GetUser   # defstruct [:id]
-      MyApp.Queries.Users.GetUsersByOrg   # defstruct [:org_id]
-
-      # Executor behaviour
-      MyApp.Queries.Users.Executor
-      @callback get_user(ops :: [{reference(), GetUser.t()}]) :: computation(...)
-
-      # Caller (suspends fiber for batching)
-      @spec get_user(String.t()) :: Types.computation(User.t() | nil)
-      def get_user(id)
-
-      # Wiring
-      @spec with_executor(computation(), module()) :: computation()
-      def with_executor(comp, executor_module)
-
-  ## Executor Implementation
-
-      defmodule MyApp.Queries.Users.EctoExecutor do
-        @behaviour MyApp.Queries.Users.Executor
-
-        @impl true
-        def get_user(ops) do
-          ids = Enum.map(ops, fn {_ref, %GetUser{id: id}} -> id end) |> Enum.uniq()
-          Comp.bind(Reader.ask(:repo), fn repo ->
-            results = repo.all(User, ids)
-            by_id = Map.new(results, &{&1.id, &1})
-            Comp.pure(Map.new(ops, fn {ref, %GetUser{id: id}} -> {ref, Map.get(by_id, id)} end))
-          end)
-        end
-      end
-
-  ## Wiring
-
-      my_comp
-      |> MyApp.Queries.Users.with_executor(MyApp.Queries.Users.EctoExecutor)
-      |> FiberPool.with_handler()
-      |> Comp.run()
-
-  ## Bulk Wiring
-
-      my_comp
-      |> Skuld.Query.Contract.with_executors([
-        {MyApp.Queries.Users, MyApp.Queries.Users.EctoExecutor},
-        {MyApp.Queries.Orders, MyApp.Queries.Orders.EctoExecutor}
-      ])
-
-  ## Bang Variant Generation
-
-  Same rules as `Port.Contract`:
-
-    * **Auto-detect** (default): If the return type contains `{:ok, T}`, a bang
-      variant is generated that unwraps `{:ok, value}` or dispatches `Throw` on
-      `{:error, reason}`.
-    * **`bang: true`**: Force standard unwrapping.
-    * **`bang: false`**: Suppress bang generation.
-    * **`bang: unwrap_fn`**: Custom unwrap function.
   """
 
   alias Skuld.Comp
@@ -129,7 +58,7 @@ defmodule Skuld.Query.Contract do
   @doc false
   defmacro __using__(_opts) do
     quote do
-      import Skuld.Query.Contract, only: [deffetch: 1, deffetch: 2, defquery: 1, defquery: 2]
+      import Skuld.Query.Contract, only: [deffetch: 1, deffetch: 2]
       Module.register_attribute(__MODULE__, :query_operations, accumulate: true)
       @before_compile Skuld.Query.Contract
     end
@@ -141,24 +70,16 @@ defmodule Skuld.Query.Contract do
   ## Syntax
 
       deffetch function_name(param :: type(), ...) :: return_type()
-      deffetch function_name(param :: type(), ...) :: return_type(), bang: option
+      deffetch function_name(param :: type(), ...) :: return_type(), cache: bool()
 
   Each `deffetch` declaration generates an operation struct, caller function,
-  executor callback, dispatch clause, and optionally a bang variant.
-
-  The `bang` option follows the same rules as `Port.Contract.defcallback`:
-
-    * **omitted** -- auto-detect: generate bang only if return type contains `{:ok, T}`
-    * **`true`** -- force standard `{:ok, v}` / `{:error, r}` unwrapping
-    * **`false`** -- suppress bang generation
-    * **`unwrap_fn`** -- custom unwrap function
+  executor callback, and dispatch clause.
   """
   defmacro deffetch(spec, opts \\ [])
 
   defmacro deffetch({:"::", _meta, [call_ast, return_type_ast]}, opts) do
-    bang_opt = Keyword.get(opts, :bang, :auto)
     cache_opt = Keyword.get(opts, :cache, true)
-    build_deffetch_ast(call_ast, return_type_ast, bang_opt, cache_opt, __CALLER__)
+    build_deffetch_ast(call_ast, return_type_ast, cache_opt, __CALLER__)
   end
 
   defmacro deffetch(other, _opts) do
@@ -170,58 +91,17 @@ defmodule Skuld.Query.Contract do
       line: __CALLER__.line
   end
 
-  @doc """
-  Deprecated: use `deffetch` instead.
-
-  `defquery` is a deprecated alias for `deffetch`. It will be removed in a future release.
-  """
-  defmacro defquery(spec, opts \\ [])
-
-  defmacro defquery({:"::", _meta, [call_ast, return_type_ast]}, opts) do
-    IO.warn("defquery is deprecated, use deffetch instead", __CALLER__)
-    bang_opt = Keyword.get(opts, :bang, :auto)
-    cache_opt = Keyword.get(opts, :cache, true)
-    build_deffetch_ast(call_ast, return_type_ast, bang_opt, cache_opt, __CALLER__)
-  end
-
-  defmacro defquery(other, _opts) do
-    raise CompileError,
-      description:
-        "invalid defquery syntax. Expected: deffetch name(param :: type(), ...) :: return_type()\n" <>
-          "Got: #{Macro.to_string(other)}",
-      file: __CALLER__.file,
-      line: __CALLER__.line
-  end
-
-  defp build_deffetch_ast(call_ast, return_type_ast, bang_opt, cache_opt, caller) do
+  defp build_deffetch_ast(call_ast, return_type_ast, cache_opt, caller) do
     {name, params} = DoubleDown.Contract.parse_call(call_ast, caller)
 
     param_names = Enum.map(params, &elem(&1, 0))
     param_types = Enum.map(params, &elem(&1, 1))
-
-    bang_mode =
-      case bang_opt do
-        :auto ->
-          if has_ok_error_pattern?(return_type_ast),
-            do: :standard,
-            else: :none
-
-        true ->
-          :standard
-
-        false ->
-          :none
-
-        custom_fn_ast ->
-          {:custom, custom_fn_ast}
-      end
 
     op_base = %{
       name: name,
       param_names: param_names,
       param_types: param_types,
       return_type: return_type_ast,
-      bang_mode: bang_mode,
       cacheable: cache_opt,
       user_doc: nil
     }
@@ -259,12 +139,6 @@ defmodule Skuld.Query.Contract do
     # Generate all artefacts
     struct_modules = Enum.map(operations, &generate_struct_module(env.module, &1))
     callers = Enum.map(operations, &generate_caller(env.module, &1))
-
-    bangs =
-      operations
-      |> Enum.filter(fn op -> op.bang_mode != :none end)
-      |> Enum.map(&generate_bang(env.module, &1))
-
     executor_module = generate_executor_module(env.module, operations)
     dispatch_fns = Enum.map(operations, &generate_dispatch/1)
     with_executor_fn = generate_with_executor(operations)
@@ -279,9 +153,6 @@ defmodule Skuld.Query.Contract do
 
       # Caller functions
       unquote_splicing(callers)
-
-      # Bang variants
-      unquote_splicing(bangs)
 
       # Dispatch functions
       unquote_splicing(dispatch_fns)
@@ -474,73 +345,6 @@ defmodule Skuld.Query.Contract do
   end
 
   # -------------------------------------------------------------------
-  # Bang Variant Generation (skuld-7hk)
-  # -------------------------------------------------------------------
-
-  defp generate_bang(_contract_module, %{
-         name: name,
-         param_names: param_names,
-         param_types: param_types,
-         return_type: return_type,
-         bang_mode: bang_mode
-       }) do
-    bang_name = :"#{name}!"
-    param_vars = Enum.map(param_names, fn pname -> {pname, [], nil} end)
-    spec_params = param_types
-
-    unwrapped = extract_success_type(return_type)
-    comp_type = {:computation, [], [unwrapped]}
-
-    {doc_string, body_ast} =
-      case bang_mode do
-        :standard ->
-          doc =
-            "Fetch operation: `#{bang_name}/#{length(param_names)}`\n\nLike `#{name}/#{length(param_names)}` but unwraps `{:ok, value}` or dispatches `Throw` on error.\n"
-
-          body =
-            quote do
-              Skuld.Comp.bind(
-                unquote(name)(unquote_splicing(param_vars)),
-                fn
-                  {:ok, value} -> Skuld.Comp.pure(value)
-                  {:error, reason} -> Skuld.Effects.Throw.throw(reason)
-                end
-              )
-            end
-
-          {doc, body}
-
-        {:custom, unwrap_fn_ast} ->
-          doc =
-            "Fetch operation: `#{bang_name}/#{length(param_names)}`\n\nLike `#{name}/#{length(param_names)}` but applies a custom unwrap function, then unwraps `{:ok, value}` or dispatches `Throw` on error.\n"
-
-          body =
-            quote do
-              Skuld.Comp.bind(
-                unquote(name)(unquote_splicing(param_vars)),
-                fn result ->
-                  case unquote(unwrap_fn_ast).(result) do
-                    {:ok, value} -> Skuld.Comp.pure(value)
-                    {:error, reason} -> Skuld.Effects.Throw.throw(reason)
-                  end
-                end
-              )
-            end
-
-          {doc, body}
-      end
-
-    quote do
-      @doc unquote(doc_string)
-      @spec unquote(bang_name)(unquote_splicing(spec_params)) ::
-              Skuld.Comp.Types.unquote(comp_type)
-      def unquote(bang_name)(unquote_splicing(param_vars)) do
-        unquote(body_ast)
-      end
-    end
-  end
-
-  # -------------------------------------------------------------------
   # Introspection (skuld-avo)
   # -------------------------------------------------------------------
 
@@ -587,35 +391,4 @@ defmodule Skuld.Query.Contract do
     |> Enum.map_join(&String.capitalize/1)
     |> String.to_atom()
   end
-
-  # -------------------------------------------------------------------
-  # Type AST helpers for bang variant generation
-  #
-  # Inlined from DoubleDown.Contract (removed in double_down v0.38).
-  # These are only used by deffetch bang generation — Port facades
-  # no longer auto-generate bangs.
-  # -------------------------------------------------------------------
-
-  defp has_ok_error_pattern?(return_type_ast) do
-    extract_from_union(return_type_ast) != nil
-  end
-
-  defp extract_success_type(return_type_ast) do
-    case extract_from_union(return_type_ast) do
-      nil -> {:term, [], []}
-      type -> type
-    end
-  end
-
-  defp extract_from_union({:|, _, [left, right]}) do
-    extract_from_ok_tuple(left) || extract_from_union(right)
-  end
-
-  defp extract_from_union(type) do
-    extract_from_ok_tuple(type)
-  end
-
-  defp extract_from_ok_tuple({:{}, _, [:ok, inner_type]}), do: inner_type
-  defp extract_from_ok_tuple({:ok, inner_type}), do: inner_type
-  defp extract_from_ok_tuple(_), do: nil
 end

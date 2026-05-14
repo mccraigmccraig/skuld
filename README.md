@@ -45,25 +45,26 @@ An effectful programming framework for Elixir.
                                            via Coroutine fibers)
 ```
 
-## The problem
+## The old problem
 
-Between your pure business logic and your side-effecting infrastructure
+Between pure business logic and side-effecting infrastructure
 sits the orchestration layer — "fetch the user, check permissions, load
-their subscription, compute the price, write the invoice." This code
-encodes your most important business rules, but it's tangled with
+their subscription, hit some APIs, compute a price, write an invoice."
+This code encodes your most important business rules, but it's tangled with
 databases, APIs, and randomness — making it hard to test, hard to
-refactor, and impossible to property-test.
+refactor, and often — impossible to property-test.
 
-## The insight
+## Another way
 
 Skuld lets you write orchestration code that *describes* side effects
-without performing them. Handlers decide what those descriptions mean.
-The same code runs with real handlers in production and pure in-memory
-handlers in tests — fully deterministic, trivially testable.
+without performing them — then handlers decide what those descriptions mean.
+The exact same "effectful" code runs with side-effecting handlers in production
+and pure in-memory handlers in tests — fully deterministic, fully pure, and
+straightforwardly property-testable.
 
-And because effects are first-class data, Skuld can also batch
-independent queries automatically, run computations cooperatively in
-fibers, and serialise execution for later replay.
+Because effects are first-class data, Skuld can do more — batch
+independent queries automatically, serialise partially complete computations
+for later resumption.
 
 ## Quick example
 

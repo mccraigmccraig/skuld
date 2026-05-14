@@ -4,7 +4,6 @@ defmodule Skuld.Query.ContractTest do
 
   alias Skuld.Comp
   alias Skuld.Effects.FiberPool
-  alias Skuld.Effects.Throw
   alias Skuld.FiberPool.BatchExecutor
 
   # ---------------------------------------------------------------
@@ -31,19 +30,8 @@ defmodule Skuld.Query.ContractTest do
     use Skuld.Query.Contract
 
     deffetch find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
-    deffetch find_post(id :: String.t()) :: Post.t() | nil, bang: false
-    deffetch find_item(id :: String.t()) :: term(), bang: true
-  end
-
-  defmodule CustomBangQueries do
-    use Skuld.Query.Contract
-
-    deffetch(find_user(id :: String.t()) :: User.t() | nil,
-      bang: fn
-        nil -> {:error, :not_found}
-        user -> {:ok, user}
-      end
-    )
+    deffetch find_post(id :: String.t()) :: Post.t() | nil
+    deffetch find_item(id :: String.t()) :: term()
   end
 
   defmodule PostQueries do
@@ -446,107 +434,6 @@ defmodule Skuld.Query.ContractTest do
 
       explicit_op = Enum.find(ops, &(&1.name == :get_explicit_cached))
       assert explicit_op.cacheable == true
-    end
-  end
-
-  describe "bang variants" do
-    test "auto-detected bang for {:ok, T} return type" do
-      # OkErrorQueries.find_user has {:ok, User.t()} | {:error, term()}
-      # Should auto-generate find_user!/1
-      assert function_exported?(OkErrorQueries, :find_user!, 1)
-    end
-
-    test "bang: false suppresses bang generation" do
-      # OkErrorQueries.find_post has bang: false
-      refute function_exported?(OkErrorQueries, :find_post!, 1)
-    end
-
-    test "bang: true forces bang generation" do
-      # OkErrorQueries.find_item has bang: true
-      assert function_exported?(OkErrorQueries, :find_item!, 1)
-    end
-
-    test "no bang generated for non-ok-error return types" do
-      # TestQueries.get_user returns User.t() | nil — no {:ok, T}
-      refute function_exported?(TestQueries, :get_user!, 1)
-    end
-
-    test "standard bang unwraps :ok and returns value" do
-      ok_executor = fn ops ->
-        Map.new(ops, fn {ref, _op} ->
-          {ref, {:ok, %User{id: "1", name: "Found"}}}
-        end)
-      end
-
-      result =
-        comp do
-          h <- FiberPool.fiber(OkErrorQueries.find_user!("1"))
-          FiberPool.await!(h)
-        end
-        |> BatchExecutor.with_executor({OkErrorQueries, :find_user}, ok_executor)
-        |> Throw.with_handler()
-        |> FiberPool.with_handler()
-        |> Comp.run!()
-
-      assert %User{id: "1", name: "Found"} = result
-    end
-
-    test "standard bang throws on :error" do
-      error_executor = fn ops ->
-        Map.new(ops, fn {ref, _op} ->
-          {ref, {:error, :not_found}}
-        end)
-      end
-
-      # Bang dispatches Throw inside the fiber, causing fiber failure.
-      # Without a Throw handler in the fiber, the effect raises.
-      assert_raise Skuld.Comp.ThrowError, fn ->
-        comp do
-          h <- FiberPool.fiber(OkErrorQueries.find_user!("1"))
-          FiberPool.await!(h)
-        end
-        |> BatchExecutor.with_executor({OkErrorQueries, :find_user}, error_executor)
-        |> FiberPool.with_handler()
-        |> Comp.run!()
-      end
-    end
-
-    test "custom bang unwrap function works" do
-      found_executor = fn ops ->
-        Map.new(ops, fn {ref, _op} ->
-          {ref, %User{id: "1", name: "Found"}}
-        end)
-      end
-
-      # non-nil → :ok via custom unwrap — should succeed
-      ok_result =
-        comp do
-          h <- FiberPool.fiber(CustomBangQueries.find_user!("1"))
-          FiberPool.await!(h)
-        end
-        |> BatchExecutor.with_executor({CustomBangQueries, :find_user}, found_executor)
-        |> FiberPool.with_handler()
-        |> Comp.run!()
-
-      assert %User{id: "1", name: "Found"} = ok_result
-    end
-
-    test "custom bang unwrap function throws on nil" do
-      nil_executor = fn ops ->
-        Map.new(ops, fn {ref, _op} -> {ref, nil} end)
-      end
-
-      # nil → custom unwrap → {:error, :not_found} → Throw.throw
-      # Since it's inside a fiber, the fiber will fail
-      assert_raise Skuld.Comp.ThrowError, fn ->
-        comp do
-          h <- FiberPool.fiber(CustomBangQueries.find_user!("1"))
-          FiberPool.await!(h)
-        end
-        |> BatchExecutor.with_executor({CustomBangQueries, :find_user}, nil_executor)
-        |> FiberPool.with_handler()
-        |> Comp.run!()
-      end
     end
   end
 
