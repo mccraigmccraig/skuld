@@ -31,33 +31,27 @@ defmodule Skuld.Query.QueryBlockTest do
     def get_user(ops) do
       send(self(), {:get_user_batch, length(ops)})
 
-      Comp.pure(
-        Map.new(ops, fn {ref, %TestQueries.GetUser{id: id}} ->
-          {ref, %{id: id, name: "User #{id}"}}
-        end)
-      )
+      Map.new(ops, fn {ref, %TestQueries.GetUser{id: id}} ->
+        {ref, %{id: id, name: "User #{id}"}}
+      end)
     end
 
     @impl true
     def get_orders(ops) do
       send(self(), {:get_orders_batch, length(ops)})
 
-      Comp.pure(
-        Map.new(ops, fn {ref, %TestQueries.GetOrders{user_id: uid}} ->
-          {ref, [%{id: "o1", user_id: uid}]}
-        end)
-      )
+      Map.new(ops, fn {ref, %TestQueries.GetOrders{user_id: uid}} ->
+        {ref, [%{id: "o1", user_id: uid}]}
+      end)
     end
 
     @impl true
     def get_recent(ops) do
       send(self(), {:get_recent_batch, length(ops)})
 
-      Comp.pure(
-        Map.new(ops, fn {ref, _op} ->
-          {ref, [%{id: "recent1"}]}
-        end)
-      )
+      Map.new(ops, fn {ref, _op} ->
+        {ref, [%{id: "recent1"}]}
+      end)
     end
   end
 
@@ -73,7 +67,7 @@ defmodule Skuld.Query.QueryBlockTest do
     test "single effectful binding" do
       result =
         query do
-          a <- Comp.pure(42)
+          a <- 42
           a
         end
         |> FiberPool.with_handler()
@@ -86,7 +80,7 @@ defmodule Skuld.Query.QueryBlockTest do
       result =
         query do
           a = 42
-          Comp.pure(a)
+          a
         end
         |> FiberPool.with_handler()
         |> Comp.run!()
@@ -97,7 +91,7 @@ defmodule Skuld.Query.QueryBlockTest do
     test "final expression only (no bindings)" do
       result =
         query do
-          Comp.pure(42)
+          42
         end
         |> FiberPool.with_handler()
         |> Comp.run!()
@@ -108,7 +102,7 @@ defmodule Skuld.Query.QueryBlockTest do
     test "final expression auto-lifted" do
       result =
         query do
-          a <- Comp.pure(42)
+          a <- 42
           a
         end
         |> FiberPool.with_handler()
@@ -122,8 +116,8 @@ defmodule Skuld.Query.QueryBlockTest do
     test "two independent effectful bindings" do
       result =
         query do
-          a <- Comp.pure(10)
-          b <- Comp.pure(32)
+          a <- 10
+          b <- 32
           a + b
         end
         |> FiberPool.with_handler()
@@ -135,9 +129,9 @@ defmodule Skuld.Query.QueryBlockTest do
     test "three independent effectful bindings" do
       result =
         query do
-          a <- Comp.pure(10)
-          b <- Comp.pure(20)
-          c <- Comp.pure(12)
+          a <- 10
+          b <- 20
+          c <- 12
           a + b + c
         end
         |> FiberPool.with_handler()
@@ -151,8 +145,8 @@ defmodule Skuld.Query.QueryBlockTest do
     test "dependent binding runs after its dependency" do
       result =
         query do
-          a <- Comp.pure(21)
-          b <- Comp.pure(a * 2)
+          a <- 21
+          b <- a * 2
           b
         end
         |> FiberPool.with_handler()
@@ -166,9 +160,9 @@ defmodule Skuld.Query.QueryBlockTest do
       # c depends on a and b (batch 2)
       result =
         query do
-          a <- Comp.pure(10)
-          b <- Comp.pure(32)
-          c <- Comp.pure(a + b)
+          a <- 10
+          b <- 32
+          c <- a + b
           c
         end
         |> FiberPool.with_handler()
@@ -183,10 +177,10 @@ defmodule Skuld.Query.QueryBlockTest do
       # d depends on b and c (batch 3)
       result =
         query do
-          a <- Comp.pure(10)
-          b <- Comp.pure(a + 5)
-          c <- Comp.pure(a + 17)
-          d <- Comp.pure(b + c)
+          a <- 10
+          b <- a + 5
+          c <- a + 17
+          d <- b + c
           d
         end
         |> FiberPool.with_handler()
@@ -199,10 +193,10 @@ defmodule Skuld.Query.QueryBlockTest do
     test "chain of sequential dependencies" do
       result =
         query do
-          a <- Comp.pure(1)
-          b <- Comp.pure(a + 1)
-          c <- Comp.pure(b + 1)
-          d <- Comp.pure(c + 1)
+          a <- 1
+          b <- a + 1
+          c <- b + 1
+          d <- c + 1
           d
         end
         |> FiberPool.with_handler()
@@ -217,11 +211,11 @@ defmodule Skuld.Query.QueryBlockTest do
       # e depends on c and d (batch 3)
       result =
         query do
-          a <- Comp.pure(10)
-          b <- Comp.pure(20)
-          c <- Comp.pure(a + 2)
-          d <- Comp.pure(b + 3)
-          e <- Comp.pure(c + d - 3)
+          a <- 10
+          b <- 20
+          c <- a + 2
+          d <- b + 3
+          e <- c + d - 3
           e
         end
         |> FiberPool.with_handler()
@@ -236,9 +230,9 @@ defmodule Skuld.Query.QueryBlockTest do
     test "pure binding with effectful dependency" do
       result =
         query do
-          a <- Comp.pure(21)
+          a <- 21
           b = a * 2
-          Comp.pure(b)
+          b
         end
         |> FiberPool.with_handler()
         |> Comp.run!()
@@ -249,7 +243,7 @@ defmodule Skuld.Query.QueryBlockTest do
     test "independent pure and effectful bindings" do
       result =
         query do
-          a <- Comp.pure(40)
+          a <- 40
           b = 2
           a + b
         end
@@ -264,7 +258,7 @@ defmodule Skuld.Query.QueryBlockTest do
     test "tuple pattern in effectful binding" do
       result =
         query do
-          {:ok, a} <- Comp.pure({:ok, 42})
+          {:ok, a} <- {:ok, 42}
           a
         end
         |> FiberPool.with_handler()
@@ -276,8 +270,8 @@ defmodule Skuld.Query.QueryBlockTest do
     test "tuple pattern with dependency" do
       result =
         query do
-          a <- Comp.pure(21)
-          {:ok, b} <- Comp.pure({:ok, a * 2})
+          a <- 21
+          {:ok, b} <- {:ok, a * 2}
           b
         end
         |> FiberPool.with_handler()
@@ -291,8 +285,8 @@ defmodule Skuld.Query.QueryBlockTest do
       # A later binding referencing `user` must be in a later batch.
       result =
         query do
-          {:ok, user} <- Comp.pure({:ok, %{id: "u1", name: "Alice"}})
-          orders <- Comp.pure([%{id: "o1", user_id: user.id}])
+          {:ok, user} <- {:ok, %{id: "u1", name: "Alice"}}
+          orders <- [%{id: "o1", user_id: user.id}]
           {user, orders}
         end
         |> FiberPool.with_handler()
@@ -308,9 +302,9 @@ defmodule Skuld.Query.QueryBlockTest do
       # c depends on both a and b.
       result =
         query do
-          {:ok, a} <- Comp.pure({:ok, 10})
-          {:ok, b} <- Comp.pure({:ok, 32})
-          c <- Comp.pure(a + b)
+          {:ok, a} <- {:ok, 10}
+          {:ok, b} <- {:ok, 32}
+          c <- a + b
           c
         end
         |> FiberPool.with_handler()
@@ -322,8 +316,8 @@ defmodule Skuld.Query.QueryBlockTest do
     test "map pattern extracts variables that create dependencies" do
       result =
         query do
-          %{name: name, id: uid} <- Comp.pure(%{name: "Alice", id: "u1"})
-          greeting <- Comp.pure("Hello #{name}, your id is #{uid}")
+          %{name: name, id: uid} <- %{name: "Alice", id: "u1"}
+          greeting <- "Hello #{name}, your id is #{uid}"
           greeting
         end
         |> FiberPool.with_handler()
@@ -335,8 +329,8 @@ defmodule Skuld.Query.QueryBlockTest do
     test "nested destructuring extracts inner variables" do
       result =
         query do
-          {:ok, %{user: %{id: uid}}} <- Comp.pure({:ok, %{user: %{id: "u1"}}})
-          detail <- Comp.pure("user-#{uid}")
+          {:ok, %{user: %{id: uid}}} <- {:ok, %{user: %{id: "u1"}}}
+          detail <- "user-#{uid}"
           detail
         end
         |> FiberPool.with_handler()
@@ -348,8 +342,8 @@ defmodule Skuld.Query.QueryBlockTest do
     test "list pattern extracts variables" do
       result =
         query do
-          [first | _rest] <- Comp.pure([10, 20, 30])
-          doubled <- Comp.pure(first * 2)
+          [first | _rest] <- [10, 20, 30]
+          doubled <- first * 2
           doubled
         end
         |> FiberPool.with_handler()
@@ -361,8 +355,8 @@ defmodule Skuld.Query.QueryBlockTest do
     test "struct pattern extracts variables" do
       result =
         query do
-          %User{id: uid, name: uname} <- Comp.pure(%User{id: 1, name: "Alice"})
-          label <- Comp.pure("#{uname}##{uid}")
+          %User{id: uid, name: uname} <- %User{id: 1, name: "Alice"}
+          label <- "#{uname}##{uid}"
           label
         end
         |> FiberPool.with_handler()
@@ -376,9 +370,9 @@ defmodule Skuld.Query.QueryBlockTest do
       # c depends on a (from destructuring) and b (batch 2).
       result =
         query do
-          {:ok, a} <- Comp.pure({:ok, 10})
-          b <- Comp.pure(32)
-          c <- Comp.pure(a + b)
+          {:ok, a} <- {:ok, 10}
+          b <- 32
+          c <- a + b
           c
         end
         |> FiberPool.with_handler()
@@ -392,7 +386,7 @@ defmodule Skuld.Query.QueryBlockTest do
       result =
         query do
           user <- TestQueries.get_user("1")
-          {:ok, recent} <- Comp.pure({:ok, :some_recent_data})
+          {:ok, recent} <- {:ok, :some_recent_data}
           orders <- TestQueries.get_orders(user.id)
           {user, recent, orders}
         end
@@ -417,7 +411,7 @@ defmodule Skuld.Query.QueryBlockTest do
       result =
         query do
           a <- State.get()
-          b <- Comp.pure(a + 10)
+          b <- a + 10
           b
         end
         |> State.with_handler(32)
@@ -432,8 +426,8 @@ defmodule Skuld.Query.QueryBlockTest do
     test "underscore binding for side-effect-only" do
       result =
         query do
-          _ <- Comp.pure(:ignored)
-          a <- Comp.pure(42)
+          _ <- :ignored
+          a <- 42
           a
         end
         |> FiberPool.with_handler()
@@ -550,7 +544,7 @@ defmodule Skuld.Query.QueryBlockTest do
           Code.compile_string("""
           import Skuld.Query.QueryBlock
           query do
-            a <- Skuld.Comp.pure(42)
+            a <- 42
           end
           """)
         end)
@@ -565,8 +559,8 @@ defmodule Skuld.Query.QueryBlockTest do
           Code.compile_string("""
           import Skuld.Query.QueryBlock
           query do
-            a <- Skuld.Comp.pure(42)
-            b <- Skuld.Comp.pure(a)
+            a <- 42
+            b <- a
           end
           """)
         end)
@@ -579,7 +573,7 @@ defmodule Skuld.Query.QueryBlockTest do
           Code.compile_string("""
           import Skuld.Query.QueryBlock
           query do
-            a <- Skuld.Comp.pure(42)
+            a <- 42
             b = a + 1
           end
           """)
@@ -593,7 +587,7 @@ defmodule Skuld.Query.QueryBlockTest do
           Code.compile_string("""
           import Skuld.Query.QueryBlock
           query do
-            a <- Skuld.Comp.pure(42)
+            a <- 42
             IO.puts("hello")
             a
           end
@@ -607,7 +601,7 @@ defmodule Skuld.Query.QueryBlockTest do
     test "return/1 works in query blocks" do
       result =
         query do
-          a <- Comp.pure(42)
+          a <- 42
           return(a)
         end
         |> FiberPool.with_handler()
@@ -619,31 +613,31 @@ defmodule Skuld.Query.QueryBlockTest do
 
   describe "defquery macro" do
     defquery simple_query do
-      a <- Comp.pure(42)
+      a <- 42
       a
     end
 
     defquery query_with_effects do
-      a <- Comp.pure(10)
-      b <- Comp.pure(32)
+      a <- 10
+      b <- 32
       a + b
     end
 
     defquery query_with_arg(x) do
-      a <- Comp.pure(x)
-      b <- Comp.pure(a * 2)
+      a <- x
+      b <- a * 2
       b
     end
 
     defquery query_with_multiple_args(x, y) do
-      a <- Comp.pure(x)
-      b <- Comp.pure(y)
+      a <- x
+      b <- y
       a + b
     end
 
     defquery query_with_dependency(id) do
-      user <- Comp.pure(%{id: id, name: "User #{id}"})
-      orders <- Comp.pure([%{user_id: user.id}])
+      user <- %{id: id, name: "User #{id}"}
+      orders <- [%{user_id: user.id}]
       {user, orders}
     end
 
@@ -674,8 +668,8 @@ defmodule Skuld.Query.QueryBlockTest do
 
   describe "defqueryp macro" do
     defqueryp private_query do
-      a <- Comp.pure(21)
-      b <- Comp.pure(a * 2)
+      a <- 21
+      b <- a * 2
       b
     end
 
@@ -740,10 +734,10 @@ defmodule Skuld.Query.QueryBlockTest do
             import Skuld.Query.QueryBlock
 
             defquery bad_query(x) do
-              a <- Skuld.Comp.pure(x)
+              a <- x
               a
             else
-              {:error, _} -> Skuld.Comp.pure(:default)
+              {:error, _} -> :default
             end
           end
           """)
@@ -770,13 +764,13 @@ defmodule Skuld.Query.QueryBlockTest do
       use Skuld.Syntax
 
       defquery public_query(x) do
-        a <- Skuld.Comp.pure(x)
-        b <- Skuld.Comp.pure(a + 1)
+        a <- x
+        b <- a + 1
         a + b
       end
 
       defqueryp private_query(x) do
-        a <- Skuld.Comp.pure(x * 2)
+        a <- x * 2
         a
       end
 
