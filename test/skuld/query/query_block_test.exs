@@ -112,7 +112,7 @@ defmodule Skuld.Query.QueryBlockTest do
     end
   end
 
-  describe "query — independent bindings run concurrently" do
+  describe "query — independent bindings" do
     test "two independent effectful bindings" do
       result =
         query do
