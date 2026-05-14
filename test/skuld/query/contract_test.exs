@@ -37,8 +37,8 @@ defmodule Skuld.Query.ContractTest do
   defmodule PostQueries do
     use Skuld.Query.Contract
 
-    deffetch(get_post(id :: String.t()) :: Post.t() | nil)
-    deffetch(get_posts_by_user(user_id :: String.t()) :: [Post.t()])
+    deffetch get_post(id :: String.t()) :: Post.t() | nil
+    deffetch get_posts_by_user(user_id :: String.t()) :: [Post.t()]
   end
 
   defmodule ZeroArgQueries do
@@ -50,9 +50,9 @@ defmodule Skuld.Query.ContractTest do
   defmodule CacheOptQueries do
     use Skuld.Query.Contract
 
-    deffetch(get_user(id :: String.t()) :: User.t() | nil)
-    deffetch(get_random() :: term(), cache: false)
-    deffetch(get_explicit_cached(id :: String.t()) :: term(), cache: true)
+    deffetch get_user(id :: String.t()) :: User.t() | nil
+    deffetch get_random() :: term(), cache: false
+    deffetch get_explicit_cached(id :: String.t()) :: term(), cache: true
   end
 
   # ---------------------------------------------------------------
