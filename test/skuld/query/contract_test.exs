@@ -22,17 +22,17 @@ defmodule Skuld.Query.ContractTest do
   defmodule TestQueries do
     use Skuld.Query.Contract
 
-    deffetch(get_user(id :: String.t()) :: User.t() | nil)
-    deffetch(get_users_by_org(org_id :: String.t()) :: [User.t()])
-    deffetch(get_user_count(org_id :: String.t()) :: non_neg_integer())
+    deffetch get_user(id :: String.t()) :: User.t() | nil
+    deffetch get_users_by_org(org_id :: String.t()) :: [User.t()]
+    deffetch get_user_count(org_id :: String.t()) :: non_neg_integer()
   end
 
   defmodule OkErrorQueries do
     use Skuld.Query.Contract
 
-    deffetch(find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()})
-    deffetch(find_post(id :: String.t()) :: Post.t() | nil, bang: false)
-    deffetch(find_item(id :: String.t()) :: term(), bang: true)
+    deffetch find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
+    deffetch find_post(id :: String.t()) :: Post.t() | nil, bang: false
+    deffetch find_item(id :: String.t()) :: term(), bang: true
   end
 
   defmodule CustomBangQueries do
