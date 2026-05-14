@@ -29,8 +29,7 @@ defmodule Skuld.Query.QueryBlockTest do
 
     @impl true
     def get_user(ops) do
-      test_pid = Process.get(:test_pid)
-      if test_pid, do: send(test_pid, {:get_user_batch, length(ops)})
+      send(self(), {:get_user_batch, length(ops)})
 
       Comp.pure(
         Map.new(ops, fn {ref, %TestQueries.GetUser{id: id}} ->
@@ -41,8 +40,7 @@ defmodule Skuld.Query.QueryBlockTest do
 
     @impl true
     def get_orders(ops) do
-      test_pid = Process.get(:test_pid)
-      if test_pid, do: send(test_pid, {:get_orders_batch, length(ops)})
+      send(self(), {:get_orders_batch, length(ops)})
 
       Comp.pure(
         Map.new(ops, fn {ref, %TestQueries.GetOrders{user_id: uid}} ->
@@ -53,8 +51,7 @@ defmodule Skuld.Query.QueryBlockTest do
 
     @impl true
     def get_recent(ops) do
-      test_pid = Process.get(:test_pid)
-      if test_pid, do: send(test_pid, {:get_recent_batch, length(ops)})
+      send(self(), {:get_recent_batch, length(ops)})
 
       Comp.pure(
         Map.new(ops, fn {ref, _op} ->
@@ -67,16 +64,6 @@ defmodule Skuld.Query.QueryBlockTest do
   # ---------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------
-
-  defp with_test_pid(fun) do
-    Process.put(:test_pid, self())
-
-    try do
-      fun.()
-    after
-      Process.delete(:test_pid)
-    end
-  end
 
   # =====================================================================
   # Tests
@@ -402,28 +389,26 @@ defmodule Skuld.Query.QueryBlockTest do
 
     test "destructured pattern with Query.Contract dependency" do
       # Real contract integration: destructured result feeds into a dependent query
-      with_test_pid(fn ->
-        result =
-          query do
-            user <- TestQueries.get_user("1")
-            {:ok, recent} <- Comp.pure({:ok, :some_recent_data})
-            orders <- TestQueries.get_orders(user.id)
-            {user, recent, orders}
-          end
-          |> TestQueries.with_executor(TestExecutor)
-          |> FiberPool.with_handler()
-          |> Comp.run!()
+      result =
+        query do
+          user <- TestQueries.get_user("1")
+          {:ok, recent} <- Comp.pure({:ok, :some_recent_data})
+          orders <- TestQueries.get_orders(user.id)
+          {user, recent, orders}
+        end
+        |> TestQueries.with_executor(TestExecutor)
+        |> FiberPool.with_handler()
+        |> Comp.run!()
 
-        {user, recent, orders} = result
-        assert %{id: "1", name: "User 1"} = user
-        assert recent == :some_recent_data
-        assert [%{id: "o1", user_id: "1"}] = orders
+      {user, recent, orders} = result
+      assert %{id: "1", name: "User 1"} = user
+      assert recent == :some_recent_data
+      assert [%{id: "o1", user_id: "1"}] = orders
 
-        # user and {:ok, recent} are independent (batch 1)
-        # orders depends on user (batch 2)
-        assert_received {:get_user_batch, 1}
-        assert_received {:get_orders_batch, 1}
-      end)
+      # user and {:ok, recent} are independent (batch 1)
+      # orders depends on user (batch 2)
+      assert_received {:get_user_batch, 1}
+      assert_received {:get_orders_batch, 1}
     end
   end
 
@@ -460,95 +445,87 @@ defmodule Skuld.Query.QueryBlockTest do
 
   describe "query — batching integration with Query.Contract" do
     test "independent queries are batched together" do
-      with_test_pid(fn ->
-        result =
-          query do
-            user <- TestQueries.get_user("1")
-            recent <- TestQueries.get_recent()
-            {user, recent}
-          end
-          |> TestQueries.with_executor(TestExecutor)
-          |> FiberPool.with_handler()
-          |> Comp.run!()
+      result =
+        query do
+          user <- TestQueries.get_user("1")
+          recent <- TestQueries.get_recent()
+          {user, recent}
+        end
+        |> TestQueries.with_executor(TestExecutor)
+        |> FiberPool.with_handler()
+        |> Comp.run!()
 
-        {user, recent} = result
-        assert %{id: "1", name: "User 1"} = user
-        assert [%{id: "recent1"}] = recent
+      {user, recent} = result
+      assert %{id: "1", name: "User 1"} = user
+      assert [%{id: "recent1"}] = recent
 
-        # Both should be batched (run concurrently in same round)
-        assert_received {:get_user_batch, 1}
-        assert_received {:get_recent_batch, 1}
-      end)
+      # Both should be batched (run concurrently in same round)
+      assert_received {:get_user_batch, 1}
+      assert_received {:get_recent_batch, 1}
     end
 
     test "dependent queries run in separate rounds" do
-      with_test_pid(fn ->
-        result =
-          query do
-            user <- TestQueries.get_user("1")
-            orders <- TestQueries.get_orders(user.id)
-            {user, orders}
-          end
-          |> TestQueries.with_executor(TestExecutor)
-          |> FiberPool.with_handler()
-          |> Comp.run!()
+      result =
+        query do
+          user <- TestQueries.get_user("1")
+          orders <- TestQueries.get_orders(user.id)
+          {user, orders}
+        end
+        |> TestQueries.with_executor(TestExecutor)
+        |> FiberPool.with_handler()
+        |> Comp.run!()
 
-        {user, orders} = result
-        assert %{id: "1", name: "User 1"} = user
-        assert [%{id: "o1", user_id: "1"}] = orders
+      {user, orders} = result
+      assert %{id: "1", name: "User 1"} = user
+      assert [%{id: "o1", user_id: "1"}] = orders
 
-        assert_received {:get_user_batch, 1}
-        assert_received {:get_orders_batch, 1}
-      end)
+      assert_received {:get_user_batch, 1}
+      assert_received {:get_orders_batch, 1}
     end
 
     test "motivating example: user + recent concurrent, orders dependent" do
-      with_test_pid(fn ->
-        result =
-          query do
-            user <- TestQueries.get_user("1")
-            recent <- TestQueries.get_recent()
-            orders <- TestQueries.get_orders(user.id)
-            {user, recent, orders}
-          end
-          |> TestQueries.with_executor(TestExecutor)
-          |> FiberPool.with_handler()
-          |> Comp.run!()
+      result =
+        query do
+          user <- TestQueries.get_user("1")
+          recent <- TestQueries.get_recent()
+          orders <- TestQueries.get_orders(user.id)
+          {user, recent, orders}
+        end
+        |> TestQueries.with_executor(TestExecutor)
+        |> FiberPool.with_handler()
+        |> Comp.run!()
 
-        {user, recent, orders} = result
-        assert %{id: "1", name: "User 1"} = user
-        assert [%{id: "recent1"}] = recent
-        assert [%{id: "o1", user_id: "1"}] = orders
+      {user, recent, orders} = result
+      assert %{id: "1", name: "User 1"} = user
+      assert [%{id: "recent1"}] = recent
+      assert [%{id: "o1", user_id: "1"}] = orders
 
-        # user and recent should be in the same batch round
-        assert_received {:get_user_batch, 1}
-        assert_received {:get_recent_batch, 1}
-        # orders comes after (depends on user)
-        assert_received {:get_orders_batch, 1}
-      end)
+      # user and recent should be in the same batch round
+      assert_received {:get_user_batch, 1}
+      assert_received {:get_recent_batch, 1}
+      # orders comes after (depends on user)
+      assert_received {:get_orders_batch, 1}
     end
 
     test "multiple users fetched concurrently" do
-      with_test_pid(fn ->
-        result =
-          query do
-            u1 <- TestQueries.get_user("1")
-            u2 <- TestQueries.get_user("2")
-            u3 <- TestQueries.get_user("3")
-            {u1, u2, u3}
-          end
-          |> TestQueries.with_executor(TestExecutor)
-          |> FiberPool.with_handler()
-          |> Comp.run!()
+      result =
+        query do
+          u1 <- TestQueries.get_user("1")
+          u2 <- TestQueries.get_user("2")
+          u3 <- TestQueries.get_user("3")
+          {u1, u2, u3}
+        end
+        |> TestQueries.with_executor(TestExecutor)
+        |> FiberPool.with_handler()
+        |> Comp.run!()
 
-        {u1, u2, u3} = result
-        assert %{id: "1"} = u1
-        assert %{id: "2"} = u2
-        assert %{id: "3"} = u3
+      {u1, u2, u3} = result
+      assert %{id: "1"} = u1
+      assert %{id: "2"} = u2
+      assert %{id: "3"} = u3
 
-        # All 3 should be batched into a single executor call
-        assert_received {:get_user_batch, 3}
-      end)
+      # All 3 should be batched into a single executor call
+      assert_received {:get_user_batch, 3}
     end
   end
 
@@ -726,35 +703,31 @@ defmodule Skuld.Query.QueryBlockTest do
     end
 
     test "defquery batches independent contract queries" do
-      with_test_pid(fn ->
-        {user, recent} =
-          fetch_user_and_recent("1")
-          |> TestQueries.with_executor(TestExecutor)
-          |> FiberPool.with_handler()
-          |> Comp.run!()
+      {user, recent} =
+        fetch_user_and_recent("1")
+        |> TestQueries.with_executor(TestExecutor)
+        |> FiberPool.with_handler()
+        |> Comp.run!()
 
-        assert %{id: "1", name: "User 1"} = user
-        assert [%{id: "recent1"}] = recent
+      assert %{id: "1", name: "User 1"} = user
+      assert [%{id: "recent1"}] = recent
 
-        assert_received {:get_user_batch, 1}
-        assert_received {:get_recent_batch, 1}
-      end)
+      assert_received {:get_user_batch, 1}
+      assert_received {:get_recent_batch, 1}
     end
 
     test "defquery sequences dependent contract queries" do
-      with_test_pid(fn ->
-        {user, orders} =
-          fetch_user_with_orders("1")
-          |> TestQueries.with_executor(TestExecutor)
-          |> FiberPool.with_handler()
-          |> Comp.run!()
+      {user, orders} =
+        fetch_user_with_orders("1")
+        |> TestQueries.with_executor(TestExecutor)
+        |> FiberPool.with_handler()
+        |> Comp.run!()
 
-        assert %{id: "1", name: "User 1"} = user
-        assert [%{id: "o1", user_id: "1"}] = orders
+      assert %{id: "1", name: "User 1"} = user
+      assert [%{id: "o1", user_id: "1"}] = orders
 
-        assert_received {:get_user_batch, 1}
-        assert_received {:get_orders_batch, 1}
-      end)
+      assert_received {:get_user_batch, 1}
+      assert_received {:get_orders_batch, 1}
     end
   end
 
