@@ -44,30 +44,28 @@ defmodule Skuld.Integration.StreamingBatchingTest do
   # ---------------------------------------------------------------
 
   defmodule BulkAPI do
-    def bulk_fetch_users(ids) when is_list(ids) do
-      Map.new(ids, fn id ->
-        {id, %User{id: id, name: "User #{id}", email: "user#{id}@test.com"}}
+    def bulk_fetch_users(ops) when is_list(ops) do
+      Map.new(ops, fn %Queries.FetchUser{id: id} = op ->
+        {op, %User{id: id, name: "User #{id}", email: "user#{id}@test.com"}}
       end)
     end
 
-    def bulk_fetch_user_orders(queries) when is_list(queries) do
-      Map.new(queries, fn {user_id, month} ->
-        key = {user_id, month}
-
-        {key,
+    def bulk_fetch_user_orders(ops) when is_list(ops) do
+      Map.new(ops, fn %Queries.FetchUserOrders{user_id: uid, month: month} = op ->
+        {op,
          [
-           %Order{id: "#{user_id}-o1", user_id: user_id, date: "#{month}-01", total: 100},
-           %Order{id: "#{user_id}-o2", user_id: user_id, date: "#{month}-15", total: 200}
+           %Order{id: "#{uid}-o1", user_id: uid, date: "#{month}-01", total: 100},
+           %Order{id: "#{uid}-o2", user_id: uid, date: "#{month}-15", total: 200}
          ]}
       end)
     end
 
-    def bulk_fetch_order_details(order_ids) when is_list(order_ids) do
-      Map.new(order_ids, fn order_id ->
-        {order_id,
+    def bulk_fetch_order_details(ops) when is_list(ops) do
+      Map.new(ops, fn %Queries.FetchOrderDetails{order_id: oid} = op ->
+        {op,
          [
-           %OrderDetail{id: "#{order_id}-d1", order_id: order_id, item: "Item A", price: 50},
-           %OrderDetail{id: "#{order_id}-d2", order_id: order_id, item: "Item B", price: 75}
+           %OrderDetail{id: "#{oid}-d1", order_id: oid, item: "Item A", price: 50},
+           %OrderDetail{id: "#{oid}-d2", order_id: oid, item: "Item B", price: 75}
          ]}
       end)
     end
@@ -84,11 +82,13 @@ defmodule Skuld.Integration.StreamingBatchingTest do
     def fetch_user(ops) do
       send(self(), {:batch, :fetch_user, length(ops)})
 
-      ids = Enum.map(ops, fn {_ref, %Queries.FetchUser{id: id}} -> id end)
-      results = BulkAPI.bulk_fetch_users(ids)
+      results =
+        ops
+        |> Enum.map(fn {_ref, op} -> op end)
+        |> BulkAPI.bulk_fetch_users()
 
-      Map.new(ops, fn {ref, %Queries.FetchUser{id: id}} ->
-        {ref, Map.fetch!(results, id)}
+      Map.new(ops, fn {ref, op} ->
+        {ref, Map.fetch!(results, op)}
       end)
     end
 
@@ -96,15 +96,13 @@ defmodule Skuld.Integration.StreamingBatchingTest do
     def fetch_user_orders(ops) do
       send(self(), {:batch, :fetch_user_orders, length(ops)})
 
-      queries =
-        Enum.map(ops, fn {_ref, %Queries.FetchUserOrders{user_id: uid, month: m}} ->
-          {uid, m}
-        end)
+      results =
+        ops
+        |> Enum.map(fn {_ref, op} -> op end)
+        |> BulkAPI.bulk_fetch_user_orders()
 
-      results = BulkAPI.bulk_fetch_user_orders(queries)
-
-      Map.new(ops, fn {ref, %Queries.FetchUserOrders{user_id: uid, month: m}} ->
-        {ref, Map.fetch!(results, {uid, m})}
+      Map.new(ops, fn {ref, op} ->
+        {ref, Map.fetch!(results, op)}
       end)
     end
 
@@ -112,13 +110,13 @@ defmodule Skuld.Integration.StreamingBatchingTest do
     def fetch_order_details(ops) do
       send(self(), {:batch, :fetch_order_details, length(ops)})
 
-      order_ids =
-        Enum.map(ops, fn {_ref, %Queries.FetchOrderDetails{order_id: oid}} -> oid end)
+      results =
+        ops
+        |> Enum.map(fn {_ref, op} -> op end)
+        |> BulkAPI.bulk_fetch_order_details()
 
-      results = BulkAPI.bulk_fetch_order_details(order_ids)
-
-      Map.new(ops, fn {ref, %Queries.FetchOrderDetails{order_id: oid}} ->
-        {ref, Map.fetch!(results, oid)}
+      Map.new(ops, fn {ref, op} ->
+        {ref, Map.fetch!(results, op)}
       end)
     end
   end
@@ -168,7 +166,7 @@ defmodule Skuld.Integration.StreamingBatchingTest do
       result =
         comp do
           source <- Brook.from_enum(user_ids, chunk_size: 5, buffer: 5)
-          summaries <- Brook.map(source, fn user_id -> build_user_summary(user_id, month) end)
+          summaries <- Brook.map(source, fn user_id -> build_user_summary(user_id, month) end, concurrency: 4)
           Brook.to_list(summaries)
         end
         |> Skuld.Query.with_executor(Queries, Executor)
@@ -189,26 +187,30 @@ defmodule Skuld.Integration.StreamingBatchingTest do
         assert summary.items == ["Item A", "Item B"]
       end)
 
-      # Batching: Brook processes 2 transforms concurrently by default.
-      # Each transform runs a query block with 1 fetch_user + 1 fetch_user_orders
-      # + 2 fetch_order_details (2 orders per user). The FiberPool scheduler
-      # groups these across fibers by batch key.
-      assert_received {:batch, :fetch_user, 2}
-      assert_received {:batch, :fetch_user, 2}
-      assert_received {:batch, :fetch_user, 2}
-      assert_received {:batch, :fetch_user, 2}
-      assert_received {:batch, :fetch_user, 2}
+      # Batching: Brook.map concurrency: 4 runs up to 4 transforms concurrently.
+      # Each transform runs a query block that spawns fetch_user and
+      # fetch_user_orders in the same batch via fiber_all. The FiberPool
+      # scheduler groups suspensions by batch key across fibers.
+      all_messages =
+        Enum.map(1..50, fn _ ->
+          receive do
+            msg -> msg
+          after
+            0 -> nil
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.filter(&match?({:batch, _, _}, &1))
 
-      assert_received {:batch, :fetch_user_orders, 2}
-      assert_received {:batch, :fetch_user_orders, 2}
-      assert_received {:batch, :fetch_user_orders, 2}
-      assert_received {:batch, :fetch_user_orders, 2}
-      assert_received {:batch, :fetch_user_orders, 2}
+      user_batches = Enum.filter(all_messages, &match?({:batch, :fetch_user, _}, &1))
+      orders_batches = Enum.filter(all_messages, &match?({:batch, :fetch_user_orders, _}, &1))
+      details_batches = Enum.filter(all_messages, &match?({:batch, :fetch_order_details, _}, &1))
 
-      # 10 users × 2 orders = 20 detail fetches, batched in pairs
-      Enum.each(1..10, fn _ ->
-        assert_received {:batch, :fetch_order_details, 2}
-      end)
+      assert Enum.map(user_batches, &elem(&1, 2)) == [2, 2, 2, 2, 2]
+      assert Enum.map(orders_batches, &elem(&1, 2)) == [2, 2, 2, 2, 2]
+
+      # 10 users × 2 orders = 20 detail fetches, batched
+      assert Enum.sum(Enum.map(details_batches, &elem(&1, 2))) == 20
     end
   end
 end
