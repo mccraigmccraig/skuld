@@ -17,7 +17,7 @@ defmodule Skuld.Query.QueryBlockTest do
   end
 
   defmodule TestQueries do
-    use Skuld.Query.Contract
+    use Skuld.Query
 
     deffetch get_user(id :: String.t()) :: map()
     deffetch get_orders(user_id :: String.t()) :: [map()]

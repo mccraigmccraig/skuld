@@ -19,7 +19,7 @@ defmodule Skuld.Query.ContractTest do
   end
 
   defmodule TestQueries do
-    use Skuld.Query.Contract
+    use Skuld.Query
 
     deffetch get_user(id :: String.t()) :: User.t() | nil
     deffetch get_users_by_org(org_id :: String.t()) :: [User.t()]
@@ -27,7 +27,7 @@ defmodule Skuld.Query.ContractTest do
   end
 
   defmodule OkErrorQueries do
-    use Skuld.Query.Contract
+    use Skuld.Query
 
     deffetch find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
     deffetch find_post(id :: String.t()) :: Post.t() | nil
@@ -35,20 +35,20 @@ defmodule Skuld.Query.ContractTest do
   end
 
   defmodule PostQueries do
-    use Skuld.Query.Contract
+    use Skuld.Query
 
     deffetch get_post(id :: String.t()) :: Post.t() | nil
     deffetch get_posts_by_user(user_id :: String.t()) :: [Post.t()]
   end
 
   defmodule ZeroArgQueries do
-    use Skuld.Query.Contract
+    use Skuld.Query
 
     deffetch health_check() :: :ok
   end
 
   defmodule CacheOptQueries do
-    use Skuld.Query.Contract
+    use Skuld.Query
 
     deffetch get_user(id :: String.t()) :: User.t() | nil
     deffetch get_random() :: term(), cache: false
@@ -457,7 +457,7 @@ defmodule Skuld.Query.ContractTest do
       assert_raise CompileError, fn ->
         Code.compile_string("""
         defmodule BadQuery do
-          use Skuld.Query.Contract
+          use Skuld.Query
 
           deffetch not_valid_syntax
         end
@@ -469,7 +469,7 @@ defmodule Skuld.Query.ContractTest do
       assert_raise CompileError, ~r/has no deffetch declarations/, fn ->
         Code.compile_string("""
         defmodule EmptyContract do
-          use Skuld.Query.Contract
+          use Skuld.Query
         end
         """)
       end

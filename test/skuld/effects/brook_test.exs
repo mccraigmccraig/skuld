@@ -465,7 +465,7 @@ defmodule Skuld.Effects.BrookTest do
 
     # Query contract for user/order fetching
     defmodule Queries do
-      use Skuld.Query.Contract
+      use Skuld.Query
 
       deffetch fetch_user(id :: pos_integer()) :: map() | nil
       deffetch fetch_orders(user_id :: pos_integer()) :: [map()]
