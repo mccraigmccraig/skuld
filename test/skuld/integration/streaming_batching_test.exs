@@ -165,8 +165,15 @@ defmodule Skuld.Integration.StreamingBatchingTest do
 
       result =
         comp do
-          source <- Brook.from_enum(user_ids, chunk_size: 5, buffer: 5)
-          summaries <- Brook.map(source, fn user_id -> build_user_summary(user_id, month) end, concurrency: 4)
+          source <- Brook.from_enum(user_ids, chunk_size: 1, buffer: 5)
+
+          summaries <-
+            Brook.map(
+              source,
+              fn user_id -> build_user_summary(user_id, month) end,
+              concurrency: 4
+            )
+
           Brook.to_list(summaries)
         end
         |> Skuld.Query.with_executor(Queries, Executor)
@@ -187,10 +194,11 @@ defmodule Skuld.Integration.StreamingBatchingTest do
         assert summary.items == ["Item A", "Item B"]
       end)
 
-      # Batching: Brook.map concurrency: 4 runs up to 4 transforms concurrently.
-      # Each transform runs a query block that spawns fetch_user and
-      # fetch_user_orders in the same batch via fiber_all. The FiberPool
-      # scheduler groups suspensions by batch key across fibers.
+      # Batching: chunk_size: 1 + concurrency: 4 means up to 4 transforms
+      # run concurrently. Each transform runs a query block with fetch_user
+      # and fetch_user_orders in the same batch via fiber_all. The FiberPool
+      # scheduler groups suspensions by batch key — 4 concurrent transforms
+      # produce batches of 4, then 4, then the remaining 2.
       all_messages =
         Enum.map(1..50, fn _ ->
           receive do
@@ -206,8 +214,8 @@ defmodule Skuld.Integration.StreamingBatchingTest do
       orders_batches = Enum.filter(all_messages, &match?({:batch, :fetch_user_orders, _}, &1))
       details_batches = Enum.filter(all_messages, &match?({:batch, :fetch_order_details, _}, &1))
 
-      assert Enum.map(user_batches, &elem(&1, 2)) == [2, 2, 2, 2, 2]
-      assert Enum.map(orders_batches, &elem(&1, 2)) == [2, 2, 2, 2, 2]
+      assert Enum.map(user_batches, &elem(&1, 2)) == [4, 4, 2]
+      assert Enum.map(orders_batches, &elem(&1, 2)) == [4, 4, 2]
 
       # 10 users × 2 orders = 20 detail fetches, batched
       assert Enum.sum(Enum.map(details_batches, &elem(&1, 2))) == 20
