@@ -467,8 +467,8 @@ defmodule Skuld.Effects.BrookTest do
     defmodule Queries do
       use Skuld.Query.Contract
 
-      deffetch(fetch_user(id :: pos_integer()) :: map() | nil)
-      deffetch(fetch_orders(user_id :: pos_integer()) :: [map()])
+      deffetch fetch_user(id :: pos_integer()) :: map() | nil
+      deffetch fetch_orders(user_id :: pos_integer()) :: [map()]
     end
 
     defmodule User do

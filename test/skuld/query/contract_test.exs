@@ -44,7 +44,7 @@ defmodule Skuld.Query.ContractTest do
   defmodule ZeroArgQueries do
     use Skuld.Query.Contract
 
-    deffetch(health_check() :: :ok)
+    deffetch health_check() :: :ok
   end
 
   defmodule CacheOptQueries do
