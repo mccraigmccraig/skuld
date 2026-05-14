@@ -9,7 +9,8 @@
     def_op: 1,
     def_op_struct: :*,
     def_tagged_op: 1,
-    defcallback: :*
+    defcallback: :*,
+    deffetch: :*
   ],
   inputs: [
     "{mix,.formatter}.exs",
