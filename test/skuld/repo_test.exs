@@ -564,7 +564,7 @@ defmodule Skuld.RepoTest do
       end
 
       defmodule OtherEffectful do
-        use Skuld.Effects.Port.EffectfulContract, double_down_contract: OtherContract
+        use Skuld.Adapter.EffectfulContract, double_down_contract: OtherContract
       end
 
       defmodule OtherFacade do

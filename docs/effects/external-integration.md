@@ -14,7 +14,7 @@ Port has three layers:
 - **Port** - low-level dispatch via `Port.request/3`
 - **Port.Facade** - typed contracts via `defcallback`, with Dialyzer support
   and generated effectful dispatch functions
-- **Port.Adapter.Effectful** - bridges plain Elixir code into effectful
+- **Skuld.Adapter** - bridges plain Elixir code into effectful
   implementations (the inbound side of hexagonal architecture)
 
 Most applications should use `Skuld.Effects.Port.Facade`. The low-level
@@ -329,16 +329,16 @@ my_comp
 - Single-module pattern: swap between DoubleDown `ContractFacade` and skuld `Port.Facade`
   with a one-line `use` change
 
-## Port.Adapter.Effectful
+## Skuld.Adapter
 
-Port.Adapter.Effectful enables the **provider side** of hexagonal architecture:
+Skuld.Adapter enables the **provider side** of hexagonal architecture:
 plain Elixir code calling into effectful implementations. It generates a
 module that satisfies the Behaviour by wrapping an Effectful
 implementation with a handler stack and `Comp.run!/1`.
 
-### When to use Port.Adapter.Effectful
+### When to use Skuld.Adapter
 
-Use Port.Adapter.Effectful when non-effectful code (a Phoenix controller, a
+Use Skuld.Adapter when non-effectful code (a Phoenix controller, a
 GenServer, a CLI) needs to call into logic that's written with effects.
 The adapter handles the effect machinery so callers don't need to know
 about it.
@@ -376,7 +376,7 @@ end
 
 # 4. Effectful adapter bridges effectful impl to plain Elixir
 defmodule MyApp.UserService.Adapter do
-  use Skuld.Effects.Port.Adapter.Effectful,
+  use Skuld.Adapter,
     contract: MyApp.UserService.Contract,
     impl: MyApp.UserService.EffectfulImpl,
     stack: fn comp ->
@@ -442,7 +442,7 @@ through the same contract:
     calls out to               calls in to
     plain Elixir impl          effectful impl
          |                          |
-    Port.with_handler          Port.Adapter.Effectful
+    Port.with_handler          Skuld.Adapter
     → Plain impl            → Effectful impl
                                  → stack
                                  → Comp.run!()
@@ -451,7 +451,7 @@ through the same contract:
 - **Plain (outbound)** - effectful code emits Port effects (via
   effectful facade), resolved by `Port.with_handler/2` dispatching to a
   Behaviour implementation
-- **Effectful (inbound)** - `Port.Adapter.Effectful` wraps an Effectful
+- **Effectful (inbound)** - `Skuld.Adapter` wraps an Effectful
   implementation with a handler stack and `Comp.run!/1`, producing a
   Behaviour-compatible module that plain code calls directly
 

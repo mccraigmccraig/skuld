@@ -48,11 +48,11 @@ defmodule Skuld.Effects.Port.ContractTest do
 
   # Effectful contracts for each test contract
   defmodule TestEffectful do
-    use Skuld.Effects.Port.EffectfulContract, double_down_contract: TestContract
+    use Skuld.Adapter.EffectfulContract, double_down_contract: TestContract
   end
 
   defmodule BareReturnEffectful do
-    use Skuld.Effects.Port.EffectfulContract, double_down_contract: BareReturnContract
+    use Skuld.Adapter.EffectfulContract, double_down_contract: BareReturnContract
   end
 
   # Facade modules for each test contract (point at effectful contracts)
@@ -644,7 +644,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       defmodule OtherEffectful do
-        use Skuld.Effects.Port.EffectfulContract, double_down_contract: OtherContract
+        use Skuld.Adapter.EffectfulContract, double_down_contract: OtherContract
       end
 
       defmodule OtherFacade do
@@ -730,7 +730,7 @@ defmodule Skuld.Effects.Port.ContractTest do
 
   # Effectful contract
   defmodule PlainDispatchEffectful do
-    use Skuld.Effects.Port.EffectfulContract, double_down_contract: PlainDispatchContract
+    use Skuld.Adapter.EffectfulContract, double_down_contract: PlainDispatchContract
   end
 
   # Consuming app defines its own effectful facade separately
@@ -785,7 +785,7 @@ defmodule Skuld.Effects.Port.ContractTest do
         end
 
         defmodule Skuld.Test.Combined do
-          use Skuld.Effects.Port.EffectfulContract,
+          use Skuld.Adapter.EffectfulContract,
             double_down_contract: Skuld.Test.CombinedContract
           use Skuld.Effects.Port.Facade,
             contract: Skuld.Test.Combined
@@ -818,7 +818,7 @@ defmodule Skuld.Effects.Port.ContractTest do
         end
 
         defmodule Skuld.Test.CombinedDispatch do
-          use Skuld.Effects.Port.EffectfulContract,
+          use Skuld.Adapter.EffectfulContract,
             double_down_contract: Skuld.Test.CombinedDispatchContract
           use Skuld.Effects.Port.Facade,
             contract: Skuld.Test.CombinedDispatch

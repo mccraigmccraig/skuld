@@ -25,7 +25,7 @@ An effectful programming framework for Elixir.
       │                     │                    │                 │
  State, Reader,        ┌────┴──────┐             │                Port
  Writer, Throw,        │           │             │                 │
- Bracket, Fresh,  Serializable-    │             │      Port.EffectfulContract
+ Bracket, Fresh,  Serializable-    │             │      Adapter.EffectfulContract
  Random, FxList,   Coroutine       │             │      Port.Facade
  Yield,                            │             │      Repo
  EffectLogger,                     │             │      Command

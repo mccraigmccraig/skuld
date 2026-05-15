@@ -14,7 +14,7 @@ if Code.ensure_loaded?(Ecto) do
 
     require Skuld.Repo.Contract
 
-    use Skuld.Effects.Port.EffectfulContract,
+    use Skuld.Adapter.EffectfulContract,
       double_down_contract: Skuld.Repo.Contract
   end
 end

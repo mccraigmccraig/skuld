@@ -45,7 +45,7 @@ defmodule Skuld.Effects.Port.Facade do
   For cases where you want them in different modules:
 
       defmodule MyApp.Todos.Effectful do
-        use Skuld.Effects.Port.EffectfulContract,
+        use Skuld.Adapter.EffectfulContract,
           double_down_contract: MyApp.Todos.Contract
       end
 
@@ -68,7 +68,7 @@ defmodule Skuld.Effects.Port.Facade do
     * `:contract` — the effectful contract module. Defaults to `__MODULE__`.
     * `:double_down_contract` — the DoubleDown contract module. When given (and
       `:contract` is not), implicitly issues
-      `use Skuld.Effects.Port.EffectfulContract` and sets `:contract` to
+      `use Skuld.Adapter.EffectfulContract` and sets `:contract` to
       `__MODULE__`. Cannot be combined with `:contract`.
     * Without options: single-module pattern — `use DoubleDown.Contract` is
       issued implicitly and everything is generated on the same module.
@@ -120,7 +120,7 @@ defmodule Skuld.Effects.Port.Facade do
       # use EffectfulContract and set contract to __MODULE__
       has_double_down? ->
         quote do
-          use Skuld.Effects.Port.EffectfulContract,
+          use Skuld.Adapter.EffectfulContract,
             double_down_contract: unquote(double_down_contract)
 
           @skuld_port_contract unquote(contract)

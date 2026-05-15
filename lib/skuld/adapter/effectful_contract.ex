@@ -1,8 +1,8 @@
-defmodule Skuld.Effects.Port.EffectfulContract do
+defmodule Skuld.Adapter.EffectfulContract do
   @moduledoc """
   Generates an effectful behaviour from a `DoubleDown.Contract`.
 
-  `use Skuld.Effects.Port.EffectfulContract` reads the operations from a
+  `use Skuld.Adapter.EffectfulContract` reads the operations from a
   plain DoubleDown contract and generates:
 
     * Effectful `@callback` declarations with `computation(return_type)`
@@ -24,7 +24,7 @@ defmodule Skuld.Effects.Port.EffectfulContract do
 
       # Effectful contract (Skuld)
       defmodule MyApp.Todos.Effectful do
-        use Skuld.Effects.Port.EffectfulContract,
+        use Skuld.Adapter.EffectfulContract,
           double_down_contract: MyApp.Todos.Contract
       end
 
@@ -55,7 +55,7 @@ defmodule Skuld.Effects.Port.EffectfulContract do
 
     quote do
       @skuld_double_down_contract unquote(double_down_contract)
-      @before_compile Skuld.Effects.Port.EffectfulContract
+      @before_compile Skuld.Adapter.EffectfulContract
     end
   end
 

@@ -1,15 +1,15 @@
-defmodule Skuld.Effects.Port.Adapter.Effectful do
+defmodule Skuld.Adapter do
   @moduledoc """
-  Macro for bridging effectful implementations to plain Elixir interfaces.
+  Bridges effectful implementations to plain Elixir interfaces.
 
-  An effectful adapter wraps an effectful implementation module — one whose
+  `Skuld.Adapter` wraps an effectful implementation module — one whose
   functions return `computation(return_type)` — with a handler stack and
   `Comp.run!/1`, producing a module that satisfies the Plain behaviour with
   plain Elixir functions.
 
   ## Options
 
-    * `:contract` — the Port.Contract module (required)
+    * `:contract` — the DoubleDown.Contract module (required)
     * `:impl` — the Effectful-behaviour implementation module (required)
     * `:stack` — a function `(computation -> computation)` that installs the
       handler stack (required)
@@ -31,9 +31,9 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
         end
       end
 
-      # Effectful adapter satisfies Plain behaviour, runs effectful impl
+      # Skuld.Adapter satisfies Plain behaviour, runs effectful impl
       defmodule MyApp.UserService.Adapter do
-        use Skuld.Effects.Port.Adapter.Effectful,
+        use Skuld.Adapter,
           contract: MyApp.UserService,
           impl: MyApp.UserService.EffectfulImpl,
           stack: &MyApp.Stacks.user_service/1
@@ -55,19 +55,19 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
   The generated module declares `@behaviour ContractModule`, ensuring
   compile-time verification that all required callbacks are implemented.
 
-  ## Hexagonal Architecture
+  ## Four Directions
 
-  In hexagonal architecture terms, there are four scenarios for a port contract:
+  There are four scenarios for bridging between plain and effectful code:
 
     * **Skuld→Plain** — effectful code calls out to plain Elixir implementations
       through the Port effect, resolved by `Port.with_handler/2` at runtime.
     * **Skuld→Effectful** — effectful code calls out to effectful implementations
       through the Port effect with an `:effectful` resolver.
     * **Legacy→Plain** — plain Elixir code calls plain implementations through
-      the DoubleDown-generated `X.Port` facade.
+      the DoubleDown-generated facade.
     * **Legacy→Effectful** — plain Elixir code calls into effectful implementations
-      through this adapter (`Port.Adapter.Effectful`), which runs the effectful
-      code with a handler stack, producing plain return values.
+      through `Skuld.Adapter`, which runs the effectful code with a handler stack,
+      producing plain return values.
 
   ## Throw handler in the stack
 
@@ -78,7 +78,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
 
   A minimal stack that only handles throws:
 
-      use Skuld.Effects.Port.Adapter.Effectful,
+      use Skuld.Adapter,
         contract: MyContract,
         impl: MyEffectfulImpl,
         stack: &Skuld.Effects.Throw.with_handler/1
@@ -93,9 +93,9 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
         |> Throw.with_handler()
       end
 
-  ## Testing Effectful Adapters
+  ## Testing
 
-  Effectful adapters produce plain Elixir values, so they can be tested directly
+  Adapters produce plain Elixir values, so they can be tested directly
   without effect machinery:
 
       test "adapter returns expected result" do
@@ -115,10 +115,6 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
         {result, _env} = Comp.run(comp)
         assert {:ok, %User{}} = result
       end
-
-  Since the adapter satisfies the Behaviour, it can also be used as a handler
-  target in `Port.with_handler/2`, enabling effectful-to-effectful composition
-  through the Port system.
   """
 
   defmacro __using__(opts) do
@@ -131,7 +127,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
     escaped_stack = Macro.escape(stack_ast)
 
     quote do
-      @before_compile {Skuld.Effects.Port.Adapter.Effectful, :__before_compile__}
+      @before_compile {Skuld.Adapter, :__before_compile__}
       @__port_provider_contract__ unquote(contract)
       @__port_provider_impl__ unquote(impl)
       @__port_provider_stack_ast__ unquote(escaped_stack)
@@ -147,7 +143,7 @@ defmodule Skuld.Effects.Port.Adapter.Effectful do
     unless function_exported?(contract, :__callbacks__, 0) do
       raise CompileError,
         description:
-          "#{inspect(contract)} does not appear to be a port contract module " <>
+          "#{inspect(contract)} does not appear to be a contract module " <>
             "(missing __callbacks__/0). Ensure it uses DoubleDown.Contract " <>
             "and defines at least one defcallback.",
         file: env.file,

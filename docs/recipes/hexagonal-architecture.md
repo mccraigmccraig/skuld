@@ -20,7 +20,7 @@ code can be either **plain Elixir** (legacy/non-effectful) or **effectful**
 | # | Caller       | Implementation | Mechanism                                          |
 |---|--------------|----------------|----------------------------------------------------|
 | 1 | Plain Elixir | Plain Elixir   | `DoubleDown.ContractFacade` — config-dispatched plain calls   |
-| 2 | Plain Elixir | Effectful      | `Port.Adapter.Effectful`                           |
+| 2 | Plain Elixir | Effectful      | `Skuld.Adapter`                           |
 | 3 | Effectful    | Plain Elixir   | `Port.with_handler` + `:direct` resolver           |
 | 4 | Effectful    | Effectful      | `Port.with_handler` + effectful module (auto-detected) |
 
@@ -194,7 +194,7 @@ The `OrderController` is still plain Elixir, so it needs an
 
 ```elixir
 defmodule MyApp.Effectful.OrdersAdapter do
-  use Skuld.Effects.Port.Adapter.Effectful,
+  use Skuld.Adapter,
     contract: MyApp.Orders,
     impl: MyApp.Effectful.OrderService,
     stack: fn comp ->
@@ -327,7 +327,7 @@ wraps the implementation with a handler stack and `Comp.run!()`.
 
 ```elixir
 defmodule MyApp.Effectful.OrdersAdapter do
-  use Skuld.Effects.Port.Adapter.Effectful,
+  use Skuld.Adapter,
     contract: MyApp.Orders,
     impl: MyApp.Effectful.OrderService,
     stack: fn comp ->

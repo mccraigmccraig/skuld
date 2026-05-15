@@ -23,7 +23,7 @@ boundaries — plus cross-cutting effects that work with any computation.
       │                     │                    │                 │
  State, Reader,        ┌────┴──────┐             │                Port
  Writer, Throw,        │           │             │                 │
- Bracket, Fresh,  Serializable-    │             │      Port.EffectfulContract
+ Bracket, Fresh,  Serializable-    │             │      Adapter.EffectfulContract
  Random, FxList,   Coroutine       │             │      Port.Facade
  Yield,                            │             │      Repo
  EffectLogger,                     │             │      Command
@@ -152,7 +152,7 @@ looks up the contract in a handler registry and delegates to the
 registered implementation. Handlers can be plain functions, stateful
 functions, or module-based (with `DoubleDown.Contract` dispatch).
 
-### Port.EffectfulContract
+### Adapter.EffectfulContract
 
 Generates typed effectful behaviours from `DoubleDown.Contract`
 declarations. Plain code (Ecto adapters, HTTP clients) implements the

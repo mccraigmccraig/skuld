@@ -252,7 +252,7 @@ config. It works but it's tedious, and the plumbing obscures the
 domain logic.
 
 **What Skuld does**: Port.Contract defines typed boundaries between
-your domain and infrastructure. Port.Adapter.Effectful bridges the other
+your domain and infrastructure. Skuld.Adapter bridges the other
 direction - letting plain Elixir code call into effectful
 implementations. The domain logic uses effects; the adapters are thin
 modules that implement a behaviour:

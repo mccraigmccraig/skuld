@@ -1,4 +1,4 @@
-defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
+defmodule Skuld.AdapterTest do
   use ExUnit.Case, async: true
 
   alias Skuld.Comp
@@ -26,7 +26,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
   end
 
   defmodule TestEffectful do
-    use Skuld.Effects.Port.EffectfulContract, double_down_contract: TestContract
+    use Skuld.Adapter.EffectfulContract, double_down_contract: TestContract
   end
 
   # Effectful implementation — returns computations (satisfies Effectful behaviour)
@@ -46,9 +46,9 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
     end
   end
 
-  # Effectful adapter — bridges effectful impl to Plain interface
+  # Adapter — bridges effectful impl to Plain interface
   defmodule TestAdapter do
-    use Skuld.Effects.Port.Adapter.Effectful,
+    use Skuld.Adapter,
       contract: TestContract,
       impl: EffectfulImpl,
       stack: &Function.identity/1
@@ -83,7 +83,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
   end
 
   defmodule StatefulAdapter do
-    use Skuld.Effects.Port.Adapter.Effectful,
+    use Skuld.Adapter,
       contract: TestContract,
       impl: StatefulImpl,
       stack: &State.with_handler(&1, 0)
@@ -114,14 +114,14 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
   end
 
   defmodule ThrowingAdapter do
-    use Skuld.Effects.Port.Adapter.Effectful,
+    use Skuld.Adapter,
       contract: TestContract,
       impl: ThrowingImpl,
       stack: &Throw.with_handler/1
   end
 
   # ---------------------------------------------------------------
-  # Basic Effectful Adapter Tests
+  # Basic Adapter Tests
   # ---------------------------------------------------------------
 
   describe "generated module satisfies Behaviour" do
@@ -218,14 +218,14 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
 
   describe "compile-time validation" do
     test "raises CompileError when contract module lacks __callbacks__" do
-      assert_raise CompileError, ~r/does not appear to be a port contract module/, fn ->
+      assert_raise CompileError, ~r/does not appear to be a contract module/, fn ->
         Code.compile_string("""
         defmodule NotAContract do
           def some_function, do: :ok
         end
 
-        defmodule BadEffectfulAdapter do
-          use Skuld.Effects.Port.Adapter.Effectful,
+        defmodule BadAdapter do
+          use Skuld.Adapter,
             contract: NotAContract,
             impl: NotAContract,
             stack: &Function.identity/1
@@ -238,7 +238,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
       assert_raise KeyError, ~r/key :contract not found/, fn ->
         Code.compile_string("""
         defmodule MissingContractAdapter do
-          use Skuld.Effects.Port.Adapter.Effectful,
+          use Skuld.Adapter,
             impl: SomeModule,
             stack: &Function.identity/1
         end
@@ -278,7 +278,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
     end
 
     defmodule CountingAdapter do
-      use Skuld.Effects.Port.Adapter.Effectful,
+      use Skuld.Adapter,
         contract: TestContract,
         impl: CountingImpl,
         stack: &State.with_handler(&1, [])
@@ -329,7 +329,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
     end
 
     defmodule MultiEffectAdapter do
-      use Skuld.Effects.Port.Adapter.Effectful,
+      use Skuld.Adapter,
         contract: TestContract,
         impl: MultiEffectImpl,
         stack: fn comp ->

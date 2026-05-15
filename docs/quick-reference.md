@@ -107,7 +107,7 @@ Many handlers support `:output` to extract handler state:
 | Module | Key operations |
 |--------|---------------|
 | `Skuld.AsyncComputation` | `start/2`, `start_sync/2`, `resume/3`, `resume_sync/3`, `cancel/1`, `cancel_sync/2` |
-| `Skuld.Effects.Port.Adapter.Effectful` | Macro: bring external effectful code into computations |
+| `Skuld.Adapter` | Macro: bring external effectful code into computations |
 
 <!-- nav:footer:start -->
 
