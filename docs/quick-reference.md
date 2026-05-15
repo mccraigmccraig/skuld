@@ -1,7 +1,7 @@
 # Quick Reference
 
 <!-- nav:header:start -->
-[< Syntax In Depth](syntax.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader & Writer >](effects/state-reader-writer.md)
+[< Syntax In Depth](syntax.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Performance >](performance.md)
 <!-- nav:header:end -->
 
 ## `comp` syntax
@@ -106,5 +106,5 @@ Handler order is independent. `EffectLogger` must be innermost.
 
 ---
 
-[< Syntax In Depth](syntax.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader & Writer >](effects/state-reader-writer.md)
+[< Syntax In Depth](syntax.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Performance >](performance.md)
 <!-- nav:footer:end -->

@@ -1,7 +1,7 @@
 # State, Reader & Writer
 
 <!-- nav:header:start -->
-[< Quick Reference](../quick-reference.md) | [Index](../../README.md) | [Throw & Bracket >](throw-bracket.md)
+[< Performance](../performance.md) | [Index](../../README.md) | [Throw & Bracket >](throw-bracket.md)
 <!-- nav:header:end -->
 
 The three foundational effects for managing context within a computation.
@@ -104,5 +104,5 @@ when the computation yields.
 
 ---
 
-[< Quick Reference](../quick-reference.md) | [Index](../../README.md) | [Throw & Bracket >](throw-bracket.md)
+[< Performance](../performance.md) | [Index](../../README.md) | [Throw & Bracket >](throw-bracket.md)
 <!-- nav:footer:end -->

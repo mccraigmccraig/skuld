@@ -1,7 +1,7 @@
 # Getting Started
 
 <!-- nav:header:start -->
-[< How Effects Work](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader & Writer >](effects/state-reader-writer.md)
+[< How Effects Work](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Syntax In Depth >](syntax.md)
 <!-- nav:header:end -->
 
 Add `skuld` to your dependencies:
@@ -119,5 +119,5 @@ during the test are immediately readable by subsequent `Repo.get` /
 
 ---
 
-[< How Effects Work](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader & Writer >](effects/state-reader-writer.md)
+[< How Effects Work](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Syntax In Depth >](syntax.md)
 <!-- nav:footer:end -->
