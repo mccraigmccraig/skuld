@@ -126,6 +126,7 @@ defmodule Skuld.CompTest do
     test "flatten auto-lifts inner non-computation" do
       # Comp.pure(:some_value) yields :some_value
       # flatten then calls :some_value, which auto-lifts to pure(:some_value)
+      # credo:disable-for-next-line Skuld.Credo.CompPureRedundant
       nested = Comp.pure(:some_value)
       comp = Comp.flatten(nested)
       {result, _env} = Comp.run(comp)

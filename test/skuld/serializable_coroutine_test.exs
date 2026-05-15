@@ -15,8 +15,11 @@ defmodule Skuld.SerializableCoroutineTest do
 
   describe "new/2" do
     test "returns a runnable Coroutine" do
+      # credo:disable-for-next-line Skuld.Credo.CompPureRedundant
+      pure_comp = Comp.pure(42)
+
       coroutine =
-        SerializableCoroutine.new(Comp.pure(42), fn comp ->
+        SerializableCoroutine.new(pure_comp, fn comp ->
           comp |> Throw.with_handler()
         end)
 
