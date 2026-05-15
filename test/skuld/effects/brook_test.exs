@@ -558,4 +558,47 @@ defmodule Skuld.Effects.BrookTest do
       assert_received {:order_fetch, _count}
     end
   end
+
+  describe "reduce/3" do
+    test "pure reducer accumulates" do
+      result =
+        comp do
+          source <- B.from_enum([1, 2, 3, 4, 5])
+          B.reduce(source, 0, fn item, acc -> acc + item end)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert result == 15
+    end
+
+    test "empty stream returns initial accumulator" do
+      result =
+        comp do
+          source <- B.from_enum([])
+          B.reduce(source, :initial, fn _item, acc -> acc end)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert result == :initial
+    end
+
+    test "effectful reducer" do
+      result =
+        comp do
+          source <- B.from_enum([10, 20, 30])
+          # Simulate effectful accumulation
+          total <- B.reduce(source, 0, fn item, acc -> Comp.pure(acc + item) end)
+          Comp.pure(total)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert result == 60
+    end
+  end
 end

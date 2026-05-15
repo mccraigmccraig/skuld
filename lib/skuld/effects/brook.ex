@@ -555,6 +555,59 @@ defmodule Skuld.Effects.Brook do
     end
   end
 
+  @doc """
+  Reduce the stream, threading an accumulator through each item.
+
+  The reducer function receives each item and the current accumulator,
+  and returns the new accumulator (or a computation producing it).
+  Returns the final accumulator value.
+
+  Sequential by nature — each step depends on the previous result.
+  Batching is limited to within-step query blocks.
+
+  ## Example
+
+      comp do
+        source <- Brook.from_enum(1..10)
+        total <- Brook.reduce(source, 0, fn item, acc -> acc + item end)
+      end
+  """
+  @spec reduce(Channel.Handle.t(), acc, (term(), acc -> acc | Comp.Types.computation())) ::
+          Comp.Types.computation()
+        when acc: term()
+  def reduce(input, initial_acc, reducer_fn) do
+    comp do
+      handle <- FiberPool.fiber(reduce_acc(input, initial_acc, reducer_fn))
+      FiberPool.await!(handle)
+    end
+  end
+
+  defp reduce_acc(input, acc, reducer_fn) do
+    comp do
+      result <- Channel.take(input)
+
+      case result do
+        {:ok, item} ->
+          reduce_with_item(input, acc, reducer_fn, item)
+
+        :closed ->
+          Comp.pure(acc)
+
+        {:error, reason} ->
+          Comp.pure({:error, reason})
+      end
+    end
+  end
+
+  defp reduce_with_item(input, acc, reducer_fn, item) do
+    reducer_result = reducer_fn.(item, acc)
+
+    comp do
+      new_acc <- reducer_result
+      reduce_acc(input, new_acc, reducer_fn)
+    end
+  end
+
   #############################################################################
   ## Helpers
   #############################################################################
