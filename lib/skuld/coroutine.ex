@@ -17,17 +17,27 @@ defmodule Skuld.Coroutine do
   - `%Coroutine.Errored{id, error, env}` — finished with error
   - `%Coroutine.Cancelled{id, reason, env}` — cancelled before completion
 
+  ## Two entry points: `call` vs `run`
+
+  Following `Comp.call`/`Comp.run` convention:
+
+  - `call/1,2` — raw step, no `ISentinel.run`. Returns typed states directly.
+    For use inside the FiberPool scheduler, which applies `ISentinel.run`
+    at its own boundary.
+  - `run/1,2` — step + `ISentinel.run`. Applies `transform_suspend` and
+    `leave_scope` before returning typed states. For standalone use
+    (AsyncComputation, SerializableCoroutine, etc.).
+
   ## Lifecycle
 
   1. Create with `new/2` — returns `%Pending{}`
-  2. Run with `run/1` — returns `%Completed{}`, `%InternalSuspended{}`,
+  2. Step with `call/1` or `run/1` — returns `%Completed{}`, `%InternalSuspended{}`,
      `%ExternalSuspended{}`, or `%Errored{}`
-  3. Resume with `run/2` — match on `%InternalSuspended{}` or
+  3. Resume with `call/2` or `run/2` — match on `%InternalSuspended{}` or
      `%ExternalSuspended{}`, pass the resume value
   4. Cancel with `cancel/2` — invokes leave_scope cleanup, returns `%Cancelled{}`
 
-  The single `run` function with clauses on the fiber's sum type enables
-  natural accumulator-style loops:
+  ## Example (standalone, with `run`)
 
       fiber
       |> Coroutine.new(comp, env)
@@ -39,6 +49,7 @@ defmodule Skuld.Coroutine do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
+  alias Skuld.Comp.ISentinel
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Comp.Types
   alias Skuld.Coroutine.Cancelled
@@ -68,7 +79,7 @@ defmodule Skuld.Coroutine do
   Create a new fiber from a computation.
 
   The fiber starts as `%Pending{}` with the computation and env stored,
-  ready to be run with `run/1`.
+  ready to be run with `run/1` or `call/1`.
 
   ## Parameters
 
@@ -90,7 +101,7 @@ defmodule Skuld.Coroutine do
   end
 
   @doc """
-  Run a pending fiber, or resume a suspended fiber with a value.
+  Step a pending fiber, or resume a suspended fiber with a value.
 
   Clauses dispatch on the fiber's sum-type state:
 
@@ -116,7 +127,9 @@ defmodule Skuld.Coroutine do
   @spec run(t()) ::
           Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
   def run(%Pending{computation: comp, env: env} = fiber) do
-    do_run(fiber, comp, env)
+    {result, result_env} = Comp.call(comp, env, &Comp.identity_k/2)
+    {sentinel_result, sentinel_env} = ISentinel.run(result, result_env)
+    execute_and_handle(fiber, sentinel_env, fn -> {sentinel_result, sentinel_env} end)
   end
 
   def run(fiber) do
@@ -127,16 +140,62 @@ defmodule Skuld.Coroutine do
   @spec run(t(), term()) ::
           Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
   def run(%InternalSuspended{k: k, env: env} = fiber, value) do
-    do_resume(fiber, k, value, env)
+    {result, result_env} = k.(value, env)
+    {sentinel_result, sentinel_env} = ISentinel.run(result, result_env)
+    execute_and_handle(fiber, sentinel_env, fn -> {sentinel_result, sentinel_env} end)
   end
 
   def run(%ExternalSuspended{k: k, env: env} = fiber, value) do
-    do_resume(fiber, k, value, env)
+    {result, result_env} = k.(value, env)
+    {sentinel_result, sentinel_env} = ISentinel.run(result, result_env)
+    execute_and_handle(fiber, sentinel_env, fn -> {sentinel_result, sentinel_env} end)
   end
 
   def run(fiber, _value) do
     raise ArgumentError,
           "Cannot run fiber: expected %Coroutine.Pending{}, %Coroutine.InternalSuspended{}, or %Coroutine.ExternalSuspended{}, got #{inspect(fiber.__struct__)}"
+  end
+
+  @doc """
+  Step a fiber without applying `ISentinel.run`.
+
+  Like `run/1,2` but produces raw typed states without `transform_suspend`
+  or `leave_scope`. For use inside the FiberPool scheduler, which applies
+  `ISentinel.run` at its own boundary.
+
+  ## Examples
+
+      fiber = Coroutine.new(my_comp, env)
+      fiber = Coroutine.call(fiber)
+      case fiber do
+        %Coroutine.InternalSuspended{} -> :needs_scheduler
+        %Coroutine.ExternalSuspended{k: k, env: env} -> handle_external(k, env)
+      end
+  """
+  @spec call(t()) ::
+          Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
+  def call(%Pending{computation: comp, env: env} = fiber) do
+    do_call(fiber, comp, env)
+  end
+
+  def call(fiber) do
+    raise ArgumentError,
+          "Cannot call fiber without value: expected %Coroutine.Pending{}, got #{inspect(fiber.__struct__)}"
+  end
+
+  @spec call(t(), term()) ::
+          Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
+  def call(%InternalSuspended{k: k, env: env} = fiber, value) do
+    do_resume(fiber, k, value, env)
+  end
+
+  def call(%ExternalSuspended{k: k, env: env} = fiber, value) do
+    do_resume(fiber, k, value, env)
+  end
+
+  def call(fiber, _value) do
+    raise ArgumentError,
+          "Cannot call fiber: expected %Coroutine.Pending{}, %Coroutine.InternalSuspended{}, or %Coroutine.ExternalSuspended{}, got #{inspect(fiber.__struct__)}"
   end
 
   @doc """
@@ -199,12 +258,12 @@ defmodule Skuld.Coroutine do
   ## Internal
   #############################################################################
 
-  # Run a computation, handling the result
-  defp do_run(fiber, comp, env) do
+  # Start a computation (raw — no ISentinel.run)
+  defp do_call(fiber, comp, env) do
     execute_and_handle(fiber, env, fn -> Comp.call(comp, env, &Comp.identity_k/2) end)
   end
 
-  # Resume via continuation
+  # Resume via continuation (raw — no ISentinel.run)
   defp do_resume(fiber, k, value, env) do
     execute_and_handle(fiber, env, fn -> k.(value, env) end)
   end

@@ -227,7 +227,7 @@ defmodule Skuld.FiberPool.Scheduler do
     fiber = %{fiber | env: fiber_env}
 
     fiber
-    |> Coroutine.run()
+    |> Coroutine.call()
     |> handle_fiber_result(state)
   end
 
@@ -241,7 +241,7 @@ defmodule Skuld.FiberPool.Scheduler do
     fiber = %{fiber | env: fiber_env}
 
     fiber
-    |> Coroutine.run(result)
+    |> Coroutine.call(result)
     |> handle_fiber_result(state)
   end
 
