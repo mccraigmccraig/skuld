@@ -1,5 +1,7 @@
 # Changelog
 
+<!-- last-updated-against: 66a6823 -->
+
 All notable changes to Skuld will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -7,8 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Architecture diagram to README — visual DAG of Skuld's component
+  structure, with cross-cutting effects merged into the foundational branch.
+- `Skuld.Query` module as the primary API surface for query contracts.
+  `use Skuld.Query` delegates to `Skuld.Query.Contract`.
+- `Skuld.Query.with_executor/3`, `Skuld.Query.with_cached_executor/3`,
+  `Skuld.Query.with_cached_executors/2` — wiring and caching functions.
+- Streaming batching integration test — demonstrates Brook + Query
+  batching: a stream of user IDs flows through `Brook.map` into a query
+  block; individual `deffetch` calls are automatically batched by the
+  FiberPool scheduler.
+- `Brook.reduce/3` — effectful stream reduction, threading an accumulator
+  through each item via a pure or effectful reducer function.
+- `Brook` channel semaphore for per-item concurrency control — `map`
+  uses a bounded `Channel` as a semaphore; `concurrency` directly
+  controls how many items are in flight. Results are reordered to
+  preserve input order.
+
 ### Changed
 
+- Query contract modules no longer generate a separate `.Executor`
+  sub-module — `@callback` declarations now live in the contract
+  module, following the same simplification DoubleDown adopted.
+- `Skuld.Query.Contract.with_executors/2` uses `__query_operations__`
+  and `__dispatch__` directly — no longer delegates to generated
+  `contract_module.with_executor/2`.
+- `Skuld.Query.Cache.with_executor/3` and `with_executors/2` renamed to
+  `with_cached_executor/3` and `with_cached_executors/2` — distinguishes
+  the caching variants from non-caching wiring.
 - `Skuld.Fiber` → `Skuld.Coroutine` — renamed to reflect that the resumable
   computation wrapper is a general-purpose coroutine primitive, not inherently
   tied to cooperative concurrency.
@@ -24,19 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Skuld.Effects.Helpers.TaskHelpers` → `Skuld.Effects.Parallel.TaskHelpers` —
   moved the private task supervisor helper into the Parallel effect's namespace
   since it's only used there.
-
-### Removed
-
-- `Skuld.Effects.EventAccumulator` — thin `emit`/`with_handler` wrapper over Writer
-  that added only `Enum.reverse`. Superseded by direct `Writer.tell/2` and
-  `Writer.with_handler/3` usage.
-- `Skuld.Effects.EventAccumulator.IEvent` — protocol for tagging events by
-  module name; an application-layer concern, not an effects library primitive.
-- `Skuld.Effects.ChangeEvent` — generic changeset wrapper struct
-  (`insert`/`update`/`delete`/`upsert`); an application-layer concern.
-
-### Changed
-
 - `Skuld.Effects.Port.Repo` → `Skuld.Repo` — moved the built-in Repo contract,
   facade, and handlers (`InMemory`, `Ecto`, `Stub`, `OpenInMemory`, `Test`) to
   the top-level `Skuld.Repo` namespace, matching DoubleDown's
@@ -57,6 +74,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   protocol dispatch. `Comp.run` is now a clean `call + ISentinel.run` pipeline
   with no sentinel-specific logic and no dependency on any `Skuld.Fiber.*`
   module.
+- Test files: `Comp.pure` calls removed throughout (auto-lifting makes them
+  unnecessary). Process dictionary / `with_test_pid` patterns removed —
+  FiberPool executors run in the same BEAM process, so `send(self(), ...)`
+  suffices.
+
+### Removed
+
+- Bang variant auto-generation from `deffetch` — `:bang` option, bang
+  variants, and the type-AST helpers `has_ok_error_pattern?/1`,
+  `extract_success_type/1`, `extract_from_union/1`, `extract_from_ok_tuple/1`
+  are gone. Bangs were pointless on query operations.
+- Deprecated `defquery` macro alias — `deffetch` is the sole declaration
+  macro.
+- Generated `with_executor/2` on contract modules — wiring is now done via
+  `Skuld.Query.with_executor/3` and `Skuld.Query.Contract.with_executors/2`.
+- `Brook.Chunk` type and all chunk-related logic — streams now operate on
+  individual items instead of chunks. `:chunk_size` option removed from all
+  Brook sources. `Brook.map` per-chunk concurrency replaced with per-item
+  channel semaphore.
+- `Skuld.Effects.EventAccumulator` — thin `emit`/`with_handler` wrapper over Writer
+  that added only `Enum.reverse`. Superseded by direct `Writer.tell/2` and
+  `Writer.with_handler/3` usage.
+- `Skuld.Effects.EventAccumulator.IEvent` — protocol for tagging events by
+  module name; an application-layer concern, not an effects library primitive.
+- `Skuld.Effects.ChangeEvent` — generic changeset wrapper struct
+  (`insert`/`update`/`delete`/`upsert`); an application-layer concern.
+
+### Improved
+
+- `Brook.map` concurrency: `concurrency` directly controls how many items
+  are in flight, using a bounded channel as a semaphore. No more `-2` floor
+  adjustment or per-chunk serialization.
+
+### Fixed
+
+- Credo: ungrouped aliases in `serializable_coroutine_test.exs`.
+- `Brook.map` pattern-match clause that could never match the result of
+  `safe_transform`.
 
 ## [0.26.0] — 2026-05-11
 
