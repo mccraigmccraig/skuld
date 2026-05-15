@@ -126,7 +126,7 @@ subsequent `Repo.get` / `Repo.get_by` calls — no mocks, no stubs.
 ```elixir
 def deps do
   [
-    {:skuld, "~> 0.3"}
+    {:skuld, "~> 0.27"}
   ]
 end
 ```
@@ -136,13 +136,14 @@ end
 | If you want to... | Read |
 |---|---|
 | Understand the problem effects solve | [Why Effects?](docs/why.md) |
-| See how handlers make testing deterministic | [How Effects Work](docs/what.md) |
-| Try your first computation | [Getting Started](docs/getting-started.md) |
-| Eliminate N+1 queries | [Query & Batching](docs/advanced/query-batching.md) |
-| Run computations concurrently | [Fibers & Concurrency](docs/advanced/fibers-concurrency.md) |
-| Build hex boundaries with swappable backends | [Hexagonal Architecture](docs/recipes/hexagonal-architecture.md) |
-| Serialise computations for resumable workflows | [EffectLogger](docs/advanced/effect-logger.md) |
-| Explore all effects and handlers | [Full documentation](docs/getting-started.md) |
+| See how effects and handlers work | [How It Works](docs/what.md) |
+| Write your first computation | [Getting Started](docs/getting-started.md) |
+| State, Reader, Writer, Throw, Fresh, Random | [Foundational Effects](docs/effects/state-reader-writer.md) |
+| Yield, Coroutines, FiberPool, Channels, Async | [Coroutines & Concurrency](docs/effects/yield.md) |
+| Port, Repo, Hexagonal Architecture | [Boundaries](docs/effects/port.md) |
+| Eliminate N+1 queries | [Query System](docs/effects/query.md) |
+| Handler-swapping for deterministic testing | [Testing](docs/testing.md) |
+| Full effect and API reference | [Reference](docs/reference.md) |
 
 ## License
 
