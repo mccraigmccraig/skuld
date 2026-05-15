@@ -14,7 +14,7 @@ defmodule Skuld.Effects.BracketTest do
           # Acquire
           Comp.bind(State.get(), fn log ->
             Comp.bind(State.put([:acquired | log]), fn _ ->
-              Comp.pure(:resource)
+              :resource
             end)
           end),
           # Release
@@ -27,14 +27,14 @@ defmodule Skuld.Effects.BracketTest do
           fn :resource ->
             Comp.bind(State.get(), fn log ->
               Comp.bind(State.put([:used | log]), fn _ ->
-                Comp.pure(:result)
+                :result
               end)
             end)
           end
         )
         |> Comp.bind(fn result ->
           Comp.bind(State.get(), fn log ->
-            Comp.pure({result, Enum.reverse(log)})
+            {result, Enum.reverse(log)}
           end)
         end)
         |> State.with_handler([])
@@ -48,7 +48,7 @@ defmodule Skuld.Effects.BracketTest do
           # Acquire
           Comp.bind(State.get(), fn log ->
             Comp.bind(State.put([:acquired | log]), fn _ ->
-              Comp.pure(:resource)
+              :resource
             end)
           end),
           # Release
@@ -68,7 +68,7 @@ defmodule Skuld.Effects.BracketTest do
         )
         |> Throw.catch_error(fn error ->
           Comp.bind(State.get(), fn log ->
-            Comp.pure({:caught, error, Enum.reverse(log)})
+            {:caught, error, Enum.reverse(log)}
           end)
         end)
         |> Throw.with_handler()
@@ -80,14 +80,14 @@ defmodule Skuld.Effects.BracketTest do
     test "propagates release error when use succeeds" do
       comp =
         Bracket.bracket(
-          Comp.pure(:resource),
+          :resource,
           # Release throws
           fn :resource -> Throw.throw(:release_error) end,
           # Use succeeds
-          fn :resource -> Comp.pure(:result) end
+          fn :resource -> :result end
         )
         |> Throw.catch_error(fn error ->
-          Comp.pure({:caught, error})
+          {:caught, error}
         end)
         |> Throw.with_handler()
 
@@ -97,14 +97,14 @@ defmodule Skuld.Effects.BracketTest do
     test "preserves use error when release also throws" do
       comp =
         Bracket.bracket(
-          Comp.pure(:resource),
+          :resource,
           # Release throws
           fn :resource -> Throw.throw(:release_error) end,
           # Use throws
           fn :resource -> Throw.throw(:use_error) end
         )
         |> Throw.catch_error(fn error ->
-          Comp.pure({:caught, error})
+          {:caught, error}
         end)
         |> Throw.with_handler()
 
@@ -117,7 +117,7 @@ defmodule Skuld.Effects.BracketTest do
         Bracket.bracket(
           Comp.bind(State.get(), fn log ->
             Comp.bind(State.put([:outer_acquired | log]), fn _ ->
-              Comp.pure(:outer)
+              :outer
             end)
           end),
           fn :outer ->
@@ -129,7 +129,7 @@ defmodule Skuld.Effects.BracketTest do
             Bracket.bracket(
               Comp.bind(State.get(), fn log ->
                 Comp.bind(State.put([:inner_acquired | log]), fn _ ->
-                  Comp.pure(:inner)
+                  :inner
                 end)
               end),
               fn :inner ->
@@ -140,7 +140,7 @@ defmodule Skuld.Effects.BracketTest do
               fn :inner ->
                 Comp.bind(State.get(), fn log ->
                   Comp.bind(State.put([:both_used | log]), fn _ ->
-                    Comp.pure(:result)
+                    :result
                   end)
                 end)
               end
@@ -149,7 +149,7 @@ defmodule Skuld.Effects.BracketTest do
         )
         |> Comp.bind(fn result ->
           Comp.bind(State.get(), fn log ->
-            Comp.pure({result, Enum.reverse(log)})
+            {result, Enum.reverse(log)}
           end)
         end)
         |> State.with_handler([])
@@ -164,7 +164,7 @@ defmodule Skuld.Effects.BracketTest do
         Bracket.bracket(
           Comp.bind(State.get(), fn log ->
             Comp.bind(State.put([:outer_acquired | log]), fn _ ->
-              Comp.pure(:outer)
+              :outer
             end)
           end),
           fn :outer ->
@@ -176,7 +176,7 @@ defmodule Skuld.Effects.BracketTest do
             Bracket.bracket(
               Comp.bind(State.get(), fn log ->
                 Comp.bind(State.put([:inner_acquired | log]), fn _ ->
-                  Comp.pure(:inner)
+                  :inner
                 end)
               end),
               fn :inner ->
@@ -196,7 +196,7 @@ defmodule Skuld.Effects.BracketTest do
         )
         |> Throw.catch_error(fn error ->
           Comp.bind(State.get(), fn log ->
-            Comp.pure({:caught, error, Enum.reverse(log)})
+            {:caught, error, Enum.reverse(log)}
           end)
         end)
         |> Throw.with_handler()
@@ -222,14 +222,14 @@ defmodule Skuld.Effects.BracketTest do
           fn :resource ->
             Comp.bind(State.get(), fn log ->
               Comp.bind(State.put([:used | log]), fn _ ->
-                Comp.pure(:result)
+                :result
               end)
             end)
           end
         )
         |> Comp.bind(fn result ->
           Comp.bind(State.get(), fn log ->
-            Comp.pure({result, Enum.reverse(log)})
+            {result, Enum.reverse(log)}
           end)
         end)
         |> State.with_handler([])
@@ -244,7 +244,7 @@ defmodule Skuld.Effects.BracketTest do
         Bracket.finally(
           Comp.bind(State.get(), fn log ->
             Comp.bind(State.put([:main | log]), fn _ ->
-              Comp.pure(:result)
+              :result
             end)
           end),
           Comp.bind(State.get(), fn log ->
@@ -253,7 +253,7 @@ defmodule Skuld.Effects.BracketTest do
         )
         |> Comp.bind(fn result ->
           Comp.bind(State.get(), fn log ->
-            Comp.pure({result, Enum.reverse(log)})
+            {result, Enum.reverse(log)}
           end)
         end)
         |> State.with_handler([])
@@ -275,7 +275,7 @@ defmodule Skuld.Effects.BracketTest do
         )
         |> Throw.catch_error(fn error ->
           Comp.bind(State.get(), fn log ->
-            Comp.pure({:caught, error, Enum.reverse(log)})
+            {:caught, error, Enum.reverse(log)}
           end)
         end)
         |> Throw.with_handler()
@@ -287,11 +287,11 @@ defmodule Skuld.Effects.BracketTest do
     test "propagates cleanup error when main succeeds" do
       comp =
         Bracket.finally(
-          Comp.pure(:result),
+          :result,
           Throw.throw(:cleanup_error)
         )
         |> Throw.catch_error(fn error ->
-          Comp.pure({:caught, error})
+          {:caught, error}
         end)
         |> Throw.with_handler()
 
@@ -305,7 +305,7 @@ defmodule Skuld.Effects.BracketTest do
           Throw.throw(:cleanup_error)
         )
         |> Throw.catch_error(fn error ->
-          Comp.pure({:caught, error})
+          {:caught, error}
         end)
         |> Throw.with_handler()
 
