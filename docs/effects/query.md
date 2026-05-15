@@ -1,7 +1,7 @@
 # Query System
 
 <!-- nav:header:start -->
-[< Repo](repo.md) | [Index](../../README.md)
+[< Repo](repo.md) | [Index](../../README.md) | [Hexagonal Architecture >](../recipes/hexagonal-architecture.md)
 <!-- nav:header:end -->
 
 Automatic N+1 query batching via dependency analysis. The query system
@@ -87,5 +87,5 @@ call hits the cache instead of the executor.
 
 ---
 
-[< Repo](repo.md) | [Index](../../README.md)
+[< Repo](repo.md) | [Index](../../README.md) | [Hexagonal Architecture >](../recipes/hexagonal-architecture.md)
 <!-- nav:footer:end -->

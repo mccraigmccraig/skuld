@@ -38,7 +38,13 @@ defmodule Skuld.MixProject do
           "docs/effects/effectful-facade.md",
           "docs/effects/adapter.md",
           "docs/effects/repo.md",
-          "docs/effects/query.md"
+          "docs/effects/query.md",
+          "docs/recipes/hexagonal-architecture.md",
+          "docs/recipes/property-testing.md",
+          "docs/recipes/handler-stacks.md",
+          "docs/recipes/liveview.md",
+          "docs/recipes/decider-pattern.md",
+          "docs/recipes/batch-loading.md"
         ],
         groups_for_extras: [
           Introduction: [
@@ -70,6 +76,14 @@ defmodule Skuld.MixProject do
           ],
           "Cross-cutting": [
             "docs/effects/query.md"
+          ],
+          Recipes: [
+            "docs/recipes/hexagonal-architecture.md",
+            "docs/recipes/property-testing.md",
+            "docs/recipes/handler-stacks.md",
+            "docs/recipes/liveview.md",
+            "docs/recipes/decider-pattern.md",
+            "docs/recipes/batch-loading.md"
           ]
         ],
         groups_for_modules: [
