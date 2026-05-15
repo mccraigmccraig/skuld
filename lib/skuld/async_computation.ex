@@ -89,6 +89,8 @@ defmodule Skuld.AsyncComputation do
   alias Skuld.Comp.ExternalSuspend
   alias Skuld.Comp.ISentinel
   alias Skuld.Comp.Throw, as: ThrowStruct
+  alias Skuld.Coroutine
+  alias Skuld.Coroutine.Error
   alias Skuld.Effects.Throw
   alias Skuld.Effects.Yield
 
@@ -390,5 +392,29 @@ defmodule Skuld.AsyncComputation do
         # Computation threw, was cancelled, or completed - send result
         send(next_reply_to, {__MODULE__, tag, other})
     end
+  end
+
+  #############################################################################
+  ## IPC Conversion (Coroutine states → Comp sentinels)
+  #############################################################################
+
+  defp coroutine_to_ipc(%Coroutine.Completed{result: result}), do: result
+  defp coroutine_to_ipc(%Coroutine.Errored{error: error}), do: error_to_throw(error)
+  defp coroutine_to_ipc(%Coroutine.Cancelled{reason: reason}), do: %Cancelled{reason: reason}
+
+  defp error_to_throw(%Error{type: :cancelled, error: reason}) do
+    %Cancelled{reason: reason}
+  end
+
+  defp error_to_throw(%Error{type: :exception, error: exception, stacktrace: stacktrace}) do
+    %ThrowStruct{error: %{kind: :error, payload: exception, stacktrace: stacktrace}}
+  end
+
+  defp error_to_throw(%Error{type: :throw, error: value, stacktrace: stacktrace}) do
+    %ThrowStruct{error: %{kind: :throw, payload: value, stacktrace: stacktrace}}
+  end
+
+  defp error_to_throw(%Error{type: :exit, error: reason, stacktrace: stacktrace}) do
+    %ThrowStruct{error: %{kind: :exit, payload: reason, stacktrace: stacktrace}}
   end
 end
