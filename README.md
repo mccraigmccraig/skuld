@@ -21,15 +21,15 @@ An effectful programming framework for Elixir.
  //Foundational       //Coroutines &                 //Boundaries
  //Effects            //Concurrency                       │
       │                     │                             │
-      │                 Coroutine                ┌────────┴────────┐
-      │                     │                    │                 │
- State, Reader,        ┌────┴──────┐             │                Port
- Writer, Throw,        │           │             │                 │
- Bracket, Fresh,  Serializable-    │             │      Adapter.EffectfulContract
- Random, FxList,   Coroutine       │             │      Port.Facade
- Yield,                            │             │      Repo
- EffectLogger,                     │             │      Command
- Parallel,                      FiberPool        │
+      │                 Coroutine                ┌────────┴────┐
+      │                     │                    │             │
+ State, Reader,        ┌────┴──────┐             │            Port
+ Writer, Throw,        │           │             │             │
+ Bracket, Fresh,  Serializable-    │             │    Port.Facade
+ Random, FxList,   Coroutine       │             │    Adapter
+ Yield,                            │             │    Adapter.EffectfulContract
+ EffectLogger,                     │             │    Repo
+ Parallel,                      FiberPool        │    Command
  AtomicState,                      │             │
  Transaction,                      │             │
  AsyncComputation                  │             │
