@@ -68,58 +68,55 @@ for later resumption.
 ## Quick example
 
 ```elixir
-defmodule Onboarding do
+defmodule Dashboard do
   use Skuld.Syntax
 
-  alias Skuld.Repo
-  alias Skuld.Effects.{Fresh, Reader, Writer}
+  alias Skuld.Query
 
-  defcomp register(params) do
-    config <- Reader.ask()
-    id <- Fresh.fresh_uuid()
-    {:ok, user} <- Repo.insert(User.changeset(%{id: id, name: params.name, tier: config.default_tier}))
-    _ <- Writer.tell(:events, %UserRegistered{user_id: id})
-    {:ok, user}
+  defcomp load(user_id) do
+    query do
+      user <- Users.get_user(user_id)
+      posts <- Posts.recent_by(user.id)         # runs concurrently with ↓
+      sub <- Billing.get_subscription(user.id)   # runs concurrently with ↑
+      {:ok, %{user: user, posts: posts, subscription: sub}}
+    end
   end
 end
 ```
 
-Run with production handlers:
+Even though `posts` and `sub` look sequential, the query system analyzes
+dependencies — they're independent of each other (both depend on `user`,
+not on each other) — and batches them into a single round-trip.
+
+Run with production executors:
 
 ```elixir
-# One-time setup: generate an Ecto adapter for the Repo contract
-defmodule MyApp.Repo.Port do
-  use Skuld.Repo.Ecto, repo: MyApp.Repo
-end
-
-# Wire everything up:
-Onboarding.register(%{name: "Alice"})
-|> Reader.with_handler(%{default_tier: :free})
-|> Fresh.with_uuid7_handler()
-|> Port.with_handler(%{Skuld.Repo.Effectful => MyApp.Repo.Port})
-|> Writer.with_handler([], tag: :events, output: fn r, raw ->
-  MyApp.EventBus.publish(Enum.reverse(raw))
-  r
-end)
-|> Throw.with_handler()
+Dashboard.load("user-123")
+|> Skuld.Query.with_cached_executors([
+  {Users, Users.EctoExecutor},
+  {Posts, Posts.EctoExecutor},
+  {Billing, Billing.HTTPExecutor}
+])
+|> FiberPool.with_handler()
 |> Comp.run!()
 ```
 
-Run with test handlers — same code, fully deterministic, no database:
+Run with test executors — deterministic, no database, no HTTP:
 
 ```elixir
-Onboarding.register(%{name: "Alice"})
-|> Reader.with_handler(%{default_tier: :free})
-|> Fresh.with_test_handler()
-|> Repo.InMemory.with_handler(Repo.InMemory.new())
-|> Writer.with_handler([], tag: :events, output: fn r, raw -> {r, Enum.reverse(raw)} end)
-|> Throw.with_handler()
+Dashboard.load("user-123")
+|> Skuld.Query.with_cached_executors([
+  {Users, Users.TestExecutor},
+  {Posts, Posts.TestExecutor},
+  {Billing, Billing.TestExecutor}
+])
+|> FiberPool.with_handler()
 |> Comp.run!()
 ```
 
-`Repo.InMemory` is a closed-world in-memory store with read-after-write
-consistency. Records created during the test are immediately readable by
-subsequent `Repo.get` / `Repo.get_by` calls — no mocks, no stubs.
+Same code. Production calls Ecto and HTTP; tests run against in-memory
+maps. The batching, concurrency, and error handling are all effects —
+swap handlers, not code.
 
 ## Installation
 
