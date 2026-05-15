@@ -79,14 +79,14 @@ defmodule Skuld.Effects.Brook do
           end
         )
 
-      Comp.pure(output)
+      output
     end
   end
 
   defp produce_items(output, []) do
     comp do
       _close_result <- Channel.close(output)
-      Comp.pure(:producer_done)
+      :producer_done
     end
   end
 
@@ -96,7 +96,7 @@ defmodule Skuld.Effects.Brook do
 
       case result do
         :ok -> produce_items(output, rest)
-        {:error, _} -> Comp.pure(:producer_stopped)
+        {:error, _} -> :producer_stopped
       end
     end
   end
@@ -146,7 +146,7 @@ defmodule Skuld.Effects.Brook do
           end
         )
 
-      Comp.pure(output)
+      output
     end
   end
 
@@ -158,7 +158,7 @@ defmodule Skuld.Effects.Brook do
 
           case result do
             :ok -> produce_from_function(output, producer_fn)
-            {:error, _} -> Comp.pure(:producer_stopped)
+            {:error, _} -> :producer_stopped
           end
         end
 
@@ -183,7 +183,7 @@ defmodule Skuld.Effects.Brook do
 
       case result do
         :ok -> produce_items_from_list(output, rest, producer_fn)
-        {:error, _} -> Comp.pure(:producer_stopped)
+        {:error, _} -> :producer_stopped
       end
     end
   end
@@ -251,7 +251,7 @@ defmodule Skuld.Effects.Brook do
       # Reorderer: awaits fibers in put-order, puts results to output
       _ <- FiberPool.fiber(map_reorderer(intermediate, output))
 
-      Comp.pure(output)
+      output
     end
   end
 
@@ -289,7 +289,7 @@ defmodule Skuld.Effects.Brook do
       # Release the concurrency slot
       _ <- Channel.take(semaphore)
 
-      Comp.pure(transform_result)
+      transform_result
     end
   end
 
@@ -319,7 +319,7 @@ defmodule Skuld.Effects.Brook do
 
       case put_result do
         :ok -> map_reorderer(intermediate, output)
-        {:error, _} -> Comp.pure(:reorderer_stopped)
+        {:error, _} -> :reorderer_stopped
       end
     end
   end
@@ -330,16 +330,16 @@ defmodule Skuld.Effects.Brook do
     if Comp.computation?(result) do
       comp do
         transformed <- result
-        Comp.pure({:ok, transformed})
+        {:ok, transformed}
       end
     else
-      Comp.pure({:ok, result})
+      {:ok, result}
     end
   rescue
-    e -> Comp.pure({:error, {:transform_error, e, __STACKTRACE__}})
+    e -> {:error, {:transform_error, e, __STACKTRACE__}}
   catch
-    :throw, reason -> Comp.pure({:error, {:throw, reason}})
-    :exit, reason -> Comp.pure({:error, {:exit, reason}})
+    :throw, reason -> {:error, {:throw, reason}}
+    :exit, reason -> {:error, {:exit, reason}}
   end
 
   @doc """
@@ -374,7 +374,7 @@ defmodule Skuld.Effects.Brook do
           end
         )
 
-      Comp.pure(output)
+      output
     end
   end
 
@@ -405,7 +405,7 @@ defmodule Skuld.Effects.Brook do
 
       case put_result do
         :ok -> filter_loop(input, output, pred_fn)
-        {:error, _} -> Comp.pure(:filter_stopped)
+        {:error, _} -> :filter_stopped
       end
     end
   end
@@ -445,10 +445,10 @@ defmodule Skuld.Effects.Brook do
           each_loop(input, consumer_fn)
 
         :closed ->
-          Comp.pure(:ok)
+          :ok
 
         {:error, reason} ->
-          Comp.pure({:error, reason})
+          {:error, reason}
       end
     end
   end
@@ -484,10 +484,10 @@ defmodule Skuld.Effects.Brook do
           run_loop_with_item(input, consumer_fn, item)
 
         :closed ->
-          Comp.pure(:ok)
+          :ok
 
         {:error, reason} ->
-          Comp.pure({:error, reason})
+          {:error, reason}
       end
     end
   end
@@ -503,7 +503,7 @@ defmodule Skuld.Effects.Brook do
           run_loop(input, consumer_fn)
 
         {:error, reason} ->
-          Comp.pure({:error, reason})
+          {:error, reason}
       end
     end
   end
@@ -514,10 +514,10 @@ defmodule Skuld.Effects.Brook do
     if Comp.computation?(result) do
       comp do
         _consumer_value <- result
-        Comp.pure(:ok)
+        :ok
       end
     else
-      Comp.pure(:ok)
+      :ok
     end
   end
 
@@ -551,10 +551,10 @@ defmodule Skuld.Effects.Brook do
           to_list_acc(input, [item | acc])
 
         :closed ->
-          Comp.pure(Enum.reverse(acc))
+          Enum.reverse(acc)
 
         {:error, reason} ->
-          Comp.pure({:error, reason})
+          {:error, reason}
       end
     end
   end
@@ -595,10 +595,10 @@ defmodule Skuld.Effects.Brook do
           reduce_with_item(input, acc, reducer_fn, item)
 
         :closed ->
-          Comp.pure(acc)
+          acc
 
         {:error, reason} ->
-          Comp.pure({:error, reason})
+          {:error, reason}
       end
     end
   end
@@ -619,14 +619,14 @@ defmodule Skuld.Effects.Brook do
   defp close_channel(channel, result) do
     comp do
       _close_result <- Channel.close(channel)
-      Comp.pure(result)
+      result
     end
   end
 
   defp error_channel(channel, reason, result) do
     comp do
       _error_result <- Channel.error(channel, reason)
-      Comp.pure(result)
+      result
     end
   end
 end
