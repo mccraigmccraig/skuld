@@ -1,11 +1,29 @@
 # Changelog
 
-<!-- last-updated-against: 9578b5723950d2a7cbb44acbafae3da5dda5992c -->
+<!-- last-updated-against: bb60bc7a574033de954363b6e8c308c4e4afb81b -->
 
 All notable changes to Skuld will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.27.1] — 2026-05-15
+
+### Added
+
+- Three-branch documentation structure matching the architecture diagram:
+  Foundational Effects, Coroutines & Concurrency, and Boundaries, with
+  narrative onboarding docs (why.md, what.md, getting-started.md).
+- Per-effect documentation pages covering all 17 effects with API
+  reference, handler patterns, and code examples.
+
+### Changed
+
+- `mix.exs` ExDoc configuration restructured to match the three-branch
+  docs layout with new groups and module categories.
+- README updated with current version and new doc cross-references.
 
 ## [0.27.0] — 2026-05-15
 
@@ -133,7 +151,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Brook.map` pattern-match clause that could never match the result of
   `safe_transform`.
 
-## [Unreleased]
 
 
 ## [0.26.0] — 2026-05-11
