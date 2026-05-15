@@ -28,13 +28,12 @@ An effectful programming framework for Elixir.
  Bracket, Fresh,  Serializable-    │             │        │    Port.Facade
  Random, FxList,   Coroutine       │             │        │    Repo
  Yield,                            │             │        │
- EffectLogger,                     │             │    Adapter
- Parallel,                      FiberPool        │    Adapter.EffectfulContract
- AtomicState,                      │             │
- Transaction,                      ├────────────┐│
+ EffectLogger,                  FiberPool        │    Adapter
+ Parallel,                         │             │    Adapter.EffectfulContract
+ AtomicState,                      ├────────────┐│
+ Transaction,                      │            ││
  AsyncComputation                  │            ││
  Command                           │            ││
-                                   │            ││
                               ┌────┴────┐       ││
                            Channel    Task      ││
                               │                 ││
