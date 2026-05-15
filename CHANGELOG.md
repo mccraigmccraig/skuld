@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: fd3313ba113b3c4fb24f256e2456bfec752a298f -->
+<!-- last-updated-against: 4fe1da6cd0e15e8ac0c3d0cc5c6e0d5dade5d2c2 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -81,6 +81,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auto-lifting promoted to the first section of `Comp`'s moduledoc. The
   catch-all `call/3` clause now has explicit `@doc`. `pure/1` leads with
   "you almost never need this" and explains when it is genuinely useful.
+- `Skuld.Credo.CompPureRedundant` — custom Credo check that detects
+  redundant `Comp.pure` calls with literal, variable, or simple expression
+  arguments. Registered in `.credo.exs` as a refactoring check.
 
 ### Removed
 
