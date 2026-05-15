@@ -6,7 +6,7 @@ defmodule Skuld.CompTest do
 
   describe "pure" do
     test "returns value" do
-      comp = Comp.pure(42)
+      comp = 42
       assert {42, _env} = Comp.run(comp)
     end
   end
@@ -14,9 +14,9 @@ defmodule Skuld.CompTest do
   describe "bind" do
     test "sequences computations" do
       comp =
-        Comp.bind(Comp.pure(1), fn a ->
-          Comp.bind(Comp.pure(2), fn b ->
-            Comp.pure(a + b)
+        Comp.bind(1, fn a ->
+          Comp.bind(2, fn b ->
+            a + b
           end)
         end)
 
@@ -26,14 +26,14 @@ defmodule Skuld.CompTest do
 
   describe "map" do
     test "transforms result" do
-      comp = Comp.map(Comp.pure(5), &(&1 * 2))
+      comp = Comp.map(5, &(&1 * 2))
       assert {10, _env} = Comp.run(comp)
     end
   end
 
   describe "sequence" do
     test "collects results" do
-      comps = [Comp.pure(1), Comp.pure(2), Comp.pure(3)]
+      comps = [1, 2, 3]
       comp = Comp.sequence(comps)
       assert {[1, 2, 3], _env} = Comp.run(comp)
     end
@@ -46,7 +46,7 @@ defmodule Skuld.CompTest do
 
   describe "traverse" do
     test "maps and sequences" do
-      comp = Comp.traverse([1, 2, 3], fn x -> Comp.pure(x * 2) end)
+      comp = Comp.traverse([1, 2, 3], fn x -> x * 2 end)
       assert {[2, 4, 6], _env} = Comp.run(comp)
     end
   end
@@ -63,12 +63,12 @@ defmodule Skuld.CompTest do
     end
 
     test "empty list returns :ok" do
-      comp = Comp.each([], fn x -> Comp.pure(x) end)
+      comp = Comp.each([], fn x -> x end)
       assert {:ok, _env} = Comp.run(comp)
     end
 
     test "discards individual results" do
-      comp = Comp.each([1, 2, 3], fn x -> Comp.pure(x * 100) end)
+      comp = Comp.each([1, 2, 3], fn x -> x * 100 end)
       # Returns :ok, not [100, 200, 300]
       assert {:ok, _env} = Comp.run(comp)
     end
@@ -76,14 +76,14 @@ defmodule Skuld.CompTest do
 
   describe "then_do" do
     test "ignores first result" do
-      comp = Comp.then_do(Comp.pure(:ignored), Comp.pure(:kept))
+      comp = Comp.then_do(:ignored, :kept)
       assert {:kept, _env} = Comp.run(comp)
     end
   end
 
   describe "flatten" do
     test "flattens nested computation" do
-      nested = Comp.pure(Comp.pure(42))
+      nested = 42
       comp = Comp.flatten(nested)
       assert {42, _env} = Comp.run(comp)
     end
@@ -113,7 +113,7 @@ defmodule Skuld.CompTest do
 
     test "bind auto-lifts when continuation returns non-computation" do
       # This is now valid - :not_a_computation is auto-lifted
-      comp = Comp.bind(Comp.pure(1), fn _a -> :not_a_computation end)
+      comp = Comp.bind(1, fn _a -> :not_a_computation end)
       {result, _env} = Comp.run(comp)
       assert result == :not_a_computation
     end
@@ -172,7 +172,7 @@ defmodule Skuld.CompTest do
 
     test "exception in bind is converted to Throw" do
       comp =
-        Comp.bind(Comp.pure(1), fn _x ->
+        Comp.bind(1, fn _x ->
           fn _env, _k -> raise "in bind" end
         end)
 
@@ -188,7 +188,7 @@ defmodule Skuld.CompTest do
         Throw.catch_error(
           fn _env, _k -> raise "caught me" end,
           fn error ->
-            Comp.pure({:caught, error.kind, error.payload.message})
+            {:caught, error.kind, error.payload.message}
           end
         )
         |> Throw.with_handler()
@@ -203,7 +203,7 @@ defmodule Skuld.CompTest do
         Throw.catch_error(
           fn _env, _k -> throw(:thrown_value) end,
           fn error ->
-            Comp.pure({:caught, error.kind, error.payload})
+            {:caught, error.kind, error.payload}
           end
         )
         |> Throw.with_handler()
@@ -217,11 +217,11 @@ defmodule Skuld.CompTest do
       inner =
         Throw.catch_error(
           fn _env, _k -> raise "inner error" end,
-          fn _error -> Comp.pure(:recovered) end
+          fn _error -> :recovered end
         )
 
       comp =
-        Comp.bind(inner, fn value -> Comp.pure({:continued, value}) end)
+        Comp.bind(inner, fn value -> {:continued, value} end)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
@@ -240,7 +240,7 @@ defmodule Skuld.CompTest do
             end
           ),
           fn error ->
-            Comp.pure({:outer_caught, error.payload.message})
+            {:outer_caught, error.payload.message}
           end
         )
         |> Throw.with_handler()
@@ -291,7 +291,7 @@ defmodule Skuld.CompTest do
       comp =
         Throw.catch_error(
           Comp.effect(:test_effect, :args),
-          fn error -> Comp.pure({:caught_handler_error, error.payload.message}) end
+          fn error -> {:caught_handler_error, error.payload.message} end
         )
         |> Comp.with_handler(:test_effect, raising_handler)
         |> Throw.with_handler()
@@ -341,7 +341,7 @@ defmodule Skuld.CompTest do
           fn inner_result ->
             # After handle scope, State handler should be gone
             # Trying to use State.get() here would fail
-            Comp.pure({:inner, inner_result})
+            {:inner, inner_result}
           end
         )
 
@@ -367,7 +367,7 @@ defmodule Skuld.CompTest do
             |> Comp.with_handler(State, &State.handle/3),
             fn inner_result ->
               Comp.bind(State.get(), fn outer_after ->
-                Comp.pure({outer_before, inner_result, outer_after})
+                {outer_before, inner_result, outer_after}
               end)
             end
           )
@@ -389,7 +389,7 @@ defmodule Skuld.CompTest do
             |> Comp.with_handler(State, &State.handle/3),
             fn level2 ->
               Comp.bind(State.get(), fn level1_after ->
-                Comp.pure({level1, level2, level1_after})
+                {level1, level2, level1_after}
               end)
             end
           )
@@ -418,14 +418,14 @@ defmodule Skuld.CompTest do
               |> Comp.with_handler(State, &State.handle/3),
               fn _ ->
                 # Never reached
-                Comp.pure(:unreachable)
+                :unreachable
               end
             )
           end),
           fn _error ->
             # After throw, outer State should be restored
             Comp.bind(State.get(), fn outer_after ->
-              Comp.pure({:caught, outer_after})
+              {:caught, outer_after}
             end)
           end
         )
