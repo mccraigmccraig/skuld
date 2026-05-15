@@ -22,74 +22,54 @@ defmodule Skuld.MixProject do
           "README.md",
           "docs/why.md",
           "docs/what.md",
-          "docs/pain-points.md",
           "docs/getting-started.md",
-          "docs/quick-reference.md",
-          "docs/architecture.md",
-          "docs/syntax.md",
-          "docs/testing.md",
-          "docs/effects/state-environment.md",
-          "docs/effects/error-handling.md",
-          "docs/effects/value-generation.md",
-          "docs/effects/collections.md",
-          "docs/effects/concurrency.md",
-          "docs/effects/persistence.md",
+          "docs/effects/state-reader-writer.md",
+          "docs/effects/throw-bracket.md",
+          "docs/effects/fresh-random.md",
+          "docs/effects/fxlist.md",
+          "docs/effects/command-transaction.md",
+          "docs/effects/yield.md",
+          "docs/effects/coroutine.md",
+          "docs/effects/fiberpool.md",
+          "docs/effects/channel-brook.md",
+          "docs/effects/async-coroutine.md",
+          "docs/effects/effectlogger.md",
+          "docs/effects/port.md",
+          "docs/effects/effectful-facade.md",
+          "docs/effects/adapter.md",
           "docs/effects/repo.md",
-          "docs/effects/external-integration.md",
-          "docs/advanced/yield.md",
-          "docs/advanced/fibers-concurrency.md",
-          "docs/advanced/query-batching.md",
-          "docs/advanced/effect-logger.md",
-          "docs/recipes/hexagonal-architecture.md",
-          "docs/recipes/decider-pattern.md",
-          "docs/recipes/handler-stacks.md",
-          "docs/recipes/liveview.md",
-          "docs/recipes/batch-loading.md",
-          "docs/internals.md",
-          "docs/reference.md",
-          "docs/research/performance-investigation.md"
+          "docs/effects/query.md"
         ],
         groups_for_extras: [
           Introduction: [
             "README.md",
             "docs/why.md",
             "docs/what.md",
-            "docs/pain-points.md",
-            "docs/getting-started.md",
-            "docs/quick-reference.md",
-            "docs/architecture.md",
-            "docs/syntax.md"
+            "docs/getting-started.md"
           ],
-          "Core Concepts": [
-            "docs/testing.md"
+          "Foundational Effects": [
+            "docs/effects/state-reader-writer.md",
+            "docs/effects/throw-bracket.md",
+            "docs/effects/fresh-random.md",
+            "docs/effects/fxlist.md",
+            "docs/effects/command-transaction.md"
           ],
-          Effects: [
-            "docs/effects/state-environment.md",
-            "docs/effects/error-handling.md",
-            "docs/effects/value-generation.md",
-            "docs/effects/collections.md",
-            "docs/effects/concurrency.md",
-            "docs/effects/persistence.md",
-            "docs/effects/repo.md",
-            "docs/effects/external-integration.md",
-            "docs/advanced/yield.md",
-            "docs/advanced/fibers-concurrency.md",
-            "docs/advanced/query-batching.md",
-            "docs/advanced/effect-logger.md"
+          "Coroutines & Concurrency": [
+            "docs/effects/yield.md",
+            "docs/effects/coroutine.md",
+            "docs/effects/fiberpool.md",
+            "docs/effects/channel-brook.md",
+            "docs/effects/async-coroutine.md",
+            "docs/effects/effectlogger.md"
           ],
-          Patterns: [
-            "docs/recipes/hexagonal-architecture.md",
-            "docs/recipes/decider-pattern.md",
-            "docs/recipes/handler-stacks.md",
-            "docs/recipes/liveview.md",
-            "docs/recipes/batch-loading.md"
+          Boundaries: [
+            "docs/effects/port.md",
+            "docs/effects/effectful-facade.md",
+            "docs/effects/adapter.md",
+            "docs/effects/repo.md"
           ],
-          Internals: [
-            "docs/internals.md",
-            "docs/reference.md"
-          ],
-          Research: [
-            "docs/research/performance-investigation.md"
+          "Cross-cutting": [
+            "docs/effects/query.md"
           ]
         ],
         groups_for_modules: [
@@ -97,46 +77,39 @@ defmodule Skuld.MixProject do
             Skuld,
             Skuld.Comp,
             Skuld.Syntax,
-            Skuld.AsyncCoroutine
+            Skuld.AsyncCoroutine,
+            Skuld.Coroutine,
+            Skuld.Adapter
           ],
-          "State & Environment": [
+          "Foundational Effects": [
             Skuld.Effects.State,
             Skuld.Effects.Reader,
-            Skuld.Effects.Writer
-          ],
-          "Control Flow": [
+            Skuld.Effects.Writer,
             Skuld.Effects.Throw,
             Skuld.Effects.Bracket,
+            Skuld.Effects.Fresh,
+            Skuld.Effects.Random,
+            Skuld.Effects.FxList,
+            Skuld.Effects.FxFasterList,
+            Skuld.Effects.Command,
+            Skuld.Effects.Transaction,
             Skuld.Effects.Yield
           ],
-          "Collection Iteration": [
-            Skuld.Effects.FxList,
-            Skuld.Effects.FxFasterList
-          ],
-          "Value Generation": [
-            Skuld.Effects.Fresh,
-            Skuld.Effects.Random
-          ],
-          Concurrency: [
-            Skuld.Effects.AtomicState,
+          "Coroutines & Concurrency": [
             Skuld.Effects.FiberPool,
             Skuld.Effects.Channel,
             Skuld.Effects.Brook,
             Skuld.Effects.Parallel,
+            Skuld.Effects.AtomicState,
             Skuld.Effects.Task,
-            Skuld.Coroutine
+            Skuld.Effects.EffectLogger
           ],
-          "Persistence & Data": [
-            Skuld.Effects.Transaction,
-            Skuld.Query.Contract,
+          Boundaries: [
             Skuld.Effects.Port,
-            Skuld.Effects.Command,
-            Skuld.Repo,
-            Skuld.Data.Change
+            Skuld.Repo
           ],
-          "Replay & Logging": [
-            Skuld.Effects.EffectLogger,
-            Skuld.Effects.EffectLogger.Log
+          "Cross-cutting": [
+            Skuld.Query.Contract
           ],
           "Core Types": [
             Skuld.Comp.Env,
