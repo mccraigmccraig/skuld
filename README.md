@@ -1,7 +1,7 @@
 # Skuld
 
 <!-- nav:header:start -->
-[Getting Started >](docs/getting-started.md)
+[Why Effects? >](docs/why.md)
 <!-- nav:header:end -->
 
 [![Test](https://github.com/mccraigmccraig/skuld/actions/workflows/test.yml/badge.svg)](https://github.com/mccraigmccraig/skuld/actions/workflows/test.yml)
@@ -153,5 +153,5 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-[Getting Started >](docs/getting-started.md)
+[Why Effects? >](docs/why.md)
 <!-- nav:footer:end -->

@@ -1,5 +1,9 @@
 # Port.EffectfulFacade
 
+<!-- nav:header:start -->
+[< Port](port.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Adapter >](adapter.md)
+<!-- nav:header:end -->
+
 Generates typed effectful caller functions from `defcallback` declarations.
 The callers return `computation(return_type)` values that dispatch via the
 Port effect.
@@ -75,3 +79,10 @@ Port.with_handler(%{MyApp.Todos => MyApp.Todos.Ecto})
 If the implementation's functions return computations (via
 `__port_effectful__?/0`), Port auto-detects and inlines them into the
 current effect context.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Port](port.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Adapter >](adapter.md)
+<!-- nav:footer:end -->

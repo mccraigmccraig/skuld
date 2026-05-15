@@ -1,5 +1,9 @@
 # Port
 
+<!-- nav:header:start -->
+[< EffectLogger & SerializableCoroutine](effectlogger.md) | [Index](../../README.md) | [Port.EffectfulFacade >](effectful-facade.md)
+<!-- nav:header:end -->
+
 Port is the dispatch effect for external integration. It routes
 `Port.request(mod, name, args)` to pluggable backends — database queries,
 HTTP calls, file I/O, or any side-effecting function.
@@ -94,3 +98,10 @@ Enable `:log` to record every dispatch as `{mod, name, args, result}`:
 
 Nested `with_handler` calls merge registries — inner entries win on
 conflict. When the inner scope exits, the previous registry is restored.
+
+<!-- nav:footer:start -->
+
+---
+
+[< EffectLogger & SerializableCoroutine](effectlogger.md) | [Index](../../README.md) | [Port.EffectfulFacade >](effectful-facade.md)
+<!-- nav:footer:end -->

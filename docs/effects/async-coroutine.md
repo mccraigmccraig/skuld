@@ -1,5 +1,9 @@
 # AsyncCoroutine
 
+<!-- nav:header:start -->
+[< Channel & Brook](channel-brook.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [EffectLogger & SerializableCoroutine >](effectlogger.md)
+<!-- nav:header:end -->
+
 Run a coroutine in a separate BEAM process, bridging yields, errors,
 and results back to the caller via messages. This is the bridge from
 non-effectful code (LiveView, GenServer, CLI) into the effect system.
@@ -88,3 +92,10 @@ end
 | `run_sync/3` | Resume + block for response |
 | `cancel/1` | Cancel (async) |
 | `cancel_sync/2` | Cancel + block for completion |
+
+<!-- nav:footer:start -->
+
+---
+
+[< Channel & Brook](channel-brook.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [EffectLogger & SerializableCoroutine >](effectlogger.md)
+<!-- nav:footer:end -->

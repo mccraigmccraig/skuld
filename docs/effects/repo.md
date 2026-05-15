@@ -1,5 +1,9 @@
 # Repo
 
+<!-- nav:header:start -->
+[< Adapter](adapter.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Query System >](query.md)
+<!-- nav:header:end -->
+
 Skuld's built-in database contract. Operations dispatch via the Port
 effect to pluggable handlers — Ecto in production, in-memory maps in tests.
 
@@ -70,3 +74,10 @@ computation |> Repo.Stub.with_handler(fallback: fallback)
 
 Bang variants: `insert!/1,2`, `update!/1,2`, `delete!/1,2`, `get!/2,3`,
 `get_by!/2,3`, `one!/1,2`, `query!/1,2,3`.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Adapter](adapter.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Query System >](query.md)
+<!-- nav:footer:end -->

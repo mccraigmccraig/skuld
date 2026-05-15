@@ -1,5 +1,9 @@
 # Fresh & Random
 
+<!-- nav:header:start -->
+[< Throw & Bracket](throw-bracket.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [FxList >](fxlist.md)
+<!-- nav:header:end -->
+
 Deterministic value generation for IDs and randomness.
 
 ## Fresh
@@ -48,3 +52,10 @@ computation |> Random.with_fixed_handler(values: [0.5, 0.2, 0.9])
 |--------|-------------------|--------------|
 | Fresh | `Fresh.with_uuid7_handler()` | `Fresh.with_test_handler()` |
 | Random | `Random.with_handler()` | `Random.with_seed_handler(seed: N)` or `Random.with_fixed_handler(values: [...])` |
+
+<!-- nav:footer:start -->
+
+---
+
+[< Throw & Bracket](throw-bracket.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [FxList >](fxlist.md)
+<!-- nav:footer:end -->

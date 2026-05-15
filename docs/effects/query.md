@@ -1,5 +1,9 @@
 # Query System
 
+<!-- nav:header:start -->
+[< Repo](repo.md) | [Index](../../README.md)
+<!-- nav:header:end -->
+
 Automatic N+1 query batching via dependency analysis. The query system
 analyzes effect dependencies in a `query do` block and batches independent
 data fetches together — using FiberPool fibers to execute them concurrently.
@@ -78,3 +82,10 @@ call hits the cache instead of the executor.
 | `with_executor/2,3` | Wire a contract to an executor |
 | `with_cached_executor/2,3` | Wire with within-batch caching |
 | `with_cached_executors/2` | Wire multiple contracts |
+
+<!-- nav:footer:start -->
+
+---
+
+[< Repo](repo.md) | [Index](../../README.md)
+<!-- nav:footer:end -->

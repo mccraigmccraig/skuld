@@ -1,5 +1,9 @@
 # Channel & Brook
 
+<!-- nav:header:start -->
+[< FiberPool](fiberpool.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [AsyncCoroutine >](async-coroutine.md)
+<!-- nav:header:end -->
+
 Channel provides backpressure-aware communication between fibers.
 Brook is an effectful streaming layer built on Channel.
 
@@ -90,3 +94,10 @@ end
 | `Brook.each/2` | Side effects per item |
 | `Brook.reduce/3` | Effectful reduction |
 | `Brook.to_list/1` | Collect stream into list |
+
+<!-- nav:footer:start -->
+
+---
+
+[< FiberPool](fiberpool.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [AsyncCoroutine >](async-coroutine.md)
+<!-- nav:footer:end -->

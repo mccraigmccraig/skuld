@@ -1,5 +1,9 @@
 # EffectLogger & SerializableCoroutine
 
+<!-- nav:header:start -->
+[< AsyncCoroutine](async-coroutine.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [Port >](port.md)
+<!-- nav:header:end -->
+
 EffectLogger records every effect invocation in a computation into a
 serializable log. SerializableCoroutine builds on this to provide
 pause-serialize-resume workflows.
@@ -92,3 +96,10 @@ end
 | `SerializableCoroutine.get_log(suspended)` | Extract log from suspended coroutine |
 | `SerializableCoroutine.serialize(log)` | Serialize log to JSON string |
 | `SerializableCoroutine.deserialize(json)` | Restore log from JSON string |
+
+<!-- nav:footer:start -->
+
+---
+
+[< AsyncCoroutine](async-coroutine.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [Port >](port.md)
+<!-- nav:footer:end -->

@@ -1,5 +1,9 @@
 # Yield
 
+<!-- nav:header:start -->
+[< Command & Transaction](command-transaction.md) | [Index](../../README.md) | [Coroutine >](coroutine.md)
+<!-- nav:header:end -->
+
 Yield suspends a computation mid-flight, returning control to the caller
 with a value. The caller can later resume the computation with a response.
 
@@ -79,3 +83,10 @@ computation |> Yield.with_handler()
 `Yield.with_handler` converts `Yield.yield` calls into `ExternalSuspend`
 sentinels. Handler order relative to other effects doesn't matter — each
 handler manages its own effect independently.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Command & Transaction](command-transaction.md) | [Index](../../README.md) | [Coroutine >](coroutine.md)
+<!-- nav:footer:end -->

@@ -1,5 +1,9 @@
 # How Effects Work
 
+<!-- nav:header:start -->
+[< Why Effects?](why.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Getting Started >](getting-started.md)
+<!-- nav:header:end -->
+
 Skuld lets you write code that *describes* side effects without performing
 them. Handlers decide what those descriptions mean. The same effectful
 code runs with real I/O in production and pure in-memory implementations
@@ -128,3 +132,10 @@ later — across restarts.
 - [Foundational Effects](effects/state-reader-writer.md) — State, Reader, Writer, and more
 - [Coroutines & Concurrency](effects/yield.md) — Yield, Coroutine, FiberPool
 - [Boundaries](effects/port.md) — Port, Repo, hexagonal architecture
+
+<!-- nav:footer:start -->
+
+---
+
+[< Why Effects?](why.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Getting Started >](getting-started.md)
+<!-- nav:footer:end -->

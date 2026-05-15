@@ -1,5 +1,9 @@
 # Throw & Bracket
 
+<!-- nav:header:start -->
+[< State, Reader & Writer](state-reader-writer.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Fresh & Random >](fresh-random.md)
+<!-- nav:header:end -->
+
 Error handling and resource management.
 
 ## Throw
@@ -73,3 +77,10 @@ safe_lookup("123")
 | `Throw.intercept(error_val, comp)` | Catch specific error, return nil |
 | `Bracket.bracket(acquire, use, release)` | Resource with cleanup |
 | `Bracket.finally(comp, cleanup)` | Cleanup after computation |
+
+<!-- nav:footer:start -->
+
+---
+
+[< State, Reader & Writer](state-reader-writer.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Fresh & Random >](fresh-random.md)
+<!-- nav:footer:end -->

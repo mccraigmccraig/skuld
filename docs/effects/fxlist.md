@@ -1,5 +1,9 @@
 # FxList
 
+<!-- nav:header:start -->
+[< Fresh & Random](fresh-random.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Command & Transaction >](command-transaction.md)
+<!-- nav:header:end -->
+
 Effectful iteration over collections — each element can trigger effects
 within the current handler context.
 
@@ -46,3 +50,10 @@ result <- FxFasterList.fx_map(items, &process/1)
 
 Both are pure combinators — no handler needed. They iterate through
 each element, running the provided effectful function, collecting results.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Fresh & Random](fresh-random.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Command & Transaction >](command-transaction.md)
+<!-- nav:footer:end -->

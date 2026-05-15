@@ -1,5 +1,9 @@
 # Adapter
 
+<!-- nav:header:start -->
+[< Port.EffectfulFacade](effectful-facade.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Repo >](repo.md)
+<!-- nav:header:end -->
+
 Bridge between effectful and plain Elixir code — both directions.
 
 ## Skuld.Adapter
@@ -65,3 +69,10 @@ auto-detection by the Port system.
 | Effectful | Effectful | `Port.with_handler` + effectful module (auto-detected) |
 | Plain | Plain | `DoubleDown.ContractFacade` — config-based dispatch |
 | Plain | Effectful | `Skuld.Adapter` — wraps effectful impl with stack |
+
+<!-- nav:footer:start -->
+
+---
+
+[< Port.EffectfulFacade](effectful-facade.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Repo >](repo.md)
+<!-- nav:footer:end -->

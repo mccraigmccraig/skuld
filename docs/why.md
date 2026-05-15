@@ -1,5 +1,9 @@
 # Why Effects?
 
+<!-- nav:header:start -->
+[< Skuld](../README.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [How Effects Work >](what.md)
+<!-- nav:header:end -->
+
 Most Elixir applications follow good practices: separate your data
 structures from your persistence layer, push side effects to the edges,
 keep business logic pure. This works well — until it doesn't.
@@ -162,3 +166,10 @@ enables automatic query batching, cooperative concurrency, and
 serialisable workflows that can pause and resume across restarts.
 The mechanism that replaces mocks in tests is the same one that
 eliminates N+1 queries in production.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Skuld](../README.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [How Effects Work >](what.md)
+<!-- nav:footer:end -->

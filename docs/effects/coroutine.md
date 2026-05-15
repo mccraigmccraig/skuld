@@ -1,5 +1,9 @@
 # Coroutine
 
+<!-- nav:header:start -->
+[< Yield](yield.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [FiberPool >](fiberpool.md)
+<!-- nav:header:end -->
+
 A Coroutine wraps a computation into a resumable fiber with typed states.
 It's the primitive that `FiberPool` schedules and `AsyncCoroutine` bridges
 across processes.
@@ -73,3 +77,10 @@ fiber = Coroutine.new(comp, Env.new())
 | `Coroutine.call/1,2` | Raw step, no `ISentinel.run` (FiberPool) |
 | `Coroutine.cancel/1,2` | Cancel with leave_scope cleanup |
 | `Coroutine.terminal?/1` | Check if in terminal state |
+
+<!-- nav:footer:start -->
+
+---
+
+[< Yield](yield.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [FiberPool >](fiberpool.md)
+<!-- nav:footer:end -->

@@ -1,5 +1,9 @@
 # FiberPool
 
+<!-- nav:header:start -->
+[< Coroutine](coroutine.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [Channel & Brook >](channel-brook.md)
+<!-- nav:header:end -->
+
 FiberPool is a cooperative scheduler that runs multiple `Coroutine`
 fibers concurrently within a single BEAM process. It manages suspension,
 resumption, deadlock detection, and structured concurrency.
@@ -79,3 +83,10 @@ its own handler.
 | `FiberPool.await_all/1` | Wait for all fibers |
 | `FiberPool.scope/1,2` | Structured concurrency boundary |
 | `FiberPool.map/2` | Concurrent map over a collection |
+
+<!-- nav:footer:start -->
+
+---
+
+[< Coroutine](coroutine.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [Channel & Brook >](channel-brook.md)
+<!-- nav:footer:end -->

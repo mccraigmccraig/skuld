@@ -1,5 +1,9 @@
 # Command & Transaction
 
+<!-- nav:header:start -->
+[< FxList](fxlist.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Yield >](yield.md)
+<!-- nav:header:end -->
+
 Dispatch and transactional boundaries.
 
 ## Command
@@ -61,3 +65,10 @@ computation
 | `Transaction.transact(comp)` | Savepoint for state rollback |
 | `Transaction.rollback(reason)` | Rollback to last savepoint |
 | `Transaction.try_transact(comp)` | Transact without error wrapping |
+
+<!-- nav:footer:start -->
+
+---
+
+[< FxList](fxlist.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Yield >](yield.md)
+<!-- nav:footer:end -->

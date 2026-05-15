@@ -1,5 +1,9 @@
 # Getting Started
 
+<!-- nav:header:start -->
+[< How Effects Work](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader & Writer >](effects/state-reader-writer.md)
+<!-- nav:header:end -->
+
 Add `skuld` to your dependencies:
 
 ```elixir
@@ -110,3 +114,10 @@ during the test are immediately readable by subsequent `Repo.get` /
 - [State, Reader & Writer](effects/state-reader-writer.md) — foundational effects
 - [Port](effects/port.md) — dispatching to external implementations
 - [Repo](effects/repo.md) — built-in database contract
+
+<!-- nav:footer:start -->
+
+---
+
+[< How Effects Work](what.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader & Writer >](effects/state-reader-writer.md)
+<!-- nav:footer:end -->

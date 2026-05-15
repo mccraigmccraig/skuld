@@ -1,5 +1,9 @@
 # State, Reader & Writer
 
+<!-- nav:header:start -->
+[< Getting Started](../getting-started.md) | [Index](../../README.md) | [Throw & Bracket >](throw-bracket.md)
+<!-- nav:header:end -->
+
 The three foundational effects for managing context within a computation.
 
 ## State
@@ -95,3 +99,10 @@ end)
 All three support the `output` option for transforming the final result
 with handler state, and `suspend` for decorating `ExternalSuspend` data
 when the computation yields.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Getting Started](../getting-started.md) | [Index](../../README.md) | [Throw & Bracket >](throw-bracket.md)
+<!-- nav:footer:end -->
