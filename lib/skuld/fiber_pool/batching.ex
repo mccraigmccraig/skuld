@@ -83,7 +83,7 @@ defmodule Skuld.FiberPool.Batching do
               {fiber_id, result}
             end)
 
-          Comp.pure(fiber_results)
+          fiber_results
         end)
     end
   end
@@ -97,17 +97,17 @@ defmodule Skuld.FiberPool.Batching do
   @spec execute_all_groups(%{batch_key => [{fiber_id, InternalSuspend.t()}]}, Comp.Types.env()) ::
           Comp.Types.computation()
   def execute_all_groups(groups, _env) when map_size(groups) == 0 do
-    Comp.pure([])
+    []
   end
 
   def execute_all_groups(groups, env) do
     # Execute each group and collect results
     group_list = Map.to_list(groups)
 
-    Enum.reduce(group_list, Comp.pure([]), fn {batch_key, group}, acc_comp ->
+    Enum.reduce(group_list, [], fn {batch_key, group}, acc_comp ->
       Comp.bind(acc_comp, fn acc_results ->
         Comp.bind(execute_group(batch_key, group, env), fn group_results ->
-          Comp.pure(acc_results ++ group_results)
+          acc_results ++ group_results
         end)
       end)
     end)
