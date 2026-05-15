@@ -23,7 +23,7 @@ defmodule Skuld.Effects.ReaderTest do
       comp =
         Comp.bind(Reader.ask(:db), fn db ->
           Comp.bind(Reader.ask(:cache), fn cache ->
-            Comp.pure({db, cache})
+            {db, cache}
           end)
         end)
         |> Reader.with_handler(%{host: "db.local"}, tag: :db)
@@ -59,7 +59,7 @@ defmodule Skuld.Effects.ReaderTest do
             Comp.bind(Reader.ask(), fn during ->
               Comp.bind(Reader.ask(), fn after_local ->
                 # after_local is still inside local, so still modified
-                Comp.pure({before, during, after_local})
+                {before, during, after_local}
               end)
             end)
           )
@@ -109,7 +109,7 @@ defmodule Skuld.Effects.ReaderTest do
             Comp.bind(Reader.ask(:num), fn during ->
               Comp.bind(Reader.ask(:num), fn after_local ->
                 # after_local is still inside local, so still modified
-                Comp.pure({before, during, after_local})
+                {before, during, after_local}
               end)
             end)
           )
@@ -140,7 +140,7 @@ defmodule Skuld.Effects.ReaderTest do
           &(&1 * 10),
           Comp.bind(Reader.ask(:a), fn a ->
             Comp.bind(Reader.ask(:b), fn b ->
-              Comp.pure({a, b})
+              {a, b}
             end)
           end)
         )
@@ -169,7 +169,7 @@ defmodule Skuld.Effects.ReaderTest do
 
           Comp.bind(inner, fn inner_result ->
             Comp.bind(Reader.ask(), fn outer_after ->
-              Comp.pure({outer_before, inner_result, outer_after})
+              {outer_before, inner_result, outer_after}
             end)
           end)
         end)
@@ -187,7 +187,7 @@ defmodule Skuld.Effects.ReaderTest do
 
           Comp.bind(inner, fn l2 ->
             Comp.bind(Reader.ask(), fn l1_after ->
-              Comp.pure({l1, l2, l1_after})
+              {l1, l2, l1_after}
             end)
           end)
         end)
@@ -203,11 +203,11 @@ defmodule Skuld.Effects.ReaderTest do
         Throw.catch_error(
           Comp.bind(
             Throw.throw(:error) |> Reader.with_handler(:inner),
-            fn _ -> Comp.pure(:unreachable) end
+            fn _ -> :unreachable end
           ),
           fn _error ->
             Comp.bind(Reader.ask(), fn outer_after ->
-              Comp.pure({:caught, outer_after})
+              {:caught, outer_after}
             end)
           end
         )
@@ -224,7 +224,7 @@ defmodule Skuld.Effects.ReaderTest do
         Comp.bind(
           Reader.ask() |> Reader.with_handler(:config),
           fn inner_result ->
-            Comp.pure({:done, inner_result})
+            {:done, inner_result}
           end
         )
 
@@ -244,7 +244,7 @@ defmodule Skuld.Effects.ReaderTest do
             Reader.local(&(&1 * 2), Reader.ask()),
             fn during_local ->
               Comp.bind(Reader.ask(), fn after_local ->
-                Comp.pure({before_local, during_local, after_local})
+                {before_local, during_local, after_local}
               end)
             end
           )
@@ -274,7 +274,7 @@ defmodule Skuld.Effects.ReaderTest do
 
           Comp.bind(inner, fn inner_result ->
             Comp.bind(Reader.ask(:ctx), fn outer_after ->
-              Comp.pure({outer_before, inner_result, outer_after})
+              {outer_before, inner_result, outer_after}
             end)
           end)
         end)
@@ -290,11 +290,11 @@ defmodule Skuld.Effects.ReaderTest do
         Throw.catch_error(
           Comp.bind(
             Throw.throw(:error) |> Reader.with_handler(:inner, tag: :ctx),
-            fn _ -> Comp.pure(:unreachable) end
+            fn _ -> :unreachable end
           ),
           fn _error ->
             Comp.bind(Reader.ask(:ctx), fn outer_after ->
-              Comp.pure({:caught, outer_after})
+              {:caught, outer_after}
             end)
           end
         )
@@ -311,7 +311,7 @@ defmodule Skuld.Effects.ReaderTest do
         Comp.bind(
           Reader.ask(:ctx) |> Reader.with_handler(:config, tag: :ctx),
           fn inner_result ->
-            Comp.pure({:done, inner_result})
+            {:done, inner_result}
           end
         )
 
@@ -327,7 +327,7 @@ defmodule Skuld.Effects.ReaderTest do
     test "extracts context with default tag" do
       comp =
         Comp.bind(Reader.ask(), fn _ ->
-          Comp.pure(:done)
+          :done
         end)
         |> Reader.with_handler(:my_context)
 
@@ -339,7 +339,7 @@ defmodule Skuld.Effects.ReaderTest do
     test "extracts context with explicit tag" do
       comp =
         Comp.bind(Reader.ask(:db), fn _ ->
-          Comp.pure(:done)
+          :done
         end)
         |> Reader.with_handler(:db_context, tag: :db)
 
@@ -354,7 +354,7 @@ defmodule Skuld.Effects.ReaderTest do
       comp =
         Comp.bind(Reader.ask(:tagged), fn tagged ->
           Comp.bind(Reader.ask(), fn untagged ->
-            Comp.pure({tagged, untagged})
+            {tagged, untagged}
           end)
         end)
         |> Reader.with_handler(:tagged_value, tag: :tagged)

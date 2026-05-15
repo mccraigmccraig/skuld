@@ -24,10 +24,10 @@ defmodule Skuld.Effects.CommandTest do
     test "dispatches to handler and runs returned computation" do
       handler = fn
         %CreateItem{name: name, value: value} ->
-          Comp.pure({:created, name, value})
+          {:created, name, value}
 
         %UpdateItem{id: id, name: name} ->
-          Comp.pure({:updated, id, name})
+          {:updated, id, name}
       end
 
       result =
@@ -136,8 +136,8 @@ defmodule Skuld.Effects.CommandTest do
 
     test "handler can use map-based routing" do
       handlers = %{
-        CreateItem => fn %CreateItem{name: n} -> Comp.pure({:created, n}) end,
-        DeleteItem => fn %DeleteItem{id: id} -> Comp.pure({:deleted, id}) end
+        CreateItem => fn %CreateItem{name: n} -> {:created, n} end,
+        DeleteItem => fn %DeleteItem{id: id} -> {:deleted, id} end
       }
 
       router = fn cmd ->
@@ -160,8 +160,8 @@ defmodule Skuld.Effects.CommandTest do
 
   describe "Command handler scoping" do
     test "handlers are scoped and restored" do
-      outer_handler = fn _ -> Comp.pure(:outer) end
-      inner_handler = fn _ -> Comp.pure(:inner) end
+      outer_handler = fn _ -> :outer end
+      inner_handler = fn _ -> :inner end
 
       result =
         comp do

@@ -167,7 +167,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
                 _ <- Throw.throw(:error)
                 return(:unreachable)
               end,
-              fn err -> Comp.pure({:caught, err}) end
+              fn err -> {:caught, err} end
             )
 
           return({x, caught_result})
@@ -209,7 +209,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           _ <-
             Throw.catch_error(
               Throw.throw(:error),
-              fn _err -> Comp.pure(:recovered) end
+              fn _err -> :recovered end
             )
 
           _ <- State.put(2)
@@ -912,7 +912,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         comp do
           _ <- State.put(1)
           result <- Yield.yield(:paused)
-          Comp.pure(result)
+          result
         end
 
       {%Comp.ExternalSuspend{data: data} = _suspend, _env} =

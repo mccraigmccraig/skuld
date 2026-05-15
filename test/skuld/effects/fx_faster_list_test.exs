@@ -10,14 +10,14 @@ defmodule Skuld.Effects.FxFasterListTest do
   describe "fx_map" do
     test "maps effectful function over empty list" do
       comp =
-        FxFasterList.fx_map([], fn x -> Comp.pure(x * 2) end)
+        FxFasterList.fx_map([], fn x -> x * 2 end)
 
       assert Comp.run!(comp) == []
     end
 
     test "maps effectful function over list" do
       comp =
-        FxFasterList.fx_map([1, 2, 3], fn x -> Comp.pure(x * 2) end)
+        FxFasterList.fx_map([1, 2, 3], fn x -> x * 2 end)
 
       assert Comp.run!(comp) == [2, 4, 6]
     end
@@ -27,7 +27,7 @@ defmodule Skuld.Effects.FxFasterListTest do
         FxFasterList.fx_map([1, 2, 3], fn x ->
           Comp.bind(State.get(), fn count ->
             Comp.bind(State.put(count + 1), fn _ ->
-              Comp.pure({x, count})
+              {x, count}
             end)
           end)
         end)
@@ -40,14 +40,14 @@ defmodule Skuld.Effects.FxFasterListTest do
   describe "fx_reduce" do
     test "reduces empty list to initial value" do
       comp =
-        FxFasterList.fx_reduce([], 0, fn x, acc -> Comp.pure(acc + x) end)
+        FxFasterList.fx_reduce([], 0, fn x, acc -> acc + x end)
 
       assert Comp.run!(comp) == 0
     end
 
     test "reduces list with effectful function" do
       comp =
-        FxFasterList.fx_reduce([1, 2, 3, 4], 0, fn x, acc -> Comp.pure(acc + x) end)
+        FxFasterList.fx_reduce([1, 2, 3, 4], 0, fn x, acc -> acc + x end)
 
       assert Comp.run!(comp) == 10
     end
@@ -57,7 +57,7 @@ defmodule Skuld.Effects.FxFasterListTest do
         FxFasterList.fx_reduce([1, 2, 3], [], fn x, acc ->
           Comp.bind(State.get(), fn count ->
             Comp.bind(State.put(count + 1), fn _ ->
-              Comp.pure([{x, count} | acc])
+              [{x, count} | acc]
             end)
           end)
         end)
@@ -87,7 +87,7 @@ defmodule Skuld.Effects.FxFasterListTest do
 
     test "returns :ok" do
       comp =
-        FxFasterList.fx_each([1, 2, 3], fn _ -> Comp.pure(:ignored) end)
+        FxFasterList.fx_each([1, 2, 3], fn _ -> :ignored end)
 
       assert Comp.run!(comp) == :ok
     end
@@ -113,14 +113,14 @@ defmodule Skuld.Effects.FxFasterListTest do
   describe "fx_filter" do
     test "filters empty list" do
       comp =
-        FxFasterList.fx_filter([], fn x -> Comp.pure(x > 0) end)
+        FxFasterList.fx_filter([], fn x -> x > 0 end)
 
       assert Comp.run!(comp) == []
     end
 
     test "filters list with pure predicate" do
       comp =
-        FxFasterList.fx_filter([1, 2, 3, 4, 5], fn x -> Comp.pure(rem(x, 2) == 0) end)
+        FxFasterList.fx_filter([1, 2, 3, 4, 5], fn x -> rem(x, 2) == 0 end)
 
       assert Comp.run!(comp) == [2, 4]
     end
@@ -131,7 +131,7 @@ defmodule Skuld.Effects.FxFasterListTest do
         FxFasterList.fx_filter([1, 2, 3, 4, 5], fn _x ->
           Comp.bind(State.get(), fn count ->
             Comp.bind(State.put(count + 1), fn _ ->
-              Comp.pure(rem(count, 2) == 0)
+              rem(count, 2) == 0
             end)
           end)
         end)
@@ -157,7 +157,7 @@ defmodule Skuld.Effects.FxFasterListTest do
           if x == 3 do
             Throw.throw({:error, :hit_three})
           else
-            Comp.pure(x * 2)
+            x * 2
           end
         end)
         |> Throw.with_handler()
@@ -174,7 +174,7 @@ defmodule Skuld.Effects.FxFasterListTest do
               if x == 3 do
                 Throw.throw({:error, :hit_three})
               else
-                Comp.pure(x * 2)
+                x * 2
               end
             end)
           end)
@@ -189,7 +189,7 @@ defmodule Skuld.Effects.FxFasterListTest do
 
     test "no throw returns normal result" do
       comp =
-        FxFasterList.fx_map([1, 2, 3], fn x -> Comp.pure(x * 2) end)
+        FxFasterList.fx_map([1, 2, 3], fn x -> x * 2 end)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
@@ -203,7 +203,7 @@ defmodule Skuld.Effects.FxFasterListTest do
             if x == 2 do
               Throw.throw(:hit_two)
             else
-              Comp.pure(x * 2)
+              x * 2
             end
           end)
         )
@@ -221,7 +221,7 @@ defmodule Skuld.Effects.FxFasterListTest do
           if x == 3 do
             Throw.throw({:error, :hit_three, acc})
           else
-            Comp.pure(acc + x)
+            acc + x
           end
         end)
         |> Throw.with_handler()
@@ -242,7 +242,7 @@ defmodule Skuld.Effects.FxFasterListTest do
                 if x == 3 do
                   Throw.throw(:hit_three)
                 else
-                  Comp.pure(:ok)
+                  :ok
                 end
               end)
             end)
@@ -264,7 +264,7 @@ defmodule Skuld.Effects.FxFasterListTest do
           if x == 3 do
             Throw.throw(:hit_three)
           else
-            Comp.pure(rem(x, 2) == 0)
+            rem(x, 2) == 0
           end
         end)
         |> Throw.with_handler()
@@ -284,7 +284,7 @@ defmodule Skuld.Effects.FxFasterListTest do
       comp =
         FxFasterList.fx_map([1, 2, 3, 4, 5], fn x ->
           Comp.bind(Yield.yield({:processing, x}), fn _ ->
-            Comp.pure(x * 2)
+            x * 2
           end)
         end)
         |> Yield.with_handler()

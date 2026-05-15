@@ -658,10 +658,10 @@ defmodule Skuld.Effects.ChannelTest do
           take_items(ch, acc ++ [item])
 
         :closed ->
-          Comp.pure(acc)
+          acc
 
         {:error, reason} ->
-          Comp.pure({:error, reason, acc})
+          {:error, reason, acc}
       end
     end
   end
@@ -673,9 +673,9 @@ defmodule Skuld.Effects.ChannelTest do
           ch <- Channel.new(10)
 
           # Put async computations
-          _ <- Channel.put_async(ch, Comp.pure(1))
-          _ <- Channel.put_async(ch, Comp.pure(2))
-          _ <- Channel.put_async(ch, Comp.pure(3))
+          _ <- Channel.put_async(ch, 1)
+          _ <- Channel.put_async(ch, 2)
+          _ <- Channel.put_async(ch, 3)
           _ <- Channel.close(ch)
 
           # Take async results in order
@@ -701,9 +701,9 @@ defmodule Skuld.Effects.ChannelTest do
           ch <- Channel.new(10)
 
           # Put computations - order should be preserved regardless of completion time
-          _ <- Channel.put_async(ch, Comp.pure(:first))
-          _ <- Channel.put_async(ch, Comp.pure(:second))
-          _ <- Channel.put_async(ch, Comp.pure(:third))
+          _ <- Channel.put_async(ch, :first)
+          _ <- Channel.put_async(ch, :second)
+          _ <- Channel.put_async(ch, :third)
           _ <- Channel.close(ch)
 
           # Take should return in put order
@@ -725,9 +725,9 @@ defmodule Skuld.Effects.ChannelTest do
             FiberPool.fiber(
               comp do
                 # Put async transforms
-                _ <- Channel.put_async(ch, Comp.pure(10))
-                _ <- Channel.put_async(ch, Comp.pure(20))
-                _ <- Channel.put_async(ch, Comp.pure(30))
+                _ <- Channel.put_async(ch, 10)
+                _ <- Channel.put_async(ch, 20)
+                _ <- Channel.put_async(ch, 30)
                 _ <- Channel.close(ch)
                 :producer_done
               end
@@ -779,9 +779,9 @@ defmodule Skuld.Effects.ChannelTest do
 
           # Mix regular puts and async puts
           _ <- Channel.put(ch, :regular1)
-          _ <- Channel.put_async(ch, Comp.pure(:async1))
+          _ <- Channel.put_async(ch, :async1)
           _ <- Channel.put(ch, :regular2)
-          _ <- Channel.put_async(ch, Comp.pure(:async2))
+          _ <- Channel.put_async(ch, :async2)
           _ <- Channel.close(ch)
 
           # take_async handles both
@@ -810,10 +810,10 @@ defmodule Skuld.Effects.ChannelTest do
             FiberPool.fiber(
               comp do
                 # These should block when buffer is full
-                _ <- Channel.put_async(ch, Comp.pure(1))
-                _ <- Channel.put_async(ch, Comp.pure(2))
-                _ <- Channel.put_async(ch, Comp.pure(3))
-                _ <- Channel.put_async(ch, Comp.pure(4))
+                _ <- Channel.put_async(ch, 1)
+                _ <- Channel.put_async(ch, 2)
+                _ <- Channel.put_async(ch, 3)
+                _ <- Channel.put_async(ch, 4)
                 _ <- Channel.close(ch)
                 :done
               end
@@ -846,10 +846,10 @@ defmodule Skuld.Effects.ChannelTest do
           take_async_items(ch, acc ++ [item])
 
         :closed ->
-          Comp.pure(acc)
+          acc
 
         {:error, reason} ->
-          Comp.pure({:error, reason, acc})
+          {:error, reason, acc}
       end
     end
   end
@@ -1083,8 +1083,8 @@ defmodule Skuld.Effects.ChannelTest do
 
       case result do
         {:ok, item} -> take_until_closed(ch, acc ++ [item])
-        :closed -> Comp.pure(acc)
-        {:error, reason} -> Comp.pure({:error, reason})
+        :closed -> acc
+        {:error, reason} -> {:error, reason}
       end
     end
   end

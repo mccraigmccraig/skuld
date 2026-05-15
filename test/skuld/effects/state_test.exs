@@ -22,7 +22,7 @@ defmodule Skuld.Effects.StateTest do
       comp =
         Comp.bind(State.get(:a), fn a ->
           Comp.bind(State.get(:b), fn b ->
-            Comp.pure({a, b})
+            {a, b}
           end)
         end)
         |> State.with_handler(1, tag: :a)
@@ -64,7 +64,7 @@ defmodule Skuld.Effects.StateTest do
         Comp.bind(State.put(:a, 100), fn _ ->
           Comp.bind(State.get(:a), fn a ->
             Comp.bind(State.get(:b), fn b ->
-              Comp.pure({a, b})
+              {a, b}
             end)
           end)
         end)
@@ -80,7 +80,7 @@ defmodule Skuld.Effects.StateTest do
       comp =
         Comp.bind(State.modify(&(&1 + 5)), fn old ->
           Comp.bind(State.get(), fn new ->
-            Comp.pure({old, new})
+            {old, new}
           end)
         end)
         |> State.with_handler(10)
@@ -94,7 +94,7 @@ defmodule Skuld.Effects.StateTest do
       comp =
         Comp.bind(State.modify(:counter, &(&1 + 5)), fn old ->
           Comp.bind(State.get(:counter), fn new ->
-            Comp.pure({old, new})
+            {old, new}
           end)
         end)
         |> State.with_handler(10, tag: :counter)
@@ -145,7 +145,7 @@ defmodule Skuld.Effects.StateTest do
               Comp.bind(State.modify(:b, &(&1 + 10)), fn _ ->
                 Comp.bind(State.get(:a), fn a ->
                   Comp.bind(State.get(:b), fn b ->
-                    Comp.pure({a, b})
+                    {a, b}
                   end)
                 end)
               end)
@@ -188,7 +188,7 @@ defmodule Skuld.Effects.StateTest do
 
           Comp.bind(inner_comp, fn inner_result ->
             Comp.bind(State.get(), fn outer_after ->
-              Comp.pure({outer_before, inner_result, outer_after})
+              {outer_before, inner_result, outer_after}
             end)
           end)
         end)
@@ -207,7 +207,7 @@ defmodule Skuld.Effects.StateTest do
 
           Comp.bind(inner, fn level2 ->
             Comp.bind(State.get(), fn level1_after ->
-              Comp.pure({level1, level2, level1_after})
+              {level1, level2, level1_after}
             end)
           end)
         end)
@@ -228,11 +228,11 @@ defmodule Skuld.Effects.StateTest do
               Throw.throw(:inner_error)
             end)
             |> State.with_handler(0),
-            fn _ -> Comp.pure(:unreachable) end
+            fn _ -> :unreachable end
           ),
           fn _error ->
             Comp.bind(State.get(), fn outer_after ->
-              Comp.pure({:caught, outer_after})
+              {:caught, outer_after}
             end)
           end
         )
@@ -250,7 +250,7 @@ defmodule Skuld.Effects.StateTest do
         Comp.bind(
           State.get() |> State.with_handler(10),
           fn inner_result ->
-            Comp.pure({:done, inner_result})
+            {:done, inner_result}
           end
         )
 
@@ -267,7 +267,7 @@ defmodule Skuld.Effects.StateTest do
       comp =
         Comp.bind(State.get(), fn s ->
           Comp.bind(Skuld.Effects.Reader.ask(), fn r ->
-            Comp.pure({s, r})
+            {s, r}
           end)
         end)
         |> Skuld.Effects.Reader.with_handler(:config)
@@ -282,7 +282,7 @@ defmodule Skuld.Effects.StateTest do
       comp =
         Comp.bind(State.put(10), fn _ ->
           Comp.bind(State.modify(&(&1 * 2)), fn _ ->
-            Comp.pure(:done)
+            :done
           end)
         end)
         |> State.with_handler(0, output: fn result, state -> {result, state} end)
@@ -336,7 +336,7 @@ defmodule Skuld.Effects.StateTest do
 
           Comp.bind(inner_comp, fn inner_result ->
             Comp.bind(State.get(:s), fn outer_after ->
-              Comp.pure({outer_before, inner_result, outer_after})
+              {outer_before, inner_result, outer_after}
             end)
           end)
         end)
@@ -354,13 +354,13 @@ defmodule Skuld.Effects.StateTest do
           inner =
             Comp.bind(State.get(:inner), fn inner_val ->
               Comp.bind(State.get(:outer), fn outer_in_inner ->
-                Comp.pure({inner_val, outer_in_inner})
+                {inner_val, outer_in_inner}
               end)
             end)
             |> State.with_handler(2, tag: :inner)
 
           Comp.bind(inner, fn {inner_val, outer_in_inner} ->
-            Comp.pure({outer_val, inner_val, outer_in_inner})
+            {outer_val, inner_val, outer_in_inner}
           end)
         end)
         |> State.with_handler(1, tag: :outer)
@@ -380,11 +380,11 @@ defmodule Skuld.Effects.StateTest do
               Throw.throw(:inner_error)
             end)
             |> State.with_handler(0, tag: :s),
-            fn _ -> Comp.pure(:unreachable) end
+            fn _ -> :unreachable end
           ),
           fn _error ->
             Comp.bind(State.get(:s), fn outer_after ->
-              Comp.pure({:caught, outer_after})
+              {:caught, outer_after}
             end)
           end
         )
@@ -402,7 +402,7 @@ defmodule Skuld.Effects.StateTest do
         Comp.bind(
           State.get(:s) |> State.with_handler(10, tag: :s),
           fn inner_result ->
-            Comp.pure({:done, inner_result})
+            {:done, inner_result}
           end
         )
 
@@ -420,7 +420,7 @@ defmodule Skuld.Effects.StateTest do
         Comp.bind(State.get(:counter), fn counter ->
           Comp.bind(State.get(:name), fn name ->
             Comp.bind(Reader.ask(), fn config ->
-              Comp.pure({counter, name, config})
+              {counter, name, config}
             end)
           end)
         end)
@@ -437,7 +437,7 @@ defmodule Skuld.Effects.StateTest do
       comp =
         Comp.bind(State.put(:counter, 10), fn _ ->
           Comp.bind(State.modify(:counter, &(&1 * 2)), fn _ ->
-            Comp.pure(:done)
+            :done
           end)
         end)
         |> State.with_handler(0, tag: :counter, output: fn result, state -> {result, state} end)
@@ -468,7 +468,7 @@ defmodule Skuld.Effects.StateTest do
       comp =
         Comp.bind(State.get(), fn default ->
           Comp.bind(State.get(:explicit), fn explicit ->
-            Comp.pure({default, explicit})
+            {default, explicit}
           end)
         end)
         |> State.with_handler(:default_value)

@@ -24,7 +24,7 @@ defmodule Skuld.Effects.YieldTest do
     test "resume continues computation" do
       comp =
         Comp.bind(Yield.yield(:first), fn x ->
-          Comp.pure({:got, x})
+          {:got, x}
         end)
 
       {%Comp.ExternalSuspend{value: :first, resume: resume}, _suspended_env} =
@@ -40,7 +40,7 @@ defmodule Skuld.Effects.YieldTest do
         Comp.bind(Yield.yield(1), fn a ->
           Comp.bind(Yield.yield(2), fn b ->
             Comp.bind(Yield.yield(3), fn c ->
-              Comp.pure(a + b + c)
+              a + b + c
             end)
           end)
         end)
@@ -63,7 +63,7 @@ defmodule Skuld.Effects.YieldTest do
         Comp.bind(Yield.yield(:a), fn _ ->
           Comp.bind(Yield.yield(:b), fn _ ->
             Comp.bind(Yield.yield(:c), fn _ ->
-              Comp.pure(:done)
+              :done
             end)
           end)
         end)
@@ -78,7 +78,7 @@ defmodule Skuld.Effects.YieldTest do
       comp =
         Comp.bind(Yield.yield(:want_x), fn x ->
           Comp.bind(Yield.yield(:want_y), fn y ->
-            Comp.pure(x * y)
+            x * y
           end)
         end)
         |> Yield.with_handler()
@@ -91,7 +91,7 @@ defmodule Skuld.Effects.YieldTest do
         Comp.bind(Yield.yield(1), fn _ ->
           Comp.bind(Yield.yield(2), fn _ ->
             Comp.bind(Yield.yield(3), fn _ ->
-              Comp.pure(:done)
+              :done
             end)
           end)
         end)
@@ -110,7 +110,7 @@ defmodule Skuld.Effects.YieldTest do
               x <- Yield.yield(:get_value)
               x * 2
             end,
-            fn :get_value -> Comp.pure(21) end
+            fn :get_value -> 21 end
           )
         end
         |> Yield.with_handler()
@@ -129,8 +129,8 @@ defmodule Skuld.Effects.YieldTest do
               x + y
             end,
             fn
-              :get_x -> Comp.pure(10)
-              :get_y -> Comp.pure(20)
+              :get_x -> 10
+              :get_y -> 20
             end
           )
         end
@@ -191,7 +191,7 @@ defmodule Skuld.Effects.YieldTest do
               x + y
             end,
             fn
-              :handled -> Comp.pure(10)
+              :handled -> 10
               other -> Yield.yield(other)
             end
           )
@@ -216,7 +216,7 @@ defmodule Skuld.Effects.YieldTest do
               _ <- Throw.throw(:inner_error)
               Yield.yield(:after_throw)
             end,
-            fn _ -> Comp.pure(:ok) end
+            fn _ -> :ok end
           )
         end
         |> Yield.with_handler()
@@ -250,7 +250,7 @@ defmodule Skuld.Effects.YieldTest do
             comp do
               42
             end,
-            fn _ -> Comp.pure(:should_not_be_called) end
+            fn _ -> :should_not_be_called end
           )
         end
         |> Yield.with_handler()
@@ -271,12 +271,12 @@ defmodule Skuld.Effects.YieldTest do
                   x + y
                 end,
                 fn
-                  :inner -> Comp.pure(10)
+                  :inner -> 10
                   other -> Yield.yield(other)
                 end
               )
             end,
-            fn :outer -> Comp.pure(20) end
+            fn :outer -> 20 end
           )
         end
         |> Yield.with_handler()

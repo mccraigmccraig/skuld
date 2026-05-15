@@ -530,34 +530,30 @@ defmodule Skuld.Effects.BrookTest do
       def fetch_user(ops) do
         send(Process.get(:test_pid), {:user_fetch, length(ops)})
 
-        Comp.pure(
-          Map.new(ops, fn {ref, %Skuld.Effects.BrookTest.Queries.FetchUser{id: id}} ->
-            {ref, %Skuld.Effects.BrookTest.User{id: id, name: "User #{id}", orders: nil}}
-          end)
-        )
+        Map.new(ops, fn {ref, %Skuld.Effects.BrookTest.Queries.FetchUser{id: id}} ->
+          {ref, %Skuld.Effects.BrookTest.User{id: id, name: "User #{id}", orders: nil}}
+        end)
       end
 
       @impl true
       def fetch_orders(ops) do
         send(Process.get(:test_pid), {:order_fetch, length(ops)})
 
-        Comp.pure(
-          Map.new(ops, fn {ref, %Skuld.Effects.BrookTest.Queries.FetchOrders{user_id: user_id}} ->
-            {ref,
-             [
-               %Skuld.Effects.BrookTest.Order{
-                 id: user_id * 10 + 1,
-                 user_id: user_id,
-                 total: 100
-               },
-               %Skuld.Effects.BrookTest.Order{
-                 id: user_id * 10 + 2,
-                 user_id: user_id,
-                 total: 200
-               }
-             ]}
-          end)
-        )
+        Map.new(ops, fn {ref, %Skuld.Effects.BrookTest.Queries.FetchOrders{user_id: user_id}} ->
+          {ref,
+           [
+             %Skuld.Effects.BrookTest.Order{
+               id: user_id * 10 + 1,
+               user_id: user_id,
+               total: 100
+             },
+             %Skuld.Effects.BrookTest.Order{
+               id: user_id * 10 + 2,
+               user_id: user_id,
+               total: 200
+             }
+           ]}
+        end)
       end
     end
 
@@ -619,8 +615,8 @@ defmodule Skuld.Effects.BrookTest do
         comp do
           source <- B.from_enum([10, 20, 30])
           # Simulate effectful accumulation
-          total <- B.reduce(source, 0, fn item, acc -> Comp.pure(acc + item) end)
-          Comp.pure(total)
+          total <- B.reduce(source, 0, fn item, acc -> acc + item end)
+          total
         end
         |> Channel.with_handler()
         |> FiberPool.with_handler()

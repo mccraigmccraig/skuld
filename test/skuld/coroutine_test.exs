@@ -19,7 +19,7 @@ defmodule Skuld.CoroutineTest do
   describe "Coroutine.new/2" do
     test "creates a pending fiber" do
       env = Env.new()
-      comp = Comp.pure(42)
+      comp = 42
 
       fiber = Coroutine.new(comp, env)
 
@@ -31,7 +31,7 @@ defmodule Skuld.CoroutineTest do
 
     test "each fiber has unique id" do
       env = Env.new()
-      comp = Comp.pure(42)
+      comp = 42
 
       fiber1 = Coroutine.new(comp, env)
       fiber2 = Coroutine.new(comp, env)
@@ -43,7 +43,7 @@ defmodule Skuld.CoroutineTest do
   describe "Coroutine.run/1" do
     test "pure computation completes immediately" do
       env = Env.new()
-      fiber = Coroutine.new(Comp.pure(42), env)
+      fiber = Coroutine.new(42, env)
 
       fiber = Coroutine.run(fiber)
       assert match?(%Completed{}, fiber)
@@ -120,7 +120,7 @@ defmodule Skuld.CoroutineTest do
 
     test "cannot run non-pending fiber" do
       env = Env.new()
-      fiber = Coroutine.new(Comp.pure(42), env)
+      fiber = Coroutine.new(42, env)
 
       fiber = Coroutine.run(fiber)
       assert match?(%Completed{}, fiber)
@@ -182,7 +182,7 @@ defmodule Skuld.CoroutineTest do
           if x == :trigger_error do
             Throw.throw(:triggered)
           else
-            Comp.pure(x)
+            x
           end
         end
         |> Yield.with_handler()
@@ -201,7 +201,7 @@ defmodule Skuld.CoroutineTest do
 
     test "cannot call run/2 on pending fiber" do
       env = Env.new()
-      fiber = Coroutine.new(Comp.pure(42), env)
+      fiber = Coroutine.new(42, env)
 
       assert_raise ArgumentError, ~r/Cannot run fiber/, fn ->
         Coroutine.run(fiber, :value)
@@ -212,7 +212,7 @@ defmodule Skuld.CoroutineTest do
   describe "Coroutine.cancel/1" do
     test "cancels pending fiber without leave_scope (no scopes entered)" do
       env = Env.new()
-      fiber = Coroutine.new(Comp.pure(42), env)
+      fiber = Coroutine.new(42, env)
 
       cancelled = Coroutine.cancel(fiber)
 
@@ -348,7 +348,7 @@ defmodule Skuld.CoroutineTest do
 
     test "cancel is no-op on completed fiber" do
       env = Env.new()
-      fiber = Coroutine.new(Comp.pure(42), env)
+      fiber = Coroutine.new(42, env)
 
       fiber = Coroutine.run(fiber)
       assert match?(%Completed{}, fiber)
@@ -383,7 +383,7 @@ defmodule Skuld.CoroutineTest do
 
     test "cancel is no-op on already-cancelled fiber" do
       env = Env.new()
-      fiber = Coroutine.new(Comp.pure(42), env)
+      fiber = Coroutine.new(42, env)
 
       cancelled = Coroutine.cancel(fiber)
       assert match?(%Cancelled{}, cancelled)
@@ -396,7 +396,7 @@ defmodule Skuld.CoroutineTest do
 
   describe "Coroutine.terminal?/1" do
     test "pending is not terminal" do
-      fiber = Coroutine.new(Comp.pure(42), Env.new())
+      fiber = Coroutine.new(42, Env.new())
       refute Coroutine.terminal?(fiber)
     end
 
@@ -410,7 +410,7 @@ defmodule Skuld.CoroutineTest do
     end
 
     test "cancelled is terminal" do
-      fiber = Coroutine.new(Comp.pure(42), Env.new())
+      fiber = Coroutine.new(42, Env.new())
       cancelled = Coroutine.cancel(fiber)
       assert Coroutine.terminal?(cancelled)
     end

@@ -43,7 +43,7 @@ defmodule Skuld.Effects.ThrowTest do
       comp =
         Throw.catch_error(
           Throw.throw(:my_error),
-          fn error -> Comp.pure({:caught, error}) end
+          fn error -> {:caught, error} end
         )
 
       {result, _env} =
@@ -57,8 +57,8 @@ defmodule Skuld.Effects.ThrowTest do
     test "passes through normal completion unchanged" do
       comp =
         Throw.catch_error(
-          Comp.pure(42),
-          fn error -> Comp.pure({:caught, error}) end
+          42,
+          fn error -> {:caught, error} end
         )
 
       {result, _env} =
@@ -74,12 +74,12 @@ defmodule Skuld.Effects.ThrowTest do
       inner =
         Throw.catch_error(
           Throw.throw(:error),
-          fn _e -> Comp.pure(:recovered) end
+          fn _e -> :recovered end
         )
 
       outer =
         Comp.bind(inner, fn result ->
-          Comp.pure({:got, result})
+          {:got, result}
         end)
 
       {result, _env} =
@@ -96,9 +96,9 @@ defmodule Skuld.Effects.ThrowTest do
         Throw.catch_error(
           Throw.catch_error(
             Throw.throw(:inner_error),
-            fn e -> Comp.pure({:inner_caught, e}) end
+            fn e -> {:inner_caught, e} end
           ),
-          fn e -> Comp.pure({:outer_caught, e}) end
+          fn e -> {:outer_caught, e} end
         )
 
       {result, _env} =
@@ -113,12 +113,12 @@ defmodule Skuld.Effects.ThrowTest do
     test "re-thrown error propagates to outer catch" do
       # Inner handler explicitly re-throws unhandled errors
       inner_handler = fn
-        :different -> Comp.pure(:inner_caught)
+        :different -> :inner_caught
         other -> Throw.throw(other)
       end
 
       outer_handler = fn
-        :the_error -> Comp.pure(:outer_caught)
+        :the_error -> :outer_caught
         other -> Throw.throw(other)
       end
 
@@ -143,7 +143,7 @@ defmodule Skuld.Effects.ThrowTest do
     test "unhandled re-throw produces Throw result" do
       # Handler explicitly re-throws unhandled errors
       handler = fn
-        :different -> Comp.pure(:caught)
+        :different -> :caught
         other -> Throw.throw(other)
       end
 
@@ -167,7 +167,7 @@ defmodule Skuld.Effects.ThrowTest do
         Throw.catch_error(
           Comp.bind(State.put(10), fn _ -> Throw.throw(:error) end),
           fn _error ->
-            Comp.bind(State.get(), fn s -> Comp.pure({:recovered_with_state, s}) end)
+            Comp.bind(State.get(), fn s -> {:recovered_with_state, s} end)
           end
         )
 
@@ -183,7 +183,7 @@ defmodule Skuld.Effects.ThrowTest do
 
   describe "try_catch" do
     test "returns Either-style result for success" do
-      comp = Throw.try_catch(Comp.pure(42))
+      comp = Throw.try_catch(42)
 
       {result, _env} =
         comp
@@ -207,7 +207,7 @@ defmodule Skuld.Effects.ThrowTest do
     test "unwraps raised exceptions to the exception struct" do
       comp =
         Throw.try_catch(
-          Comp.bind(Comp.pure(nil), fn _ ->
+          Comp.bind(nil, fn _ ->
             raise ArgumentError, "bad input"
           end)
         )
@@ -223,7 +223,7 @@ defmodule Skuld.Effects.ThrowTest do
     test "wraps erlang :throw as {:thrown, value}" do
       comp =
         Throw.try_catch(
-          Comp.bind(Comp.pure(nil), fn _ ->
+          Comp.bind(nil, fn _ ->
             :erlang.throw(:some_value)
           end)
         )
@@ -239,7 +239,7 @@ defmodule Skuld.Effects.ThrowTest do
     test "wraps erlang :exit as {:exit, reason}" do
       comp =
         Throw.try_catch(
-          Comp.bind(Comp.pure(nil), fn _ ->
+          Comp.bind(nil, fn _ ->
             :erlang.exit(:shutdown)
           end)
         )
@@ -260,7 +260,7 @@ defmodule Skuld.Effects.ThrowTest do
     test "applies IThrowable.unwrap to domain exceptions" do
       comp =
         Throw.try_catch(
-          Comp.bind(Comp.pure(nil), fn _ ->
+          Comp.bind(nil, fn _ ->
             raise Skuld.Test.NotFoundError, entity: :user, id: 123
           end)
         )
@@ -276,7 +276,7 @@ defmodule Skuld.Effects.ThrowTest do
     test "enables clean pattern matching on domain errors" do
       comp =
         Throw.try_catch(
-          Comp.bind(Comp.pure(nil), fn _ ->
+          Comp.bind(nil, fn _ ->
             raise Skuld.Test.NotFoundError, entity: :post, id: 456
           end)
         )

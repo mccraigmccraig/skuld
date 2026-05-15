@@ -35,7 +35,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           nested_loops(outer - 1, inner)
         end
       else
-        Comp.pure(:done)
+        :done
       end
 
     return(result)
@@ -50,7 +50,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
       if n > 0 do
         inner_loop(n - 1)
       else
-        Comp.pure(:inner_done)
+        :inner_done
       end
 
     return(result)

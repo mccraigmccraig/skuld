@@ -34,15 +34,15 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
     @behaviour TestEffectful
 
     def get_todo(tenant_id, id) do
-      Comp.pure({:ok, %{tenant_id: tenant_id, id: id, source: :effectful}})
+      {:ok, %{tenant_id: tenant_id, id: id, source: :effectful}}
     end
 
     def list_todos(tenant_id) do
-      Comp.pure({:ok, [%{tenant_id: tenant_id, id: "1"}]})
+      {:ok, [%{tenant_id: tenant_id, id: "1"}]}
     end
 
     def health_check do
-      Comp.pure(:ok)
+      :ok
     end
   end
 
@@ -64,7 +64,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
     def get_todo(tenant_id, id) do
       Comp.bind(State.get(), fn count ->
         Comp.bind(State.put(count + 1), fn _ ->
-          Comp.pure({:ok, %{tenant_id: tenant_id, id: id, call_count: count + 1}})
+          {:ok, %{tenant_id: tenant_id, id: id, call_count: count + 1}}
         end)
       end)
     end
@@ -72,13 +72,13 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
     def list_todos(tenant_id) do
       Comp.bind(State.get(), fn count ->
         Comp.bind(State.put(count + 1), fn _ ->
-          Comp.pure({:ok, [%{tenant_id: tenant_id, call_count: count + 1}]})
+          {:ok, [%{tenant_id: tenant_id, call_count: count + 1}]}
         end)
       end)
     end
 
     def health_check do
-      Comp.pure(:ok)
+      :ok
     end
   end
 
@@ -101,7 +101,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
     end
 
     def get_todo(tenant_id, id) do
-      Comp.pure({:ok, %{tenant_id: tenant_id, id: id}})
+      {:ok, %{tenant_id: tenant_id, id: id}}
     end
 
     def list_todos(_tenant_id) do
@@ -109,7 +109,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
     end
 
     def health_check do
-      Comp.pure(:ok)
+      :ok
     end
   end
 
@@ -259,7 +259,7 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
       def get_todo(tenant_id, id) do
         Comp.bind(State.get(), fn calls ->
           Comp.bind(State.put([{:get_todo, tenant_id, id} | calls]), fn _ ->
-            Comp.pure({:ok, %{tenant_id: tenant_id, id: id, source: :counting}})
+            {:ok, %{tenant_id: tenant_id, id: id, source: :counting}}
           end)
         end)
       end
@@ -267,13 +267,13 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
       def list_todos(tenant_id) do
         Comp.bind(State.get(), fn calls ->
           Comp.bind(State.put([{:list_todos, tenant_id} | calls]), fn _ ->
-            Comp.pure({:ok, [%{tenant_id: tenant_id, source: :counting}]})
+            {:ok, [%{tenant_id: tenant_id, source: :counting}]}
           end)
         end)
       end
 
       def health_check do
-        Comp.pure(:ok)
+        :ok
       end
     end
 
@@ -315,16 +315,16 @@ defmodule Skuld.Effects.Port.Adapter.EffectfulTest do
 
       def get_todo(tenant_id, id) do
         Comp.bind(State.modify(fn count -> count + 1 end), fn old_count ->
-          Comp.pure({:ok, %{tenant_id: tenant_id, id: id, call: old_count + 1}})
+          {:ok, %{tenant_id: tenant_id, id: id, call: old_count + 1}}
         end)
       end
 
       def list_todos(_tenant_id) do
-        Comp.pure({:ok, []})
+        {:ok, []}
       end
 
       def health_check do
-        Comp.pure(:ok)
+        :ok
       end
     end
 

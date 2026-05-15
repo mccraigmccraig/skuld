@@ -50,7 +50,7 @@ defmodule Skuld.IntegrationTest do
         end)
         |> Comp.bind(fn caught_state ->
           Comp.bind(State.get(), fn final_state ->
-            Comp.pure({caught_state, final_state})
+            {caught_state, final_state}
           end)
         end)
 
@@ -73,7 +73,7 @@ defmodule Skuld.IntegrationTest do
           Comp.bind(Yield.yield(:suspended), fn input ->
             Comp.bind(State.modify(&(&1 + input)), fn _ ->
               Comp.bind(State.get(), fn final_state ->
-                Comp.pure({final_state, final_state})
+                {final_state, final_state}
               end)
             end)
           end)
@@ -102,10 +102,10 @@ defmodule Skuld.IntegrationTest do
             if should_throw do
               Throw.throw(:post_resume_error)
             else
-              Comp.pure(:no_error)
+              :no_error
             end
           end),
-          fn error -> Comp.pure({:caught, error}) end
+          fn error -> {:caught, error} end
         )
 
       {%Comp.ExternalSuspend{value: :waiting, resume: resume}, _suspended_env} =
@@ -130,13 +130,13 @@ defmodule Skuld.IntegrationTest do
             fn _ -> 100 end,
             Comp.bind(Reader.ask(), fn val ->
               Comp.bind(Throw.throw({:error, val}), fn _ ->
-                Comp.pure(:never)
+                :never
               end)
             end)
           ),
           fn {:error, val} ->
             Comp.bind(Reader.ask(), fn after_val ->
-              Comp.pure({:caught, val, after_val})
+              {:caught, val, after_val}
             end)
           end
         )
@@ -160,7 +160,7 @@ defmodule Skuld.IntegrationTest do
           Comp.bind(Reader.ask(), fn before ->
             Comp.bind(Yield.yield(:pause), fn _ ->
               Comp.bind(Reader.ask(), fn after_yield ->
-                Comp.pure({before, after_yield})
+                {before, after_yield}
               end)
             end)
           end)
