@@ -22,19 +22,19 @@ N=10,000 (run with `MIX_ENV=prod` for consolidated protocols). The
 handling — this is the cost real-world Elixir code with `try`/`rescue`
 already pays:
 
-| Approach                              | Time    | Per-op   |
-|---------------------------------------|---------|----------|
-| Pure tail recursion                   | 189 µs  | 0.019 us |
-| Pure tail recursion + catches         | 263 µs  | 0.026 us |
-| Simple state monad                    | 164 µs  | 0.016 us |
-| Simple state monad + catches          | 1.71 ms | 0.171 us |
-| Evidence-passing (reader)              | 318 µs  | 0.032 us |
-| Evidence-passing (reader) + catches    | 863 µs  | 0.086 us |
-| Evidence-passing + CPS                | 347 µs  | 0.035 us |
-| Evidence-passing + CPS + catches      | 1.59 ms | 0.159 us |
-| **Skuld** (nested binds, CPS path)    | 2.18 ms | 0.218 us |
-| **Skuld/Comp** (comp macro, inline)   | 1.42 ms | 0.142 us |
-| Freyja                                | ~10 ms  | ~1 us    |
+| Approach                                  | Time    | Per-op   |
+|-------------------------------------------|---------|----------|
+| Pure tail recursion                       | 189 µs  | 0.019 us |
+| Pure tail recursion + catches             | 263 µs  | 0.026 us |
+| Simple state monad                        | 164 µs  | 0.016 us |
+| Simple state monad + catches              | 1.71 ms | 0.171 us |
+| Evidence-passing (reader)                 | 318 µs  | 0.032 us |
+| Evidence-passing (reader) + catches       | 863 µs  | 0.086 us |
+| Evidence-passing (reader + CPS)           | 347 µs  | 0.035 us |
+| Evidence-passing (reader + CPS) + catches | 1.59 ms | 0.159 us |
+| **Skuld** (nested binds, CPS path)        | 2.18 ms | 0.218 us |
+| **Skuld/Comp** (comp macro, inline)       | 1.42 ms | 0.142 us |
+| Freyja                                    | ~10 ms  | ~1 us    |
 
 Two Skuld variants are shown:
 
@@ -58,8 +58,8 @@ Elixir application already uses for error handling:
 
 | Baseline                           | us/op | vs bare CPS |
 |------------------------------------|-------|-------------|
-| Evidence-passing + CPS             | 0.035 | 1.0×        |
-| Evidence-passing + CPS + catches   | 0.159 | **4.5×**    |
+| Evidence-passing (reader) + CPS       | 0.035 | 1.0×        |
+| Evidence-passing (reader) + CPS + catches | 0.159 | **4.5×**    |
 | **Skuld/Comp** (comp macro inline) | 0.142 | 4.1×        |
 | **Skuld** (nested binds)           | 0.218 | 6.2×        |
 

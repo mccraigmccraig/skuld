@@ -13,7 +13,7 @@
 # 4. Monad/Nested + catches  - Same with catch frames
 # 5. Evf/Nested              - Evidence-passing (reader), direct-style (no CPS)
 # 6. Evf/Nested + catches    - Same with catch frames
-# 7. Evf/CPS                 - Evidence-passing with CPS (isolates CPS overhead)
+# 7. Evf/CPS                 - Evidence-passing (reader + CPS)
 # 8. Evf/CPS + catches       - Same with catch frames
 # 9.  Skuld/Nested            - Skuld with nested binds (CPS path via Comp.bind)
 # 10. Skuld/Comp              - Skuld with comp macro binds (total+linear inline path)
@@ -210,7 +210,7 @@ defmodule SkuldBenchmark do
   end
 
   # ============================================================
-  # Flat evidence-passing + catches - evidence-passing with
+  # Evidence-passing (reader) + catches - evidence-passing with
   # catch frames matching Skuld's structure
   # ============================================================
 
@@ -255,7 +255,7 @@ defmodule SkuldBenchmark do
   end
 
   # ============================================================
-  # Flat evidence-passing + CPS + catches - evidence-passing CPS
+  # Evidence-passing (reader) + CPS + catches - evidence-passing CPS
   # with catch frames matching Skuld's structure
   # ============================================================
 
@@ -336,7 +336,7 @@ defmodule SkuldBenchmark do
   end
 
   # ============================================================
-  # Flat evidence-passing - minimal dynamic dispatch baseline
+  # Evidence-passing (reader) - minimal dynamic dispatch baseline
   # ============================================================
 
   def evf_pure(value), do: fn env -> {value, env} end
@@ -385,7 +385,7 @@ defmodule SkuldBenchmark do
   end
 
   # ============================================================
-  # Flat evidence-passing with CPS - isolates CPS overhead
+  # Evidence-passing (reader) + CPS - isolates CPS overhead
   # ============================================================
 
   def evf_cps_pure(value), do: fn env, k -> k.(value, env) end
@@ -689,8 +689,8 @@ defmodule SkuldBenchmark do
     IO.puts("- Pure/Rec: Non-effectful baseline (recursive function with map state)")
     IO.puts("- +catches: Same approach with catch frames matching Skuld's structure")
     IO.puts("- Monad: Simple state monad (fn state -> {val, state} end)")
-    IO.puts("- Evf: Flat evidence-passing, direct-style (no CPS)")
-    IO.puts("- Evf/CPS: Flat evidence-passing with CPS (isolates CPS overhead)")
+    IO.puts("- Evf: Evidence-passing (reader), direct-style (no CPS)")
+    IO.puts("- Evf/CPS: Evidence-passing (reader + CPS)")
     IO.puts("- Skuld: Skuld with nested binds (CPS path via Comp.bind)")
     IO.puts("- Skuld/Comp: Skuld with comp macro binds (total+linear inline path)")
     IO.puts("")
