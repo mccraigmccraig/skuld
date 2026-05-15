@@ -11,9 +11,9 @@
 # 2. Pure/Recurse + catches  - Same with catch frames
 # 3. Monad/Nested            - Simple state monad (no effects library)
 # 4. Monad/Nested + catches  - Same with catch frames
-# 5. Evf/Nested              - Flat evidence-passing, direct-style (no CPS)
+# 5. Evf/Nested              - Evidence-passing (reader), direct-style (no CPS)
 # 6. Evf/Nested + catches    - Same with catch frames
-# 7. Evf/CPS                 - Flat evidence-passing with CPS (isolates CPS overhead)
+# 7. Evf/CPS                 - Evidence-passing with CPS (isolates CPS overhead)
 # 8. Evf/CPS + catches       - Same with catch frames
 # 9.  Skuld/Nested            - Skuld with nested binds (CPS path via Comp.bind)
 # 10. Skuld/Comp              - Skuld with comp macro binds (total+linear inline path)
@@ -461,6 +461,7 @@ defmodule SkuldBenchmark do
   defp skuld_comp_nested_loop(target) do
     comp do
       n <- SkuldState.get()
+
       if n >= target do
         Comp.pure(n)
       else

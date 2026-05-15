@@ -9,8 +9,8 @@ continuation creation, and function call overhead. Operations use compact
 representations — bare atoms for 0-arg ops, small tuples for ops with
 args. No struct allocation on the hot path.
 
-When effects implement `ITotalLinearHandler` (like `State`, `Writer`,
-`Throw`), the `comp` macro can emit an inline continuation path that
+When effects implement `ITotalLinearHandler` (like `State`),
+the `comp` macro can emit an inline continuation path that
 skips `Comp.bind/2` closure allocation entirely — eliminating the
 closure-creation cost from the per-operation overhead.
 
@@ -28,8 +28,8 @@ already pays:
 | Pure tail recursion + catches         | 263 µs  | 0.026 us |
 | Simple state monad                    | 164 µs  | 0.016 us |
 | Simple state monad + catches          | 1.71 ms | 0.171 us |
-| Evidence-passing (flat)               | 318 µs  | 0.032 us |
-| Evidence-passing (flat) + catches     | 863 µs  | 0.086 us |
+| Evidence-passing (reader)              | 318 µs  | 0.032 us |
+| Evidence-passing (reader) + catches    | 863 µs  | 0.086 us |
 | Evidence-passing + CPS                | 347 µs  | 0.035 us |
 | Evidence-passing + CPS + catches      | 1.59 ms | 0.159 us |
 | **Skuld** (nested binds, CPS path)    | 2.18 ms | 0.218 us |
