@@ -56,12 +56,12 @@ Nearly all the gap between Skuld/Comp and bare evidence-passing CPS is
 **catch frames** — the same `try`/`catch` mechanism every real-world
 Elixir application already uses for error handling:
 
-| Baseline                           | us/op | vs bare CPS |
-|------------------------------------|-------|-------------|
-| Evidence-passing (reader) + CPS       | 0.035 | 1.0×        |
+| Baseline                                  | us/op | vs bare CPS |
+|-------------------------------------------|-------|-------------|
+| Evidence-passing (reader) + CPS           | 0.035 | 1.0×        |
 | Evidence-passing (reader) + CPS + catches | 0.159 | **4.5×**    |
-| **Skuld/Comp** (comp macro inline) | 0.142 | 4.1×        |
-| **Skuld** (nested binds)           | 0.218 | 6.2×        |
+| **Skuld/Comp** (comp macro inline)        | 0.142 | 4.1×        |
+| **Skuld** (nested binds)                  | 0.218 | 6.2×        |
 
 Catch frames account for **4.5×** of the total overhead. Skuld/Comp
 adds **0.89×** — indistinguishable from the catch-only baseline.
