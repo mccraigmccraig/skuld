@@ -1,4 +1,4 @@
-defmodule Skuld.AsyncComputation do
+defmodule Skuld.AsyncCoroutine do
   @moduledoc """
   Run a computation in a separate process, bridging yields, throws, and results
   back to the calling process via messages.
@@ -8,7 +8,7 @@ defmodule Skuld.AsyncComputation do
 
   ## Messages
 
-  The runner sends messages to the caller in the form `{AsyncComputation, tag, result}`:
+  The runner sends messages to the caller in the form `{AsyncCoroutine, tag, result}`:
 
   - `%ExternalSuspend{value: v, data: d, resume: nil}` - computation yielded, waiting for resume
   - `%Throw{error: e}` - computation threw an error
@@ -32,14 +32,14 @@ defmodule Skuld.AsyncComputation do
         |> EctoPersist.with_handler(Repo)
 
       # Start async - will add Yield and Throw handlers
-      {:ok, runner} = AsyncComputation.run(computation, tag: :create_todo)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :create_todo)
 
       # Or start sync for fast-yielding computations
       {:ok, runner, %ExternalSuspend{value: :ready}} =
-        AsyncComputation.run_sync(computation, tag: :create_todo)
+        AsyncCoroutine.run_sync(computation, tag: :create_todo)
 
       # In handle_info - single clause handles all messages for a tag:
-      def handle_info({AsyncComputation, :create_todo, result}, socket) do
+      def handle_info({AsyncCoroutine, :create_todo, result}, socket) do
         case result do
           %ExternalSuspend{value: value, data: data} ->
             handle_yield(value, data, socket)
@@ -66,21 +66,21 @@ defmodule Skuld.AsyncComputation do
         end
         |> ...handlers...
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :create_user)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :create_user)
 
       # Handle yields
-      def handle_info({AsyncComputation, :create_user, %ExternalSuspend{value: :get_name}}, socket) do
+      def handle_info({AsyncCoroutine, :create_user, %ExternalSuspend{value: :get_name}}, socket) do
         # Maybe wait for user input, then:
-        AsyncComputation.run(runner, "Alice")
+        AsyncCoroutine.run(runner, "Alice")
         {:noreply, socket}
       end
 
-      def handle_info({AsyncComputation, :create_user, %ExternalSuspend{value: :get_email}}, socket) do
-        AsyncComputation.run(runner, "alice@example.com")
+      def handle_info({AsyncCoroutine, :create_user, %ExternalSuspend{value: :get_email}}, socket) do
+        AsyncCoroutine.run(runner, "alice@example.com")
         {:noreply, socket}
       end
 
-      def handle_info({AsyncComputation, :create_user, {:ok, user}}, socket) do
+      def handle_info({AsyncCoroutine, :create_user, {:ok, user}}, socket) do
         {:noreply, assign(socket, user: user)}
       end
   """
@@ -167,10 +167,10 @@ defmodule Skuld.AsyncComputation do
       {:ok, runner, %ExternalSuspend{value: :ready}} =
         command_processor
         |> Reader.with_handler(context)
-        |> AsyncComputation.run_sync(tag: :processor)
+        |> AsyncCoroutine.run_sync(tag: :processor)
 
       # Now resume synchronously for quick commands
-      %ExternalSuspend{value: :ready} = AsyncComputation.run_sync(runner, %QuickCommand{})
+      %ExternalSuspend{value: :ready} = AsyncCoroutine.run_sync(runner, %QuickCommand{})
   """
   @spec run_sync(Skuld.Comp.Types.computation(), keyword()) ::
           {:ok, t(), term()}
@@ -191,7 +191,7 @@ defmodule Skuld.AsyncComputation do
   @doc """
   Resume a yielded computation with a value (async).
 
-  Call this after receiving a `{AsyncComputation, tag, %ExternalSuspend{}}` message.
+  Call this after receiving a `{AsyncCoroutine, tag, %ExternalSuspend{}}` message.
   The next response will arrive via message to the caller (or `:reply_to` if specified).
 
   ## Options
@@ -227,15 +227,15 @@ defmodule Skuld.AsyncComputation do
 
   ## Example
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :cmd)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :cmd)
 
       # First yield arrives via message
       receive do
-        {AsyncComputation, :cmd, %ExternalSuspend{value: :ready}} -> :ok
+        {AsyncCoroutine, :cmd, %ExternalSuspend{value: :ready}} -> :ok
       end
 
       # Now resume and wait synchronously
-      case AsyncComputation.run_sync(runner, %SomeCommand{}) do
+      case AsyncCoroutine.run_sync(runner, %SomeCommand{}) do
         %ExternalSuspend{value: :ready} -> # ready for next command
         %Throw{error: e} -> # something went wrong
         %Cancelled{reason: r} -> # was cancelled
@@ -264,7 +264,7 @@ defmodule Skuld.AsyncComputation do
 
   Sends a cancel signal to the computation. The computation will invoke `leave_scope`
   for all active scoped effects (allowing cleanup), then send a
-  `{AsyncComputation, tag, %Cancelled{reason: :cancelled}}` message to the caller.
+  `{AsyncCoroutine, tag, %Cancelled{reason: :cancelled}}` message to the caller.
 
   Use `cancel_sync/2` if you need to wait for the cancellation to complete.
   """
@@ -296,10 +296,10 @@ defmodule Skuld.AsyncComputation do
   ## Example
 
       {:ok, runner, %ExternalSuspend{value: :ready}} =
-        AsyncComputation.run_sync(computation, tag: :worker)
+        AsyncCoroutine.run_sync(computation, tag: :worker)
 
       # Cancel and wait for cleanup to finish
-      %Cancelled{reason: :cancelled} = AsyncComputation.cancel_sync(runner)
+      %Cancelled{reason: :cancelled} = AsyncCoroutine.cancel_sync(runner)
   """
   @spec cancel_sync(t(), keyword()) :: Cancelled.t() | {:error, :timeout}
   def cancel_sync(%__MODULE__{ref: ref, pid: pid, monitor_ref: monitor_ref, tag: tag}, opts \\ []) do

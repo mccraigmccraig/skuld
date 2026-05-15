@@ -130,7 +130,7 @@ end
 #=> 15
 ```
 
-## AsyncComputation
+## AsyncCoroutine
 
 Bridge effectful computations into non-effectful code (LiveView,
 GenServer, plain Elixir). Handles the suspend/resume lifecycle via
@@ -139,7 +139,7 @@ messages.
 ### Basic usage
 
 ```elixir
-alias Skuld.AsyncComputation
+alias Skuld.AsyncCoroutine
 alias Skuld.Comp.{Suspend, Throw, Cancelled}
 
 computation =
@@ -151,16 +151,16 @@ computation =
   |> Reader.with_handler(%{tenant_id: "t-123"})
 
 # Start async - returns immediately, responses arrive as messages
-{:ok, runner} = AsyncComputation.run(computation, tag: :create_user)
+{:ok, runner} = AsyncCoroutine.run(computation, tag: :create_user)
 
 # Or start sync - blocks until first yield/result/throw
 {:ok, runner, %Suspend{value: :get_name}} =
-  AsyncComputation.run_sync(computation, tag: :create_user, timeout: 5000)
+  AsyncCoroutine.run_sync(computation, tag: :create_user, timeout: 5000)
 ```
 
 ### Message format
 
-All messages arrive as `{AsyncComputation, tag, result}`:
+All messages arrive as `{AsyncCoroutine, tag, result}`:
 
 - `%Suspend{value: v, data: d}` - computation yielded
 - `%Throw{error: e}` - computation threw
@@ -171,17 +171,17 @@ All messages arrive as `{AsyncComputation, tag, result}`:
 
 ```elixir
 # Async resume - returns immediately
-AsyncComputation.run(runner, "Alice")
+AsyncCoroutine.run(runner, "Alice")
 
 # Sync resume - blocks until next yield/result/throw
-case AsyncComputation.run_sync(runner, "Alice", timeout: 5000) do
+case AsyncCoroutine.run_sync(runner, "Alice", timeout: 5000) do
   %Suspend{value: next_prompt} -> # yielded again
   %Throw{error: error} -> # threw
   value -> # completed
 end
 
 # Cancel - triggers cleanup via leave_scope
-AsyncComputation.cancel(runner)
+AsyncCoroutine.cancel(runner)
 ```
 
 ### LiveView example
@@ -196,11 +196,11 @@ def handle_event("start_wizard", _params, socket) do
     end
     |> MyApp.with_domain_handlers()
 
-  {:ok, runner} = AsyncComputation.run(computation, tag: :wizard)
+  {:ok, runner} = AsyncCoroutine.run(computation, tag: :wizard)
   {:noreply, assign(socket, runner: runner)}
 end
 
-def handle_info({AsyncComputation, :wizard, result}, socket) do
+def handle_info({AsyncCoroutine, :wizard, result}, socket) do
   case result do
     %Suspend{value: %{step: step, prompt: prompt}} ->
       {:noreply, assign(socket, step: step, prompt: prompt)}
@@ -212,7 +212,7 @@ def handle_info({AsyncComputation, :wizard, result}, socket) do
 end
 
 def handle_event("submit_step", %{"value" => value}, socket) do
-  AsyncComputation.run(socket.assigns.runner, value)
+  AsyncCoroutine.run(socket.assigns.runner, value)
   {:noreply, socket}
 end
 ```
@@ -224,7 +224,7 @@ end
 - Cancellation triggers proper cleanup via `leave_scope`
 - `Suspend.data` contains decorations from scoped effects (e.g.,
   EffectLogger log)
-- Use AsyncComputation for non-effectful callers; use FiberPool when
+- Use AsyncCoroutine for non-effectful callers; use FiberPool when
   inside a computation
 
 ### Operations

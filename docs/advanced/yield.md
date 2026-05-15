@@ -8,7 +8,7 @@ Yield enables coroutine-style suspension and resumption. A computation
 can yield a value and pause, waiting for the caller to provide a
 response before continuing. This is the foundation for all of Skuld's
 advanced control-flow capabilities - FiberPool, Channel, Brook,
-EffectLogger, and AsyncComputation all build on Yield.
+EffectLogger, and AsyncCoroutine all build on Yield.
 
 > **Note:** You don't need Yield for most applications. The foundational
 > effects (State, Reader, Throw, Port, Transaction, etc.) cover common patterns

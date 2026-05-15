@@ -1,8 +1,8 @@
-defmodule Skuld.AsyncComputationTest do
+defmodule Skuld.AsyncCoroutineTest do
   use ExUnit.Case, async: true
   use Skuld.Syntax
 
-  alias Skuld.AsyncComputation
+  alias Skuld.AsyncCoroutine
   alias Skuld.Comp.Cancelled
   alias Skuld.Comp.ExternalSuspend
   alias Skuld.Comp.Throw, as: ThrowStruct
@@ -18,9 +18,9 @@ defmodule Skuld.AsyncComputationTest do
           return({:ok, 42})
         end
 
-      {:ok, _runner} = AsyncComputation.run(computation, tag: :test)
+      {:ok, _runner} = AsyncCoroutine.run(computation, tag: :test)
 
-      assert_receive {AsyncComputation, :test, {:ok, 42}}
+      assert_receive {AsyncCoroutine, :test, {:ok, 42}}
     end
 
     test "computation can use effects" do
@@ -33,9 +33,9 @@ defmodule Skuld.AsyncComputationTest do
         |> Reader.with_handler(10)
         |> State.with_handler(32)
 
-      {:ok, _runner} = AsyncComputation.run(computation, tag: :with_effects)
+      {:ok, _runner} = AsyncCoroutine.run(computation, tag: :with_effects)
 
-      assert_receive {AsyncComputation, :with_effects, 42}
+      assert_receive {AsyncCoroutine, :with_effects, 42}
     end
 
     test "sends throw errors" do
@@ -45,9 +45,9 @@ defmodule Skuld.AsyncComputationTest do
           return(:never_reached)
         end
 
-      {:ok, _runner} = AsyncComputation.run(computation, tag: :throwing)
+      {:ok, _runner} = AsyncCoroutine.run(computation, tag: :throwing)
 
-      assert_receive {AsyncComputation, :throwing, %ThrowStruct{error: :something_went_wrong}}
+      assert_receive {AsyncCoroutine, :throwing, %ThrowStruct{error: :something_went_wrong}}
     end
 
     test "sends yields and waits for resume" do
@@ -58,18 +58,18 @@ defmodule Skuld.AsyncComputationTest do
           return(x + y)
         end
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :yielding)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :yielding)
 
       # First yield (data is nil since no scoped effects with suspend decoration)
-      assert_receive {AsyncComputation, :yielding, %ExternalSuspend{value: :first}}
-      AsyncComputation.run(runner, 10)
+      assert_receive {AsyncCoroutine, :yielding, %ExternalSuspend{value: :first}}
+      AsyncCoroutine.run(runner, 10)
 
       # Second yield
-      assert_receive {AsyncComputation, :yielding, %ExternalSuspend{value: :second}}
-      AsyncComputation.run(runner, 32)
+      assert_receive {AsyncCoroutine, :yielding, %ExternalSuspend{value: :second}}
+      AsyncCoroutine.run(runner, 32)
 
       # Final result
-      assert_receive {AsyncComputation, :yielding, 42}
+      assert_receive {AsyncCoroutine, :yielding, 42}
     end
 
     test "uses custom caller" do
@@ -85,9 +85,9 @@ defmodule Skuld.AsyncComputationTest do
 
       computation = comp(do: return(:hello))
 
-      {:ok, _runner} = AsyncComputation.run(computation, tag: :custom_caller, caller: middleman)
+      {:ok, _runner} = AsyncCoroutine.run(computation, tag: :custom_caller, caller: middleman)
 
-      assert_receive {:forwarded, {AsyncComputation, :custom_caller, :hello}}
+      assert_receive {:forwarded, {AsyncCoroutine, :custom_caller, :hello}}
     end
   end
 
@@ -100,17 +100,17 @@ defmodule Skuld.AsyncComputationTest do
         end
 
       {:ok, runner, %ExternalSuspend{value: :ready}} =
-        AsyncComputation.run_sync(computation, tag: :sync_start)
+        AsyncCoroutine.run_sync(computation, tag: :sync_start)
 
       # Can continue with resume_sync
-      assert 42 = AsyncComputation.run_sync(runner, 21)
+      assert 42 = AsyncCoroutine.run_sync(runner, 21)
     end
 
     test "returns result when computation completes immediately" do
       computation = comp(do: return({:ok, 42}))
 
       {:ok, _runner, {:ok, 42}} =
-        AsyncComputation.run_sync(computation, tag: :immediate_result)
+        AsyncCoroutine.run_sync(computation, tag: :immediate_result)
     end
 
     test "returns throw when computation throws immediately" do
@@ -121,7 +121,7 @@ defmodule Skuld.AsyncComputationTest do
         end
 
       {:ok, _runner, %ThrowStruct{error: :immediate_error}} =
-        AsyncComputation.run_sync(computation, tag: :immediate_throw)
+        AsyncCoroutine.run_sync(computation, tag: :immediate_throw)
     end
 
     test "works with effects" do
@@ -134,9 +134,9 @@ defmodule Skuld.AsyncComputationTest do
         |> Reader.with_handler(21)
 
       {:ok, runner, %ExternalSuspend{value: :get_multiplier}} =
-        AsyncComputation.run_sync(computation, tag: :with_effects)
+        AsyncCoroutine.run_sync(computation, tag: :with_effects)
 
-      assert 42 = AsyncComputation.run_sync(runner, 2)
+      assert 42 = AsyncCoroutine.run_sync(runner, 2)
     end
 
     test "respects custom timeout" do
@@ -148,9 +148,9 @@ defmodule Skuld.AsyncComputationTest do
 
       # Should succeed quickly with reasonable timeout
       {:ok, runner, %ExternalSuspend{value: :first}} =
-        AsyncComputation.run_sync(computation, tag: :custom_timeout, timeout: 1000)
+        AsyncCoroutine.run_sync(computation, tag: :custom_timeout, timeout: 1000)
 
-      assert :done = AsyncComputation.run_sync(runner, :done)
+      assert :done = AsyncCoroutine.run_sync(runner, :done)
     end
 
     test "command processor pattern - sync start then sync resume loop" do
@@ -166,15 +166,15 @@ defmodule Skuld.AsyncComputationTest do
 
       # Start sync - get first :ready yield
       {:ok, runner, %ExternalSuspend{value: :ready}} =
-        AsyncComputation.run_sync(processor, tag: :processor)
+        AsyncCoroutine.run_sync(processor, tag: :processor)
 
       # Send first command, get back ready with result
       %ExternalSuspend{value: {:ready, {:processed, :cmd_a}}} =
-        AsyncComputation.run_sync(runner, :cmd_a)
+        AsyncCoroutine.run_sync(runner, :cmd_a)
 
       # Send second command, get final result
       {:done, {:processed, :cmd_a}, {:processed, :cmd_b}} =
-        AsyncComputation.run_sync(runner, :cmd_b)
+        AsyncCoroutine.run_sync(runner, :cmd_b)
     end
   end
 
@@ -187,16 +187,16 @@ defmodule Skuld.AsyncComputationTest do
           return(x + y)
         end
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :sync_yield)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :sync_yield)
 
       # First yield comes via message
-      assert_receive {AsyncComputation, :sync_yield, %ExternalSuspend{value: :first}}
+      assert_receive {AsyncCoroutine, :sync_yield, %ExternalSuspend{value: :first}}
 
       # Resume sync and wait for second yield
-      assert %ExternalSuspend{value: :second} = AsyncComputation.run_sync(runner, 10)
+      assert %ExternalSuspend{value: :second} = AsyncCoroutine.run_sync(runner, 10)
 
       # Resume sync and wait for result
-      assert 42 = AsyncComputation.run_sync(runner, 32)
+      assert 42 = AsyncCoroutine.run_sync(runner, 32)
     end
 
     test "returns result when computation completes" do
@@ -206,10 +206,10 @@ defmodule Skuld.AsyncComputationTest do
           return({:ok, x * 2})
         end
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :sync_result)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :sync_result)
 
-      assert_receive {AsyncComputation, :sync_result, %ExternalSuspend{value: :get_value}}
-      assert {:ok, 42} = AsyncComputation.run_sync(runner, 21)
+      assert_receive {AsyncCoroutine, :sync_result, %ExternalSuspend{value: :get_value}}
+      assert {:ok, 42} = AsyncCoroutine.run_sync(runner, 21)
     end
 
     test "returns throw on error" do
@@ -220,10 +220,10 @@ defmodule Skuld.AsyncComputationTest do
           return(x)
         end
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :sync_throw)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :sync_throw)
 
-      assert_receive {AsyncComputation, :sync_throw, %ExternalSuspend{value: :get_value}}
-      assert %ThrowStruct{error: :negative} = AsyncComputation.run_sync(runner, -5)
+      assert_receive {AsyncCoroutine, :sync_throw, %ExternalSuspend{value: :get_value}}
+      assert %ThrowStruct{error: :negative} = AsyncCoroutine.run_sync(runner, -5)
     end
 
     test "respects custom timeout" do
@@ -234,12 +234,12 @@ defmodule Skuld.AsyncComputationTest do
           return(:done)
         end
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :custom_timeout)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :custom_timeout)
 
-      assert_receive {AsyncComputation, :custom_timeout, %ExternalSuspend{value: :ready}}
+      assert_receive {AsyncCoroutine, :custom_timeout, %ExternalSuspend{value: :ready}}
 
       # This should succeed quickly
-      assert :done = AsyncComputation.run_sync(runner, :go, timeout: 1000)
+      assert :done = AsyncCoroutine.run_sync(runner, :go, timeout: 1000)
     end
 
     test "mixed sync and async resumes" do
@@ -251,20 +251,20 @@ defmodule Skuld.AsyncComputationTest do
           return(a + b + c)
         end
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :mixed)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :mixed)
 
       # First yield via message
-      assert_receive {AsyncComputation, :mixed, %ExternalSuspend{value: :a}}
+      assert_receive {AsyncCoroutine, :mixed, %ExternalSuspend{value: :a}}
 
       # Async resume
-      AsyncComputation.run(runner, 1)
-      assert_receive {AsyncComputation, :mixed, %ExternalSuspend{value: :b}}
+      AsyncCoroutine.run(runner, 1)
+      assert_receive {AsyncCoroutine, :mixed, %ExternalSuspend{value: :b}}
 
       # Sync resume
-      assert %ExternalSuspend{value: :c} = AsyncComputation.run_sync(runner, 2)
+      assert %ExternalSuspend{value: :c} = AsyncCoroutine.run_sync(runner, 2)
 
       # Sync resume to completion
-      assert 6 = AsyncComputation.run_sync(runner, 3)
+      assert 6 = AsyncCoroutine.run_sync(runner, 3)
     end
   end
 
@@ -276,14 +276,14 @@ defmodule Skuld.AsyncComputationTest do
           return(:completed)
         end
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :cancellable)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :cancellable)
 
-      assert_receive {AsyncComputation, :cancellable, %ExternalSuspend{value: :waiting}}
+      assert_receive {AsyncCoroutine, :cancellable, %ExternalSuspend{value: :waiting}}
 
-      AsyncComputation.cancel(runner)
+      AsyncCoroutine.cancel(runner)
 
-      assert_receive {AsyncComputation, :cancellable, %Cancelled{reason: :cancelled}}
-      refute_receive {AsyncComputation, :cancellable, _}, 10
+      assert_receive {AsyncCoroutine, :cancellable, %Cancelled{reason: :cancelled}}
+      refute_receive {AsyncCoroutine, :cancellable, _}, 10
     end
 
     test "cancellation invokes leave_scope for effect cleanup" do
@@ -306,17 +306,17 @@ defmodule Skuld.AsyncComputationTest do
         end)
         |> Yield.with_handler()
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :cleanup_test)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :cleanup_test)
 
-      assert_receive {AsyncComputation, :cleanup_test, %ExternalSuspend{value: :waiting}}
+      assert_receive {AsyncCoroutine, :cleanup_test, %ExternalSuspend{value: :waiting}}
 
       # Verify we entered the scope
       assert Agent.get(agent, & &1) == [:entered]
 
       # Cancel - should trigger cleanup
-      AsyncComputation.cancel(runner)
+      AsyncCoroutine.cancel(runner)
 
-      assert_receive {AsyncComputation, :cleanup_test, %Cancelled{reason: :cancelled}}
+      assert_receive {AsyncCoroutine, :cleanup_test, %Cancelled{reason: :cancelled}}
 
       # Verify cleanup was called with Cancelled
       log = Agent.get(agent, & &1)
@@ -335,13 +335,13 @@ defmodule Skuld.AsyncComputationTest do
         end
 
       {:ok, runner, %ExternalSuspend{value: :waiting}} =
-        AsyncComputation.run_sync(computation, tag: :cancel_sync_test)
+        AsyncCoroutine.run_sync(computation, tag: :cancel_sync_test)
 
       # Cancel synchronously
-      assert %Cancelled{reason: :cancelled} = AsyncComputation.cancel_sync(runner)
+      assert %Cancelled{reason: :cancelled} = AsyncCoroutine.cancel_sync(runner)
 
       # No additional messages should arrive
-      refute_receive {AsyncComputation, :cancel_sync_test, _}, 10
+      refute_receive {AsyncCoroutine, :cancel_sync_test, _}, 10
     end
 
     test "cancel_sync invokes leave_scope for cleanup" do
@@ -362,13 +362,13 @@ defmodule Skuld.AsyncComputationTest do
         |> Yield.with_handler()
 
       {:ok, runner, %ExternalSuspend{value: :waiting}} =
-        AsyncComputation.run_sync(computation, tag: :cleanup_sync)
+        AsyncCoroutine.run_sync(computation, tag: :cleanup_sync)
 
       # Verify we entered the scope
       assert Agent.get(agent, & &1) == [:entered]
 
       # Cancel synchronously - should trigger cleanup
-      assert %Cancelled{reason: :cancelled} = AsyncComputation.cancel_sync(runner)
+      assert %Cancelled{reason: :cancelled} = AsyncCoroutine.cancel_sync(runner)
 
       # Verify cleanup was called with Cancelled
       log = Agent.get(agent, & &1)
@@ -386,13 +386,13 @@ defmodule Skuld.AsyncComputationTest do
 
       # Start with self() as caller
       {:ok, runner, %ExternalSuspend{value: :waiting}} =
-        AsyncComputation.run_sync(computation, tag: :cross_process)
+        AsyncCoroutine.run_sync(computation, tag: :cross_process)
 
       # Cancel from a different process
       test_pid = self()
 
       spawn(fn ->
-        result = AsyncComputation.cancel_sync(runner)
+        result = AsyncCoroutine.cancel_sync(runner)
         send(test_pid, {:cancel_result, result})
       end)
 
@@ -400,7 +400,7 @@ defmodule Skuld.AsyncComputationTest do
       assert_receive {:cancel_result, %Cancelled{reason: :cancelled}}
 
       # Original caller should NOT receive anything (the spawned process got it)
-      refute_receive {AsyncComputation, :cross_process, _}, 50
+      refute_receive {AsyncCoroutine, :cross_process, _}, 50
     end
 
     test "cancel_sync respects timeout" do
@@ -411,11 +411,11 @@ defmodule Skuld.AsyncComputationTest do
         end
 
       {:ok, runner, %ExternalSuspend{value: :waiting}} =
-        AsyncComputation.run_sync(computation, tag: :timeout_test)
+        AsyncCoroutine.run_sync(computation, tag: :timeout_test)
 
       # This should complete quickly, well within timeout
       assert %Cancelled{reason: :cancelled} =
-               AsyncComputation.cancel_sync(runner, timeout: 1000)
+               AsyncCoroutine.cancel_sync(runner, timeout: 1000)
     end
   end
 
@@ -423,9 +423,9 @@ defmodule Skuld.AsyncComputationTest do
     test "runner process exits after sending result" do
       computation = comp(do: return(:done))
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :lifecycle)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :lifecycle)
 
-      assert_receive {AsyncComputation, :lifecycle, :done}
+      assert_receive {AsyncCoroutine, :lifecycle, :done}
 
       # Wait for process to exit via monitor (already set up in start/2)
       # :noproc means process already exited before monitor was set up (fast exit)
@@ -437,10 +437,10 @@ defmodule Skuld.AsyncComputationTest do
       # Skuld converts exceptions to Throws, so they come back as messages
       computation = fn _env, _k -> raise "something went wrong" end
 
-      {:ok, _runner} = AsyncComputation.run(computation, tag: :raising)
+      {:ok, _runner} = AsyncCoroutine.run(computation, tag: :raising)
 
       # Should receive a throw message with the exception info
-      assert_receive {AsyncComputation, :raising,
+      assert_receive {AsyncCoroutine, :raising,
                       %ThrowStruct{
                         error: %{
                           kind: :error,
@@ -452,9 +452,9 @@ defmodule Skuld.AsyncComputationTest do
     test "runner exits normally after sending throw message" do
       computation = fn _env, _k -> raise "boom" end
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :exits_normally)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :exits_normally)
 
-      assert_receive {AsyncComputation, :exits_normally, %ThrowStruct{}}
+      assert_receive {AsyncCoroutine, :exits_normally, %ThrowStruct{}}
 
       # Wait for process to exit normally via monitor
       # :noproc means process already exited before monitor was set up (fast exit)
@@ -480,12 +480,12 @@ defmodule Skuld.AsyncComputationTest do
         )
 
       {:ok, runner, %ExternalSuspend{value: :first, data: data}} =
-        AsyncComputation.run_sync(computation, tag: :transform_initial)
+        AsyncCoroutine.run_sync(computation, tag: :transform_initial)
 
       # Initial suspend should have the data from transform_suspend
       assert data[:counter] == 1
 
-      assert :done = AsyncComputation.run_sync(runner, :ok)
+      assert :done = AsyncCoroutine.run_sync(runner, :ok)
     end
 
     test "applies transform_suspend on subsequent yields after resume" do
@@ -518,24 +518,24 @@ defmodule Skuld.AsyncComputationTest do
         end)
 
       {:ok, runner, %ExternalSuspend{value: :first, data: data1}} =
-        AsyncComputation.run_sync(computation, tag: :transform_subsequent)
+        AsyncCoroutine.run_sync(computation, tag: :transform_subsequent)
 
       # First yield - counter should be 1
       assert data1[:yield_count] == 1
 
       # Resume and get second yield
-      %ExternalSuspend{value: :second, data: data2} = AsyncComputation.run_sync(runner, :ok)
+      %ExternalSuspend{value: :second, data: data2} = AsyncCoroutine.run_sync(runner, :ok)
 
       # Second yield - counter should be 2 (transform_suspend was applied on resume!)
       assert data2[:yield_count] == 2
 
       # Resume and get third yield
-      %ExternalSuspend{value: :third, data: data3} = AsyncComputation.run_sync(runner, :ok)
+      %ExternalSuspend{value: :third, data: data3} = AsyncCoroutine.run_sync(runner, :ok)
 
       # Third yield - counter should be 3
       assert data3[:yield_count] == 3
 
-      assert :done = AsyncComputation.run_sync(runner, :ok)
+      assert :done = AsyncCoroutine.run_sync(runner, :ok)
 
       Agent.stop(agent)
     end
@@ -555,7 +555,7 @@ defmodule Skuld.AsyncComputationTest do
         |> State.with_handler(0)
 
       {:ok, runner, %ExternalSuspend{value: :first, data: data1}} =
-        AsyncComputation.run_sync(computation, tag: :effectlogger_transform)
+        AsyncCoroutine.run_sync(computation, tag: :effectlogger_transform)
 
       # First yield should have EffectLogger data
       assert is_map(data1)
@@ -565,7 +565,7 @@ defmodule Skuld.AsyncComputationTest do
       entries1 = EffectLogger.Log.to_list(log1)
 
       # Resume and get second yield
-      %ExternalSuspend{value: :second, data: data2} = AsyncComputation.run_sync(runner, :ok)
+      %ExternalSuspend{value: :second, data: data2} = AsyncCoroutine.run_sync(runner, :ok)
 
       # Second yield should ALSO have EffectLogger data (this was the bug!)
       assert is_map(data2)
@@ -578,7 +578,7 @@ defmodule Skuld.AsyncComputationTest do
       assert length(entries2) > length(entries1)
 
       # Final result is {:done, log} because EffectLogger wraps the result
-      {:done, _final_log} = AsyncComputation.run_sync(runner, :ok)
+      {:done, _final_log} = AsyncCoroutine.run_sync(runner, :ok)
     end
   end
 
@@ -592,22 +592,22 @@ defmodule Skuld.AsyncComputationTest do
           return(%{name: name, email: email})
         end
 
-      {:ok, runner} = AsyncComputation.run(wizard, tag: :wizard)
+      {:ok, runner} = AsyncCoroutine.run(wizard, tag: :wizard)
 
       # Step 1
-      assert_receive {AsyncComputation, :wizard,
+      assert_receive {AsyncCoroutine, :wizard,
                       %ExternalSuspend{value: %{step: 1, prompt: "Enter name"}}}
 
-      AsyncComputation.run(runner, "Alice")
+      AsyncCoroutine.run(runner, "Alice")
 
       # Step 2
-      assert_receive {AsyncComputation, :wizard,
+      assert_receive {AsyncCoroutine, :wizard,
                       %ExternalSuspend{value: %{step: 2, prompt: "Enter email"}}}
 
-      AsyncComputation.run(runner, "alice@example.com")
+      AsyncCoroutine.run(runner, "alice@example.com")
 
       # Result
-      assert_receive {AsyncComputation, :wizard, %{name: "Alice", email: "alice@example.com"}}
+      assert_receive {AsyncCoroutine, :wizard, %{name: "Alice", email: "alice@example.com"}}
     end
 
     test "computation with effects and yields" do
@@ -619,12 +619,12 @@ defmodule Skuld.AsyncComputationTest do
         end
         |> Reader.with_handler(21)
 
-      {:ok, runner} = AsyncComputation.run(computation, tag: :mixed)
+      {:ok, runner} = AsyncCoroutine.run(computation, tag: :mixed)
 
-      assert_receive {AsyncComputation, :mixed, %ExternalSuspend{value: :get_multiplier}}
-      AsyncComputation.run(runner, 2)
+      assert_receive {AsyncCoroutine, :mixed, %ExternalSuspend{value: :get_multiplier}}
+      AsyncCoroutine.run(runner, 2)
 
-      assert_receive {AsyncComputation, :mixed, 42}
+      assert_receive {AsyncCoroutine, :mixed, 42}
     end
   end
 end

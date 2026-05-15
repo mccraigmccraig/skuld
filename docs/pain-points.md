@@ -216,16 +216,16 @@ the end requires manual state management and message passing. If the
 operation can suspend and resume (waiting for user input between
 steps), you're building a state machine by hand.
 
-**What Skuld does**: AsyncComputation bridges effectful computations
+**What Skuld does**: AsyncCoroutine bridges effectful computations
 into LiveView's process model. Start a computation, receive messages
 when it yields or completes, resume it with user input:
 
 ```elixir
 # In your LiveView
 def handle_event("start_wizard", _params, socket) do
-  {:ok, runner} = AsyncComputation.run(
+  {:ok, runner} = AsyncCoroutine.run(
 
-  AsyncComputation.run(socket.assigns.runner, answer)
+  AsyncCoroutine.run(socket.assigns.runner, answer)
   {:noreply, socket}
 end
 ```

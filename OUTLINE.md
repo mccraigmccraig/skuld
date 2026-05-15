@@ -80,7 +80,7 @@ stops here has already gotten substantial value.
 - Fresh, Random
 - DB, Command
 - Port, Port.EffectfulFacade, Skuld.Adapter
-- Parallel, AtomicState, AsyncComputation
+- Parallel, AtomicState, AsyncCoroutine
 - FxList, FxFasterList
 
 ### Advanced Effects
@@ -327,7 +327,7 @@ Each effect section follows the pattern:
 
 - **Parallel** - Fork-join: `all`, `race`, `map`. Sequential test handler.
 - **AtomicState** - Thread-safe state via Agent. CAS operations. Test handler.
-- **AsyncComputation** - Bridge from effectful to non-effectful contexts
+- **AsyncCoroutine** - Bridge from effectful to non-effectful contexts
   (e.g. LiveView). `start`/`resume`/`cancel`.
 
 ### 5f: Persistence & Data
@@ -411,7 +411,7 @@ recipe is a self-contained how-to guide.
 
 ### Advanced Recipes
 
-- **LiveView integration** - Using AsyncComputation for multi-step wizards
+- **LiveView integration** - Using AsyncCoroutine for multi-step wizards
   and long-running operations.
 - **Durable workflows** - EffectLogger for persist-and-resume patterns.
   Looping conversations (e.g. LLM chat loops).

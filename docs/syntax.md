@@ -322,7 +322,7 @@ resources:
 
 `Comp.cancel/3` creates a `%Cancelled{}` result and invokes the cleanup
 chain, ensuring effects like database connections or locks are properly
-released. This is used internally by `AsyncComputation.cancel/1` and
+released. This is used internally by `AsyncCoroutine.cancel/1` and
 `Yield.run_with_driver/2`.
 
 <!-- nav:footer:start -->

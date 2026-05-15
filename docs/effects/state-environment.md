@@ -189,7 +189,7 @@ end
 Multiple handlers with `:suspend` options compose their suspend
 decorations into a chain. Each handler's decoration is applied in
 turn when the computation suspends. This mechanism is used by
-EffectLogger and AsyncComputation to expose state across suspension
+EffectLogger and AsyncCoroutine to expose state across suspension
 boundaries.
 
 <!-- nav:footer:start -->

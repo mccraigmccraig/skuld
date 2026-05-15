@@ -97,7 +97,7 @@ defmodule Skuld.MixProject do
             Skuld,
             Skuld.Comp,
             Skuld.Syntax,
-            Skuld.AsyncComputation
+            Skuld.AsyncCoroutine
           ],
           "State & Environment": [
             Skuld.Effects.State,

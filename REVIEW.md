@@ -253,7 +253,7 @@ Missing:
 - Phoenix integration guide
 - Ecto integration beyond basic transactions
 - GenServer integration patterns
-- LiveView patterns (though AsyncComputation helps)
+- LiveView patterns (though AsyncCoroutine helps)
 
 The library is complete but the ecosystem integration story is light.
 

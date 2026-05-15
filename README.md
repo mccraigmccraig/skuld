@@ -32,7 +32,7 @@ An effectful programming framework for Elixir.
  Parallel,                         │             │  Adapter.EffectfulContract
  AtomicState,                      ├────────────┐│
  Transaction,                      │            ││
- AsyncComputation                  │            ││
+ AsyncCoroutine                  │            ││
  Command                      ┌────┴────┐       ││
                            Channel    Task      ││
                               │                 ││

@@ -26,7 +26,7 @@ defmodule Skuld.Coroutine do
     at its own boundary.
   - `run/1,2` — step + `ISentinel.run`. Applies `transform_suspend` and
     `leave_scope` before returning typed states. For standalone use
-    (AsyncComputation, SerializableCoroutine, etc.).
+    (AsyncCoroutine, SerializableCoroutine, etc.).
 
   ## Lifecycle
 

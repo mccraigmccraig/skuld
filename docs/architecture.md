@@ -30,7 +30,7 @@ boundaries — plus cross-cutting effects that work with any computation.
  Parallel,                      FiberPool        │
  AtomicState,                      │             │
  Transaction,                      │             │
- AsyncComputation                  │             │
+ AsyncCoroutine                  │             │
                                    ├────────────┐│
                                    │            ││
                               ┌────┴────┐       ││
@@ -76,7 +76,7 @@ computation with no additional machinery — just install a handler and
 | `Parallel`                | Fork-join concurrency via BEAM tasks            |
 | `AtomicState`             | Thread-safe mutable state                       |
 | `Transaction`             | Env state rollback + optional DB wrapping       |
-| `AsyncComputation`        | LiveView process bridge                         |
+| `AsyncCoroutine`        | LiveView process bridge                         |
 
 A computation with just `State.with_handler(0)` and
 `Throw.with_handler()` is a fully functional program. No scheduler, no

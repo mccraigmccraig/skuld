@@ -103,7 +103,7 @@ wrapped in `Comp.pure/1`. The final expression, bare `if` without
 |--------|--------|---------------|---------|---------------|
 | **Parallel** | `Skuld.Effects.Parallel` | `all/1` `race/1` `map/2` | `with_handler(comp)` | `with_sequential_handler(comp)` for determinism |
 | **AtomicState** | `Skuld.Effects.AtomicState` | `get/0,1` `put/1,2` `modify/1,2` `cas/2,3` `atomic_state/1,2` | `with_agent_handler(comp, initial, opts)` opts: `tag:` | `with_state_handler(comp, initial, opts)` - uses State internally |
-| **AsyncComputation** | `Skuld.AsyncComputation` | `start/2` `resume/3` `cancel/1` + `_sync` variants | Not an effect; a runner module | Use `start_sync`/`resume_sync` for testing |
+| **AsyncCoroutine** | `Skuld.AsyncCoroutine` | `run/2` `run/3` `cancel/1` + `_sync` variants | Not an effect; a runner module | Use `run_sync` for testing |
 
 #### Persistence & Data
 
@@ -305,7 +305,7 @@ no `Eff '[State, Reader, Throw] a` to track.
 | 5 | [Error Handling](effects/error-handling.md) | Throw, Bracket |
 | 5 | [Value Generation](effects/value-generation.md) | Fresh, Random |
 | 5 | [Collections](effects/collections.md) | FxList, FxFasterList |
-| 5 | [Concurrency](effects/concurrency.md) | Parallel, AtomicState, AsyncComputation |
+| 5 | [Concurrency](effects/concurrency.md) | Parallel, AtomicState, AsyncCoroutine |
 | 5 | [Persistence](effects/persistence.md) | Transaction, Command |
 | 5 | [External Integration](effects/external-integration.md) | Port, Port.EffectfulFacade, Skuld.Adapter |
 | 6 | [Yield](advanced/yield.md) | Coroutines, suspend/resume |
@@ -316,7 +316,7 @@ no `Eff '[State, Reader, Throw] a` to track.
 | 7 | [Hexagonal Architecture](recipes/hexagonal-architecture.md) | Port.EffectfulFacade + Skuld.Adapter |
 | 7 | [Decider Pattern](recipes/decider-pattern.md) | Command + Writer |
 | 7 | [Handler Stacks](recipes/handler-stacks.md) | Production vs test stacks |
-| 7 | [LiveView Integration](recipes/liveview.md) | AsyncComputation in LiveView |
+| 7 | [LiveView Integration](recipes/liveview.md) | AsyncCoroutine in LiveView |
 | 7 | [Durable Workflows](../advanced/effect-logger.md) | EffectLogger persistence |
 | 7 | [Data Pipelines](../advanced/fibers-concurrency.md) | Brook streaming |
 | 7 | [Batch Loading](recipes/batch-loading.md) | Query contracts, FiberPool |

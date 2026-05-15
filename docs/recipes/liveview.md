@@ -4,16 +4,16 @@
 [< Handler Stacks](handler-stacks.md) | [Up: Patterns](../testing.md) | [Index](../../README.md) | [Data Pipelines >](../advanced/fibers-concurrency.md)
 <!-- nav:header:end -->
 
-AsyncComputation bridges effectful computations into Phoenix LiveView,
+AsyncCoroutine bridges effectful computations into Phoenix LiveView,
 enabling multi-step wizards, long-running operations, and interactive
 workflows where a computation yields for user input.
 
 ## The pattern
 
 1. Build a computation that yields at each user-interaction point
-2. Run it with `AsyncComputation.run/2`
+2. Run it with `AsyncCoroutine.run/2`
 
-4. Resume with user input via `AsyncComputation.run/2`
+4. Resume with user input via `AsyncCoroutine.run/2`
 
 ## Example: a multi-step wizard
 
@@ -21,7 +21,7 @@ workflows where a computation yields for user input.
 defmodule MyAppWeb.WizardLive do
   use MyAppWeb, :live_view
 
-  alias Skuld.AsyncComputation
+  alias Skuld.AsyncCoroutine
   alias Skuld.Comp.{Suspend, Throw, Cancelled}
 
   def mount(_params, _session, socket) do
@@ -46,12 +46,12 @@ defmodule MyAppWeb.WizardLive do
       end
       |> MyApp.Stacks.with_handlers(mode: :production, tenant_id: "t1")
 
-    {:ok, runner} = AsyncComputation.run(computation, tag: :wizard)
+    {:ok, runner} = AsyncCoroutine.run(computation, tag: :wizard)
     {:noreply, assign(socket, runner: runner)}
   end
 
   # Handle all wizard messages
-  def handle_info({AsyncComputation, :wizard, result}, socket) do
+  def handle_info({AsyncCoroutine, :wizard, result}, socket) do
     case result do
       %Suspend{value: %{step: step} = prompt} ->
         {:noreply, assign(socket, step: step, prompt: prompt)}
@@ -75,14 +75,14 @@ defmodule MyAppWeb.WizardLive do
 
   # User submits a step
   def handle_event("submit", %{"value" => value}, socket) do
-    AsyncComputation.run(socket.assigns.runner, value)
+    AsyncCoroutine.run(socket.assigns.runner, value)
     {:noreply, assign(socket, step: nil)}
   end
 
   # Cancel the wizard
   def handle_event("cancel", _params, socket) do
     if socket.assigns.runner do
-      AsyncComputation.cancel(socket.assigns.runner)
+      AsyncCoroutine.cancel(socket.assigns.runner)
     end
     {:noreply, assign(socket, runner: nil, step: nil)}
   end
@@ -96,7 +96,7 @@ use `start_sync/2` to avoid a render cycle:
 
 ```elixir
 {:ok, runner, %Suspend{value: first_prompt}} =
-  AsyncComputation.run_sync(computation, tag: :wizard, timeout: 5000)
+  AsyncCoroutine.run_sync(computation, tag: :wizard, timeout: 5000)
 
 {:noreply,
   socket
@@ -106,7 +106,7 @@ use `start_sync/2` to avoid a render cycle:
 Similarly, `resume_sync/3` blocks until the next yield/result:
 
 ```elixir
-case AsyncComputation.run_sync(runner, value, timeout: 5000) do
+case AsyncCoroutine.run_sync(runner, value, timeout: 5000) do
   %Suspend{value: next_prompt} ->
     {:noreply, assign(socket, step: next_prompt.step, prompt: next_prompt)}
   {:ok, result} ->
@@ -120,9 +120,9 @@ end
 
 ## Key points
 
-- AsyncComputation automatically adds `Throw.with_handler/1` and
+- AsyncCoroutine automatically adds `Throw.with_handler/1` and
   `Yield.with_handler/1` - don't add them to your stack
-- Messages arrive as `{AsyncComputation, tag, result}` - single
+- Messages arrive as `{AsyncCoroutine, tag, result}` - single
   pattern match handles all cases
 - Elixir exceptions become
   `%Throw{error: %{kind: :error, payload: exception}}`
@@ -133,7 +133,7 @@ end
 
 ## With EffectLogger for durable wizards
 
-Combine AsyncComputation with EffectLogger to persist wizard state
+Combine AsyncCoroutine with EffectLogger to persist wizard state
 across page refreshes or server restarts:
 
 ```elixir
@@ -146,7 +146,7 @@ computation =
   |> EffectLogger.with_logging()
   |> MyApp.Stacks.with_handlers(mode: :production, tenant_id: "t1")
 
-{:ok, runner} = AsyncComputation.run(computation, tag: :wizard)
+{:ok, runner} = AsyncCoroutine.run(computation, tag: :wizard)
 ```
 
 When the computation suspends, extract and persist the log from
