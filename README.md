@@ -67,56 +67,70 @@ for later resumption.
 
 ## Quick example
 
+A multi-step checkout wizard. The computation *pauses* at each step,
+waiting for external input — then resumes with full effect context
+preserved:
+
 ```elixir
-defmodule Dashboard do
+defmodule Checkout do
   use Skuld.Syntax
 
-  alias Skuld.Query
+  alias Skuld.Effects.Yield
 
-  defcomp load(user_id) do
-    query do
-      user <- Users.get_user(user_id)
-      posts <- Posts.recent_by(user.id)         # runs concurrently with ↓
-      sub <- Billing.get_subscription(user.id)   # runs concurrently with ↑
-      {:ok, %{user: user, posts: posts, subscription: sub}}
-    end
+  defcomp run do
+    cart <- Yield.yield(:get_cart)
+    {:ok, inventory} <- Inventory.check_stock(cart.items)
+    payment <- Yield.yield(:get_payment)
+    {:ok, order} <- Orders.place(cart, payment)
+    _ <- Emailer.send_confirmation(order)
+    {:ok, order}
   end
 end
 ```
 
-Even though `posts` and `sub` look sequential, the query system analyzes
-dependencies — they're independent of each other (both depend on `user`,
-not on each other) — and batches them into a single round-trip.
-
-Run with production executors:
+Run it from a LiveView with `AsyncCoroutine`:
 
 ```elixir
-Dashboard.load("user-123")
-|> Skuld.Query.with_cached_executors([
-  {Users, Users.EctoExecutor},
-  {Posts, Posts.EctoExecutor},
-  {Billing, Billing.HTTPExecutor}
-])
-|> FiberPool.with_handler()
-|> Comp.run!()
+# mount
+{:ok, runner} = AsyncCoroutine.run(Checkout.run(), tag: :checkout)
+
+# handle_info — the wizard pauses at each yield
+def handle_info({AsyncCoroutine, :checkout, %ExternalSuspend{value: :get_cart}}, socket) do
+  cart = ShoppingCart.get_cart(socket.assigns.user)
+  AsyncCoroutine.run(socket.assigns.runner, cart)   # resume with cart
+  {:noreply, socket}
+end
+
+def handle_info({AsyncCoroutine, :checkout, %ExternalSuspend{value: :get_payment}}, socket) do
+  payment = socket.assigns.payment_form |> to_payment_method()
+  AsyncCoroutine.run(socket.assigns.runner, payment) # resume with payment
+  {:noreply, socket}
+end
+
+def handle_info({AsyncCoroutine, :checkout, {:ok, order}}, socket) do
+  {:noreply, assign(socket, order: order, step: :done)}
+end
 ```
 
-Run with test executors — deterministic, no database, no HTTP:
+Test it — drive the whole wizard in a few lines:
 
 ```elixir
-Dashboard.load("user-123")
-|> Skuld.Query.with_cached_executors([
-  {Users, Users.TestExecutor},
-  {Posts, Posts.TestExecutor},
-  {Billing, Billing.TestExecutor}
-])
-|> FiberPool.with_handler()
-|> Comp.run!()
+comp =
+  Checkout.run()
+  |> Port.with_handler(%{Inventory => Inventory.Test, Orders => Orders.Test})
+  |> Port.with_test_handler(%{Port.key(Emailer, :send_confirmation, [_]) => :ok})
+  |> Yield.with_handler()
+  |> Throw.with_handler()
+
+fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()    # pauses at :get_cart
+fiber = Coroutine.run(fiber, %{items: [...]})                  # pauses at :get_payment
+%Coroutine.Completed{result: {:ok, order}} =
+  Coroutine.run(fiber, %{card: "4242..."})                     # completes
 ```
 
-Same code. Production calls Ecto and HTTP; tests run against in-memory
-maps. The batching, concurrency, and error handling are all effects —
-swap handlers, not code.
+Same code. Production pauses at each step for user input. Tests drive
+the entire wizard in a single function — deterministic, no processes,
+no stubs.
 
 ## Installation
 
