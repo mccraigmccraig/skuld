@@ -99,13 +99,13 @@ defmodule Skuld.Effects.FxList do
   end
 
   defp do_fx_map([], _f) do
-    Comp.pure([])
+    []
   end
 
   defp do_fx_map([elem | rest], f) do
     Comp.bind(f.(elem), fn result ->
       Comp.bind(do_fx_map(rest, f), fn rest_results ->
-        Comp.pure([result | rest_results])
+        [result | rest_results]
       end)
     end)
   end
@@ -134,7 +134,7 @@ defmodule Skuld.Effects.FxList do
   end
 
   defp do_fx_reduce([], acc, _f) do
-    Comp.pure(acc)
+    acc
   end
 
   defp do_fx_reduce([elem | rest], acc, f) do
@@ -167,7 +167,7 @@ defmodule Skuld.Effects.FxList do
   end
 
   defp do_fx_each([], _f) do
-    Comp.pure(:ok)
+    :ok
   end
 
   defp do_fx_each([elem | rest], f) do
@@ -197,16 +197,16 @@ defmodule Skuld.Effects.FxList do
   end
 
   defp do_fx_filter([], _pred) do
-    Comp.pure([])
+    []
   end
 
   defp do_fx_filter([elem | rest], pred) do
     Comp.bind(pred.(elem), fn keep? ->
       Comp.bind(do_fx_filter(rest, pred), fn rest_results ->
         if keep? do
-          Comp.pure([elem | rest_results])
+          [elem | rest_results]
         else
-          Comp.pure(rest_results)
+          rest_results
         end
       end)
     end)
