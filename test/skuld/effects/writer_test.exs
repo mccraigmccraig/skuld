@@ -45,7 +45,7 @@ defmodule Skuld.Effects.WriterTest do
       comp =
         Comp.bind(Writer.tell("step 1"), fn _ ->
           Comp.bind(Writer.tell("step 2"), fn _ ->
-            Comp.pure(:done)
+            :done
           end)
         end)
         |> Writer.with_handler([], output: fn result, log -> {result, log} end)
@@ -60,7 +60,7 @@ defmodule Skuld.Effects.WriterTest do
         Comp.bind(Writer.tell("a"), fn _ ->
           Comp.bind(Writer.tell("b"), fn _ ->
             Comp.bind(Writer.tell("c"), fn _ ->
-              Comp.pure(42)
+              42
             end)
           end)
         end)
@@ -76,7 +76,7 @@ defmodule Skuld.Effects.WriterTest do
     test "with initial log entries" do
       comp =
         Comp.bind(Writer.tell("new"), fn _ ->
-          Comp.pure(:ok)
+          :ok
         end)
         |> Writer.with_handler(["existing"],
           output: fn result, log -> {result, log} end
@@ -145,7 +145,7 @@ defmodule Skuld.Effects.WriterTest do
               Comp.bind(Writer.tell(:metrics, "metric2"), fn _ ->
                 Comp.bind(Writer.peek(:audit), fn audit_log ->
                   Comp.bind(Writer.peek(:metrics), fn metrics_log ->
-                    Comp.pure({audit_log, metrics_log})
+                    {audit_log, metrics_log}
                   end)
                 end)
               end)
@@ -185,7 +185,7 @@ defmodule Skuld.Effects.WriterTest do
               :log,
               Comp.bind(Writer.tell(:log, "inner1"), fn _ ->
                 Comp.bind(Writer.tell(:log, "inner2"), fn _ ->
-                  Comp.pure(:result)
+                  :result
                 end)
               end)
             )
@@ -193,7 +193,7 @@ defmodule Skuld.Effects.WriterTest do
           Comp.bind(inner, fn {result, captured} ->
             Comp.bind(Writer.tell(:log, "after"), fn _ ->
               Comp.bind(Writer.peek(:log), fn full_log ->
-                Comp.pure({result, captured, full_log})
+                {result, captured, full_log}
               end)
             end)
           end)
@@ -213,13 +213,13 @@ defmodule Skuld.Effects.WriterTest do
             :a,
             Comp.bind(Writer.tell(:a, "a-msg"), fn _ ->
               Comp.bind(Writer.tell(:b, "b-msg"), fn _ ->
-                Comp.pure(:ok)
+                :ok
               end)
             end)
           ),
           fn {result, captured_a} ->
             Comp.bind(Writer.peek(:b), fn b_log ->
-              Comp.pure({result, captured_a, b_log})
+              {result, captured_a, b_log}
             end)
           end
         )
@@ -239,13 +239,13 @@ defmodule Skuld.Effects.WriterTest do
           Writer.censor(
             :log,
             Comp.bind(Writer.tell(:log, "secret"), fn _ ->
-              Comp.pure(:done)
+              :done
             end),
             fn logs -> Enum.map(logs, fn _ -> "[REDACTED]" end) end
           ),
           fn result ->
             Comp.bind(Writer.peek(:log), fn log ->
-              Comp.pure({result, log})
+              {result, log}
             end)
           end
         )
@@ -291,7 +291,7 @@ defmodule Skuld.Effects.WriterTest do
           Comp.bind(inner, fn inner_log ->
             Comp.bind(Writer.tell(:log, "outer2"), fn _ ->
               Comp.bind(Writer.peek(:log), fn outer_log ->
-                Comp.pure({inner_log, outer_log})
+                {inner_log, outer_log}
               end)
             end)
           end)
@@ -311,7 +311,7 @@ defmodule Skuld.Effects.WriterTest do
               Throw.throw(:error)
             end)
             |> Writer.with_handler([], tag: :log),
-            fn _ -> Comp.pure(:unreachable) end
+            fn _ -> :unreachable end
           ),
           fn _error ->
             Comp.bind(Writer.tell(:log, "after_catch"), fn _ ->
@@ -331,7 +331,7 @@ defmodule Skuld.Effects.WriterTest do
       comp =
         Comp.bind(Writer.tell(:audit, "step 1"), fn _ ->
           Comp.bind(Writer.tell(:audit, "step 2"), fn _ ->
-            Comp.pure(:done)
+            :done
           end)
         end)
         |> Writer.with_handler([], tag: :audit, output: fn result, log -> {result, log} end)
@@ -376,7 +376,7 @@ defmodule Skuld.Effects.WriterTest do
     test "extracts log with default tag" do
       comp =
         Comp.bind(Writer.tell("msg"), fn _ ->
-          Comp.pure(:done)
+          :done
         end)
         |> Writer.with_handler()
 
@@ -388,7 +388,7 @@ defmodule Skuld.Effects.WriterTest do
     test "extracts log with explicit tag" do
       comp =
         Comp.bind(Writer.tell(:audit, "msg"), fn _ ->
-          Comp.pure(:done)
+          :done
         end)
         |> Writer.with_handler([], tag: :audit)
 
@@ -405,7 +405,7 @@ defmodule Skuld.Effects.WriterTest do
           Comp.bind(Writer.tell("untagged_msg"), fn _ ->
             Comp.bind(Writer.peek(:tagged), fn tagged_log ->
               Comp.bind(Writer.peek(), fn untagged_log ->
-                Comp.pure({tagged_log, untagged_log})
+                {tagged_log, untagged_log}
               end)
             end)
           end)
@@ -430,7 +430,7 @@ defmodule Skuld.Effects.WriterTest do
           Comp.bind(Writer.tell("before yield"), fn _ ->
             Comp.bind(Yield.yield(:pause), fn _ ->
               Comp.bind(Writer.tell("after yield"), fn _ ->
-                Comp.pure(:done)
+                :done
               end)
             end)
           end)
@@ -459,7 +459,7 @@ defmodule Skuld.Effects.WriterTest do
               Comp.bind(Writer.tell(input1), fn _ ->
                 Comp.bind(Yield.yield(:second), fn input2 ->
                   Comp.bind(Writer.tell(input2), fn _ ->
-                    Comp.pure(:done)
+                    :done
                   end)
                 end)
               end)
@@ -482,7 +482,7 @@ defmodule Skuld.Effects.WriterTest do
           Writer.listen(
             Comp.bind(Writer.tell("inner"), fn _ ->
               Comp.bind(Yield.yield(:pause), fn _ ->
-                Comp.pure(:result)
+                :result
               end)
             end)
           )
@@ -505,7 +505,7 @@ defmodule Skuld.Effects.WriterTest do
           Comp.bind(Writer.tell("before throw"), fn _ ->
             Comp.bind(Throw.throw(:my_error), fn _ ->
               Comp.bind(Writer.tell("never reached"), fn _ ->
-                Comp.pure(:done)
+                :done
               end)
             end)
           end)
@@ -529,7 +529,7 @@ defmodule Skuld.Effects.WriterTest do
           ),
           fn _err ->
             Comp.bind(Writer.peek(), fn log ->
-              Comp.pure({:caught, log})
+              {:caught, log}
             end)
           end
         )
@@ -554,7 +554,7 @@ defmodule Skuld.Effects.WriterTest do
           Comp.bind(Writer.tell("a"), fn _ ->
             Comp.bind(Yield.yield(:pause), fn _ ->
               Comp.bind(Writer.tell("b"), fn _ ->
-                Comp.pure({:done, fn logs -> Enum.map(logs, &String.upcase/1) end})
+                {:done, fn logs -> Enum.map(logs, &String.upcase/1) end}
               end)
             end)
           end)
@@ -576,7 +576,7 @@ defmodule Skuld.Effects.WriterTest do
         Writer.pass(
           Comp.bind(Writer.tell("before"), fn _ ->
             Comp.bind(Throw.throw(:error), fn _ ->
-              Comp.pure({:done, fn logs -> Enum.reverse(logs) end})
+              {:done, fn logs -> Enum.reverse(logs) end}
             end)
           end)
         )
@@ -600,7 +600,7 @@ defmodule Skuld.Effects.WriterTest do
           Comp.bind(Writer.tell("secret"), fn _ ->
             Comp.bind(Yield.yield(:pause), fn _ ->
               Comp.bind(Writer.tell("also secret"), fn _ ->
-                Comp.pure(:done)
+                :done
               end)
             end)
           end),
@@ -624,7 +624,7 @@ defmodule Skuld.Effects.WriterTest do
               Comp.bind(Writer.tell("b"), fn _ ->
                 Comp.bind(Yield.yield(:y2), fn _ ->
                   Comp.bind(Writer.tell("c"), fn _ ->
-                    Comp.pure(:done)
+                    :done
                   end)
                 end)
               end)
@@ -671,7 +671,7 @@ defmodule Skuld.Effects.WriterTest do
             end),
             fn _err ->
               Comp.bind(Writer.tell("recovered"), fn _ ->
-                Comp.pure(:caught)
+                :caught
               end)
             end
           ),
