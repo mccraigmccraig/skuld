@@ -10,14 +10,14 @@ defmodule Skuld.Effects.FxListTest do
   describe "fx_map" do
     test "maps effectful function over empty list" do
       comp =
-        FxList.fx_map([], fn x -> Comp.pure(x * 2) end)
+        FxList.fx_map([], fn x -> x * 2 end)
 
       assert Comp.run!(comp) == []
     end
 
     test "maps effectful function over list" do
       comp =
-        FxList.fx_map([1, 2, 3], fn x -> Comp.pure(x * 2) end)
+        FxList.fx_map([1, 2, 3], fn x -> x * 2 end)
 
       assert Comp.run!(comp) == [2, 4, 6]
     end
@@ -27,7 +27,7 @@ defmodule Skuld.Effects.FxListTest do
         FxList.fx_map([1, 2, 3], fn x ->
           Comp.bind(State.get(), fn count ->
             Comp.bind(State.put(count + 1), fn _ ->
-              Comp.pure({x, count})
+              {x, count}
             end)
           end)
         end)
@@ -38,7 +38,7 @@ defmodule Skuld.Effects.FxListTest do
 
     test "works with range" do
       comp =
-        FxList.fx_map(1..3, fn x -> Comp.pure(x * 2) end)
+        FxList.fx_map(1..3, fn x -> x * 2 end)
 
       assert Comp.run!(comp) == [2, 4, 6]
     end
@@ -47,14 +47,14 @@ defmodule Skuld.Effects.FxListTest do
   describe "fx_reduce" do
     test "reduces empty list to initial value" do
       comp =
-        FxList.fx_reduce([], 0, fn x, acc -> Comp.pure(acc + x) end)
+        FxList.fx_reduce([], 0, fn x, acc -> acc + x end)
 
       assert Comp.run!(comp) == 0
     end
 
     test "reduces list with effectful function" do
       comp =
-        FxList.fx_reduce([1, 2, 3, 4], 0, fn x, acc -> Comp.pure(acc + x) end)
+        FxList.fx_reduce([1, 2, 3, 4], 0, fn x, acc -> acc + x end)
 
       assert Comp.run!(comp) == 10
     end
@@ -64,7 +64,7 @@ defmodule Skuld.Effects.FxListTest do
         FxList.fx_reduce([1, 2, 3], [], fn x, acc ->
           Comp.bind(State.get(), fn count ->
             Comp.bind(State.put(count + 1), fn _ ->
-              Comp.pure([{x, count} | acc])
+              [{x, count} | acc]
             end)
           end)
         end)
@@ -94,7 +94,7 @@ defmodule Skuld.Effects.FxListTest do
 
     test "returns :ok" do
       comp =
-        FxList.fx_each([1, 2, 3], fn _ -> Comp.pure(:ignored) end)
+        FxList.fx_each([1, 2, 3], fn _ -> :ignored end)
 
       assert Comp.run!(comp) == :ok
     end
@@ -120,14 +120,14 @@ defmodule Skuld.Effects.FxListTest do
   describe "fx_filter" do
     test "filters empty list" do
       comp =
-        FxList.fx_filter([], fn x -> Comp.pure(x > 0) end)
+        FxList.fx_filter([], fn x -> x > 0 end)
 
       assert Comp.run!(comp) == []
     end
 
     test "filters list with pure predicate" do
       comp =
-        FxList.fx_filter([1, 2, 3, 4, 5], fn x -> Comp.pure(rem(x, 2) == 0) end)
+        FxList.fx_filter([1, 2, 3, 4, 5], fn x -> rem(x, 2) == 0 end)
 
       assert Comp.run!(comp) == [2, 4]
     end
@@ -138,7 +138,7 @@ defmodule Skuld.Effects.FxListTest do
         FxList.fx_filter([1, 2, 3, 4, 5], fn _x ->
           Comp.bind(State.get(), fn count ->
             Comp.bind(State.put(count + 1), fn _ ->
-              Comp.pure(rem(count, 2) == 0)
+              rem(count, 2) == 0
             end)
           end)
         end)
@@ -164,7 +164,7 @@ defmodule Skuld.Effects.FxListTest do
           if x == 3 do
             Throw.throw({:error, :hit_three})
           else
-            Comp.pure(x * 2)
+            x * 2
           end
         end)
         |> Throw.with_handler()
@@ -181,7 +181,7 @@ defmodule Skuld.Effects.FxListTest do
               if x == 3 do
                 Throw.throw({:error, :hit_three})
               else
-                Comp.pure(x * 2)
+                x * 2
               end
             end)
           end)
@@ -196,7 +196,7 @@ defmodule Skuld.Effects.FxListTest do
 
     test "no throw returns normal result" do
       comp =
-        FxList.fx_map([1, 2, 3], fn x -> Comp.pure(x * 2) end)
+        FxList.fx_map([1, 2, 3], fn x -> x * 2 end)
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
@@ -210,7 +210,7 @@ defmodule Skuld.Effects.FxListTest do
             if x == 2 do
               Throw.throw(:hit_two)
             else
-              Comp.pure(x * 2)
+              x * 2
             end
           end)
         )
@@ -222,7 +222,7 @@ defmodule Skuld.Effects.FxListTest do
 
     test "try_catch returns ok on success" do
       comp =
-        Throw.try_catch(FxList.fx_map([1, 2, 3], fn x -> Comp.pure(x * 2) end))
+        Throw.try_catch(FxList.fx_map([1, 2, 3], fn x -> x * 2 end))
         |> Throw.with_handler()
 
       {result, _env} = Comp.run(comp)
@@ -237,7 +237,7 @@ defmodule Skuld.Effects.FxListTest do
           if x == 3 do
             Throw.throw({:error, :hit_three, acc})
           else
-            Comp.pure(acc + x)
+            acc + x
           end
         end)
         |> Throw.with_handler()
@@ -258,7 +258,7 @@ defmodule Skuld.Effects.FxListTest do
                 if x == 3 do
                   Throw.throw(:hit_three)
                 else
-                  Comp.pure(:ok)
+                  :ok
                 end
               end)
             end)
@@ -280,7 +280,7 @@ defmodule Skuld.Effects.FxListTest do
           if x == 3 do
             Throw.throw(:hit_three)
           else
-            Comp.pure(rem(x, 2) == 0)
+            rem(x, 2) == 0
           end
         end)
         |> Throw.with_handler()
@@ -299,7 +299,7 @@ defmodule Skuld.Effects.FxListTest do
       comp =
         FxList.fx_map([1, 2, 3, 4, 5], fn x ->
           Comp.bind(Yield.yield({:processing, x}), fn _ ->
-            Comp.pure(x * 2)
+            x * 2
           end)
         end)
         |> Yield.with_handler()
@@ -324,7 +324,7 @@ defmodule Skuld.Effects.FxListTest do
           Comp.bind(State.get(), fn count ->
             Comp.bind(State.put(count + 1), fn _ ->
               Comp.bind(Yield.yield({:at_count, count}), fn _ ->
-                Comp.pure({x, count})
+                {x, count}
               end)
             end)
           end)
@@ -347,7 +347,7 @@ defmodule Skuld.Effects.FxListTest do
       comp =
         FxList.fx_reduce([1, 2, 3], 0, fn x, acc ->
           Comp.bind(Yield.yield({:reducing, x, acc}), fn _ ->
-            Comp.pure(acc + x)
+            acc + x
           end)
         end)
         |> Yield.with_handler()
@@ -381,7 +381,7 @@ defmodule Skuld.Effects.FxListTest do
       comp =
         FxList.fx_filter([1, 2, 3, 4], fn x ->
           Comp.bind(Yield.yield({:checking, x}), fn _ ->
-            Comp.pure(rem(x, 2) == 0)
+            rem(x, 2) == 0
           end)
         end)
         |> Yield.with_handler()
@@ -407,7 +407,7 @@ defmodule Skuld.Effects.FxListTest do
             if x == 2 do
               Throw.throw(:error_at_2)
             else
-              Comp.pure(x * 2)
+              x * 2
             end
           end)
         end)
@@ -431,14 +431,14 @@ defmodule Skuld.Effects.FxListTest do
               if x == 2 do
                 Throw.throw(:error_at_2)
               else
-                Comp.pure(x * 2)
+                x * 2
               end,
-              fn _err -> Comp.pure(:recovered) end
+              fn _err -> :recovered end
             )
 
           Comp.bind(inner, fn result ->
             Comp.bind(Yield.yield({:after, x, result}), fn _ ->
-              Comp.pure(result)
+              result
             end)
           end)
         end)
@@ -466,7 +466,7 @@ defmodule Skuld.Effects.FxListTest do
       comp =
         FxList.fx_map([1, 2, 3], fn x ->
           Comp.bind(Yield.yield(x), fn _ ->
-            Comp.pure(x * 2)
+            x * 2
           end)
         end)
         |> Yield.with_handler()
@@ -482,7 +482,7 @@ defmodule Skuld.Effects.FxListTest do
       comp =
         FxList.fx_map([1, 2, 3], fn x ->
           Comp.bind(Yield.yield({:want_multiplier, x}), fn mult ->
-            Comp.pure(x * mult)
+            x * mult
           end)
         end)
         |> Yield.with_handler()
@@ -496,7 +496,7 @@ defmodule Skuld.Effects.FxListTest do
       comp =
         FxList.fx_map([1, 2, 3], fn x ->
           Comp.bind(Yield.yield(x), fn _ ->
-            Comp.pure(x * 2)
+            x * 2
           end)
         end)
         |> Yield.with_handler()
