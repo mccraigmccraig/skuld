@@ -86,8 +86,8 @@ defmodule Skuld.AsyncComputation do
   """
 
   alias Skuld.Comp.Cancelled
+  alias Skuld.Comp.Env
   alias Skuld.Comp.ExternalSuspend
-  alias Skuld.Comp.ISentinel
   alias Skuld.Comp.Throw, as: ThrowStruct
   alias Skuld.Coroutine
   alias Skuld.Coroutine.Error
@@ -320,77 +320,59 @@ defmodule Skuld.AsyncComputation do
 
   # Child process entry point
   defp run_bridged(computation, caller, tag, ref) do
-    # Add Yield and Throw handlers on top of user's handlers
     comp =
       computation
       |> Throw.with_handler()
       |> Yield.with_handler()
 
-    # Run the computation - handle immediate completion or enter yield loop
-    case Skuld.Comp.run(comp) do
-      {%ExternalSuspend{} = suspend, env} ->
-        # First yield - enter the yield/resume loop
-        run_yield_loop(suspend, env, caller, tag, ref, caller)
+    case Coroutine.new(comp, Env.new()) |> Coroutine.run() do
+      %Coroutine.ExternalSuspended{} = fiber ->
+        run_yield_loop(fiber, caller, tag, ref, caller)
 
-      {result, _env} ->
-        # Send error sentinels (Throw, Cancelled) or completed values
-        send(caller, {__MODULE__, tag, result})
+      other ->
+        send(caller, {__MODULE__, tag, coroutine_to_ipc(other)})
     end
   end
 
   # Main yield/resume loop
   # - reply_to: where to send THIS yield's suspend message
   # - original_caller: default destination (reset target after override)
-  defp run_yield_loop(suspend, env, original_caller, tag, ref, reply_to) do
-    # Send ExternalSuspend with resume stripped (can't send functions over IPC)
-    ipc_suspend = %ExternalSuspend{value: suspend.value, data: suspend.data, resume: nil}
+  defp run_yield_loop(
+         %Coroutine.ExternalSuspended{value: value, data: data} = fiber,
+         original_caller,
+         tag,
+         ref,
+         reply_to
+       ) do
+    ipc_suspend = %ExternalSuspend{value: value, data: data, resume: nil}
     send(reply_to, {__MODULE__, tag, ipc_suspend})
 
     receive do
       {:async_resume, ^ref, value, nil} ->
-        # No override - next yield goes to original_caller
-        handle_resume(suspend, env, value, original_caller, tag, ref, original_caller)
+        case Coroutine.run(fiber, value) do
+          %Coroutine.ExternalSuspended{} = new_fiber ->
+            run_yield_loop(new_fiber, original_caller, tag, ref, original_caller)
+
+          other ->
+            send(original_caller, {__MODULE__, tag, coroutine_to_ipc(other)})
+        end
 
       {:async_resume, ^ref, value, override} when not is_nil(override) ->
-        # Override for NEXT yield only, then resets to original_caller
-        handle_resume(suspend, env, value, original_caller, tag, ref, override)
+        case Coroutine.run(fiber, value) do
+          %Coroutine.ExternalSuspended{} = new_fiber ->
+            run_yield_loop(new_fiber, original_caller, tag, ref, override)
+
+          other ->
+            send(override, {__MODULE__, tag, coroutine_to_ipc(other)})
+        end
 
       {:async_cancel, ^ref} ->
-        # Cancel - cleanup and send to current reply_to
-        {cancelled, _final_env} = Skuld.Comp.cancel(suspend, env, :cancelled)
+        cancelled = Coroutine.cancel(fiber, :cancelled) |> coroutine_to_ipc()
         send(reply_to, {__MODULE__, tag, cancelled})
 
       {:async_cancel_sync, ^ref, sync_reply_to} ->
-        # Sync cancel - cleanup and send to the requester
-        {cancelled, _final_env} = Skuld.Comp.cancel(suspend, env, :cancelled)
+        cancelled = Coroutine.cancel(fiber, :cancelled) |> coroutine_to_ipc()
         send(sync_reply_to, {__MODULE__, tag, cancelled})
-    end
-  end
-
-  # Handle resume result - may yield again, throw, or complete
-  defp handle_resume(suspend, _env, value, original_caller, tag, ref, next_reply_to) do
-    {result, new_env} = suspend.resume.(value)
-
-    case result do
-      %ExternalSuspend{} = new_suspend ->
-        # Apply transform_suspend to decorate the new suspend (same as Comp.run does)
-        # This ensures EffectLogger and other scoped effects can add data to ExternalSuspend.data
-        {transformed_suspend, transformed_env} =
-          ISentinel.run(new_suspend, new_env)
-
-        # Yielded again - continue the loop
-        run_yield_loop(
-          transformed_suspend,
-          transformed_env,
-          original_caller,
-          tag,
-          ref,
-          next_reply_to
-        )
-
-      other ->
-        # Computation threw, was cancelled, or completed - send result
-        send(next_reply_to, {__MODULE__, tag, other})
     end
   end
 
@@ -408,6 +390,10 @@ defmodule Skuld.AsyncComputation do
 
   defp error_to_throw(%Error{type: :exception, error: exception, stacktrace: stacktrace}) do
     %ThrowStruct{error: %{kind: :error, payload: exception, stacktrace: stacktrace}}
+  end
+
+  defp error_to_throw(%Error{type: :throw, error: value, stacktrace: nil}) do
+    %ThrowStruct{error: value}
   end
 
   defp error_to_throw(%Error{type: :throw, error: value, stacktrace: stacktrace}) do
