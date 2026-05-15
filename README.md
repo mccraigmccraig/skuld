@@ -31,9 +31,9 @@ An effectful programming framework for Elixir.
  EffectLogger,                     │             │    Adapter
  Parallel,                      FiberPool        │    Adapter.EffectfulContract
  AtomicState,                      │             │
- Transaction,                      │             │
- AsyncComputation                  │             │
- Command                           ├────────────┐│
+ Transaction,                      ├────────────┐│
+ AsyncComputation                  │            ││
+ Command                           │            ││
                                    │            ││
                               ┌────┴────┐       ││
                            Channel    Task      ││
