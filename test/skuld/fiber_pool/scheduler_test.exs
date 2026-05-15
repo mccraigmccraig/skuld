@@ -1,7 +1,10 @@
 defmodule Skuld.FiberPool.SchedulerTest do
   use ExUnit.Case, async: true
 
-
+  alias Skuld.Comp.Env
+  alias Skuld.Coroutine
+  alias Skuld.FiberPool.FiberPoolState
+  alias Skuld.FiberPool.Scheduler
 
   describe "step/2" do
     test "runs one fiber and returns :continue" do
