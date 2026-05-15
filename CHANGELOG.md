@@ -7,26 +7,7 @@ All notable changes to Skuld will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added
-
-- Architecture diagram to README — visual DAG of Skuld's component
-  structure, with cross-cutting effects merged into the foundational branch.
-- `Skuld.Query` module as the primary API surface for query contracts.
-  `use Skuld.Query` delegates to `Skuld.Query.Contract`.
-- `Skuld.Query.with_executor/3`, `Skuld.Query.with_cached_executor/3`,
-  `Skuld.Query.with_cached_executors/2` — wiring and caching functions.
-- Streaming batching integration test — demonstrates Brook + Query
-  batching: a stream of user IDs flows through `Brook.map` into a query
-  block; individual `deffetch` calls are automatically batched by the
-  FiberPool scheduler.
-- `Brook.reduce/3` — effectful stream reduction, threading an accumulator
-  through each item via a pure or effectful reducer function.
-- `Brook` channel semaphore for per-item concurrency control — `map`
-  uses a bounded `Channel` as a semaphore; `concurrency` directly
-  controls how many items are in flight. Results are reordered to
-  preserve input order.
+## [0.27.0] — 2026-05-15
 
 ### Changed
 
@@ -151,6 +132,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Credo: ungrouped aliases in `serializable_coroutine_test.exs`.
 - `Brook.map` pattern-match clause that could never match the result of
   `safe_transform`.
+
+## [Unreleased]
+
 
 ## [0.26.0] — 2026-05-11
 
