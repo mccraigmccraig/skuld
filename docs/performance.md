@@ -4,83 +4,103 @@
 [< Quick Reference](quick-reference.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader & Writer >](effects/state-reader-writer.md)
 <!-- nav:header:end -->
 
-Skuld achieves near-parity with hand-written evidence-passing CPS.
-Discounting BEAM `try/catch` overhead — irreducible and shared with all
-Elixir applications — the additional framework overhead is minimal.
+Each effect invocation involves handler lookup (O(1) map atom key),
+continuation creation, and function call overhead. Operations use compact
+representations — bare atoms for 0-arg ops, small tuples for ops with
+args. No struct allocation on the hot path.
 
-## Per-effect overhead
+When effects implement `ITotalLinearHandler` (like `State`, `Writer`,
+`Throw`), the `comp` macro can emit an inline continuation path that
+skips `Comp.bind/2` closure allocation entirely — eliminating the
+closure-creation cost from the per-operation overhead.
 
-Progressive benchmarks starting from a bare CPS baseline and adding
-Skuld features one at a time (N=10,000, `MIX_ENV=prod`):
+## Benchmarks
 
-| Step | Feature | vs catch baseline |
-|------|---------|-------------------|
-| S1 | + first catch frame | 1.0x (baseline) |
-| S3 | + 2 more catches (3 total) | 1.25x |
-| S6 | + struct operation args | 1.68x |
-| S10 | Full Skuld (all features) | ~2.1–2.3x |
+A loop incrementing a counter via `State.get()`/`State.put(n + 1)` at
+N=10,000 (run with `MIX_ENV=prod` for consolidated protocols). The
+"+catches" variants add the same catch frames Skuld uses for error
+handling — this is the cost real-world Elixir code with `try`/`rescue`
+already pays:
 
-The largest single factor is BEAM `try/catch` frames (~0.163 µs/op for
-the first frame), not Skuld's own machinery. Three catch frames per loop
-iteration (call, bind, handler dispatch) account for most of the overhead
-relative to raw CPS.
+| Approach                              | Time    | Per-op   |
+|---------------------------------------|---------|----------|
+| Pure tail recursion                   | 189 µs  | 0.019 us |
+| Pure tail recursion + catches         | 263 µs  | 0.026 us |
+| Simple state monad                    | 164 µs  | 0.016 us |
+| Simple state monad + catches          | 1.71 ms | 0.171 us |
+| Evidence-passing (flat)               | 318 µs  | 0.032 us |
+| Evidence-passing (flat) + catches     | 863 µs  | 0.086 us |
+| Evidence-passing + CPS                | 347 µs  | 0.035 us |
+| Evidence-passing + CPS + catches      | 1.59 ms | 0.159 us |
+| **Skuld** (nested binds, CPS path)    | 2.18 ms | 0.218 us |
+| **Skuld/Comp** (comp macro, inline)   | 1.42 ms | 0.142 us |
+| Freyja                                | ~10 ms  | ~1 us    |
 
-## Inline total+linear path
+Two Skuld variants are shown:
 
-Effects implementing `ITotalLinearHandler` get an inline continuation
-path in `comp do` blocks:
+- **Skuld** — uses nested `Comp.bind/2` calls (the CPS path)
+- **Skuld/Comp** — uses the `comp` macro with the total+linear
+  inline optimisation (the optimal path)
 
-```elixir
-# State is a total+linear handler — the comp macro emits inline
-# continuations, skipping Comp.bind/2 closure allocation
-comp do
-  x <- State.get()
-  y <- State.put(x + 1)
-  y * 2
-end
+Skuld/Comp is **1.5× faster** than the nested-bind Skuld path.
+
+The apples-to-apples comparison is Skuld/Comp vs evidence-passing CPS +
+catches (both have catch frames): Skuld/Comp achieves **0.89×** — it is
+**faster** than hand-written evidence-passing CPS + catches. The comp
+macro path eliminates bind overhead entirely, matching the raw CPS
+baseline.
+
+## Where the overhead comes from
+
+Nearly all the gap between Skuld/Comp and bare evidence-passing CPS is
+**catch frames** — the same `try`/`catch` mechanism every real-world
+Elixir application already uses for error handling:
+
+| Baseline                           | us/op | vs bare CPS |
+|------------------------------------|-------|-------------|
+| Evidence-passing + CPS             | 0.035 | 1.0×        |
+| Evidence-passing + CPS + catches   | 0.159 | **4.5×**    |
+| **Skuld/Comp** (comp macro inline) | 0.142 | 4.1×        |
+| **Skuld** (nested binds)           | 0.218 | 6.2×        |
+
+Catch frames account for **4.5×** of the total overhead. Skuld/Comp
+adds **0.89×** — indistinguishable from the catch-only baseline.
+
+## Iteration strategies
+
+Effectful iteration over collections at N=1,000:
+
+| Strategy     | Time   | Per-op  | Notes                                     |
+|--------------|--------|---------|-------------------------------------------|
+| FxFasterList | 115 us | 0.12 us | Fastest; no Yield/Suspend support         |
+| Yield        | 160 us | 0.16 us | Use when you need interruptible iteration |
+| FxList       | 167 us | 0.17 us | Full Yield/Suspend support                |
+
+All three maintain constant per-operation cost as N grows.
+
+## Protocol consolidation
+
+Elixir consolidates protocols only in `:prod` mode. In `:dev` and
+`:test`, protocol dispatch uses a slow dynamic lookup (~75 us per call)
+instead of the compiled dispatch table used in production. Skuld
+dispatches through the `ISentinel` protocol in `Comp.run/1`.
+
+Always benchmark with `MIX_ENV=prod` to get production-representative
+numbers. You can also set `consolidate_protocols: true` in your
+`mix.exs` project config temporarily for benchmarking in dev mode.
+
+## Running the benchmarks
+
+```bash
+# Main benchmark (approaches 1-10)
+MIX_ENV=prod mix run bench/skuld_benchmark.exs
+
+# Progressive overhead (adds features one at a time)
+MIX_ENV=prod mix run bench/overhead_progressive.exs
+
+# Brook vs GenStage comparison
+MIX_ENV=prod mix run bench/brook_vs_genstage.exs
 ```
-
-At N=10,000 this path is **1.5–1.8× faster** than the nested-bind
-path and matches raw CPS within noise.
-
-## Per-tag operation optimisation
-
-Tagged effects (e.g. `State.get(:counter)`) use per-tag module-atom
-signatures. The handler captures a precomputed state key at installation
-time, eliminating per-operation key computation and struct allocation:
-
-| Metric | Before (struct ops) | After (per-tag sig) |
-|--------|---------------------|---------------------|
-| S10 Full Skuld | 4.2–5.5x vs S0 | 2.6–2.7x vs S0 |
-
-The improvement collapses multiple overhead sources simultaneously:
-struct args, Change struct allocation, and state key computation are
-all reduced by the handler closing over precomputed values.
-
-## Data fetch benchmarks
-
-Query batching benchmarks show FiberPool overhead at ~0.25 µs/op per
-fiber. For realistic workloads (database queries at ~1 ms), the overhead
-is noise. Automatic N+1 batching provides order-of-magnitude speedups
-for multi-fetch operations.
-
-## Where the overhead lives
-
-The remaining vs-catch-baseline overhead (~2.1–2.3x) is composed of:
-
-- Additional catch frames (~1.25x) — irreducible BEAM tax
-- Struct argument allocation (~1.30x) — reduced by per-tag sigs
-- Tuple state keys (~1.16x) — eliminated by per-tag sigs
-- Env struct size and scoped machinery — negligible after inlining
-
-## Optimisation summary
-
-| Optimisation | Status | Impact |
-|------------|--------|--------|
-| `@compile {:inline, ...}` for hot-path wrappers | Implemented | Closed S9→S10 gap (~1.40x → 1.0x) |
-| Per-tag module-atom sigs | Implemented | Reduced S10 from 4.2–5.5x to 2.6–2.7x |
-| Total+linear inline continuation | Implemented | 1.5–1.8× over nested-bind; parity with raw CPS |
-| Reduce Env struct size | Under investigation | Potential marginal gain |
 
 <!-- nav:footer:start -->
 
