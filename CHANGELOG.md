@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 1783d9064cd414e84561c4b0ba44cef168598df7 -->
+<!-- last-updated-against: 2bb9825e64a1b270ceb08ba864c5fe3aad218043 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -88,6 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Throw`, `Yield`, `FxList`, `FiberPool`, `BatchExecutor`, `CompBlock`,
   `EffectfulContract`, `Bracket`, and `QueryBlock` moduledocs and `@doc`
   blocks.
+- `Comp.pure` calls stripped from the entire test suite (~400 calls across
+  27 files). One `Comp.pure` retained in `serializable_coroutine_test.exs`
+  where the guarded `SerializableCoroutine.new/2` function requires a
+  2-arity function argument.
 
 ### Removed
 
