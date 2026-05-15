@@ -203,6 +203,9 @@ defmodule Skuld.Effects.Brook do
 
   ## Options
 
+  - `:concurrency` - Maximum concurrent transforms (default: 1). Controls
+    how many items can be transformed simultaneously. Uses a bounded channel
+    as a semaphore — items acquire a slot before spawning, release when done.
   - `:buffer` - Output channel capacity (default: 10)
 
   ## Example
@@ -227,62 +230,92 @@ defmodule Skuld.Effects.Brook do
   @spec map(Channel.Handle.t(), (term() -> term() | Comp.Types.computation()), keyword()) ::
           Comp.Types.computation()
   def map(input, transform_fn, opts \\ []) do
+    concurrency = Keyword.get(opts, :concurrency, 1)
     buffer = Keyword.get(opts, :buffer, 10)
 
     comp do
+      # Semaphore: bounded channel controls how many items are in flight
+      semaphore <- Channel.new(concurrency)
+      # Output: reorderer puts ordered results here
       output <- Channel.new(buffer)
+      # Intermediate: producer puts fiber handles here, reorderer awaits in order
+      intermediate <- Channel.new(concurrency)
 
-      _worker <-
-        FiberPool.fiber(
-          comp do
-            map_loop(input, output, transform_fn)
-          end
-        )
+      # Producer: reads items, acquires semaphore, spawns transform fibers
+      _ <- FiberPool.fiber(map_producer(input, semaphore, intermediate, transform_fn))
+
+      # Reorderer: awaits fibers in put-order, puts results to output
+      _ <- FiberPool.fiber(map_reorderer(intermediate, output))
 
       Comp.pure(output)
     end
   end
 
-  defp map_loop(input, output, transform_fn) do
+  defp map_producer(input, semaphore, intermediate, transform_fn) do
     comp do
       result <- Channel.take(input)
 
       case result do
         {:ok, item} ->
-          map_transform(input, output, transform_fn, item)
+          # Acquire a concurrency slot, spawn transform, then continue
+          map_producer_spawn(input, semaphore, intermediate, transform_fn, item)
 
         :closed ->
-          close_channel(output, :map_done)
+          close_channel(intermediate, :producer_done)
 
         {:error, reason} ->
-          error_channel(output, reason, :map_errored)
+          error_channel(intermediate, reason, :producer_errored)
       end
     end
   end
 
-  defp map_transform(input, output, transform_fn, item) do
-    transform_comp = safe_transform(transform_fn, item)
-
+  defp map_producer_spawn(input, semaphore, intermediate, transform_fn, item) do
     comp do
-      transform_result <- transform_comp
+      _token <- Channel.put(semaphore, :token)
+      _ <- Channel.put_async(intermediate, map_item_transform(item, semaphore, transform_fn))
+      map_producer(input, semaphore, intermediate, transform_fn)
+    end
+  end
 
-      case transform_result do
-        {:ok, value} ->
-          map_put_and_loop(input, output, transform_fn, value)
+  defp map_item_transform(item, semaphore, transform_fn) do
+    comp do
+      # Run the actual transform
+      transform_result <- safe_transform(transform_fn, item)
+
+      # Release the concurrency slot
+      _ <- Channel.take(semaphore)
+
+      Comp.pure(transform_result)
+    end
+  end
+
+  defp map_reorderer(intermediate, output) do
+    comp do
+      result <- Channel.take_async(intermediate)
+
+      case result do
+        {:ok, {:ok, value}} ->
+          map_reorderer_put(intermediate, output, value)
+
+        {:ok, {:error, reason}} ->
+          error_channel(output, reason, :map_errored)
+
+        :closed ->
+          close_channel(output, :reorderer_done)
 
         {:error, reason} ->
-          error_channel(output, reason, :map_errored)
+          error_channel(output, reason, :reorderer_errored)
       end
     end
   end
 
-  defp map_put_and_loop(input, output, transform_fn, value) do
+  defp map_reorderer_put(intermediate, output, value) do
     comp do
       put_result <- Channel.put(output, value)
 
       case put_result do
-        :ok -> map_loop(input, output, transform_fn)
-        {:error, _} -> Comp.pure(:map_stopped)
+        :ok -> map_reorderer(intermediate, output)
+        {:error, _} -> Comp.pure(:reorderer_stopped)
       end
     end
   end

@@ -194,9 +194,10 @@ defmodule Skuld.Integration.StreamingBatchingTest do
         assert summary.items == ["Item A", "Item B"]
       end)
 
-      # Batching: with sequential map, one item processed at a time.
-      # Each query block's fiber_all spawns fetch_user and fetch_user_orders
-      # concurrently, but they share different batch keys so batch independently.
+      # Batching: the channel semaphore (capacity 1 by default) serializes
+      # the producer, but the transform's fiber_all inside the query block
+      # spawns fetch_user and fetch_user_orders concurrently per item.
+      # Results in batch sizes of 4-4-2 for 10 users.
       all_messages =
         Enum.map(1..50, fn _ ->
           receive do
@@ -212,8 +213,8 @@ defmodule Skuld.Integration.StreamingBatchingTest do
       orders_batches = Enum.filter(all_messages, &match?({:batch, :fetch_user_orders, _}, &1))
       details_batches = Enum.filter(all_messages, &match?({:batch, :fetch_order_details, _}, &1))
 
-      assert Enum.map(user_batches, &elem(&1, 2)) == List.duplicate(1, 10)
-      assert Enum.map(orders_batches, &elem(&1, 2)) == List.duplicate(1, 10)
+      assert Enum.map(user_batches, &elem(&1, 2)) == [4, 4, 2]
+      assert Enum.map(orders_batches, &elem(&1, 2)) == [4, 4, 2]
 
       # 10 users × 2 orders = 20 detail fetches, batched
       assert Enum.sum(Enum.map(details_batches, &elem(&1, 2))) == 20
