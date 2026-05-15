@@ -15,7 +15,7 @@ defmodule Skuld.Effects.Command do
         def handle(%CreateTodo{title: title}) do
           comp do
             {:ok, todo} <- EctoPersist.insert(changeset(title))
-            _ <- Writer.tell(:events, %TodoCreated{id: todo.id}) |> Comp.then_do(Comp.pure(:ok))
+            _ <- Writer.tell(:events, %TodoCreated{id: todo.id}) |> Comp.then_do(:ok)
             {:ok, todo}
           end
         end
@@ -24,7 +24,7 @@ defmodule Skuld.Effects.Command do
           comp do
             todo <- EctoPersist.get!(Todo, id)
             _ <- EctoPersist.delete(todo)
-            _ <- Writer.tell(:events, %TodoDeleted{id: id}) |> Comp.then_do(Comp.pure(:ok))
+            _ <- Writer.tell(:events, %TodoDeleted{id: id}) |> Comp.then_do(:ok)
             :ok
           end
         end

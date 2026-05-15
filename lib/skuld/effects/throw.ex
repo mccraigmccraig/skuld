@@ -55,7 +55,7 @@ defmodule Skuld.Effects.Throw do
       # Transparent recovery - catch fully handles the error
       Throw.catch_error(
         risky_computation(),
-        fn :not_found -> Comp.pure(:default) end
+        fn :not_found -> :default end
       )
       # Returns either the value or :default
 

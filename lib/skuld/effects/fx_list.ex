@@ -35,7 +35,7 @@ defmodule Skuld.Effects.FxList do
   Comp.bind(f.(1), fn r1 ->
     Comp.bind(f.(2), fn r2 ->
       Comp.bind(f.(3), fn r3 ->
-        Comp.pure([r1, r2, r3])
+        [r1, r2, r3]
       end)
     end)
   end)
@@ -58,7 +58,7 @@ defmodule Skuld.Effects.FxList do
       comp =
         FxList.fx_map([1, 2, 3], fn x ->
           Comp.bind(Yield.yield({:processing, x}), fn _ ->
-            Comp.pure(x * 2)
+            x * 2
           end)
         end)
         |> Yield.with_handler()

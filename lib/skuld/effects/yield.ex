@@ -76,8 +76,8 @@ defmodule Skuld.Effects.Yield do
             x + y
           end,
           fn
-            :get_value -> Comp.pure(10)
-            :get_another -> Comp.pure(20)
+            :get_value -> 10
+            :get_another -> 20
           end
         )
         result
@@ -111,7 +111,7 @@ defmodule Skuld.Effects.Yield do
             x + y
           end,
           fn
-            :handled -> Comp.pure(10)
+            :handled -> 10
             other -> Yield.yield(other)  # re-yield to outer handler
           end
         )

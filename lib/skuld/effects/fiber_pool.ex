@@ -412,7 +412,7 @@ defmodule Skuld.Effects.FiberPool do
   ## Example
 
       comp_f = Comp.pure(fn x -> x * 2 end)
-      comp_a = Comp.pure(21)
+      comp_a = 21
       result = FiberPool.ap(comp_f, comp_a)
       # result is a computation that returns 42
   """

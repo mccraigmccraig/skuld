@@ -70,7 +70,7 @@ defmodule Skuld.Query.QueryBlock do
 
   - `var <- computation` — effectful binding (auto-batched if independent)
   - `var = expression` — pure binding (participates in dependency analysis)
-  - Last expression — auto-lifted to `Comp.pure` if not already a computation
+  - Last expression — auto-lifted if not already a computation
 
   ## Requirements
 

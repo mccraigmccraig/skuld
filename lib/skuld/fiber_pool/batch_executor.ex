@@ -31,7 +31,7 @@
 #     # Test - mock executor
 #     comp
 #     |> BatchExecutor.with_executor({:db_fetch, User}, fn ops ->
-#       Comp.pure(Map.new(ops, fn {ref, _op} -> {ref, %User{id: 1}} end))
+#       Map.new(ops, fn {ref, _op} -> {ref, %User{id: 1}} end)
 #     end)
 #     |> Comp.run()
 defmodule Skuld.FiberPool.BatchExecutor do

@@ -215,7 +215,7 @@ defmodule Skuld.Effects.Bracket do
 
       # Instead of:
       Bracket.bracket(
-        Comp.pure(file_handle),
+        file_handle,
         fn h -> close(h) end,
         fn h -> read(h) end
       )

@@ -39,7 +39,7 @@ defmodule Skuld.Effects.Port.EffectfulContract do
         @behaviour MyApp.Todos.Effectful
 
         def get_todo(id) do
-          Comp.pure({:ok, %Todo{id: id}})
+          {:ok, %Todo{id: id}}
         end
       end
 

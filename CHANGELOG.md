@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 4fe1da6cd0e15e8ac0c3d0cc5c6e0d5dade5d2c2 -->
+<!-- last-updated-against: 1783d9064cd414e84561c4b0ba44cef168598df7 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -84,6 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Skuld.Credo.CompPureRedundant` — custom Credo check that detects
   redundant `Comp.pure` calls with literal, variable, or simple expression
   arguments. Registered in `.credo.exs` as a refactoring check.
+- `Comp.pure` calls removed from documentation examples in `Command`,
+  `Throw`, `Yield`, `FxList`, `FiberPool`, `BatchExecutor`, `CompBlock`,
+  `EffectfulContract`, `Bracket`, and `QueryBlock` moduledocs and `@doc`
+  blocks.
 
 ### Removed
 

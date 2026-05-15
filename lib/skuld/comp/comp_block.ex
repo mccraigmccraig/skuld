@@ -55,7 +55,7 @@
 #
 #     comp do
 #       x <- State.get()
-#       _ <- if x < 0, do: Throw.throw(:negative), else: Comp.pure(:ok)
+#       _ <- if x < 0, do: Throw.throw(:negative), else: :ok
 #       return(x * 2)
 #     catch
 #       {Throw, :negative} -> return(0)
