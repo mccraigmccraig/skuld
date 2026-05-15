@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 5c207efbc71c08ea163eded2c1f1e0705921b3bf -->
+<!-- last-updated-against: 9578b5723950d2a7cbb44acbafae3da5dda5992c -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -29,6 +29,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preserve input order.
 
 ### Changed
+
+- `Skuld.Effects.Port.Adapter.Effectful` → `Skuld.Adapter` and
+  `Skuld.Effects.Port.EffectfulContract` → `Skuld.Adapter.EffectfulContract`
+  — separates paradigm bridging (Adapter) from Port dispatch mechanics.
+- `Skuld.Effects.Port.Facade` → `Skuld.Effects.Port.EffectfulFacade` —
+  clarifies that this generates effectful callers via Port dispatch
+  (vs. DoubleDown's plain `ContractFacade`).
+- `Skuld.Coroutine.run/1,2` split into `call/1,2` (raw step, FiberPool)
+  and `run/1,2` (step + `ISentinel.run`, standalone). Matches
+  `Comp.call`/`Comp.run` convention.
+- Added `data` field to `Skuld.Coroutine.ExternalSuspended` — carries
+  scoped effect state applied by `transform_suspend` via `ISentinel.run`.
+- Refactored `Skuld.AsyncCoroutine` (née `AsyncComputation`) internals
+  to use `Coroutine.new`/`Coroutine.run`/`Coroutine.cancel` instead of
+  raw `Comp.run`/`Comp.cancel`/`suspend.resume`/`ISentinel.run`.
+  Eliminated `handle_resume/7` — `Coroutine` normalizes all sentinel
+  types into typed states.
+- Renamed `Skuld.AsyncComputation` → `Skuld.AsyncCoroutine` and API
+  `start`/`resume` → `run` to mirror `Coroutine` naming convention.
+- Architecture diagram in README updated with effect categorisation
+  (Foundational, Coroutines & Concurrency, Boundaries).
 
 - Query contract modules no longer generate a separate `.Executor`
   sub-module — `@callback` declarations now live in the contract
