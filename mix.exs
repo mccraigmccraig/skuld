@@ -194,15 +194,7 @@ defmodule Skuld.MixProject do
   end
 
   defp description do
-    """
-    An effectful programming framework for Elixir.
-
-    Write business logic as pure effect descriptions — database access,
-    concurrency, error handling, and workflow orchestration — then swap handlers
-    between production and deterministic test implementations. Built on algebraic
-    effects with cooperative fibers, automatic N+1 query batching, hexagonal
-    architecture support, and durable serialisable workflows.
-    """
+    "Effectful programming for Elixir: write business logic as pure effect descriptions, swap handlers for testing. Algebraic effects, cooperative coroutines, N+1 query batching, hexagonal architecture."
   end
 
   defp package do
