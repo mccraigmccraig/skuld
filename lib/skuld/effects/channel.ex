@@ -366,13 +366,13 @@ defmodule Skuld.Effects.Channel do
 
         {:ok, other} ->
           # Not an async fiber - return as-is (allows mixed usage)
-          Comp.pure({:ok, other})
+          {:ok, other}
 
         :closed ->
-          Comp.pure(:closed)
+          :closed
 
         {:error, reason} ->
-          Comp.pure({:error, reason})
+          {:error, reason}
       end
     end
   end

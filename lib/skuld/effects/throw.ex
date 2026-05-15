@@ -146,7 +146,7 @@ defmodule Skuld.Effects.Throw do
   def try_catch(comp) do
     catch_error(
       Comp.map(comp, fn value -> {:ok, value} end),
-      fn error -> Comp.pure({:error, unwrap_error(error)}) end
+      fn error -> {:error, unwrap_error(error)} end
     )
   end
 

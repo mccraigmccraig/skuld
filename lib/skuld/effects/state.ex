@@ -105,7 +105,7 @@ defmodule Skuld.Effects.State do
   def modify(tag, f) when is_atom(tag) and is_function(f, 1) do
     Comp.bind(get(tag), fn old ->
       Comp.bind(put(tag, f.(old)), fn _ ->
-        Comp.pure(old)
+        old
       end)
     end)
   end

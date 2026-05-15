@@ -220,7 +220,7 @@ defmodule Skuld.Effects.Port do
   @spec request!(port_module(), port_name(), args()) :: Types.computation()
   def request!(mod, name, args \\ []) do
     Comp.bind(request(mod, name, args), fn
-      {:ok, value} -> Comp.pure(value)
+      {:ok, value} -> value
       {:error, reason} -> Throw.throw(reason)
     end)
   end
@@ -250,7 +250,7 @@ defmodule Skuld.Effects.Port do
   def request_bang(mod, name, args, unwrap_fn) do
     Comp.bind(request(mod, name, args), fn result ->
       case unwrap_fn.(result) do
-        {:ok, value} -> Comp.pure(value)
+        {:ok, value} -> value
         {:error, reason} -> Throw.throw(reason)
       end
     end)

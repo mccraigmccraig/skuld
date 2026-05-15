@@ -119,7 +119,7 @@ defmodule Skuld.Effects.Writer do
           # Calculate what was added (new logs are at the front)
           # Only one length call on final_log (O(n) once instead of twice)
           captured = Enum.take(final_log, length(final_log) - initial_length)
-          Comp.pure({result, captured})
+          {result, captured}
         end)
       end)
     end)
@@ -157,7 +157,7 @@ defmodule Skuld.Effects.Writer do
           new_log = transformed ++ initial_log
 
           Comp.bind(set_log(tag, new_log), fn _ ->
-            Comp.pure(value)
+            value
           end)
         end)
       end)
@@ -182,7 +182,7 @@ defmodule Skuld.Effects.Writer do
     pass(
       tag,
       Comp.bind(comp, fn result ->
-        Comp.pure({result, transform_fn})
+        {result, transform_fn}
       end)
     )
   end
