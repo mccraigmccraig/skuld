@@ -79,7 +79,7 @@ stops here has already gotten substantial value.
 - Throw, Bracket
 - Fresh, Random
 - DB, Command
-- Port, Port.Facade, Skuld.Adapter
+- Port, Port.EffectfulFacade, Skuld.Adapter
 - Parallel, AtomicState, AsyncComputation
 - FxList, FxFasterList
 

@@ -57,11 +57,11 @@ defmodule Skuld.Effects.Port.ContractTest do
 
   # Facade modules for each test contract (point at effectful contracts)
   defmodule TestFacade do
-    use Skuld.Effects.Port.Facade, contract: TestEffectful
+    use Skuld.Effects.Port.EffectfulFacade, contract: TestEffectful
   end
 
   defmodule BareReturnFacade do
-    use Skuld.Effects.Port.Facade, contract: BareReturnEffectful
+    use Skuld.Effects.Port.EffectfulFacade, contract: BareReturnEffectful
   end
 
   # Implementation module for dispatch tests
@@ -365,7 +365,7 @@ defmodule Skuld.Effects.Port.ContractTest do
           end
 
           defmodule DocVerifyFacade do
-            use Skuld.Effects.Port.Facade, contract: DocVerifyContract
+            use Skuld.Effects.Port.EffectfulFacade, contract: DocVerifyContract
           end
           """,
           "DocVerifyFacade"
@@ -415,7 +415,7 @@ defmodule Skuld.Effects.Port.ContractTest do
           end
 
           defmodule DocOverrideFacade do
-            use Skuld.Effects.Port.Facade, contract: DocOverrideContract
+            use Skuld.Effects.Port.EffectfulFacade, contract: DocOverrideContract
           end
           """,
           "DocOverrideFacade"
@@ -648,7 +648,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       end
 
       defmodule OtherFacade do
-        use Skuld.Effects.Port.Facade, contract: OtherEffectful
+        use Skuld.Effects.Port.EffectfulFacade, contract: OtherEffectful
       end
 
       defmodule OtherImpl do
@@ -735,7 +735,7 @@ defmodule Skuld.Effects.Port.ContractTest do
 
   # Consuming app defines its own effectful facade separately
   defmodule PlainDispatchFacade do
-    use Skuld.Effects.Port.Facade, contract: PlainDispatchEffectful
+    use Skuld.Effects.Port.EffectfulFacade, contract: PlainDispatchEffectful
   end
 
   describe "Contract/Facade separation" do
@@ -787,7 +787,7 @@ defmodule Skuld.Effects.Port.ContractTest do
         defmodule Skuld.Test.Combined do
           use Skuld.Adapter.EffectfulContract,
             double_down_contract: Skuld.Test.CombinedContract
-          use Skuld.Effects.Port.Facade,
+          use Skuld.Effects.Port.EffectfulFacade,
             contract: Skuld.Test.Combined
         end
         """)
@@ -820,7 +820,7 @@ defmodule Skuld.Effects.Port.ContractTest do
         defmodule Skuld.Test.CombinedDispatch do
           use Skuld.Adapter.EffectfulContract,
             double_down_contract: Skuld.Test.CombinedDispatchContract
-          use Skuld.Effects.Port.Facade,
+          use Skuld.Effects.Port.EffectfulFacade,
             contract: Skuld.Test.CombinedDispatch
         end
         """)
@@ -851,7 +851,7 @@ defmodule Skuld.Effects.Port.ContractTest do
         end
 
         defmodule Skuld.Test.Shorthand do
-          use Skuld.Effects.Port.Facade,
+          use Skuld.Effects.Port.EffectfulFacade,
             double_down_contract: Skuld.Test.ShorthandContract
         end
         """)
@@ -882,7 +882,7 @@ defmodule Skuld.Effects.Port.ContractTest do
         end
 
         defmodule Skuld.Test.ShorthandDispatch do
-          use Skuld.Effects.Port.Facade,
+          use Skuld.Effects.Port.EffectfulFacade,
             double_down_contract: Skuld.Test.ShorthandDispatchContract
         end
         """)
@@ -899,15 +899,15 @@ defmodule Skuld.Effects.Port.ContractTest do
   end
 
   # ---------------------------------------------------------------
-  # Single-module pattern: use Skuld.Effects.Port.Facade (no options)
+  # Single-module pattern: use Skuld.Effects.Port.EffectfulFacade (no options)
   # ---------------------------------------------------------------
 
-  describe "single-module: use Skuld.Effects.Port.Facade (no options)" do
+  describe "single-module: use Skuld.Effects.Port.EffectfulFacade (no options)" do
     test "compiles and has all required metadata" do
       [{mod, _}] =
         Code.compile_string("""
         defmodule Skuld.Test.SingleMod do
-          use Skuld.Effects.Port.Facade
+          use Skuld.Effects.Port.EffectfulFacade
 
           defcallback greet(name :: String.t()) :: String.t()
           defcallback ping() :: :pong
@@ -944,7 +944,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       [{mod, _}] =
         Code.compile_string("""
         defmodule Skuld.Test.SingleModMeta do
-          use Skuld.Effects.Port.Facade
+          use Skuld.Effects.Port.EffectfulFacade
 
           defcallback get_todo(id :: String.t()) :: {:ok, map()} | {:error, term()}
         end
@@ -965,7 +965,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       [{mod, _}] =
         Code.compile_string("""
         defmodule Skuld.Test.SingleModDispatch do
-          use Skuld.Effects.Port.Facade
+          use Skuld.Effects.Port.EffectfulFacade
 
           defcallback greet(name :: String.t()) :: String.t()
         end
@@ -985,7 +985,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       [{mod, _}] =
         Code.compile_string("""
         defmodule Skuld.Test.SingleModKey do
-          use Skuld.Effects.Port.Facade
+          use Skuld.Effects.Port.EffectfulFacade
 
           defcallback find_user(id :: integer()) :: {:ok, map()} | {:error, term()}
         end
@@ -1000,7 +1000,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       [{mod, _}] =
         Code.compile_string("""
         defmodule Skuld.Test.SingleModZero do
-          use Skuld.Effects.Port.Facade
+          use Skuld.Effects.Port.EffectfulFacade
 
           defcallback health_check() :: :ok
         end
@@ -1020,7 +1020,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       assert_raise CompileError, ~r/has no defcallback declarations/, fn ->
         Code.compile_string("""
         defmodule Skuld.Test.SingleModEmpty do
-          use Skuld.Effects.Port.Facade
+          use Skuld.Effects.Port.EffectfulFacade
         end
         """)
       end
@@ -1032,7 +1032,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       [{mod, _}] =
         Code.compile_string("""
         defmodule Skuld.Test.SingleModAsContract do
-          use Skuld.Effects.Port.Facade
+          use Skuld.Effects.Port.EffectfulFacade
 
           defcallback add(a :: integer(), b :: integer()) :: integer()
         end
@@ -1052,7 +1052,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       [{mod, _}] =
         Code.compile_string("""
         defmodule Skuld.Test.SingleModTestHandler do
-          use Skuld.Effects.Port.Facade
+          use Skuld.Effects.Port.EffectfulFacade
 
           defcallback lookup(key :: String.t()) :: {:ok, term()} | {:error, term()}
         end

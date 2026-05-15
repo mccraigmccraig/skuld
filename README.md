@@ -16,28 +16,28 @@ An effectful programming framework for Elixir.
                       evidence-passing,
                       scoped handlers)
                             │
-      ┌─────────────────────┼─────────────────────────────┐
-      │                     │                             │
- //Foundational       //Coroutines &                 //Boundaries
- //Effects            //Concurrency                       │
-      │                     │                             │
-      │                 Coroutine                ┌────────┼────────┐
-      │                     │                    │        │        │
- State, Reader,        ┌────┴──────┐             │        │       Port
- Writer, Throw,        │           │             │        │        │
- Bracket, Fresh,  Serializable-    │             │        │    Port.Facade
- Random, FxList,   Coroutine       │             │        │    Repo
- Yield,                            │             │        │
- EffectLogger,                  FiberPool        │    Adapter
- Parallel,                         │             │    Adapter.EffectfulContract
+      ┌─────────────────────┼───────────────────────────┐
+      │                     │                           │
+ //Foundational       //Coroutines &               //Boundaries
+ //Effects            //Concurrency                     │
+      │                     │                           │
+      │                 Coroutine                ┌──────┼────────┐
+      │                     │                    │      │        │
+ State, Reader,        ┌────┴──────┐             │      │       Port
+ Writer, Throw,        │           │             │      │        │
+ Bracket, Fresh,  Serializable-    │             │      │  Port.EffectfulFacade
+ Random, FxList,   Coroutine       │             │      │  Repo
+ Yield,                            │             │      │
+ EffectLogger,                  FiberPool        │  Adapter
+ Parallel,                         │             │  Adapter.EffectfulContract
  AtomicState,                      ├────────────┐│
  Transaction,                      │            ││
  AsyncComputation                  │            ││
- Command                           │            ││
-                              ┌────┴────┐       ││
+ Command                      ┌────┴────┐       ││
                            Channel    Task      ││
                               │                 ││
                             Brook               ││
+                                                ││
                                            Query.Contract
                                            QueryBlock
                                            (Haxl-like: auto-batches fetches

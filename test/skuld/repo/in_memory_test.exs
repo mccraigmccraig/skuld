@@ -677,7 +677,7 @@ defmodule Skuld.Repo.OpenInMemoryTest do
       end
 
       defmodule OtherFacade do
-        use Skuld.Effects.Port.Facade, contract: OtherEffectful
+        use Skuld.Effects.Port.EffectfulFacade, contract: OtherEffectful
       end
 
       defmodule OtherImpl do

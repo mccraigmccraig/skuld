@@ -32,6 +32,6 @@ if Code.ensure_loaded?(Ecto) do
         |> Comp.run!()
     """
 
-    use Skuld.Effects.Port.Facade, contract: Skuld.Repo.Effectful
+    use Skuld.Effects.Port.EffectfulFacade, contract: Skuld.Repo.Effectful
   end
 end

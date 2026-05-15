@@ -12,12 +12,12 @@ swappable for testing.
 Port has three layers:
 
 - **Port** - low-level dispatch via `Port.request/3`
-- **Port.Facade** - typed contracts via `defcallback`, with Dialyzer support
+- **Port.EffectfulFacade** - typed contracts via `defcallback`, with Dialyzer support
   and generated effectful dispatch functions
 - **Skuld.Adapter** - bridges plain Elixir code into effectful
   implementations (the inbound side of hexagonal architecture)
 
-Most applications should use `Skuld.Effects.Port.Facade`. The low-level
+Most applications should use `Skuld.Effects.Port.EffectfulFacade`. The low-level
 Port API is useful for quick prototyping or when you need maximum flexibility.
 
 ## Port (Low-Level API)
@@ -62,7 +62,7 @@ The dispatch map keys are modules and values are resolvers:
 - `:direct` - `apply(mod, name, args)` (call directly on the keyed module)
 - `module` - `apply(module, name, args)` (dispatch to an implementation
   module). Modules where `__port_effectful__?/0` returns truthy (e.g. via
-  `use Skuld.Effects.Port.Facade`) are auto-detected as effectful resolvers
+  `use Skuld.Effects.Port.EffectfulFacade`) are auto-detected as effectful resolvers
   whose return values are computations inlined into the caller's effect
   context. Returning `false` opts out of auto-detection.
 - `{:effectful, module}` - explicit effectful resolver (same as above,
@@ -190,7 +190,7 @@ The function handler gives you full Elixir pattern matching power -
 pins, guards, wildcards. Use `with_test_handler` for exact-match cases
 and `with_fn_handler` for dynamic scenarios.
 
-## Port.Facade
+## Port.EffectfulFacade
 
 Typed contracts via `defcallback` declarations. Generates Dialyzer-checked
 caller functions, behaviour callbacks, test key helpers, and
@@ -198,13 +198,13 @@ introspection. This is the recommended way to define effectful ports.
 
 ### Defining a contract and facade
 
-The single-module pattern is the simplest — `use Skuld.Effects.Port.Facade`
+The single-module pattern is the simplest — `use Skuld.Effects.Port.EffectfulFacade`
 with no options creates the contract, effectful behaviour, and dispatch
 facade in one module:
 
 ```elixir
 defmodule MyApp.Repository do
-  use Skuld.Effects.Port.Facade
+  use Skuld.Effects.Port.EffectfulFacade
 
   alias MyApp.Todo
 
@@ -232,7 +232,7 @@ end
 
 # Effectful facade (same callbacks, effectful dispatch)
 defmodule MyApp.Repository do
-  use Skuld.Effects.Port.Facade,
+  use Skuld.Effects.Port.EffectfulFacade,
     double_down_contract: MyApp.Repository.Contract
 end
 ```
@@ -242,7 +242,7 @@ and skuld effectful dispatch is a one-line `use` change.
 
 ### Plain and Effectful behaviours
 
-`Skuld.Effects.Port.Facade` generates effectful `@callback` declarations
+`Skuld.Effects.Port.EffectfulFacade` generates effectful `@callback` declarations
 with `computation()`-wrapped return types on the facade module, while
 `__callbacks__/0` preserves the original plain operation metadata:
 
@@ -263,7 +263,7 @@ was removed in `double_down` 0.38. If you want a bang version, declare it:
 
 ```elixir
 defmodule MyApp.Users do
-  use Skuld.Effects.Port.Facade
+  use Skuld.Effects.Port.EffectfulFacade
 
   defcallback get_user(id :: String.t()) ::
                {:ok, User.t()} | {:error, term()}
@@ -326,7 +326,7 @@ my_comp
 - LSP autocomplete on `Repository.` shows available operations
 - Missing callback implementations produce compiler warnings
 - Facade `.__key__/N` helpers replace verbose `Port.key(Module, :name, [args...])` calls
-- Single-module pattern: swap between DoubleDown `ContractFacade` and skuld `Port.Facade`
+- Single-module pattern: swap between DoubleDown `ContractFacade` and skuld `Port.EffectfulFacade`
   with a one-line `use` change
 
 ## Skuld.Adapter
@@ -356,7 +356,7 @@ end
 
 # 2. Effectful contract + facade (single-module)
 defmodule MyApp.UserService do
-  use Skuld.Effects.Port.Facade,
+  use Skuld.Effects.Port.EffectfulFacade,
     double_down_contract: MyApp.UserService.Contract
 end
 

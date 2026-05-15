@@ -226,7 +226,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Single-module contract+facade pattern: `use Skuld.Effects.Port.Facade` (no
+- Single-module contract+facade pattern: `use Skuld.Effects.Port.EffectfulFacade` (no
   options) now folds contract definition, effectful behaviour, and dispatch
   facade into a single module. `defcallback` declares operations directly in
   the facade module, with `computation()`-wrapped `@callback` declarations

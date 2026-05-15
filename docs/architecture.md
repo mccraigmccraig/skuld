@@ -24,7 +24,7 @@ boundaries — plus cross-cutting effects that work with any computation.
  State, Reader,        ┌────┴──────┐             │                Port
  Writer, Throw,        │           │             │                 │
  Bracket, Fresh,  Serializable-    │             │      Adapter.EffectfulContract
- Random, FxList,   Coroutine       │             │      Port.Facade
+ Random, FxList,   Coroutine       │             │      Port.EffectfulFacade
  Yield,                            │             │      Repo
  EffectLogger,                     │             │      Command
  Parallel,                      FiberPool        │
@@ -158,9 +158,9 @@ Generates typed effectful behaviours from `DoubleDown.Contract`
 declarations. Plain code (Ecto adapters, HTTP clients) implements the
 behaviour; effectful code calls through the facade.
 
-### Port.Facade
+### Port.EffectfulFacade
 
-Single-module contract + effectful dispatch. `use Skuld.Effects.Port.Facade`
+Single-module contract + effectful dispatch. `use Skuld.Effects.Port.EffectfulFacade`
 defines operations inline and generates both the contract and the
 effectful caller functions.
 

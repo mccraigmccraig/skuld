@@ -30,7 +30,7 @@ defmodule Skuld.Adapter.EffectfulContract do
 
       # Effectful facade
       defmodule MyApp.Todos do
-        use Skuld.Effects.Port.Facade, contract: MyApp.Todos.Effectful
+        use Skuld.Effects.Port.EffectfulFacade, contract: MyApp.Todos.Effectful
       end
 
   ## Effectful Implementation

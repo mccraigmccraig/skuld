@@ -31,7 +31,7 @@ the contract and facade in a single module:
 - **Plain facade**: `use DoubleDown.ContractFacade, otp_app: :my_app` — when
   `contract:` is omitted, the module is both contract and facade. Add
   `defcallback` declarations to define the interface.
-- **Effectful facade**: `use Skuld.Effects.Port.Facade, double_down_contract: MyApp.Orders` —
+- **Effectful facade**: `use Skuld.Effects.Port.EffectfulFacade, double_down_contract: MyApp.Orders` —
   when `contract:` is omitted, the module is both effectful contract and
   facade. The effectful callbacks and caller functions are derived from
   the plain contract automatically.
@@ -57,7 +57,7 @@ end
 
 # Effectful contract + facade — derives effectful callbacks and caller functions
 defmodule MyApp.Effectful.Orders do
-  use Skuld.Effects.Port.Facade,
+  use Skuld.Effects.Port.EffectfulFacade,
     double_down_contract: MyApp.Orders
 end
 ```
@@ -162,7 +162,7 @@ the effectful facade for the contracts it will call through:
 
 ```elixir
 defmodule MyApp.Effectful.Inventory do
-  use Skuld.Effects.Port.Facade,
+  use Skuld.Effects.Port.EffectfulFacade,
     double_down_contract: MyApp.Inventory
 end
 ```
@@ -230,7 +230,7 @@ an effectful orchestrator). Define the effectful facade for `Orders`:
 
 ```elixir
 defmodule MyApp.Effectful.Orders do
-  use Skuld.Effects.Port.Facade,
+  use Skuld.Effects.Port.EffectfulFacade,
     double_down_contract: MyApp.Orders
 end
 ```
@@ -505,7 +505,7 @@ end
 2. **Use Mox in tests** — `Mox.defmock(Mock, for: MyApp.Orders)`,
    point app at mock via `config/test.exs`
 3. **Later, optionally** — define `MyApp.Effectful.Orders` with
-   `use Skuld.Effects.Port.Facade` for effectful callers, use
+   `use Skuld.Effects.Port.EffectfulFacade` for effectful callers, use
    `Adapter.Effectful` for plain callers of effectful implementations
 
 Each step delivers value independently. You don't need to adopt the
@@ -664,7 +664,7 @@ for `Repo.InMemory` and verify business rules without database overhead.
 - Keep contract implementations thin — just infrastructure calls
 - The in-memory implementation is your test double — no mocks needed
 - Start with `DoubleDown.ContractFacade` to impose boundaries, convert later
-- Effectful facades (from `use Skuld.Effects.Port.Facade`) have
+- Effectful facades (from `use Skuld.Effects.Port.EffectfulFacade`) have
   `__port_effectful__?/0` and auto-detect as effectful resolvers
 - Use `Adapter.Effectful` when you want encapsulated effect execution
 - Include `Throw.with_handler/1` in any stack where computations can

@@ -1,8 +1,8 @@
-defmodule Skuld.Effects.Port.Facade do
+defmodule Skuld.Effects.Port.EffectfulFacade do
   @moduledoc """
   Generates an effectful dispatch facade for a port contract.
 
-  `use Skuld.Effects.Port.Facade` reads a contract's metadata and generates
+  `use Skuld.Effects.Port.EffectfulFacade` reads a contract's metadata and generates
   effectful caller functions (returning computations) and `__key__` helpers
   for test stub matching.
 
@@ -11,7 +11,7 @@ defmodule Skuld.Effects.Port.Facade do
   With no options, the module is both the contract and the dispatch facade:
 
       defmodule MyApp.Todos do
-        use Skuld.Effects.Port.Facade
+        use Skuld.Effects.Port.EffectfulFacade
 
         defcallback get_todo(id :: String.t()) :: {:ok, Todo.t()} | {:error, term()}
         defcallback list_todos() :: [Todo.t()]
@@ -33,7 +33,7 @@ defmodule Skuld.Effects.Port.Facade do
       end
 
       defmodule MyApp.Todos do
-        use Skuld.Effects.Port.Facade,
+        use Skuld.Effects.Port.EffectfulFacade,
           double_down_contract: MyApp.Todos.Contract
       end
 
@@ -50,7 +50,7 @@ defmodule Skuld.Effects.Port.Facade do
       end
 
       defmodule MyApp.Todos do
-        use Skuld.Effects.Port.Facade, contract: MyApp.Todos.Effectful
+        use Skuld.Effects.Port.EffectfulFacade, contract: MyApp.Todos.Effectful
       end
 
   ## Handler Installation
@@ -113,7 +113,7 @@ defmodule Skuld.Effects.Port.Facade do
           use DoubleDown.Contract, callbacks: false
 
           @skuld_port_contract __MODULE__
-          @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
+          @before_compile {Skuld.Effects.Port.EffectfulFacade, :__before_compile__}
         end
 
       # Combined: double_down_contract given, no contract — implicitly issue
@@ -124,7 +124,7 @@ defmodule Skuld.Effects.Port.Facade do
             double_down_contract: unquote(double_down_contract)
 
           @skuld_port_contract unquote(contract)
-          @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
+          @before_compile {Skuld.Effects.Port.EffectfulFacade, :__before_compile__}
         end
 
       # Self-referencing (contract: __MODULE__, no double_down_contract)
@@ -132,7 +132,7 @@ defmodule Skuld.Effects.Port.Facade do
       self_ref? ->
         quote do
           @skuld_port_contract unquote(contract)
-          @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
+          @before_compile {Skuld.Effects.Port.EffectfulFacade, :__before_compile__}
         end
 
       # Separate module
@@ -140,7 +140,7 @@ defmodule Skuld.Effects.Port.Facade do
         quote do
           require unquote(contract)
           @skuld_port_contract unquote(contract)
-          @before_compile {Skuld.Effects.Port.Facade, :__before_compile__}
+          @before_compile {Skuld.Effects.Port.EffectfulFacade, :__before_compile__}
         end
     end
   end
@@ -166,7 +166,7 @@ defmodule Skuld.Effects.Port.Facade do
           if raw_ops == [] do
             raise CompileError,
               description:
-                "#{inspect(env.module)} uses Skuld.Effects.Port.Facade but has no defcallback declarations",
+                "#{inspect(env.module)} uses Skuld.Effects.Port.EffectfulFacade but has no defcallback declarations",
               file: env.file,
               line: 0
           end
