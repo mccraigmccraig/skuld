@@ -663,7 +663,7 @@ defmodule Skuld.Effects.Port.ContractTest do
       comp =
         Comp.bind(TestFacade.get_todo("t1", "id1"), fn result1 ->
           Comp.bind(OtherFacade.lookup("mykey"), fn result2 ->
-            Comp.pure({result1, result2})
+            {result1, result2}
           end)
         end)
         |> Port.with_handler(%{

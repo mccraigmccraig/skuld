@@ -151,7 +151,7 @@ defmodule Skuld.Integration.StreamingBatchingTest do
     details_list <-
       Comp.sequence(Enum.map(order_ids, fn oid -> Queries.fetch_order_details(oid) end))
 
-    Comp.pure(build_summary(user, orders, details_list))
+    build_summary(user, orders, details_list)
   end
 
   # ---------------------------------------------------------------

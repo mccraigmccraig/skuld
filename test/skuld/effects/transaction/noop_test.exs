@@ -8,7 +8,7 @@ defmodule Skuld.Effects.Transaction.NoopTest do
   alias Skuld.Effects.Transaction
   alias Skuld.Effects.Writer
 
-  defp emit(tag, event), do: Writer.tell(tag, event) |> Comp.then_do(Comp.pure(:ok))
+  defp emit(tag, event), do: Writer.tell(tag, event) |> Comp.then_do(:ok)
 
   defp events_handler(comp, tag \\ :events),
     do: Writer.with_handler(comp, [], tag: tag, output: &{&1, Enum.reverse(&2)})
