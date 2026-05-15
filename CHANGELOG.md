@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 0591103 -->
+<!-- last-updated-against: fd3313ba113b3c4fb24f256e2456bfec752a298f -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -78,6 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unnecessary). Process dictionary / `with_test_pid` patterns removed —
   FiberPool executors run in the same BEAM process, so `send(self(), ...)`
   suffices.
+- Auto-lifting promoted to the first section of `Comp`'s moduledoc. The
+  catch-all `call/3` clause now has explicit `@doc`. `pure/1` leads with
+  "you almost never need this" and explains when it is genuinely useful.
 
 ### Removed
 

@@ -2,6 +2,22 @@ defmodule Skuld.Comp do
   @moduledoc """
   Skuld.Comp: Evidence-passing algebraic effects with scoped handlers.
 
+  ## Auto-Lifting
+
+  Non-computation values are automatically lifted to `pure(value)` — you almost
+  never need to call `Comp.pure/1` explicitly. This enables ergonomic patterns
+  where bare values and expressions Just Work:
+
+      comp do
+        x <- State.get()
+        _ <- if x > 5, do: Writer.tell(:big)  # nil auto-lifted when false
+        x * 2  # final expression auto-lifted (no `return` needed)
+      end
+
+  Auto-lifting is implemented by the catch-all clause of `call/3`, which treats
+  any value that isn't a 2-arity function as `pure(value)` and passes it
+  directly to the continuation.
+
   ## Core Concepts
 
   - **Computation**: `(env, k -> {result, env})` - a suspended computation
@@ -11,17 +27,6 @@ defmodule Skuld.Comp do
     Each sentinel type (Throw, ExternalSuspend, InternalSuspend, Cancelled)
     has its own `ISentinel.run/2` implementation. Comp.run is a clean
     `call + ISentinel.run` pipeline with no sentinel-specific logic.
-
-  ## Auto-Lifting
-
-  Non-computation values are automatically lifted to `pure(value)`. This enables
-  ergonomic patterns:
-
-      comp do
-        x <- State.get()
-        _ <- if x > 5, do: Writer.tell(:big)  # nil auto-lifted when false
-        x * 2  # final expression auto-lifted (no return needed)
-      end
 
   ## Architecture
 
@@ -61,7 +66,17 @@ defmodule Skuld.Comp do
   ## Core Operations
   #############################################################################
 
-  @doc "Lift a pure value into a computation"
+  @doc """
+  Lift a pure value into a computation.
+
+  You almost never need this — bare values are automatically lifted by `call/3`.
+  Prefer returning values directly inside `comp` blocks rather than wrapping
+  them with `pure/1`.
+
+  `pure/1` is still useful when you need an explicit computation value for
+  combinators like `map/2`, `sequence/1`, or when passing computations as
+  arguments.
+  """
   @spec pure(term()) :: Types.computation()
   def pure(value) do
     fn env, k -> call_k(k, value, env) end
@@ -101,10 +116,16 @@ defmodule Skuld.Comp do
   def return(value), do: pure(value)
 
   @doc """
-  Call a computation with validation and exception handling.
+  Call a computation with validation, exception handling, and auto-lifting.
 
-  Raises a helpful error if the value is not a valid computation (2-arity function).
-  This catches common mistakes like forgetting `return(value)` at the end of a comp block.
+  If the value is a 2-arity function, it's called as `comp.(env, k)`.
+
+  If the value is not a computation (not a 2-arity function), it is automatically
+  lifted — treated as `pure(value)` and passed directly to the continuation.
+  This enables ergonomic patterns without explicit wrapping:
+
+      _ <- if condition, do: Writer.tell(x)  # nil auto-lifted when false
+      x + 1  # final expression auto-lifted (no return needed)
 
   Elixir exceptions (raise/throw/exit) are caught and converted to Throw effects,
   allowing them to be handled uniformly with effect-based errors via `catch_error`.
@@ -121,9 +142,6 @@ defmodule Skuld.Comp do
   end
 
   # Auto-lift: non-computation values are treated as pure(value)
-  # This enables ergonomic use like:
-  #   _ <- if condition, do: Writer.tell(x)  # nil auto-lifted when false
-  #   x + 1  # final expression auto-lifted (no return needed)
   def call(value, env, k) do
     k.(value, env)
   catch
