@@ -223,19 +223,9 @@ when it yields or completes, resume it with user input:
 ```elixir
 # In your LiveView
 def handle_event("start_wizard", _params, socket) do
-  {:ok, runner} = AsyncComputation.start(
-    MyApp.Wizard.run(),
-    tag: :wizard, caller: self()
-  )
-  {:noreply, assign(socket, runner: runner)}
-end
+  {:ok, runner} = AsyncComputation.run(
 
-def handle_info({AsyncComputation, :wizard, %ExternalSuspend{value: prompt}}, socket) do
-  {:noreply, assign(socket, step: prompt)}
-end
-
-def handle_event("next_step", %{"answer" => answer}, socket) do
-  AsyncComputation.resume(socket.assigns.runner, answer)
+  AsyncComputation.run(socket.assigns.runner, answer)
   {:noreply, socket}
 end
 ```

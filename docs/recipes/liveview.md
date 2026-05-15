@@ -11,9 +11,9 @@ workflows where a computation yields for user input.
 ## The pattern
 
 1. Build a computation that yields at each user-interaction point
-2. Start it with `AsyncComputation.start/2`
-3. Handle messages in `handle_info/2`
-4. Resume with user input via `AsyncComputation.resume/2`
+2. Run it with `AsyncComputation.run/2`
+
+4. Resume with user input via `AsyncComputation.run/2`
 
 ## Example: a multi-step wizard
 
@@ -46,7 +46,7 @@ defmodule MyAppWeb.WizardLive do
       end
       |> MyApp.Stacks.with_handlers(mode: :production, tenant_id: "t1")
 
-    {:ok, runner} = AsyncComputation.start(computation, tag: :wizard)
+    {:ok, runner} = AsyncComputation.run(computation, tag: :wizard)
     {:noreply, assign(socket, runner: runner)}
   end
 
@@ -75,7 +75,7 @@ defmodule MyAppWeb.WizardLive do
 
   # User submits a step
   def handle_event("submit", %{"value" => value}, socket) do
-    AsyncComputation.resume(socket.assigns.runner, value)
+    AsyncComputation.run(socket.assigns.runner, value)
     {:noreply, assign(socket, step: nil)}
   end
 
@@ -96,7 +96,7 @@ use `start_sync/2` to avoid a render cycle:
 
 ```elixir
 {:ok, runner, %Suspend{value: first_prompt}} =
-  AsyncComputation.start_sync(computation, tag: :wizard, timeout: 5000)
+  AsyncComputation.run_sync(computation, tag: :wizard, timeout: 5000)
 
 {:noreply,
   socket
@@ -106,7 +106,7 @@ use `start_sync/2` to avoid a render cycle:
 Similarly, `resume_sync/3` blocks until the next yield/result:
 
 ```elixir
-case AsyncComputation.resume_sync(runner, value, timeout: 5000) do
+case AsyncComputation.run_sync(runner, value, timeout: 5000) do
   %Suspend{value: next_prompt} ->
     {:noreply, assign(socket, step: next_prompt.step, prompt: next_prompt)}
   {:ok, result} ->
@@ -146,7 +146,7 @@ computation =
   |> EffectLogger.with_logging()
   |> MyApp.Stacks.with_handlers(mode: :production, tenant_id: "t1")
 
-{:ok, runner} = AsyncComputation.start(computation, tag: :wizard)
+{:ok, runner} = AsyncComputation.run(computation, tag: :wizard)
 ```
 
 When the computation suspends, extract and persist the log from

@@ -151,11 +151,11 @@ computation =
   |> Reader.with_handler(%{tenant_id: "t-123"})
 
 # Start async - returns immediately, responses arrive as messages
-{:ok, runner} = AsyncComputation.start(computation, tag: :create_user)
+{:ok, runner} = AsyncComputation.run(computation, tag: :create_user)
 
 # Or start sync - blocks until first yield/result/throw
 {:ok, runner, %Suspend{value: :get_name}} =
-  AsyncComputation.start_sync(computation, tag: :create_user, timeout: 5000)
+  AsyncComputation.run_sync(computation, tag: :create_user, timeout: 5000)
 ```
 
 ### Message format
@@ -171,10 +171,10 @@ All messages arrive as `{AsyncComputation, tag, result}`:
 
 ```elixir
 # Async resume - returns immediately
-AsyncComputation.resume(runner, "Alice")
+AsyncComputation.run(runner, "Alice")
 
 # Sync resume - blocks until next yield/result/throw
-case AsyncComputation.resume_sync(runner, "Alice", timeout: 5000) do
+case AsyncComputation.run_sync(runner, "Alice", timeout: 5000) do
   %Suspend{value: next_prompt} -> # yielded again
   %Throw{error: error} -> # threw
   value -> # completed
@@ -196,7 +196,7 @@ def handle_event("start_wizard", _params, socket) do
     end
     |> MyApp.with_domain_handlers()
 
-  {:ok, runner} = AsyncComputation.start(computation, tag: :wizard)
+  {:ok, runner} = AsyncComputation.run(computation, tag: :wizard)
   {:noreply, assign(socket, runner: runner)}
 end
 
@@ -212,7 +212,7 @@ def handle_info({AsyncComputation, :wizard, result}, socket) do
 end
 
 def handle_event("submit_step", %{"value" => value}, socket) do
-  AsyncComputation.resume(socket.assigns.runner, value)
+  AsyncComputation.run(socket.assigns.runner, value)
   {:noreply, socket}
 end
 ```
