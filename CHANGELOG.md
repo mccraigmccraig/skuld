@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 2bb9825e64a1b270ceb08ba864c5fe3aad218043 -->
+<!-- last-updated-against: 5c207efbc71c08ea163eded2c1f1e0705921b3bf -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -92,6 +92,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   27 files). One `Comp.pure` retained in `serializable_coroutine_test.exs`
   where the guarded `SerializableCoroutine.new/2` function requires a
   2-arity function argument.
+- `Comp.pure` calls stripped from lib/ code across 9 files (57 calls):
+  `brook.ex`, `fx_list.ex`, `fiber_pool.ex`, `batching.ex`, `writer.ex`,
+  `channel.ex`, `port.ex`, `throw.ex`, `state.ex`. Credo refactoring
+  opportunities reduced from 436 → 2.
 
 ### Removed
 
