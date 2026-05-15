@@ -176,6 +176,34 @@ defmodule Skuld.Effects.BrookTest do
       assert result == [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
     end
 
+    test "works with concurrency: 1 explicitly" do
+      result =
+        comp do
+          source <- B.from_enum(1..20)
+          mapped <- B.map(source, fn x -> x * 2 end, concurrency: 1)
+          B.to_list(mapped)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert result == Enum.map(1..20, &(&1 * 2))
+    end
+
+    test "works with concurrency: 4 and preserves order" do
+      result =
+        comp do
+          source <- B.from_enum(1..20)
+          mapped <- B.map(source, fn x -> x * 2 end, concurrency: 4)
+          B.to_list(mapped)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert result == Enum.map(1..20, &(&1 * 2))
+    end
+
     test "propagates input errors" do
       result =
         comp do
