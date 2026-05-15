@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 66a6823 -->
+<!-- last-updated-against: 0591103 -->
 
 All notable changes to Skuld will be documented in this file.
 
