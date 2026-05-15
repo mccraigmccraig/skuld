@@ -23,6 +23,8 @@ defmodule Skuld.MixProject do
           "docs/why.md",
           "docs/what.md",
           "docs/getting-started.md",
+          "docs/syntax.md",
+          "docs/quick-reference.md",
           "docs/effects/state-reader-writer.md",
           "docs/effects/throw-bracket.md",
           "docs/effects/fresh-random.md",
@@ -44,14 +46,18 @@ defmodule Skuld.MixProject do
           "docs/recipes/handler-stacks.md",
           "docs/recipes/liveview.md",
           "docs/recipes/decider-pattern.md",
-          "docs/recipes/batch-loading.md"
+          "docs/recipes/batch-loading.md",
+          "docs/internals.md",
+          "docs/reference.md"
         ],
         groups_for_extras: [
           Introduction: [
             "README.md",
             "docs/why.md",
             "docs/what.md",
-            "docs/getting-started.md"
+            "docs/getting-started.md",
+            "docs/syntax.md",
+            "docs/quick-reference.md"
           ],
           "Foundational Effects": [
             "docs/effects/state-reader-writer.md",
@@ -84,6 +90,10 @@ defmodule Skuld.MixProject do
             "docs/recipes/liveview.md",
             "docs/recipes/decider-pattern.md",
             "docs/recipes/batch-loading.md"
+          ],
+          "Under the Hood": [
+            "docs/internals.md",
+            "docs/reference.md"
           ]
         ],
         groups_for_modules: [

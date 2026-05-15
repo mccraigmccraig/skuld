@@ -1,7 +1,7 @@
 # Batch Loading
 
 <!-- nav:header:start -->
-[< The Decider Pattern](decider-pattern.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md)
+[< The Decider Pattern](decider-pattern.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:header:end -->
 
 Eliminate N+1 queries with `query do` blocks. The query system analyzes
@@ -102,5 +102,5 @@ manual batching or data loader boilerplate.
 
 ---
 
-[< The Decider Pattern](decider-pattern.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md)
+[< The Decider Pattern](decider-pattern.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:footer:end -->
