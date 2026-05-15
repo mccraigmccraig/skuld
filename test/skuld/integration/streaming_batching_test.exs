@@ -219,5 +219,47 @@ defmodule Skuld.Integration.StreamingBatchingTest do
       # 10 users × 2 orders = 20 detail fetches, batched
       assert Enum.sum(Enum.map(details_batches, &elem(&1, 2))) == 20
     end
+
+    test "concurrency: 1 serialises transforms, producing batch sizes of 1" do
+      user_ids = ["u1", "u2", "u3", "u4", "u5"]
+      month = "2026-01"
+
+      result =
+        comp do
+          source <- Brook.from_enum(user_ids, buffer: 20)
+
+          summaries <-
+            Brook.map(
+              source,
+              fn user_id -> build_user_summary(user_id, month) end,
+              concurrency: 1
+            )
+
+          Brook.to_list(summaries)
+        end
+        |> Skuld.Query.with_executor(Queries, Executor)
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert length(result) == 5
+
+      all_messages =
+        Enum.map(1..30, fn _ ->
+          receive do
+            msg -> msg
+          after
+            0 -> nil
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.filter(&match?({:batch, _, _}, &1))
+
+      user_batches = Enum.filter(all_messages, &match?({:batch, :fetch_user, _}, &1))
+      orders_batches = Enum.filter(all_messages, &match?({:batch, :fetch_user_orders, _}, &1))
+
+      assert Enum.map(user_batches, &elem(&1, 2)) == List.duplicate(1, 5)
+      assert Enum.map(orders_batches, &elem(&1, 2)) == List.duplicate(1, 5)
+    end
   end
 end

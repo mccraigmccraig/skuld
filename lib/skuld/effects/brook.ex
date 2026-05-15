@@ -233,6 +233,10 @@ defmodule Skuld.Effects.Brook do
     concurrency = Keyword.get(opts, :concurrency, 1)
     buffer = Keyword.get(opts, :buffer, 10)
 
+    if concurrency < 1 do
+      raise ArgumentError, "concurrency must be >= 1, got: #{inspect(concurrency)}"
+    end
+
     comp do
       # Semaphore: bounded channel controls how many items are in flight
       semaphore <- Channel.new(concurrency)
