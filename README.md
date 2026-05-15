@@ -21,22 +21,22 @@ An effectful programming framework for Elixir.
  //Foundational       //Coroutines &               //Boundaries
  //Effects            //Concurrency                     │
       │                     │                           │
-      │                 Coroutine                ┌──────┼────────┐
-      │                     │                    │      │        │
- State, Reader,        ┌────┴──────┐             │      │       Port
- Writer, Throw,        │           │             │      │        │
- Bracket, Fresh,  Serializable-    │             │      │  Port.EffectfulFacade
- Random, FxList,   Coroutine       │             │      │  Repo
- Yield,                            │             │      │
- EffectLogger,                  FiberPool        │  Adapter
- Parallel,                         │             │  Adapter.EffectfulContract
- AtomicState,                      ├────────────┐│
- Transaction,                      │            ││
- AsyncCoroutine                  │            ││
- Command                      ┌────┴────┐       ││
-                           Channel    Task      ││
-                              │                 ││
-                            Brook               ││
+      │                 Coroutine                ┌──────┼────┐
+      │                     │                    │      │    │
+ State, Reader,    ┌────────┼─────────┐          │      │  Port
+ Writer, Throw,    │        │         │          │      │  Port.EffectfulFacade
+ Bracket, Fresh,   │  Serializable-   │          │      │  Repo
+ Random, FxList,   │   Coroutine      │          │      │
+ Yield,            │                  │          │      │
+ EffectLogger,  AsyncCoroutine     FiberPool     │  Adapter
+ Parallel,                            │          │  Adapter.EffectfulContract
+ AtomicState,                         ├─────────┐│
+ Transaction,                         │         ││
+ Command                              │         ││
+                                 ┌────┴────┐    ││
+                              Channel    Task   ││
+                                 │              ││
+                               Brook            ││
                                                 ││
                                            Query.Contract
                                            QueryBlock
