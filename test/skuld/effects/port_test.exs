@@ -546,7 +546,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(Port.request!(TestQueries, :find_user, [1]), fn user1 ->
           Comp.bind(Port.request!(TestQueries, :find_user, [2]), fn user2 ->
-            Comp.pure([user1, user2])
+            [user1, user2]
           end)
         end)
         |> Port.with_test_handler(responses)
@@ -565,7 +565,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(Port.request(TestQueries, :find_user, [1]), fn result1 ->
           Comp.bind(Port.request(TestQueries, :find_user, [2]), fn result2 ->
-            Comp.pure([result1, result2])
+            [result1, result2]
           end)
         end)
         |> Port.with_test_handler(responses)
@@ -585,7 +585,7 @@ defmodule Skuld.Effects.PortTest do
         Comp.bind(Port.request!(TestQueries, :find_user, [1]), fn user ->
           Comp.bind(State.get(), fn count ->
             Comp.bind(State.put(count + 1), fn _ ->
-              Comp.pure({user, count})
+              {user, count}
             end)
           end)
         end)
@@ -634,19 +634,19 @@ defmodule Skuld.Effects.PortTest do
     def __port_effectful__?, do: true
 
     def find_user(id) do
-      Comp.pure({:ok, %{id: id, name: "Effectful #{id}"}})
+      {:ok, %{id: id, name: "Effectful #{id}"}}
     end
 
     def find_user_or_error(id) when id < 0 do
-      Comp.pure({:error, {:not_found, :user, id}})
+      {:error, {:not_found, :user, id}}
     end
 
     def find_user_or_error(id) do
-      Comp.pure({:ok, %{id: id, name: "Effectful #{id}"}})
+      {:ok, %{id: id, name: "Effectful #{id}"}}
     end
 
     def no_args do
-      Comp.pure({:ok, :healthy})
+      {:ok, :healthy}
     end
   end
 
@@ -659,7 +659,7 @@ defmodule Skuld.Effects.PortTest do
     def find_user(id) do
       Comp.bind(State.get(), fn count ->
         Comp.bind(State.put(count + 1), fn _ ->
-          Comp.pure({:ok, %{id: id, name: "Stateful #{id}", call_count: count + 1}})
+          {:ok, %{id: id, name: "Stateful #{id}", call_count: count + 1}}
         end)
       end)
     end
@@ -712,7 +712,7 @@ defmodule Skuld.Effects.PortTest do
         Port.request(TestQueries, :find_user, [1])
         |> Comp.bind(fn first_result ->
           Comp.bind(Port.request(TestQueries, :find_user, [2]), fn second_result ->
-            Comp.pure({first_result, second_result})
+            {first_result, second_result}
           end)
         end)
         |> Port.with_handler(%{TestQueries => StatefulEffectfulImpl})
@@ -747,7 +747,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(Port.request(TestQueries, :find_user, [1]), fn plain_result ->
           Comp.bind(Port.request(TestImplModule, :find_user, [2]), fn effectful_result ->
-            Comp.pure({plain_result, effectful_result})
+            {plain_result, effectful_result}
           end)
         end)
         |> Port.with_handler(%{
@@ -795,7 +795,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
           Comp.bind(Port.request(ModuleB, :do_b, [2]), fn b_result ->
-            Comp.pure({a_result, b_result})
+            {a_result, b_result}
           end)
         end)
         |> Port.with_handler(%{ModuleB => :direct})
@@ -826,7 +826,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(inner_comp, fn inner_result ->
           Comp.bind(Port.request(ModuleA, :do_a, [2]), fn outer_result ->
-            Comp.pure({inner_result, outer_result})
+            {inner_result, outer_result}
           end)
         end)
         |> Port.with_handler(%{ModuleA => :direct})
@@ -841,7 +841,7 @@ defmodule Skuld.Effects.PortTest do
       innermost_comp =
         Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
           Comp.bind(Port.request(ModuleB, :do_b, [2]), fn b_result ->
-            Comp.pure({a_result, b_result})
+            {a_result, b_result}
           end)
         end)
         |> Port.with_handler(%{ModuleA => ModuleAv2})
@@ -873,7 +873,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(inner_comp, fn inner_result ->
           Comp.bind(outer_request, fn outer_result ->
-            Comp.pure({inner_result, outer_result})
+            {inner_result, outer_result}
           end)
         end)
         |> Port.with_handler(%{ModuleA => :direct})
@@ -888,7 +888,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
           Comp.bind(Port.request(TestQueries, :find_user, [42]), fn q_result ->
-            Comp.pure({a_result, q_result})
+            {a_result, q_result}
           end)
         end)
         |> Port.with_handler(%{TestQueries => EffectfulImpl})
@@ -912,7 +912,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
           Comp.bind(Port.request(ModuleB, :do_b, [99]), fn b_result ->
-            Comp.pure({a_result, b_result})
+            {a_result, b_result}
           end)
         end)
         |> Port.with_test_handler(responses)
@@ -931,7 +931,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
           Comp.bind(Port.request(ModuleB, :do_b, [42]), fn b_result ->
-            Comp.pure({a_result, b_result})
+            {a_result, b_result}
           end)
         end)
         |> Port.with_fn_handler(handler)
@@ -951,7 +951,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
           Comp.bind(Port.request(ModuleB, :do_b, [2]), fn b_result ->
-            Comp.pure({a_result, b_result})
+            {a_result, b_result}
           end)
         end)
         |> Port.with_test_handler(responses)
@@ -971,7 +971,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
           Comp.bind(Port.request(ModuleB, :do_b, [2]), fn b_result ->
-            Comp.pure({a_result, b_result})
+            {a_result, b_result}
           end)
         end)
         |> Port.with_fn_handler(handler)
@@ -1009,7 +1009,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(Port.request(TestQueries, :find_user, [42]), fn q_result ->
           Comp.bind(Port.request(ModuleB, :do_b, [5]), fn b_result ->
-            Comp.pure({q_result, b_result})
+            {q_result, b_result}
           end)
         end)
         |> Port.with_test_handler(responses)
@@ -1032,7 +1032,7 @@ defmodule Skuld.Effects.PortTest do
         Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
           Comp.bind(Port.request(ModuleB, :do_b, [1]), fn b_exact ->
             Comp.bind(Port.request(ModuleB, :do_b, [999]), fn b_fallback ->
-              Comp.pure({a_result, b_exact, b_fallback})
+              {a_result, b_exact, b_fallback}
             end)
           end)
         end)
@@ -1269,7 +1269,7 @@ defmodule Skuld.Effects.PortTest do
       {result, log} =
         Comp.bind(inner_comp, fn inner_result ->
           Comp.bind(Port.request(ModuleB, :do_b, [2]), fn outer_result ->
-            Comp.pure({inner_result, outer_result})
+            {inner_result, outer_result}
           end)
         end)
         |> Port.with_handler(%{ModuleB => :direct}, log: true, output: &log_output/2)
@@ -1292,7 +1292,7 @@ defmodule Skuld.Effects.PortTest do
       {result, outer_log} =
         Comp.bind(inner_comp, fn inner_result ->
           Comp.bind(Port.request(ModuleB, :do_b, [2]), fn outer_result ->
-            Comp.pure({inner_result, outer_result})
+            {inner_result, outer_result}
           end)
         end)
         |> Port.with_handler(%{ModuleB => :direct}, log: true, output: &log_output/2)
@@ -1339,7 +1339,7 @@ defmodule Skuld.Effects.PortTest do
         Comp.bind(Port.request(TestQueries, :find_user, [1]), fn r1 ->
           Comp.bind(Port.request(TestQueries, :find_user, [2]), fn r2 ->
             Comp.bind(Port.request(TestQueries, :find_user, [3]), fn r3 ->
-              Comp.pure({r1, r2, r3})
+              {r1, r2, r3}
             end)
           end)
         end)
@@ -1363,7 +1363,7 @@ defmodule Skuld.Effects.PortTest do
         Comp.bind(Port.request(ModuleA, :do_a, [1]), fn r1 ->
           Comp.bind(Port.request(ModuleB, :do_b, [2]), fn r2 ->
             Comp.bind(Port.request(TestQueries, :find_user, [3]), fn r3 ->
-              Comp.pure({r1, r2, r3})
+              {r1, r2, r3}
             end)
           end)
         end)
@@ -1404,7 +1404,7 @@ defmodule Skuld.Effects.PortTest do
       result =
         Comp.bind(Port.request(TestQueries, :find_user, [1]), fn r1 ->
           Comp.bind(Port.request(TestQueries, :find_user, [2]), fn r2 ->
-            Comp.pure({r1, r2})
+            {r1, r2}
           end)
         end)
         |> Port.with_stateful_handler(%{}, handler)
@@ -1429,7 +1429,7 @@ defmodule Skuld.Effects.PortTest do
       result =
         Comp.bind(Port.request(TestQueries, :insert, [record]), fn {:ok, inserted} ->
           Comp.bind(Port.request(TestQueries, :get, [:user, inserted.id]), fn found ->
-            Comp.pure({inserted, found})
+            {inserted, found}
           end)
         end)
         |> Port.with_stateful_handler(%{}, handler)
@@ -1465,7 +1465,7 @@ defmodule Skuld.Effects.PortTest do
       {result, final_state} =
         Comp.bind(Port.request(TestQueries, :find_user, [1]), fn r1 ->
           Comp.bind(Port.request(TestQueries, :find_user, [2]), fn r2 ->
-            Comp.pure({r1, r2})
+            {r1, r2}
           end)
         end)
         |> Port.with_stateful_handler(%{}, handler,
@@ -1568,7 +1568,7 @@ defmodule Skuld.Effects.PortTest do
       comp =
         Comp.bind(Port.request(ModuleA, :do_a, [1]), fn a_result ->
           Comp.bind(Port.request(ModuleB, :do_b, [2]), fn b_result ->
-            Comp.pure({a_result, b_result})
+            {a_result, b_result}
           end)
         end)
         |> Port.with_stateful_handler(%{}, handler)
@@ -1593,7 +1593,7 @@ defmodule Skuld.Effects.PortTest do
         Comp.bind(Port.request(TestQueries, :find_user, [1]), fn user ->
           Comp.bind(State.get(), fn count ->
             Comp.bind(State.put(count + 1), fn _ ->
-              Comp.pure({user, count})
+              {user, count}
             end)
           end)
         end)
@@ -1615,7 +1615,7 @@ defmodule Skuld.Effects.PortTest do
       {result, log, final_handler_state} =
         Comp.bind(Port.request(TestQueries, :find_user, [1]), fn r1 ->
           Comp.bind(Port.request(TestQueries, :find_user, [2]), fn r2 ->
-            Comp.pure({r1, r2})
+            {r1, r2}
           end)
         end)
         |> Port.with_stateful_handler(%{}, handler,
