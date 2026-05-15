@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: bb60bc7a574033de954363b6e8c308c4e4afb81b -->
+<!-- last-updated-against: f9f8fde56e15cd3ffb679df9c68b9dd4cd0c3568 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.27.2] — 2026-05-15
+
+### Added
+
+- Recipe docs: hexagonal architecture, property-based testing, handler
+  stacks, LiveView integration, decider pattern, batch loading.
+- Syntax, internals, reference, and quick-reference docs.
+- Performance benchmarks page with progressive overhead decomposition
+  and optimisation results.
+- `mix docs.nav` step added to release process in AGENTS.md.
 
 ## [0.27.1] — 2026-05-15
 
