@@ -129,7 +129,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "pattern matching in binding" do
       computation =
         comp do
-          {a, b} <- Comp.pure({1, 2})
+          {a, b} <- {1, 2}
           return(a + b)
         end
 
@@ -292,8 +292,8 @@ defmodule Skuld.Comp.CompBlockTest do
     test "computation as last expression without return" do
       computation =
         comp do
-          x <- Comp.pure(10)
-          Comp.pure(x + 1)
+          x <- 10
+          x + 1
         end
 
       assert Comp.run!(computation) == 11
@@ -302,7 +302,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "complex pattern in binding" do
       computation =
         comp do
-          %{a: a, b: b} <- Comp.pure(%{a: 1, b: 2, c: 3})
+          %{a: a, b: b} <- %{a: 1, b: 2, c: 3}
           return(a + b)
         end
 
@@ -468,7 +468,7 @@ defmodule Skuld.Comp.CompBlockTest do
 
   describe "defcomp with catch" do
     defcomp safe_divide(a, b) do
-      _ <- if b == 0, do: Throw.throw(:divide_by_zero), else: Comp.pure(:ok)
+      _ <- if b == 0, do: Throw.throw(:divide_by_zero), else: :ok
       return(div(a, b))
     catch
       {Throw, :divide_by_zero} -> return(:infinity)
@@ -518,7 +518,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "handles pattern match failure in <-" do
       computation =
         comp do
-          {:ok, x} <- Comp.pure({:error, :not_found})
+          {:ok, x} <- {:error, :not_found}
           return(x)
         else
           {:error, reason} -> return({:failed, reason})
@@ -531,7 +531,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "passes through successful match" do
       computation =
         comp do
-          {:ok, x} <- Comp.pure({:ok, 42})
+          {:ok, x} <- {:ok, 42}
           return(x)
         else
           {:error, _} -> return(:failed)
@@ -544,7 +544,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "handles multiple patterns in else" do
       computation =
         comp do
-          {:ok, x} <- Comp.pure({:error, :specific})
+          {:ok, x} <- {:error, :specific}
           return(x)
         else
           {:error, :specific} -> return(:specific_handled)
@@ -559,7 +559,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "unhandled match failure propagates as MatchFailed" do
       computation =
         comp do
-          {:ok, x} <- Comp.pure({:error, :unhandled})
+          {:ok, x} <- {:error, :unhandled}
           return(x)
         else
           {:error, :specific} -> return(:handled)
@@ -573,7 +573,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "else with catch-all handles any mismatch" do
       computation =
         comp do
-          {:ok, x} <- Comp.pure(:something_else)
+          {:ok, x} <- :something_else
           return(x)
         else
           other -> return({:caught, other})
@@ -587,7 +587,7 @@ defmodule Skuld.Comp.CompBlockTest do
       # Simple variable patterns always match, so else is never called
       computation =
         comp do
-          x <- Comp.pure(42)
+          x <- 42
           return(x * 2)
         else
           _ -> return(:should_not_reach)
@@ -600,7 +600,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "handles pattern match failure in = binding" do
       computation =
         comp do
-          x <- Comp.pure(10)
+          x <- 10
           {:ok, y} = {:error, :oops}
           return(x + y)
         else
@@ -614,7 +614,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "else handler can use effects" do
       computation =
         comp do
-          {:ok, x} <- Comp.pure({:error, :failed})
+          {:ok, x} <- {:error, :failed}
           return(x)
         else
           {:error, _} ->
@@ -630,9 +630,9 @@ defmodule Skuld.Comp.CompBlockTest do
     test "multiple <- bindings with else" do
       computation =
         comp do
-          {:ok, a} <- Comp.pure({:ok, 1})
-          {:ok, b} <- Comp.pure({:ok, 2})
-          {:ok, c} <- Comp.pure({:error, :third_failed})
+          {:ok, a} <- {:ok, 1}
+          {:ok, b} <- {:ok, 2}
+          {:ok, c} <- {:error, :third_failed}
           return(a + b + c)
         else
           {:error, reason} -> return({:failed_at, reason})
@@ -681,7 +681,7 @@ defmodule Skuld.Comp.CompBlockTest do
         import Skuld.Comp.CompBlock
         alias Skuld.Comp
         comp do
-          x <- Comp.pure(1)
+          x <- 1
           IO.puts("side effect")
           x + 1
         end
@@ -696,7 +696,7 @@ defmodule Skuld.Comp.CompBlockTest do
         import Skuld.Comp.CompBlock
         alias Skuld.Comp
         defmodule TempModule do
-          def some_effect, do: Comp.pure(:ok)
+          def some_effect, do: :ok
         end
         comp do
           TempModule.some_effect()
@@ -715,8 +715,8 @@ defmodule Skuld.Comp.CompBlockTest do
           import Skuld.Comp.CompBlock
           alias Skuld.Comp
           comp do
-            _ <- Comp.pure(:setup)
-            a <- Comp.pure(42)
+            _ <- :setup
+            a <- 42
           end
           """)
         end)
@@ -732,7 +732,7 @@ defmodule Skuld.Comp.CompBlockTest do
           import Skuld.Comp.CompBlock
           alias Skuld.Comp
           comp do
-            _ <- Comp.pure(:setup)
+            _ <- :setup
             a = 42
           end
           """)
@@ -745,7 +745,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "else inside catch - throws from else are caught" do
       computation =
         comp do
-          {:ok, x} <- Comp.pure({:error, :match_fail})
+          {:ok, x} <- {:error, :match_fail}
           return(x)
         else
           {:error, :match_fail} ->
@@ -763,7 +763,7 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           _ <- Throw.throw(:body_threw)
-          {:ok, x} <- Comp.pure({:ok, 42})
+          {:ok, x} <- {:ok, 42}
           return(x)
         else
           {:error, _} -> return(:else_handled)
@@ -778,7 +778,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "else handles match failure, catch handles throw" do
       computation =
         comp do
-          {:ok, x} <- Comp.pure({:error, :no_match})
+          {:ok, x} <- {:error, :no_match}
           return(x)
         else
           {:error, :no_match} -> return(:else_handled_match)
@@ -810,7 +810,7 @@ defmodule Skuld.Comp.CompBlockTest do
 
   describe "defcomp with else" do
     defcomp safe_unwrap(result) do
-      {:ok, value} <- Comp.pure(result)
+      {:ok, value} <- result
       return(value)
     else
       {:error, reason} -> return({:failed, reason})
@@ -830,8 +830,8 @@ defmodule Skuld.Comp.CompBlockTest do
 
   describe "defcomp with else and catch" do
     defcomp complex_handler(input) do
-      {:ok, x} <- Comp.pure(input)
-      _ <- if x < 0, do: Throw.throw(:negative), else: Comp.pure(:ok)
+      {:ok, x} <- input
+      _ <- if x < 0, do: Throw.throw(:negative), else: :ok
       return(x * 2)
     else
       {:error, reason} -> return({:match_failed, reason})
@@ -1131,7 +1131,7 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Yield.yield(:get_value)
-          _ <- if x < 0, do: Throw.throw(:negative), else: Comp.pure(:ok)
+          _ <- if x < 0, do: Throw.throw(:negative), else: :ok
           return(x * 2)
         catch
           {Yield, :get_value} -> return(-5)
@@ -1147,7 +1147,7 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Yield.yield(:get_value)
-          _ <- if x < 0, do: Throw.throw(:negative), else: Comp.pure(:ok)
+          _ <- if x < 0, do: Throw.throw(:negative), else: :ok
           return(x * 2)
         catch
           {Yield, :get_value} -> return(5)
