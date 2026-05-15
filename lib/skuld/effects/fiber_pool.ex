@@ -331,7 +331,7 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   defp fiber_all_acc([], handles_acc) do
-    Comp.pure(Enum.reverse(handles_acc))
+    Enum.reverse(handles_acc)
   end
 
   defp fiber_all_acc([comp | rest], handles_acc) do
@@ -358,7 +358,7 @@ defmodule Skuld.Effects.FiberPool do
   @spec fiber_await_all([Comp.Types.computation()]) :: Comp.Types.computation()
   def fiber_await_all([single]) do
     # Optimization: single computation doesn't need fiber overhead
-    Comp.bind(single, fn result -> Comp.pure([result]) end)
+    Comp.bind(single, fn result -> [result] end)
   end
 
   def fiber_await_all(comps) when is_list(comps) do
@@ -419,7 +419,7 @@ defmodule Skuld.Effects.FiberPool do
   @spec ap(Comp.Types.computation(), Comp.Types.computation()) :: Comp.Types.computation()
   def ap(comp_f, comp_a) do
     Comp.bind(fiber_await_all([comp_f, comp_a]), fn [f, a] ->
-      Comp.pure(f.(a))
+      f.(a)
     end)
   end
 
@@ -617,9 +617,9 @@ defmodule Skuld.Effects.FiberPool do
 
           after_exit =
             if on_exit do
-              Comp.bind(on_exit.(result, scope_handles), fn _ -> Comp.pure(result) end)
+              Comp.bind(on_exit.(result, scope_handles), fn _ -> result end)
             else
-              Comp.pure(result)
+              result
             end
 
           final =
@@ -627,7 +627,7 @@ defmodule Skuld.Effects.FiberPool do
               after_exit
             else
               Comp.bind(after_exit, fn r ->
-                Comp.bind(await_all(scope_handles), fn _results -> Comp.pure(r) end)
+                Comp.bind(await_all(scope_handles), fn _results -> r end)
               end)
             end
 
@@ -659,7 +659,7 @@ defmodule Skuld.Effects.FiberPool do
   end
 
   # Cancel a list of handles sequentially
-  defp cancel_all([]), do: Comp.pure(:ok)
+  defp cancel_all([]), do: :ok
 
   defp cancel_all([handle | rest]) do
     Comp.bind(cancel(handle), fn _ -> cancel_all(rest) end)
