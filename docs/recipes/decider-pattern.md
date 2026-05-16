@@ -5,7 +5,7 @@
 <!-- nav:header:end -->
 
 Event-sourced domain logic where the core decision is a pure function.
-`Command` provides the dispatch; handlers manage state and persistence.
+Effects handle state and persistence; the decider stays plain Elixir.
 
 ## The pure decider
 
@@ -45,15 +45,14 @@ def evolve(state, %AmountDeposited{amount: amount}), do: %{state | balance: stat
 def evolve(state, %AmountWithdrawn{amount: amount}), do: %{state | balance: state.balance - amount}
 ```
 
-## Wiring with effects
+## Putting it together
 
-The computation loads state, dispatches to the decider via `Command`,
-evolves state from the resulting events, and persists:
+Load state, call the pure decider, evolve, and persist:
 
 ```elixir
 defcomp handle(cmd) do
   state <- State.get()
-  events <- Command.execute(cmd)
+  events = BankAccount.decide(cmd, state)
 
   case events do
     [{:error, reason}] ->
@@ -68,25 +67,21 @@ defcomp handle(cmd) do
 end
 ```
 
-The `Command` handler just calls the pure decider:
+`decide` and `evolve` are plain Elixir functions — testable without
+effects. `State` and `Writer` handle persistence:
 
 ```elixir
-computation
-|> Command.with_handler(fn cmd ->
-  Comp.bind(State.get(), fn state ->
-    BankAccount.decide(cmd, state)
-  end)
-end)
+handle(%Deposit{amount: 100})
 |> State.with_handler(%{balance: 50})
-|> Writer.with_handler([], tag: :events)
+|> Writer.with_handler([], tag: :events, output: fn r, events -> {r, Enum.reverse(events)} end)
 |> Throw.with_handler()
 |> Comp.run!()
+# => {{:ok, %{balance: 150}}, [%AmountDeposited{amount: 100}]}
 ```
 
-The decider is a pure Elixir module — testable with plain function
-calls. The computation manages state and persistence via effects.
-`Command` provides the dispatch from operation to implementation,
-so the pattern composes naturally with other effects in the stack.
+The pattern separates pure domain logic (decide, evolve) from effectful
+infrastructure (state, event log). The effects handle the plumbing; the
+decider stays a plain Elixir module with no dependencies.
 
 <!-- nav:footer:start -->
 
