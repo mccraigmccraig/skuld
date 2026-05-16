@@ -11,92 +11,115 @@ code restructuring needed.
 ## The N+1 problem
 
 ```elixir
-# N+1: one query for users, then one per user for subscriptions
+# N+1: one query for users, then N queries for their orders
 users <- Repo.all(User)
 Enum.map(users, fn user ->
-  {:ok, sub} <- Repo.get_by(Subscription, user_id: user.id)
-  {user, sub}
+  {:ok, orders} <- Repo.get_by(Order, user_id: user.id)
+  {user, orders}
 end)
 ```
 
-## The solution: `query do`
+## The solution: `query do` with streaming
+
+Define fetch operations with `deffetch`:
 
 ```elixir
-defmodule MyApp.Fetches do
+defmodule AccountQueries do
   use Skuld.Query
 
-  deffetch get_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
-  deffetch get_subscription(user_id :: String.t()) :: {:ok, Subscription.t()} | {:error, term()}
+  deffetch fetch_user(id :: String.t()) :: User.t() | nil
+  deffetch fetch_orders(user_id :: String.t()) :: [Order.t()]
+  deffetch fetch_order_details(order_id :: String.t()) :: [OrderDetail.t()]
 end
+```
 
-defcomp load_dashboard(user_id) do
-  query do
-    user <- MyApp.Fetches.get_user(user_id)
-    sub <- MyApp.Fetches.get_subscription(user.id)
-    {:ok, %{user: user, subscription: sub}}
+Build a summary for one user. The `query` block automatically batches
+calls across concurrent transforms:
+
+```elixir
+defquery build_summary(user_id, month) do
+  user <- AccountQueries.fetch_user(user_id)
+  orders <- AccountQueries.fetch_orders(user_id, month)
+  order_ids = Enum.map(orders, & &1.id)
+
+  details_list <-
+    Comp.sequence(Enum.map(order_ids, fn oid ->
+      AccountQueries.fetch_order_details(oid)
+    end))
+
+  build_summary(user, orders, details_list)
+end
+```
+
+Feed a stream of user IDs through `Brook.map` with concurrency.
+The query system batches `deffetch` calls from *all* concurrent
+transforms together:
+
+```elixir
+comp do
+  source <- Brook.from_enum(user_ids, buffer: 20)
+
+  summaries <-
+    Brook.map(
+      source,
+      fn user_id -> build_summary(user_id, "2026-01") end,
+      concurrency: 4
+    )
+
+  Brook.to_list(summaries)
+end
+|> Skuld.Query.with_executor(AccountQueries, AccountExecutor)
+|> Channel.with_handler()
+|> FiberPool.with_handler()
+|> Comp.run!()
+```
+
+## What happens
+
+With `concurrency: 4`, the FiberPool runs 4 transforms concurrently.
+As each transform calls `fetch_user(user_id)`, the query system holds
+the call and waits for other transforms to reach their first fetch.
+When enough calls accumulate, they're batched into a single round-trip:
+
+- **10 users, concurrency 4**: `fetch_user` calls arrive in batches
+  of [4, 4, 2]. Same for `fetch_orders`.
+- **5 users, concurrency 1**: each batch has only 1 call — no
+  batching benefit.
+
+Dependent calls (like `fetch_order_details` which depends on
+`orders` from the previous fetch) wait for their inputs and run in
+subsequent rounds.
+
+## Wiring an executor
+
+```elixir
+defmodule AccountExecutor do
+  @behaviour AccountQueries
+
+  @impl true
+  def fetch_user(ops) do
+    results = ops |> Enum.map(fn {_ref, op} -> op end) |> BulkAPI.bulk_fetch_users()
+    Map.new(ops, fn {ref, op} -> {ref, Map.fetch!(results, op)} end)
+  end
+
+  @impl true
+  def fetch_orders(ops) do
+    results = ops |> Enum.map(fn {_ref, op} -> op end) |> BulkAPI.bulk_fetch_orders()
+    Map.new(ops, fn {ref, op} -> {ref, Map.fetch!(results, op)} end)
   end
 end
 ```
 
-The query system detects that `get_subscription` depends on `user.id` and
-batches any *independent* `get_user` calls together. Dependent fetches
-run in a second round.
-
-## Wiring executors
-
-```elixir
-defmodule MyApp.UserExecutor do
-  @behaviour Skuld.Query.Executor
-
-  def execute(tagged_ops) do
-    results = for {ref, op} <- tagged_ops, into: %{} do
-      {ref, do_fetch(op)}
-    end
-    {:ok, results}
-  end
-end
-
-load_dashboard("user-123")
-|> Skuld.Query.with_executor(MyApp.Fetches, MyApp.UserExecutor)
-|> FiberPool.with_handler()
-|> Comp.run!()
-```
-
-## Caching
-
-Within-batch deduplication:
-
-```elixir
-load_dashboard("user-123")
-|> Skuld.Query.with_cached_executor(MyApp.Fetches, MyApp.UserExecutor)
-|> FiberPool.with_handler()
-|> Comp.run!()
-```
-
-If `get_user("user-123")` is called twice in the same batch, the second
-call returns the cached result.
-
-## Multiple contracts
-
-Wire multiple fetch contracts together:
-
-```elixir
-computation
-|> Skuld.Query.with_cached_executors([
-  {MyApp.Fetches, MyApp.UserExecutor},
-  {MyApp.Products, MyApp.ProductExecutor}
-])
-|> FiberPool.with_handler()
-|> Comp.run!()
-```
+Each executor method receives a *list* of `{ref, op}` tuples — all the
+calls that were batched together. Return a map keyed by ref.
 
 ## How it works
 
 `query do` blocks desugar into `deffetch` calls with dependency analysis.
-Independent operations are batched and executed concurrently via
-`FiberPool` fibers. Dependent operations wait for their inputs and run in
-subsequent rounds. The result is automatic N+1 elimination without
-manual batching or data loader boilerplate.
+Independent operations are held and dispatched in batches via `FiberPool`.
+Dependent operations wait for their inputs and run in subsequent rounds.
+The result is automatic N+1 elimination — no manual batching, no data
+loader boilerplate, no code restructuring.
 
 <!-- nav:footer:start -->
 
