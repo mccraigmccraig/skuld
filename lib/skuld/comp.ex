@@ -103,6 +103,22 @@ defmodule Skuld.Comp do
   @spec return(term()) :: Types.computation()
   def return(value), do: pure(value)
 
+  @doc "Sequence computations"
+  @spec bind(Types.computation(), (term() -> Types.computation())) :: Types.computation()
+  def bind(comp, f) do
+    fn env, k ->
+      call(comp, env, fn a, env2 ->
+        try do
+          result = f.(a)
+          call(result, env2, k)
+        catch
+          kind, payload ->
+            ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, env2)
+        end
+      end)
+    end
+  end
+
   @doc """
   Call a computation with validation, exception handling, and auto-lifting.
 
@@ -152,22 +168,6 @@ defmodule Skuld.Comp do
   catch
     kind, payload ->
       ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, env)
-  end
-
-  @doc "Sequence computations"
-  @spec bind(Types.computation(), (term() -> Types.computation())) :: Types.computation()
-  def bind(comp, f) do
-    fn env, k ->
-      call(comp, env, fn a, env2 ->
-        try do
-          result = f.(a)
-          call(result, env2, k)
-        catch
-          kind, payload ->
-            ConvertThrow.handle_exception(kind, payload, __STACKTRACE__, env2)
-        end
-      end)
-    end
   end
 
   @doc "identity continuation - for initial continuation & default leave-scope"
