@@ -92,9 +92,8 @@ end
 ### The pipeline
 
 ```elixir
-def process_stream(commands) do
-  commands
-  |> Brook.from_enum()
+def process_stream(stream) do
+  stream
   |> Brook.flat_map(fn cmd ->
     comp do
       state <- State.get()
@@ -114,20 +113,30 @@ def process_stream(commands) do
   |> Brook.map(fn event ->
     comp do
       _ <- EventStore.write_event(event)
-      event
     end
   end, concurrency: 4)
-  |> Brook.to_list()
 end
 ```
 
+The caller handles the source and sink:
+
+```elixir
+commands
+|> Brook.from_enum()
+|> process_stream()
+|> Brook.run()
+```
+
 `flat_map` runs `decide` concurrently and flattens the event lists.
-Second phase maps each event through `write_event` — and because
+The second phase maps each event through `write_event` — and because
 `write_event` is a `deffetch` operation under `FiberPool`, the
 scheduler batches concurrent calls for the executor:
 
 ```elixir
-process_stream(commands)
+commands
+|> Brook.from_enum()
+|> process_stream()
+|> Brook.to_list()
 |> Skuld.Query.with_executor(EventStore, EventStore.EctoExecutor)
 |> State.with_handler(%{balance: 0})
 |> Writer.with_handler([], tag: :errors)
