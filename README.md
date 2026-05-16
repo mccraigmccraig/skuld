@@ -132,6 +132,42 @@ Same code. Production pauses at each step for user input. Tests drive
 the entire wizard in a single function — deterministic, no processes,
 no stubs.
 
+## Composability
+
+Effects compose with zero ceremony. This streaming pipeline processes
+a sequence of commands through a pure decider, persists events via a
+batched `deffetch` contract, and pushes concurrency and backpressure
+to the handler layer:
+
+```elixir
+def process_stream(stream) do
+  stream
+  |> Brook.flat_map(fn cmd ->
+    comp do
+      state <- State.get()
+      BankAccount.decide(cmd, state)
+    end
+  end)
+  |> Brook.map(&EventStore.evolve/1, concurrency: 4)
+end
+
+# Wire everything up — batching, concurrency, error handling, persistence
+commands
+|> Brook.from_enum()
+|> process_stream()
+|> Brook.to_list()
+|> Skuld.Query.with_executor(EventStore, EventStore.EctoExecutor)
+|> State.with_handler(%{balance: 0})
+|> Channel.with_handler()
+|> FiberPool.with_handler()
+|> Throw.with_handler()
+|> Comp.run!()
+```
+
+`process_stream` knows nothing about databases, batch sizes, or
+concurrency limits. Two lines of business logic. Everything else
+is handler wiring — swappable, testable, composable.
+
 ## Installation
 
 ```elixir
