@@ -25,8 +25,9 @@ fn _env, k -> k.(42, _env) end
 
 ## Evidence-passing
 
-Handlers are stored in `env.evidence` — a map from effect signatures to
-handler functions. When an effect operation runs, it looks up its handler:
+Handlers are stored in `env.scope.evidence` (a `ScopeEnv` struct containing
+evidence, leave_scope, and transform_suspend). When an effect operation
+runs, it looks up its handler via `Env.get_handler!/2`:
 
 ```elixir
 def effect(sig, args) do
