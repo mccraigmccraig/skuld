@@ -219,6 +219,73 @@ defmodule Skuld.Effects.BrookTest do
     end
   end
 
+  describe "flat_map/3" do
+    test "maps and flattens items" do
+      result =
+        comp do
+          source <- B.from_enum([1, 2, 3])
+          mapped <- B.flat_map(source, fn x -> [x, x * 10] end)
+          B.to_list(mapped)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert result == [1, 10, 2, 20, 3, 30]
+    end
+
+    test "works with concurrency" do
+      result =
+        comp do
+          source <- B.from_enum([1, 2, 3, 4, 5], buffer: 20)
+          mapped <- B.flat_map(source, fn x -> [x, x * 10] end, concurrency: 2)
+          B.to_list(mapped)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert length(result) == 10
+      assert 1 in result
+      assert 50 in result
+    end
+
+    test "handles empty lists from transform" do
+      result =
+        comp do
+          source <- B.from_enum([1, 2, 3])
+          mapped <- B.flat_map(source, fn x -> if rem(x, 2) == 0, do: [x], else: [] end)
+          B.to_list(mapped)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert result == [2]
+    end
+
+    test "works with effectful transforms" do
+      result =
+        comp do
+          source <- B.from_enum([1, 2, 3])
+          mapped <- B.flat_map(source, fn x -> [x, x + 1] end)
+          mapped2 <- B.flat_map(mapped, fn x -> [x, x * 2] end)
+          B.to_list(mapped2)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      # With concurrent transforms, items from the same source are ordered
+      # relative to each other, but items from different sources may interleave
+      assert length(result) == 12
+      assert 1 in result
+      assert 2 in result
+      assert 6 in result
+      assert 8 in result
+    end
+  end
+
   describe "filter/3" do
     test "filters items by predicate" do
       result =

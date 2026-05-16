@@ -324,6 +324,71 @@ defmodule Skuld.Effects.Brook do
     end
   end
 
+  @doc """
+  Map and flatten: `transform_fn` returns a list for each item, and
+  the lists are flattened into a single stream.
+
+  Uses the same concurrent semaphore pattern as `map/2`. Supports the
+  same `:concurrency` and `:buffer` options.
+
+  ## Example
+
+      [1, 2, 3]
+      |> Brook.from_enum()
+      |> Brook.flat_map(fn x -> [x, x * 10] end, concurrency: 2)
+      |> Brook.to_list()
+      # => [1, 10, 2, 20, 3, 30]
+  """
+  def flat_map(input, transform_fn, opts \\ []) do
+    concurrency = Keyword.get(opts, :concurrency, 1)
+    buffer = Keyword.get(opts, :buffer, 10)
+
+    if concurrency < 1 do
+      raise ArgumentError, "concurrency must be >= 1, got: #{inspect(concurrency)}"
+    end
+
+    comp do
+      semaphore <- Channel.new(concurrency)
+      output <- Channel.new(buffer)
+      intermediate <- Channel.new(concurrency)
+
+      _ <- FiberPool.fiber(map_producer(input, semaphore, intermediate, fn item ->
+        transform_fn.(item)
+      end))
+
+      _ <- FiberPool.fiber(flat_map_reorderer(intermediate, output))
+
+      output
+    end
+  end
+
+  defp flat_map_reorderer(intermediate, output) do
+    comp do
+      result <- Channel.take_async(intermediate)
+
+      case result do
+        {:ok, {:ok, items}} when is_list(items) ->
+          flat_map_reorderer_put(intermediate, output, items)
+
+        {:ok, {:error, reason}} ->
+          error_channel(output, reason, :map_errored)
+
+        :closed ->
+          close_channel(output, :reorderer_done)
+
+        {:error, reason} ->
+          error_channel(output, reason, :reorderer_errored)
+      end
+    end
+  end
+
+  defp flat_map_reorderer_put(intermediate, output, items) do
+    comp do
+      _ <- Channel.put_all(output, items)
+      flat_map_reorderer(intermediate, output)
+    end
+  end
+
   defp safe_transform(transform_fn, value) do
     result = transform_fn.(value)
 
