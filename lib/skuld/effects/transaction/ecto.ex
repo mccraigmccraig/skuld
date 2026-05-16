@@ -140,7 +140,7 @@ if Code.ensure_loaded?(Ecto) do
               # ... do work ...
               _ <- Transaction.rollback(:some_reason)
             end)
-            return(result)
+            result
           end
       """
     end

@@ -19,7 +19,7 @@ defmodule Skuld.Effects.Transaction do
       # Wrap a computation in a transaction
       result <- Transaction.transact(comp do
         _ <- do_some_work()
-        return(:ok)
+        :ok
       end)
 
       # Explicitly roll back the current transaction
@@ -56,12 +56,12 @@ defmodule Skuld.Effects.Transaction do
 
           inner <- Transaction.transact(comp do
             _ <- do_inner_work()
-            return(:inner_done)
+            :inner_done
           end)
 
-          return({:outer_done, inner})
+          {:outer_done, inner}
         end)
-        return(result)
+        result
       end
   """
 

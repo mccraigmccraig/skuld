@@ -19,9 +19,9 @@
 #     comp do
 #       result <- Transaction.transact(comp do
 #         _ <- do_something()
-#         return(:ok)
+#         :ok
 #       end)
-#       return(result)
+#       result
 #     end
 #     |> Transaction.Noop.with_handler()
 #     |> Comp.run!()
@@ -57,9 +57,9 @@ defmodule Skuld.Effects.Transaction.Noop do
       comp do
         result <- Transaction.transact(comp do
           _ <- Transaction.rollback(:test_reason)
-          return(:never_reached)
+          :never_reached
         end)
-        return(result)
+        result
       end
       |> Transaction.Noop.with_handler()
       |> Comp.run!()
@@ -129,7 +129,7 @@ defmodule Skuld.Effects.Transaction.Noop do
             # ... do work ...
             _ <- Transaction.rollback(:some_reason)
           end)
-          return(result)
+          result
         end
     """
   end
