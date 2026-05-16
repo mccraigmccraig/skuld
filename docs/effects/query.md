@@ -56,18 +56,22 @@ independent ones for concurrent execution via `FiberPool` fibers:
 comp do
   query do
     user <- MyApp.Users.get_user(user_id)
+    recent <- MyApp.Posts.get_recent()               # runs concurrently with ↑
     sub <- MyApp.Users.get_subscription(user.id)
-    {:ok, %{user: user, subscription: sub}}
+    {:ok, %{user: user, recent: recent, subscription: sub}}
   end
 end
-|> Skuld.Query.with_executor(MyApp.Users, MyApp.UserExecutor)
+|> Skuld.Query.with_executors([
+  {MyApp.Users, MyApp.UserExecutor},
+  {MyApp.Posts, MyApp.PostExecutor}
+])
 |> FiberPool.with_handler()
 |> Comp.run!()
 ```
 
-Even though `get_subscription` depends on `user.id`, any other
-`get_user` calls in the block that are independent are executed
-concurrently.
+`get_user(user_id)` and `get_recent()` are independent — they run
+concurrently. `get_subscription(user.id)` depends on `user`, so it runs
+in a second round after the first batch completes.
 
 `query` blocks don't require `deffetch` — any effectful computation
 can appear in a `query` block. The dependency analysis and concurrent
