@@ -215,7 +215,9 @@ comp
 |> Comp.run!()
 ```
 
-Handler order is independent (each manages its own effect). `EffectLogger` must be innermost to record all effects.
+Handler order is generally independent (each manages its own effect).
+The exception - effects which intercept other effects: `EffectLogger`
+must be innermost to record all effects.
 
 <!-- nav:footer:start -->
 
