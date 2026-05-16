@@ -239,7 +239,7 @@ defmodule Skuld.Effects.Brook do
     Comp.bind(input, &map(&1, transform_fn, opts))
   end
 
-  def map(input, transform_fn, opts) do
+  def map(%Channel.Handle{} = input, transform_fn, opts) do
     concurrency = Keyword.get(opts, :concurrency, 1)
     buffer = Keyword.get(opts, :buffer, 10)
 
@@ -361,7 +361,7 @@ defmodule Skuld.Effects.Brook do
     Comp.bind(input, &flat_map(&1, transform_fn, opts))
   end
 
-  def flat_map(input, transform_fn, opts) do
+  def flat_map(%Channel.Handle{} = input, transform_fn, opts) do
     concurrency = Keyword.get(opts, :concurrency, 1)
     buffer = Keyword.get(opts, :buffer, 10)
 
@@ -461,7 +461,7 @@ defmodule Skuld.Effects.Brook do
     Comp.bind(input, &filter(&1, pred_fn, opts))
   end
 
-  def filter(input, pred_fn, opts) do
+  def filter(%Channel.Handle{} = input, pred_fn, opts) do
     buffer = Keyword.get(opts, :buffer, 10)
 
     comp do
@@ -537,7 +537,7 @@ defmodule Skuld.Effects.Brook do
     Comp.bind(input, &each(&1, consumer_fn))
   end
 
-  def each(input, consumer_fn) do
+  def each(%Channel.Handle{} = input, consumer_fn) do
     comp do
       handle <- FiberPool.fiber(each_loop(input, consumer_fn))
       FiberPool.await!(handle)
@@ -585,7 +585,7 @@ defmodule Skuld.Effects.Brook do
     Comp.bind(input, &run(&1, consumer_fn))
   end
 
-  def run(input, consumer_fn) do
+  def run(%Channel.Handle{} = input, consumer_fn) do
     comp do
       handle <- FiberPool.fiber(run_loop(input, consumer_fn))
       FiberPool.await!(handle)
@@ -659,7 +659,7 @@ defmodule Skuld.Effects.Brook do
     Comp.bind(input, &to_list/1)
   end
 
-  def to_list(input) do
+  def to_list(%Channel.Handle{} = input) do
     comp do
       handle <- FiberPool.fiber(to_list_acc(input, []))
       FiberPool.await!(handle)
@@ -711,7 +711,7 @@ defmodule Skuld.Effects.Brook do
     Comp.bind(input, &reduce(&1, initial_acc, reducer_fn))
   end
 
-  def reduce(input, initial_acc, reducer_fn) do
+  def reduce(%Channel.Handle{} = input, initial_acc, reducer_fn) do
     comp do
       handle <- FiberPool.fiber(reduce_acc(input, initial_acc, reducer_fn))
       FiberPool.await!(handle)
