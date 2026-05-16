@@ -107,6 +107,41 @@ def get_user(id) do
 end
 ```
 
+## `query do` blocks
+
+A `query` block analyzes dependencies between `deffetch` calls and
+batches independent fetches into concurrent round-trips:
+
+```elixir
+defcomp load_dashboard(user_id) do
+  query do
+    user <- Users.get_user(user_id)
+    # these two are independent — batched together:
+    recent <- Posts.get_recent()
+    orders <- Orders.get_by_user(user.id)
+    {user, recent, orders}
+  end
+end
+```
+
+`defquery` and `defqueryp` are `query` equivalents of `defcomp`/`defcompp`:
+
+```elixir
+defquery user_with_orders(id) do
+  user <- Users.get_user(id)
+  orders <- Orders.get_by_user(user.id)
+  {user, orders}
+end
+
+defqueryp private_fetch(id) do
+  data <- DataSource.fetch(id)
+  data
+end
+```
+
+All three (`query`, `defquery`, `defqueryp`) are imported by
+`use Skuld.Syntax`. Requires a `FiberPool.with_handler` in the stack.
+
 ## `defcallback` (with Port.EffectfulFacade)
 
 Define a typed port operation:
