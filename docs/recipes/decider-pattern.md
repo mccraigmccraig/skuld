@@ -85,7 +85,7 @@ Define `deffetch` operations for persisting events:
 defmodule EventStore do
   use Skuld.Query
 
-  deffetch write_event(event :: term()) :: :ok
+  deffetch evolve(event :: term()) :: :ok
 end
 ```
 
@@ -97,24 +97,10 @@ def process_stream(stream) do
   |> Brook.flat_map(fn cmd ->
     comp do
       state <- State.get()
-      events = BankAccount.decide(cmd, state)
-
-      case events do
-        [{:error, reason}] ->
-          _ <- Writer.tell(:errors, {cmd, reason})
-          []
-
-        _ ->
-          _ <- State.put(Enum.reduce(events, state, &evolve/2))
-          events
-      end
+      BankAccount.decide(cmd, state)
     end
   end, concurrency: 4)
-  |> Brook.map(fn event ->
-    comp do
-      _ <- EventStore.write_event(event)
-    end
-  end, concurrency: 4)
+  |> Brook.map(&EventStore.evolve/1, concurrency: 4)
 end
 ```
 
@@ -124,12 +110,12 @@ The caller handles the source and sink:
 commands
 |> Brook.from_enum()
 |> process_stream()
-|> Brook.run()
+|> Brook.to_list()
 ```
 
 `flat_map` runs `decide` concurrently and flattens the event lists.
-The second phase maps each event through `write_event` — and because
-`write_event` is a `deffetch` operation under `FiberPool`, the
+The second phase maps each event through `evolve` — and because
+`evolve` is a `deffetch` operation under `FiberPool`, the
 scheduler batches concurrent calls for the executor:
 
 ```elixir
