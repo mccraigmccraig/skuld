@@ -144,7 +144,7 @@ defmodule Skuld.Query.CacheTest do
           h2 <- FiberPool.fiber(TestQueries.get_user("1"))
           r2 <- FiberPool.await!(h2)
 
-          return({r1, r2})
+          {r1, r2}
         end
         |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
@@ -172,7 +172,7 @@ defmodule Skuld.Query.CacheTest do
           h2 <- FiberPool.fiber(TestQueries.get_user("B"))
           r2 <- FiberPool.await!(h2)
 
-          return({r1, r2})
+          {r1, r2}
         end
         |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
@@ -200,7 +200,7 @@ defmodule Skuld.Query.CacheTest do
           h2 <- FiberPool.fiber(TestQueries.get_user("X"))
           r2 <- FiberPool.await!(h2)
 
-          return({r1, r2})
+          {r1, r2}
         end
         |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
@@ -305,7 +305,7 @@ defmodule Skuld.Query.CacheTest do
           h3 <- FiberPool.fiber(TestQueries.get_user("X"))
           r3 <- FiberPool.await!(h3)
 
-          return({r1, r2, r3})
+          {r1, r2, r3}
         end
         |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
@@ -357,7 +357,7 @@ defmodule Skuld.Query.CacheTest do
           h2 <- FiberPool.fiber(TestQueries.get_user("1"))
           r2 <- FiberPool.await!(h2)
 
-          return({r1, r2})
+          {r1, r2}
         end
         |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> FiberPool.with_handler()
@@ -384,7 +384,7 @@ defmodule Skuld.Query.CacheTest do
           h2 <- FiberPool.fiber(CacheOptQueries.get_random("seed1"))
           r2 <- FiberPool.await!(h2)
 
-          return({r1, r2})
+          {r1, r2}
         end
         |> QueryCache.with_cached_executor(CacheOptQueries, CacheOptExecutor)
         |> FiberPool.with_handler()
@@ -419,7 +419,7 @@ defmodule Skuld.Query.CacheTest do
           h4 <- FiberPool.fiber(CacheOptQueries.get_random("s1"))
           r4 <- FiberPool.await!(h4)
 
-          return({r1, r2, r3, r4})
+          {r1, r2, r3, r4}
         end
         |> QueryCache.with_cached_executor(CacheOptQueries, CacheOptExecutor)
         |> FiberPool.with_handler()
@@ -486,7 +486,7 @@ defmodule Skuld.Query.CacheTest do
           h4 <- FiberPool.fiber(OrderQueries.get_order("o1"))
           [r3, r4] <- FiberPool.await_all!([h3, h4])
 
-          return({r1, r2, r3, r4})
+          {r1, r2, r3, r4}
         end
         |> QueryCache.with_cached_executors([
           {TestQueries, CountingExecutor},
@@ -523,7 +523,7 @@ defmodule Skuld.Query.CacheTest do
           h4 <- FiberPool.fiber(OrderQueries.get_order("o1"))
           [r3, r4] <- FiberPool.await_all!([h3, h4])
 
-          return({r1, r2, r3, r4})
+          {r1, r2, r3, r4}
         end
         |> QueryCache.with_cached_executor(TestQueries, CountingExecutor)
         |> QueryCache.with_cached_executor(OrderQueries, OrderExecutor)
