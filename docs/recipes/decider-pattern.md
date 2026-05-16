@@ -92,11 +92,11 @@ end
 ### The pipeline
 
 ```elixir
-defcomp process_stream(commands) do
-  _ <-
-    commands
-    |> Brook.from_enum()
-    |> Brook.flat_map(fn cmd ->
+def process_stream(commands) do
+  commands
+  |> Brook.from_enum()
+  |> Brook.flat_map(fn cmd ->
+    comp do
       state <- State.get()
       events = BankAccount.decide(cmd, state)
 
@@ -109,14 +109,15 @@ defcomp process_stream(commands) do
           _ <- State.put(Enum.reduce(events, state, &evolve/2))
           events
       end
-    end, concurrency: 4)
-    |> Brook.map(fn event ->
+    end
+  end, concurrency: 4)
+  |> Brook.map(fn event ->
+    comp do
       _ <- EventStore.write_event(event)
       event
-    end, concurrency: 4)
-    |> Brook.to_list()
-
-  :ok
+    end
+  end, concurrency: 4)
+  |> Brook.to_list()
 end
 ```
 
