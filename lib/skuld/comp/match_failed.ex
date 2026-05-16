@@ -10,9 +10,9 @@ defmodule Skuld.Comp.MatchFailed do
 
       comp do
         {:ok, x} <- maybe_returns_error()
-        return(x)
+        x
       else
-        {:error, reason} -> return({:failed, reason})
+        {:error, reason} -> {:failed, reason}
       end
 
   If `maybe_returns_error()` returns `{:error, :not_found}`, the pattern
