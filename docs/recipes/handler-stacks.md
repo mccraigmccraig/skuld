@@ -40,36 +40,6 @@ The *only* time handler order is significant is when a handler wraps
 other handlers. `EffectLogger` must be innermost (first in the pipe)
 to record every effect invocation:
 
-```elixir
-comp
-|> EffectLogger.with_logging()     # innermost — records everything
-|> State.with_handler(0)           #
-|> Reader.with_handler(%{})        # these are recorded
-|> Throw.with_handler()            #
-|> Comp.run!()
-```
-
-`Throw` should be outermost (last) to catch errors from all inner
-handlers:
-
-```elixir
-comp
-|> State.with_handler(0)
-|> Throw.with_handler()            # catches errors from State
-|> Comp.run!()
-```
-
-`Transaction` should wrap the persistence layer but sit below Throw:
-
-```elixir
-comp
-|> State.with_handler(0)
-|> Port.with_handler(%{...})
-|> Transaction.Noop.with_handler()  # rollback for State + Repo
-|> Throw.with_handler()             # catch errors
-|> Comp.run!()
-```
-
 ## Per-effect handler reference
 
 | Effect | Production handler | Test handler |
