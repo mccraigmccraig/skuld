@@ -15,7 +15,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "single return" do
       computation =
         comp do
-          return(42)
+          42
         end
 
       assert Comp.run!(computation) == 42
@@ -26,7 +26,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           x = 10
           y = x + 5
-          return(y)
+          y
         end
 
       assert Comp.run!(computation) == 15
@@ -36,7 +36,7 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- State.get()
-          return(x + 1)
+          x + 1
         end
         |> State.with_handler(10)
 
@@ -49,7 +49,7 @@ defmodule Skuld.Comp.CompBlockTest do
           x <- State.get()
           _ <- State.put(x + 1)
           y <- State.get()
-          return({x, y})
+          {x, y}
         end
         |> State.with_handler(5)
 
@@ -63,7 +63,7 @@ defmodule Skuld.Comp.CompBlockTest do
           y = x * 2
           _ <- State.put(y)
           z <- State.get()
-          return({x, y, z})
+          {x, y, z}
         end
         |> State.with_handler(3)
 
@@ -75,7 +75,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           _ <- State.put(100)
           x <- State.get()
-          return(x)
+          x
         end
         |> State.with_handler(0)
 
@@ -86,7 +86,7 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           ctx <- Reader.ask()
-          return(ctx.value * 2)
+          ctx.value * 2
         end
         |> Reader.with_handler(%{value: 21})
 
@@ -100,7 +100,7 @@ defmodule Skuld.Comp.CompBlockTest do
           x <- State.get()
           _ <- State.put(x + ctx.increment)
           y <- State.get()
-          return({x, y})
+          {x, y}
         end
         |> Reader.with_handler(%{increment: 10})
         |> State.with_handler(5)
@@ -112,14 +112,14 @@ defmodule Skuld.Comp.CompBlockTest do
       inner =
         comp do
           x <- State.get()
-          return(x * 2)
+          x * 2
         end
 
       outer =
         comp do
           _ <- State.put(10)
           result <- inner
-          return(result + 1)
+          result + 1
         end
         |> State.with_handler(0)
 
@@ -130,7 +130,7 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           {a, b} <- {1, 2}
-          return(a + b)
+          a + b
         end
 
       assert Comp.run!(computation) == 3
@@ -157,7 +157,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           x <- State.get()
           _ <- if x > 5, do: Writer.tell(:big)
-          return(:done)
+          :done
         end
         |> State.with_handler(10)
         |> Writer.with_handler([], output: fn r, log -> {r, log} end)
@@ -170,7 +170,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           x <- State.get()
           _ <- if x > 5, do: Writer.tell(:big)
-          return(:done)
+          :done
         end
         |> State.with_handler(3)
         |> Writer.with_handler([], output: fn r, log -> {r, log} end)
@@ -205,24 +205,24 @@ defmodule Skuld.Comp.CompBlockTest do
   describe "defcomp macro" do
     defcomp simple_get do
       x <- State.get()
-      return(x)
+      x
     end
 
     defcomp increment_and_get do
       x <- State.get()
       _ <- State.put(x + 1)
       y <- State.get()
-      return({x, y})
+      {x, y}
     end
 
     defcomp with_arg(multiplier) do
       x <- State.get()
-      return(x * multiplier)
+      x * multiplier
     end
 
     defcomp with_multiple_args(a, b) do
       x <- State.get()
-      return(x + a + b)
+      x + a + b
     end
 
     test "defcomp with no args" do
@@ -247,13 +247,13 @@ defmodule Skuld.Comp.CompBlockTest do
 
     defcompp private_double do
       x <- State.get()
-      return(x * 2)
+      x * 2
     end
 
     defcomp uses_private do
       x <- private_double()
       _ <- State.put(x)
-      return(x)
+      x
     end
 
     test "defcompp defines private function usable internally" do
@@ -269,7 +269,7 @@ defmodule Skuld.Comp.CompBlockTest do
 
       defcomp get_doubled do
         x <- State.get()
-        return(x * 2)
+        x * 2
       end
     end
 
@@ -283,7 +283,7 @@ defmodule Skuld.Comp.CompBlockTest do
     test "empty block with just return" do
       computation =
         comp do
-          return(:ok)
+          :ok
         end
 
       assert Comp.run!(computation) == :ok
@@ -303,7 +303,7 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           %{a: a, b: b} <- %{a: 1, b: 2, c: 3}
-          return(a + b)
+          a + b
         end
 
       assert Comp.run!(computation) == 3
@@ -315,9 +315,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           _ <- Throw.throw(:my_error)
-          return(:never_reached)
+          :never_reached
         catch
-          {Throw, :my_error} -> return(:caught)
+          {Throw, :my_error} -> :caught
         end
         |> Throw.with_handler()
 
@@ -327,9 +327,9 @@ defmodule Skuld.Comp.CompBlockTest do
     test "passes through normal completion" do
       computation =
         comp do
-          return(42)
+          42
         catch
-          {Throw, _} -> return(:caught)
+          {Throw, _} -> :caught
         end
         |> Throw.with_handler()
 
@@ -340,10 +340,10 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           _ <- Throw.throw({:error, :not_found})
-          return(:never_reached)
+          :never_reached
         catch
-          {Throw, {:error, :not_found}} -> return(:not_found_handled)
-          {Throw, {:error, reason}} -> return({:other_error, reason})
+          {Throw, {:error, :not_found}} -> :not_found_handled
+          {Throw, {:error, reason}} -> {:other_error, reason}
         end
         |> Throw.with_handler()
 
@@ -354,9 +354,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           _ <- Throw.throw(:unhandled)
-          return(:never_reached)
+          :never_reached
         catch
-          {Throw, :specific_error} -> return(:handled)
+          {Throw, :specific_error} -> :handled
         end
         |> Throw.with_handler()
 
@@ -368,9 +368,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           _ <- Throw.throw(:any_error)
-          return(:never_reached)
+          :never_reached
         catch
-          {Throw, err} -> return({:caught, err})
+          {Throw, err} -> {:caught, err}
         end
         |> Throw.with_handler()
 
@@ -382,11 +382,11 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           _ <- State.put(100)
           _ <- Throw.throw(:error)
-          return(:never_reached)
+          :never_reached
         catch
           {Throw, :error} ->
             x <- State.get()
-            return({:recovered, x})
+            {:recovered, x}
         end
         |> State.with_handler(0)
         |> Throw.with_handler()
@@ -398,11 +398,11 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           _ <- Throw.throw(:error)
-          return(:never_reached)
+          :never_reached
         catch
           {Throw, :error} ->
             ctx <- Reader.ask()
-            return({:recovered, ctx.default})
+            {:recovered, ctx.default}
         end
         |> Reader.with_handler(%{default: :fallback})
         |> Throw.with_handler()
@@ -414,9 +414,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           _ <- Throw.throw(:error)
-          return(:never_reached)
+          :never_reached
         catch
-          {Throw, :error} -> return({:ok, :recovered})
+          {Throw, :error} -> {:ok, :recovered}
         end
         |> Throw.with_handler()
 
@@ -427,17 +427,17 @@ defmodule Skuld.Comp.CompBlockTest do
       inner =
         comp do
           _ <- Throw.throw(:inner_error)
-          return(:never)
+          :never
         catch
-          {Throw, :inner_error} -> return(:inner_caught)
+          {Throw, :inner_error} -> :inner_caught
         end
 
       outer =
         comp do
           result <- inner
-          return({:outer_got, result})
+          {:outer_got, result}
         catch
-          {Throw, _} -> return(:outer_caught)
+          {Throw, _} -> :outer_caught
         end
         |> Throw.with_handler()
 
@@ -448,17 +448,17 @@ defmodule Skuld.Comp.CompBlockTest do
       inner =
         comp do
           _ <- Throw.throw(:uncaught_inner)
-          return(:never)
+          :never
         catch
-          {Throw, :different_error} -> return(:inner_caught)
+          {Throw, :different_error} -> :inner_caught
         end
 
       outer =
         comp do
           result <- inner
-          return({:outer_got, result})
+          {:outer_got, result}
         catch
-          {Throw, :uncaught_inner} -> return(:outer_caught_inner_error)
+          {Throw, :uncaught_inner} -> :outer_caught_inner_error
         end
         |> Throw.with_handler()
 
@@ -469,16 +469,16 @@ defmodule Skuld.Comp.CompBlockTest do
   describe "defcomp with catch" do
     defcomp safe_divide(a, b) do
       _ <- if b == 0, do: Throw.throw(:divide_by_zero), else: :ok
-      return(div(a, b))
+      div(a, b)
     catch
-      {Throw, :divide_by_zero} -> return(:infinity)
+      {Throw, :divide_by_zero} -> :infinity
     end
 
     defcomp fetch_with_default(key, default) do
       _ <- Throw.throw({:not_found, key})
-      return(:never)
+      :never
     catch
-      {Throw, {:not_found, _}} -> return(default)
+      {Throw, {:not_found, _}} -> default
     end
 
     test "defcomp with catch handles error" do
@@ -498,14 +498,14 @@ defmodule Skuld.Comp.CompBlockTest do
   describe "defcompp with catch" do
     defcompp private_risky do
       _ <- Throw.throw(:private_error)
-      return(:never)
+      :never
     catch
-      {Throw, :private_error} -> return(:privately_handled)
+      {Throw, :private_error} -> :privately_handled
     end
 
     defcomp uses_private_risky do
       result <- private_risky()
-      return({:got, result})
+      {:got, result}
     end
 
     test "defcompp with catch works" do
@@ -519,9 +519,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           {:ok, x} <- {:error, :not_found}
-          return(x)
+          x
         else
-          {:error, reason} -> return({:failed, reason})
+          {:error, reason} -> {:failed, reason}
         end
         |> Throw.with_handler()
 
@@ -532,9 +532,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           {:ok, x} <- {:ok, 42}
-          return(x)
+          x
         else
-          {:error, _} -> return(:failed)
+          {:error, _} -> :failed
         end
         |> Throw.with_handler()
 
@@ -545,11 +545,11 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           {:ok, x} <- {:error, :specific}
-          return(x)
+          x
         else
-          {:error, :specific} -> return(:specific_handled)
-          {:error, _} -> return(:generic_error)
-          other -> return({:unexpected, other})
+          {:error, :specific} -> :specific_handled
+          {:error, _} -> :generic_error
+          other -> {:unexpected, other}
         end
         |> Throw.with_handler()
 
@@ -560,9 +560,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           {:ok, x} <- {:error, :unhandled}
-          return(x)
+          x
         else
-          {:error, :specific} -> return(:handled)
+          {:error, :specific} -> :handled
         end
         |> Throw.with_handler()
 
@@ -574,9 +574,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           {:ok, x} <- :something_else
-          return(x)
+          x
         else
-          other -> return({:caught, other})
+          other -> {:caught, other}
         end
         |> Throw.with_handler()
 
@@ -588,9 +588,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- 42
-          return(x * 2)
+          x * 2
         else
-          _ -> return(:should_not_reach)
+          _ -> :should_not_reach
         end
         |> Throw.with_handler()
 
@@ -602,9 +602,9 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           x <- 10
           {:ok, y} = {:error, :oops}
-          return(x + y)
+          x + y
         else
-          {:error, reason} -> return({:assignment_failed, reason})
+          {:error, reason} -> {:assignment_failed, reason}
         end
         |> Throw.with_handler()
 
@@ -615,11 +615,11 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           {:ok, x} <- {:error, :failed}
-          return(x)
+          x
         else
           {:error, _} ->
             s <- State.get()
-            return({:recovered_with_state, s})
+            {:recovered_with_state, s}
         end
         |> State.with_handler(100)
         |> Throw.with_handler()
@@ -633,9 +633,9 @@ defmodule Skuld.Comp.CompBlockTest do
           {:ok, a} <- {:ok, 1}
           {:ok, b} <- {:ok, 2}
           {:ok, c} <- {:error, :third_failed}
-          return(a + b + c)
+          a + b + c
         else
-          {:error, reason} -> return({:failed_at, reason})
+          {:error, reason} -> {:failed_at, reason}
         end
         |> Throw.with_handler()
 
@@ -746,13 +746,13 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           {:ok, x} <- {:error, :match_fail}
-          return(x)
+          x
         else
           {:error, :match_fail} ->
             _ <- Throw.throw(:else_threw)
-            return(:never)
+            :never
         catch
-          {Throw, :else_threw} -> return(:catch_got_else_throw)
+          {Throw, :else_threw} -> :catch_got_else_throw
         end
         |> Throw.with_handler()
 
@@ -764,11 +764,11 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           _ <- Throw.throw(:body_threw)
           {:ok, x} <- {:ok, 42}
-          return(x)
+          x
         else
-          {:error, _} -> return(:else_handled)
+          {:error, _} -> :else_handled
         catch
-          {Throw, :body_threw} -> return(:catch_got_body_throw)
+          {Throw, :body_threw} -> :catch_got_body_throw
         end
         |> Throw.with_handler()
 
@@ -779,11 +779,11 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           {:ok, x} <- {:error, :no_match}
-          return(x)
+          x
         else
-          {:error, :no_match} -> return(:else_handled_match)
+          {:error, :no_match} -> :else_handled_match
         catch
-          {Throw, :some_error} -> return(:catch_handled_throw)
+          {Throw, :some_error} -> :catch_handled_throw
         end
         |> Throw.with_handler()
 
@@ -797,11 +797,11 @@ defmodule Skuld.Comp.CompBlockTest do
         Code.compile_string("""
         import Skuld.Comp.CompBlock
         comp do
-          return(:ok)
+          :ok
         catch
-          {Throw, _} -> return(:caught)
+          {Throw, _} -> :caught
         else
-          _ -> return(:else)
+          _ -> :else
         end
         """)
       end
@@ -811,10 +811,10 @@ defmodule Skuld.Comp.CompBlockTest do
   describe "defcomp with else" do
     defcomp safe_unwrap(result) do
       {:ok, value} <- result
-      return(value)
+      value
     else
-      {:error, reason} -> return({:failed, reason})
-      other -> return({:unexpected, other})
+      {:error, reason} -> {:failed, reason}
+      other -> {:unexpected, other}
     end
 
     test "defcomp with else handles match failure" do
@@ -832,11 +832,11 @@ defmodule Skuld.Comp.CompBlockTest do
     defcomp complex_handler(input) do
       {:ok, x} <- input
       _ <- if x < 0, do: Throw.throw(:negative), else: :ok
-      return(x * 2)
+      x * 2
     else
-      {:error, reason} -> return({:match_failed, reason})
+      {:error, reason} -> {:match_failed, reason}
     catch
-      {Throw, :negative} -> return(:was_negative)
+      {Throw, :negative} -> :was_negative
     end
 
     test "defcomp with else and catch - match failure" do
@@ -884,7 +884,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           Risky.boom!()
         catch
-          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> return({:caught, msg})
+          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> {:caught, msg}
         end
         |> Throw.with_handler()
 
@@ -895,7 +895,7 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Risky.boom!()
-          return(x)
+          x
         end
 
       {result, _env} = Comp.run(computation)
@@ -908,9 +908,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Risky.boom!()
-          return(x)
+          x
         catch
-          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> return({:caught, msg})
+          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> {:caught, msg}
         end
         |> Throw.with_handler()
 
@@ -922,7 +922,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           _ <- Risky.boom!()
           x <- State.get()
-          return(x)
+          x
         end
         |> State.with_handler(42)
 
@@ -937,9 +937,9 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           _ <- Risky.boom!()
           x <- State.get()
-          return(x)
+          x
         catch
-          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> return({:caught, msg})
+          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> {:caught, msg}
         end
         |> State.with_handler(42)
         |> Throw.with_handler()
@@ -969,7 +969,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ = x
           Risky.boom!()
         catch
-          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> return({:caught, msg})
+          {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} -> {:caught, msg}
         end
         |> State.with_handler(42)
         |> Throw.with_handler()
@@ -994,7 +994,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           Risky.throw_it!()
         catch
-          {Throw, %{kind: :throw, payload: value}} -> return({:caught_throw, value})
+          {Throw, %{kind: :throw, payload: value}} -> {:caught_throw, value}
         end
         |> Throw.with_handler()
 
@@ -1018,7 +1018,7 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           Risky.exit_it!()
         catch
-          {Throw, %{kind: :exit, payload: reason}} -> return({:caught_exit, reason})
+          {Throw, %{kind: :exit, payload: reason}} -> {:caught_exit, reason}
         end
         |> Throw.with_handler()
 
@@ -1036,7 +1036,7 @@ defmodule Skuld.Comp.CompBlockTest do
         catch
           {Throw, %{kind: :error, payload: %RuntimeError{message: msg}}} ->
             final <- State.get()
-            return({:caught, msg, final})
+            {:caught, msg, final}
         end
         |> State.with_handler(10)
         |> Throw.with_handler()
@@ -1051,9 +1051,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Yield.yield(:question)
-          return({:got, x})
+          {:got, x}
         catch
-          {Yield, :question} -> return(42)
+          {Yield, :question} -> 42
         end
         |> Yield.with_handler()
 
@@ -1066,10 +1066,10 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           x <- Yield.yield(:first)
           y <- Yield.yield(:second)
-          return({x, y})
+          {x, y}
         catch
-          {Yield, :first} -> return(10)
-          {Yield, :second} -> return(20)
+          {Yield, :first} -> 10
+          {Yield, :second} -> 20
         end
         |> Yield.with_handler()
 
@@ -1081,9 +1081,9 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           x <- Yield.yield(:handled)
           y <- Yield.yield(:not_handled)
-          return({x, y})
+          {x, y}
         catch
-          {Yield, :handled} -> return(10)
+          {Yield, :handled} -> 10
         end
         |> Yield.with_handler()
 
@@ -1096,11 +1096,11 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Yield.yield(:need_state)
-          return({:got, x})
+          {:got, x}
         catch
           {Yield, :need_state} ->
             s <- State.get()
-            return(s * 2)
+            s * 2
         end
         |> State.with_handler(21)
         |> Yield.with_handler()
@@ -1112,14 +1112,14 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Yield.yield(:will_throw)
-          return({:got, x})
+          {:got, x}
         catch
           {Yield, :will_throw} ->
             _ <- Throw.throw(:yield_handler_threw)
-            return(:never)
+            :never
 
           {Throw, :yield_handler_threw} ->
-            return(:caught_from_yield_handler)
+            :caught_from_yield_handler
         end
         |> Yield.with_handler()
         |> Throw.with_handler()
@@ -1132,10 +1132,10 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           x <- Yield.yield(:get_value)
           _ <- if x < 0, do: Throw.throw(:negative), else: :ok
-          return(x * 2)
+          x * 2
         catch
-          {Yield, :get_value} -> return(-5)
-          {Throw, :negative} -> return(:was_negative)
+          {Yield, :get_value} -> -5
+          {Throw, :negative} -> :was_negative
         end
         |> Yield.with_handler()
         |> Throw.with_handler()
@@ -1148,10 +1148,10 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           x <- Yield.yield(:get_value)
           _ <- if x < 0, do: Throw.throw(:negative), else: :ok
-          return(x * 2)
+          x * 2
         catch
-          {Yield, :get_value} -> return(5)
-          {Throw, :negative} -> return(:was_negative)
+          {Yield, :get_value} -> 5
+          {Throw, :negative} -> :was_negative
         end
         |> Yield.with_handler()
         |> Throw.with_handler()
@@ -1163,9 +1163,9 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Yield.yield(:any_value)
-          return({:got, x})
+          {:got, x}
         catch
-          {Yield, value} -> return({:responded_to, value})
+          {Yield, value} -> {:responded_to, value}
         end
         |> Yield.with_handler()
 
@@ -1176,16 +1176,16 @@ defmodule Skuld.Comp.CompBlockTest do
       inner =
         comp do
           x <- Yield.yield(:inner_question)
-          return({:inner_got, x})
+          {:inner_got, x}
         catch
-          {Yield, :handled_locally} -> return(:local)
+          {Yield, :handled_locally} -> :local
           {Yield, other} -> Yield.yield({:forwarded, other})
         end
 
       computation =
         comp do
           result <- inner
-          return({:outer_got, result})
+          {:outer_got, result}
         end
         |> Yield.with_handler()
 
@@ -1200,10 +1200,10 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Throw.throw(:first)
-          return({:got, x})
+          {:got, x}
         catch
-          {Throw, :first} -> return(:caught_first)
-          {Throw, :second} -> return(:caught_second)
+          {Throw, :first} -> :caught_first
+          {Throw, :second} -> :caught_second
         end
         |> Throw.with_handler()
 
@@ -1218,20 +1218,20 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Yield.yield(:need_value)
-          return({:got, x})
+          {:got, x}
         catch
           # First Throw layer (inner)
           {Throw, :from_body} ->
-            return(:caught_from_body)
+            :caught_from_body
 
           # Yield layer (middle)
           {Yield, :need_value} ->
             _ <- Throw.throw(:from_yield_handler)
-            return(:never)
+            :never
 
           # Second Throw layer (outer) - catches throws from Yield handler
           {Throw, :from_yield_handler} ->
-            return(:caught_from_yield_handler)
+            :caught_from_yield_handler
         end
         |> Yield.with_handler()
         |> Throw.with_handler()
@@ -1245,12 +1245,12 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           _ <- Throw.throw(:early_error)
           x <- Yield.yield(:never_reached)
-          return({:got, x})
+          {:got, x}
         catch
           # Throw first (inner) - catches body throws
-          {Throw, :early_error} -> return(:caught_early)
+          {Throw, :early_error} -> :caught_early
           # Yield second (outer) - never sees anything
-          {Yield, :never_reached} -> return(:responded)
+          {Yield, :never_reached} -> :responded
         end
         |> Yield.with_handler()
         |> Throw.with_handler()
@@ -1263,16 +1263,16 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Yield.yield(:get_value)
-          return({:got, x})
+          {:got, x}
         catch
           # Yield first (inner)
           {Yield, :get_value} ->
             _ <- Throw.throw(:yield_threw)
-            return(:never)
+            :never
 
           # Throw second (outer) - catches throws from Yield handler
           {Throw, :yield_threw} ->
-            return(:outer_caught)
+            :outer_caught
         end
         |> Yield.with_handler()
         |> Throw.with_handler()
@@ -1288,17 +1288,17 @@ defmodule Skuld.Comp.CompBlockTest do
         comp do
           # This yield will be caught by first Yield layer
           x <- Yield.yield(:first_yield)
-          return({:got, x})
+          {:got, x}
         catch
           # Layer 1: Throw (inner)
           {Throw, :layer1} ->
-            return(:from_layer1)
+            :from_layer1
 
           # Layer 2: Yield
           {Yield, :first_yield} ->
             # This throw will be caught by layer 3, not layer 1
             _ <- Throw.throw(:from_layer2)
-            return(:never)
+            :never
 
           # Layer 3: Throw
           {Throw, :from_layer2} ->
@@ -1307,7 +1307,7 @@ defmodule Skuld.Comp.CompBlockTest do
 
           # Layer 4: Yield (outer)
           {Yield, :from_layer3} ->
-            return(:from_layer4)
+            :from_layer4
         end
         |> Yield.with_handler()
         |> Throw.with_handler()
@@ -1324,20 +1324,20 @@ defmodule Skuld.Comp.CompBlockTest do
       computation =
         comp do
           x <- Yield.yield(:trigger)
-          return({:got, x})
+          {:got, x}
         catch
           # Inner Throw - handles :a only
           {Throw, :a} ->
-            return(:inner_caught_a)
+            :inner_caught_a
 
           # Yield - throws :b
           {Yield, :trigger} ->
             _ <- Throw.throw(:b)
-            return(:never)
+            :never
 
           # Outer Throw - handles :b
           {Throw, :b} ->
-            return(:outer_caught_b)
+            :outer_caught_b
         end
         |> Yield.with_handler()
         |> Throw.with_handler()
@@ -1381,7 +1381,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ <- Throw.throw(:error)
           :never_reached
         catch
-          {Throw, :error} -> return(:caught)
+          {Throw, :error} -> :caught
           Throw -> nil
           Yield -> nil
         end
@@ -1396,7 +1396,7 @@ defmodule Skuld.Comp.CompBlockTest do
           _ <- if x < 0, do: Throw.throw(:negative)
           x * 2
         catch
-          {Throw, :negative} -> return(:was_negative)
+          {Throw, :negative} -> :was_negative
           State -> -5
           Throw -> nil
         end
@@ -1486,7 +1486,7 @@ defmodule Skuld.Comp.CompBlockTest do
           x * 2
         catch
           State -> -1
-          {Throw, :error} -> return(:caught_error)
+          {Throw, :error} -> :caught_error
           Throw -> nil
         end
 
