@@ -4,11 +4,15 @@
 [< Repo](repo.md) | [Index](../../README.md) | [Hexagonal Architecture >](../recipes/hexagonal-architecture.md)
 <!-- nav:header:end -->
 
-Automatic N+1 query batching via dependency analysis. The query system
-analyzes effect dependencies in a `query do` block and batches independent
-data fetches together — using FiberPool fibers to execute them concurrently.
+Two complementary mechanisms for data fetching. Together they eliminate
+N+1 queries, but each stands alone.
 
-## Defining fetch operations
+## Query.Contract — batchable fetch operations
+
+`deffetch` declares typed fetch operations that suspend the current
+fiber for batched execution. Each generated caller returns a computation
+with an `InternalSuspend.batch` sentinel, which `FiberPool` recognises
+and dispatches to the configured executor as a batch:
 
 ```elixir
 defmodule MyApp.Users do
@@ -19,17 +23,13 @@ defmodule MyApp.Users do
 end
 ```
 
-## Wiring executors
-
-An executor handles a batch of operations:
+Wiring an executor:
 
 ```elixir
 defmodule MyApp.UserExecutor do
   @behaviour Skuld.Query.Executor
 
   def execute(tagged_ops) do
-    # tagged_ops = [{ref, %GetUser{id: id}}, ...]
-    # Return results keyed by ref
     results = for {ref, op} <- tagged_ops, into: %{} do
       {ref, Repo.get!(User, op.id)}
     end
@@ -37,13 +37,20 @@ defmodule MyApp.UserExecutor do
   end
 end
 
-Skuld.Query.with_executor(MyApp.Users, MyApp.UserExecutor)
+computation
+|> Skuld.Query.with_executor(MyApp.Users, MyApp.UserExecutor)
+|> FiberPool.with_handler()
+|> Comp.run!()
 ```
 
-## Query blocks
+Used standalone, `Query.Contract` enables N+1 elimination anywhere
+`FiberPool` is installed — multiple fibers calling the same `deffetch`
+get their calls batched by the scheduler.
 
-A `query do` block expresses data dependencies naturally. The system
-analyzes them and batches independent fetches:
+## `query do` — concurrent effect execution
+
+A `query` block analyzes dependencies between expressions and batches
+independent ones for concurrent execution via `FiberPool` fibers:
 
 ```elixir
 comp do
@@ -59,8 +66,12 @@ end
 ```
 
 Even though `get_subscription` depends on `user.id`, any other
-`get_user` calls in the block that are independent will be batched
-together.
+`get_user` calls in the block that are independent are executed
+concurrently.
+
+`query` blocks don't require `deffetch` — any effectful computation
+can appear in a `query` block. The dependency analysis and concurrent
+dispatch work the same way.
 
 ## Caching
 
@@ -72,13 +83,10 @@ computation
 |> FiberPool.with_handler()
 ```
 
-If the same `get_user("123")` is called twice in a batch, the second
-call hits the cache instead of the executor.
-
 | Function | Purpose |
 |----------|---------|
-| `deffetch` | Declare a fetch operation |
-| `query do` block | Express data dependencies, auto-batch independent fetches |
+| `deffetch` | Declare a batchable fetch operation |
+| `query do` block | Concurrent effect execution with dependency analysis |
 | `with_executor/2,3` | Wire a contract to an executor |
 | `with_cached_executor/2,3` | Wire with within-batch caching |
 | `with_cached_executors/2` | Wire multiple contracts |
