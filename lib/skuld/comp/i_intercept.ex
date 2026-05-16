@@ -25,7 +25,7 @@ defmodule Skuld.Comp.IIntercept do
         x <- risky_operation()
         x * 2
       catch
-        {Throw, :not_found} -> return(:default)  # calls Throw.intercept/2
+        {Throw, :not_found} -> :default  # calls Throw.intercept/2
       end
 
   The `handler_fn` receives the intercepted value (effect-specific) and

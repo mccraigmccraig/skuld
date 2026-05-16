@@ -198,7 +198,7 @@ defmodule Skuld.Effects.Throw do
       comp_with_throw =
         comp do
           result <- risky_operation()
-          return(result)
+          result
         end
         |> Throw.with_handler()
 

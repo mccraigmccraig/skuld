@@ -256,7 +256,7 @@ defmodule Skuld.Effects.Yield do
       comp_with_yield =
         comp do
           input <- Yield.yield(:question)
-          return({:got, input})
+          {:got, input}
         end
         |> Yield.with_handler()
 
