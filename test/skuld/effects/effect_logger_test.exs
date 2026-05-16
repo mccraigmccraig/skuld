@@ -46,7 +46,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           x <- State.get()
           _ <- State.put(x + 1)
           y <- State.get()
-          return({x, y})
+          {x, y}
         end
 
       {{result, log}, _env} =
@@ -85,7 +85,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           _ <- State.get()
           _ <- State.get()
           _ <- State.get()
-          return(:done)
+          :done
         end
 
       {{_result, log}, _env} =
@@ -104,7 +104,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
       computation =
         comp do
           x <- State.get()
-          return(x)
+          x
         end
 
       {{_result, log}, _env} =
@@ -125,7 +125,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           _ <- State.put(42)
           _ <- Throw.throw(:boom)
           # Never reached
-          return(:unreachable)
+          :unreachable
         end
 
       {{result, log}, _env} =
@@ -165,12 +165,12 @@ defmodule Skuld.Effects.EffectLoggerTest do
               comp do
                 _ <- State.put(x + 1)
                 _ <- Throw.throw(:error)
-                return(:unreachable)
+                :unreachable
               end,
               fn err -> {:caught, err} end
             )
 
-          return({x, caught_result})
+          {x, caught_result}
         end
 
       {{result, log}, _env} =
@@ -214,7 +214,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
           _ <- State.put(2)
           x <- State.get()
-          return(x)
+          x
         end
 
       {{result, log}, _env} =
@@ -246,7 +246,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           x <- State.get()
           _ <- State.put(x + 10)
           y <- State.get()
-          return({x, y})
+          {x, y}
         end
 
       # First run - capture log
@@ -282,7 +282,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
       computation =
         comp do
           x <- State.get()
-          return(x)
+          x
         end
 
       # First run with counting handler
@@ -313,7 +313,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
       computation =
         comp do
           x <- State.get()
-          return(x)
+          x
         end
 
       # First run with nil initial state
@@ -344,7 +344,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           x <- State.get()
           _ <- State.put(x + 1)
           y <- State.get()
-          return({x, y})
+          {x, y}
         end
 
       {{_result, log}, _env} =
@@ -381,7 +381,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           x <- State.get()
           _ <- State.put(x + 100)
           y <- State.get()
-          return({x, y})
+          {x, y}
         end
 
       # First run
@@ -531,7 +531,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           input <- Yield.yield(:question)
           _ <- State.put(x + input)
           y <- State.get()
-          return({x, input, y})
+          {x, input, y}
         end
 
       # First run - suspends at yield
@@ -591,7 +591,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           x <- State.get()
           _ <- State.put(x + 1)
           input <- Yield.yield(:waiting)
-          return({x, input})
+          {x, input}
         end
 
       # First run with counting handler - suspends
@@ -632,7 +632,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           input <- Yield.yield(42)
           _ <- State.put(x + input)
           y <- State.get()
-          return({x, input, y})
+          {x, input, y}
         end
 
       # First run - suspends
@@ -679,7 +679,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           _ <- State.put(x + input)
           y <- State.get()
           _ = :ets.insert(effect_calls, {:get2, y})
-          return({x, input, y})
+          {x, input, y}
         end
 
       # First run - suspends
@@ -720,7 +720,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
       computation =
         comp do
           input <- Yield.yield(:waiting)
-          return({:got, input})
+          {:got, input}
         end
 
       # First run - suspends
@@ -747,7 +747,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         comp do
           input1 <- Yield.yield(:first)
           input2 <- Yield.yield(:second)
-          return({input1, input2})
+          {input1, input2}
         end
 
       # First run - suspends at first yield
@@ -789,7 +789,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         comp do
           _ <- State.put(42)
           input <- Yield.yield(:waiting)
-          return({:got, input})
+          {:got, input}
         end
 
       {%ExternalSuspend{value: :waiting, data: data}, _env} =
@@ -828,7 +828,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         comp do
           _ <- State.put(42)
           input <- Yield.yield(:waiting)
-          return({:got, input})
+          {:got, input}
         end
 
       # First run - get the log
@@ -859,7 +859,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         comp do
           _ <- State.put(42)
           input <- Yield.yield(:inner)
-          return({:inner_got, input})
+          {:inner_got, input}
         end
         |> EffectLogger.with_logging()
 
@@ -868,7 +868,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
           result <- inner
           # After inner scope, EffectLogger's transform_suspend should be gone
           next <- Yield.yield(:outer)
-          return({result, next})
+          {result, next}
         end
         |> State.with_handler(0)
         |> Yield.with_handler()
