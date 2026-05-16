@@ -41,6 +41,7 @@ defmodule Skuld.Effects.Brook do
   use Skuld.Syntax
 
   alias Skuld.Comp
+  require Skuld.Comp, as: Comp
   alias Skuld.Comp.Types
   alias Skuld.Effects.Channel
   alias Skuld.Effects.FiberPool
@@ -236,7 +237,7 @@ defmodule Skuld.Effects.Brook do
           Types.computation(Channel.Handle.t())
   def map(input, transform_fn, opts \\ [])
 
-  def map(input, transform_fn, opts) when is_function(input, 2) do
+  def map(input, transform_fn, opts) when Comp.computation?(input) do
     Comp.bind(input, &map(&1, transform_fn, opts))
   end
 
@@ -358,7 +359,7 @@ defmodule Skuld.Effects.Brook do
           Types.computation(Channel.Handle.t())
   def flat_map(input, transform_fn, opts \\ [])
 
-  def flat_map(input, transform_fn, opts) when is_function(input, 2) do
+  def flat_map(input, transform_fn, opts) when Comp.computation?(input) do
     Comp.bind(input, &flat_map(&1, transform_fn, opts))
   end
 
@@ -458,7 +459,7 @@ defmodule Skuld.Effects.Brook do
           Types.computation(Channel.Handle.t())
   def filter(input, pred_fn, opts \\ [])
 
-  def filter(input, pred_fn, opts) when is_function(input, 2) do
+  def filter(input, pred_fn, opts) when Comp.computation?(input) do
     Comp.bind(input, &filter(&1, pred_fn, opts))
   end
 
@@ -534,7 +535,7 @@ defmodule Skuld.Effects.Brook do
         ) :: Types.computation(Channel.Handle.t())
   def each(input, consumer_fn)
 
-  def each(input, consumer_fn) when is_function(input, 2) do
+  def each(input, consumer_fn) when Comp.computation?(input) do
     Comp.bind(input, &each(&1, consumer_fn))
   end
 
@@ -582,7 +583,7 @@ defmodule Skuld.Effects.Brook do
         ) :: Types.computation(Channel.Handle.t())
   def run(input, consumer_fn)
 
-  def run(input, consumer_fn) when is_function(input, 2) do
+  def run(input, consumer_fn) when Comp.computation?(input) do
     Comp.bind(input, &run(&1, consumer_fn))
   end
 
@@ -656,7 +657,7 @@ defmodule Skuld.Effects.Brook do
           Types.computation([term()])
   def to_list(input)
 
-  def to_list(input) when is_function(input, 2) do
+  def to_list(input) when Comp.computation?(input) do
     Comp.bind(input, &to_list/1)
   end
 
@@ -708,7 +709,7 @@ defmodule Skuld.Effects.Brook do
         ) :: Types.computation(term())
   def reduce(input, initial_acc, reducer_fn)
 
-  def reduce(input, initial_acc, reducer_fn) when is_function(input, 2) do
+  def reduce(input, initial_acc, reducer_fn) when Comp.computation?(input) do
     Comp.bind(input, &reduce(&1, initial_acc, reducer_fn))
   end
 

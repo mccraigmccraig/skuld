@@ -90,9 +90,7 @@ defmodule Skuld.Comp do
   contexts where precision matters (e.g., stream combinators), prefer an
   explicit tagged return value.
   """
-  @spec computation?(term()) :: boolean()
-  def computation?(value) when is_function(value, 2), do: true
-  def computation?(_value), do: false
+  defguard computation?(value) when is_function(value, 2)
 
   @doc """
   Lift a pure value into a computation. Alias for `pure/1`.
