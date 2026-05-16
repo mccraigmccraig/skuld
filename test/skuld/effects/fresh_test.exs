@@ -11,7 +11,7 @@ defmodule Skuld.Effects.FreshTest do
       result =
         comp do
           uuid <- Fresh.fresh_uuid()
-          return(uuid)
+          uuid
         end
         |> Fresh.with_uuid7_handler()
         |> Comp.run!()
@@ -32,7 +32,7 @@ defmodule Skuld.Effects.FreshTest do
           uuid1 <- Fresh.fresh_uuid()
           uuid2 <- Fresh.fresh_uuid()
           uuid3 <- Fresh.fresh_uuid()
-          return({uuid1, uuid2, uuid3})
+          {uuid1, uuid2, uuid3}
         end
         |> Fresh.with_uuid7_handler()
         |> Comp.run!()
@@ -52,12 +52,12 @@ defmodule Skuld.Effects.FreshTest do
             comp do
               inner1 <- Fresh.fresh_uuid()
               inner2 <- Fresh.fresh_uuid()
-              return({inner1, inner2})
+              {inner1, inner2}
             end
             |> Fresh.with_uuid7_handler()
 
           outer2 <- Fresh.fresh_uuid()
-          return({outer1, inner_result, outer2})
+          {outer1, inner_result, outer2}
         end
         |> Fresh.with_uuid7_handler()
         |> Comp.run!()
@@ -75,7 +75,7 @@ defmodule Skuld.Effects.FreshTest do
       result =
         comp do
           uuid <- Fresh.fresh_uuid()
-          return(uuid)
+          uuid
         end
         |> Fresh.with_test_handler()
         |> Comp.run!()
@@ -96,7 +96,7 @@ defmodule Skuld.Effects.FreshTest do
           uuid1 <- Fresh.fresh_uuid()
           uuid2 <- Fresh.fresh_uuid()
           uuid3 <- Fresh.fresh_uuid()
-          return({uuid1, uuid2, uuid3})
+          {uuid1, uuid2, uuid3}
         end
         |> Fresh.with_test_handler()
         |> Comp.run!()
@@ -114,7 +114,7 @@ defmodule Skuld.Effects.FreshTest do
         comp do
           a <- Fresh.fresh_uuid()
           b <- Fresh.fresh_uuid()
-          return({a, b})
+          {a, b}
         end
         |> Fresh.with_test_handler(namespace: namespace)
         |> Comp.run!()
@@ -123,7 +123,7 @@ defmodule Skuld.Effects.FreshTest do
         comp do
           a <- Fresh.fresh_uuid()
           b <- Fresh.fresh_uuid()
-          return({a, b})
+          {a, b}
         end
         |> Fresh.with_test_handler(namespace: namespace)
         |> Comp.run!()
@@ -138,7 +138,7 @@ defmodule Skuld.Effects.FreshTest do
       uuid1 =
         comp do
           uuid <- Fresh.fresh_uuid()
-          return(uuid)
+          uuid
         end
         |> Fresh.with_test_handler(namespace: namespace1)
         |> Comp.run!()
@@ -146,7 +146,7 @@ defmodule Skuld.Effects.FreshTest do
       uuid2 =
         comp do
           uuid <- Fresh.fresh_uuid()
-          return(uuid)
+          uuid
         end
         |> Fresh.with_test_handler(namespace: namespace2)
         |> Comp.run!()
@@ -158,7 +158,7 @@ defmodule Skuld.Effects.FreshTest do
       result =
         comp do
           uuid <- Fresh.fresh_uuid()
-          return(uuid)
+          uuid
         end
         |> Fresh.with_test_handler(namespace: :dns)
         |> Comp.run!()
@@ -175,7 +175,7 @@ defmodule Skuld.Effects.FreshTest do
           _ <- Fresh.fresh_uuid()
           _ <- Fresh.fresh_uuid()
           _ <- Fresh.fresh_uuid()
-          return(:done)
+          :done
         end
         |> Fresh.with_test_handler(output: fn result, counter -> {result, counter} end)
         |> Comp.run!()
@@ -195,12 +195,12 @@ defmodule Skuld.Effects.FreshTest do
             comp do
               inner1 <- Fresh.fresh_uuid()
               inner2 <- Fresh.fresh_uuid()
-              return({inner1, inner2})
+              {inner1, inner2}
             end
             |> Fresh.with_test_handler(namespace: inner_namespace)
 
           outer2 <- Fresh.fresh_uuid()
-          return({outer1, inner_result, outer2})
+          {outer1, inner_result, outer2}
         end
         |> Fresh.with_test_handler(namespace: outer_namespace)
         |> Comp.run!()
