@@ -16,14 +16,7 @@ end
 ```
 
 All expressions except the last must be `<-` or `=`. The final
-expression is implicitly wrapped in `Comp.pure/1`. Use `return(value)`
-outside of `comp` blocks or for final expressions that need an explicit
-lift:
-
-```elixir
-Comp.return(42)             # explicit pure computation
-def get_answer, do: return(42)  # in defcomp, shorthand for Comp.return/1
-```
+expression is automatically lifted via `Comp.pure/1`.
 
 ## `<-` bind
 
@@ -187,8 +180,8 @@ end
 ```
 
 The one exception: if you want to return a `function/2` value, wrap
-it in `Comp.pure/1` or `return/1`. Otherwise the runtime sees a
-2-arity function and tries to invoke it as a computation:
+it in `Comp.pure/1`. Otherwise the runtime sees a 2-arity function
+and tries to invoke it as a computation:
 
 ```elixir
 comp do
