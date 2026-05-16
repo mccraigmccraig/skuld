@@ -24,8 +24,7 @@ propagated through the handler chain.
 computation |> Throw.with_handler()
 ```
 
-Place `Throw.with_handler` outermost in your handler stack so it
-catches errors from all inner handlers.
+Handler order is independent — each effect manages its own handler.
 
 ## Bracket
 
@@ -63,7 +62,7 @@ defcomp safe_lookup(id) do
   result
 end
 
-# Place Throw handler outermost
+# Handler order is independent
 safe_lookup("123")
 |> State.with_handler(0)
 |> Throw.with_handler()
@@ -75,7 +74,7 @@ safe_lookup("123")
 | `Throw.throw(error)` | Raise an error |
 | `Throw.catch_error(comp, handler_fn)` | Catch and handle |
 | `Throw.intercept(error_val, comp)` | Catch specific error, return nil |
-| `Bracket.bracket(acquire, use, release)` | Resource with cleanup |
+| `Bracket.bracket(acquire, release, use)` | Resource with cleanup |
 | `Bracket.finally(comp, cleanup)` | Cleanup after computation |
 
 <!-- nav:footer:start -->
