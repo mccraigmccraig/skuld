@@ -4,11 +4,10 @@
 [< LiveView Integration](liveview.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Batch Loading >](batch-loading.md)
 <!-- nav:header:end -->
 
-Event-sourced domain logic using `Command` + `Writer`. The pattern
-separates decision-making from event persistence — commands produce
-events, events are persisted, and state is derived from the event stream.
+Event-sourced domain logic where the core decision is a pure function.
+`Command` provides the dispatch; handlers manage state and persistence.
 
-## Core idea
+## The pure decider
 
 A decider is a function `(command, state) -> events`. It's pure: given
 a command and current state, it produces a list of events. No database,
@@ -46,36 +45,48 @@ def evolve(state, %AmountDeposited{amount: amount}), do: %{state | balance: stat
 def evolve(state, %AmountWithdrawn{amount: amount}), do: %{state | balance: state.balance - amount}
 ```
 
-## Putting it together with effects
+## Wiring with effects
 
-`Command` dispatches to the decider. `Writer` collects events:
+The computation loads state, dispatches to the decider via `Command`,
+evolves state from the resulting events, and persists:
 
 ```elixir
-defcomp handle_command(cmd) do
-  state <- Reader.ask()                              # load state
-  events <- Command.execute({BankAccount, :decide, cmd, state})  # decide
-  _ <- Writer.tell(:events, events)                  # collect events
-  new_state = Enum.reduce(events, state, &evolve/2)
-  _ <- Reader.local(fn _ -> new_state end, fn ->     # update state
-    {:ok, _} <- State.put(new_state)                 # persist state
-    events
-  end)
+defcomp handle(cmd) do
+  state <- State.get()
+  events <- Command.execute(cmd)
+
+  case events do
+    [{:error, reason}] ->
+      {:error, reason}
+
+    _ ->
+      _ <- Writer.tell(:events, events)
+      new_state = Enum.reduce(events, state, &evolve/2)
+      _ <- State.put(new_state)
+      {:ok, new_state}
+  end
 end
 ```
 
-The decider is pure. The effectful code handles loading state,
-persisting events, and updating projections. Swap handlers to test:
+The `Command` handler just calls the pure decider:
 
 ```elixir
-handle_command(%Deposit{amount: 100})
-|> Reader.with_handler(%{balance: 50})
-|> Command.with_handler(fn {mod, fun, cmd, state} -> apply(mod, fun, [cmd, state]) end)
-|> Writer.with_handler([], tag: :events, output: fn r, events -> {r, Enum.reverse(events)} end)
-|> State.with_handler(nil)
+computation
+|> Command.with_handler(fn cmd ->
+  Comp.bind(State.get(), fn state ->
+    BankAccount.decide(cmd, state)
+  end)
+end)
+|> State.with_handler(%{balance: 50})
+|> Writer.with_handler([], tag: :events)
 |> Throw.with_handler()
 |> Comp.run!()
-# => {[{:ok, %{balance: 150}}], [%AmountDeposited{amount: 100}]}
 ```
+
+The decider is a pure Elixir module — testable with plain function
+calls. The computation manages state and persistence via effects.
+`Command` provides the dispatch from operation to implementation,
+so the pattern composes naturally with other effects in the stack.
 
 <!-- nav:footer:start -->
 
