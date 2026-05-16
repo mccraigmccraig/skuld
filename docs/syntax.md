@@ -158,22 +158,28 @@ Generates a function `get_user/1` returning `computation(User.t() | {:error, ter
 
 ## Auto-lifting
 
-Bare values at the end of a `comp` block are automatically lifted:
+Any non-computation expression (anything that isn't a 2-arity function)
+is automatically lifted as `Comp.pure(value)`:
 
 ```elixir
 comp do
   x <- State.get()
-  x * 2    # auto-lifted — no return() needed
+  x * 2                                    # auto-lifted
 end
-```
 
-`if` without `else` also auto-lifts:
-
-```elixir
 comp do
   x <- State.get()
-  _ <- if x > 5, do: Writer.tell(:big)   # nil auto-lifted when false
+  _ <- if x > 5, do: Writer.tell(:big)     # nil auto-lifted when false
   x
+end
+
+comp do
+  x <- State.get()
+  msg = case x do
+    0 -> :zero                             # auto-lifted
+    _ -> :other                            # auto-lifted
+  end
+  msg
 end
 ```
 
