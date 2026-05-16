@@ -21,7 +21,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
         State.get()
       end
 
-    return(result)
+    result
   end
 
   defcomp nested_loops(outer, inner) do
@@ -38,7 +38,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
         :done
       end
 
-    return(result)
+    result
   end
 
   defcomp inner_loop(n) do
@@ -53,7 +53,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
         :inner_done
       end
 
-    return(result)
+    result
   end
 
   describe "EffectLogger.mark_loop/1" do
@@ -61,7 +61,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
       {{:done, _log}, _env} =
         comp do
           _ <- EffectLogger.mark_loop(TestLoop)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging()
         |> Comp.run()
@@ -73,7 +73,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- EffectLogger.mark_loop(:my_loop)
           _ <- EffectLogger.mark_loop(SomeModule)
           _ <- EffectLogger.mark_loop(:"Elixir.AnotherModule")
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging()
         |> Comp.run()
@@ -85,7 +85,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- EffectLogger.mark_loop(TestLoop)
           _ <- EffectLogger.mark_loop(TestLoop)
           _ <- EffectLogger.mark_loop(TestLoop)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging()
         |> Comp.run()
@@ -99,7 +99,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- EffectLogger.mark_loop(InnerLoop)
           _ <- EffectLogger.mark_loop(OuterLoop)
           _ <- EffectLogger.mark_loop(InnerLoop)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging()
         |> Comp.run()
@@ -116,7 +116,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
       {{:done, log}, _env} =
         comp do
           _ <- EffectLogger.mark_loop(TestLoop)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging()
         |> Comp.run()
@@ -131,7 +131,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- EffectLogger.mark_loop(OuterLoop)
           _ <- EffectLogger.mark_loop(MiddleLoop)
           _ <- EffectLogger.mark_loop(InnerLoop)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(prune_loops: false)
         |> Comp.run()
@@ -154,7 +154,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- EffectLogger.mark_loop(InnerLoop)
           _ <- EffectLogger.mark_loop(OuterLoop)
           _ <- EffectLogger.mark_loop(InnerLoop)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(prune_loops: false)
         |> Comp.run()
@@ -214,7 +214,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
         comp do
           _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(100)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(prune_loops: false)
         |> State.with_handler(0)
@@ -235,7 +235,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- State.put(100)
           _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(200)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(prune_loops: false)
         |> State.with_handler(0)
@@ -260,7 +260,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- State.put(200)
           _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(300)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(prune_loops: false)
         |> State.with_handler(0)
@@ -289,7 +289,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- EffectLogger.mark_loop(OuterLoop)
           _ <- EffectLogger.mark_loop(InnerLoop)
           _ <- State.put(30)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(prune_loops: false)
         |> State.with_handler(0)
@@ -324,7 +324,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- EffectLogger.mark_loop(L2)
           _ <- EffectLogger.mark_loop(L3)
           _ <- State.put(3)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(prune_loops: false)
         |> State.with_handler(0)
@@ -350,7 +350,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- EffectLogger.mark_loop(InnerLoop)
           _ <- EffectLogger.mark_loop(OuterLoop)
           _ <- EffectLogger.mark_loop(InnerLoop)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging()
         |> Comp.run()
@@ -374,7 +374,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- State.put(100)
           _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(200)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(prune_loops: true)
         |> State.with_handler(0)
@@ -392,7 +392,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- State.put(100)
           _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(200)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(prune_loops: false)
         |> State.with_handler(0)
@@ -410,7 +410,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- State.put(100)
           _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(200)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging()
         |> State.with_handler(0)
@@ -433,7 +433,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- EffectLogger.mark_loop(TestLoop)
           s2 <- State.get()
           _ <- State.put(s2 + 20)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(prune_loops: true)
         |> State.with_handler(0)
@@ -452,7 +452,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
           _ <- EffectLogger.mark_loop(TestLoop)
           s2 <- State.get()
           _ <- State.put(s2 + 20)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(log, allow_divergence: true)
         |> State.with_handler(0)
@@ -588,7 +588,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
         comp do
           _ <- EffectLogger.mark_loop(TestLoop)
           _ <- State.put(100)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging(prune_loops: false)
         |> State.with_handler(0)
@@ -620,7 +620,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
         comp do
           _ <- State.put(42)
           _ <- EffectLogger.mark_loop(TestLoop)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging()
         |> State.with_handler(0)
@@ -643,7 +643,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
       {{:done, log}, _env} =
         comp do
           _ <- State.get()
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging()
         |> State.with_handler(42)
