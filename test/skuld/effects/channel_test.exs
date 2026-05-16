@@ -854,6 +854,62 @@ defmodule Skuld.Effects.ChannelTest do
     end
   end
 
+  describe "put_all/2" do
+    test "puts multiple items onto a channel" do
+      result =
+        comp do
+          ch <- Channel.new(10)
+          _ <- Channel.put_all(ch, [1, 2, 3])
+          _ <- Channel.close(ch)
+
+          a <- Channel.take(ch)
+          b <- Channel.take(ch)
+          c <- Channel.take(ch)
+          [a, b, c]
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert result == [{:ok, 1}, {:ok, 2}, {:ok, 3}]
+    end
+
+    test "suspends when buffer is full" do
+      result =
+        comp do
+          ch <- Channel.new(2)
+
+          producer <-
+            FiberPool.fiber(
+              comp do
+                _ <- Channel.put_all(ch, [1, 2, 3, 4, 5])
+                _ <- Channel.close(ch)
+                :done
+              end
+            )
+
+          consumer <-
+            FiberPool.fiber(
+              comp do
+                a <- Channel.take(ch)
+                b <- Channel.take(ch)
+                c <- Channel.take(ch)
+                d <- Channel.take(ch)
+                e <- Channel.take(ch)
+                [a, b, c, d, e]
+              end
+            )
+
+          FiberPool.await_all!([producer, consumer])
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert [:done, [{:ok, 1}, {:ok, 2}, {:ok, 3}, {:ok, 4}, {:ok, 5}]] = result
+    end
+  end
+
   describe "rendezvous channel (capacity 0)" do
     test "put blocks until take - put first" do
       # When put happens before take, put should suspend until take arrives

@@ -317,6 +317,31 @@ defmodule Skuld.Effects.Channel do
   end
 
   @doc """
+  Put a list of items onto a channel.
+
+  Equivalent to calling `put/2` for each item in sequence. If any
+  put suspends (buffer full), the whole operation suspends. If the
+  channel is closed or errored, stops and returns the error.
+
+  ## Example
+
+      comp do
+        handle <- Channel.new(10)
+        _ <- Channel.put_all(handle, [1, 2, 3, 4, 5])
+        Channel.close(handle)
+      end
+  """
+  @spec put_all(Handle.t(), [term()]) :: Comp.Types.computation()
+  def put_all(%Handle{} = handle, items) when is_list(items) do
+    Enum.reduce(items, :ok, fn item, acc ->
+      Comp.bind(acc, fn
+        {:error, _} = error -> error
+        _ -> put(handle, item)
+      end)
+    end)
+  end
+
+  @doc """
   Take from a channel with async fibers, awaiting the result.
 
   Takes a fiber handle from the buffer and awaits its completion.
