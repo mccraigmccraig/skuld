@@ -1,15 +1,16 @@
 defmodule Skuld.Credo.CompPureRedundant do
   @moduledoc """
-  Credo check that detects redundant `Comp.pure` calls.
+  Credo check that detects redundant `Comp.pure` and `Comp.return` calls.
 
-  `Comp.pure/1` is almost never necessary — bare values are automatically
-  lifted by `Comp.call/3`. This check flags `Comp.pure(arg)` where the
-  argument is a literal value, a variable reference, or a simple expression
-  that would be trivially auto-lifted.
+  `Comp.pure/1` and `Comp.return/1` are almost never necessary — bare values
+  are automatically lifted by `Comp.call/3`. This check flags
+  `Comp.pure(arg)` and `Comp.return(arg)` where the argument is a literal
+  value, a variable reference, or a simple expression that would be trivially
+  auto-lifted.
 
-  It does NOT flag cases where `Comp.pure` wraps function calls or other
-  non-trivial AST nodes, since those may be legitimate computation-construction
-  patterns.
+  It does NOT flag cases where the argument is a function call or other
+  non-trivial AST node, since those may be legitimate computation-construction
+  patterns (e.g. `Comp.pure(fn a, b -> ... end)` to return a function/2).
   """
 
   use Credo.Check, category: :refactor
@@ -51,15 +52,21 @@ defmodule Skuld.Credo.CompPureRedundant do
          issue_meta
        ) do
     if trivial_arg?(arg) do
-      line_no = call_meta[:line] || 1
+      issue = format_trivial_issue("Comp.pure", call_meta, issue_meta)
+      [issue | acc]
+    else
+      acc
+    end
+  end
 
-      issue =
-        format_issue(issue_meta,
-          message: "`Comp.pure` is unnecessary — bare values are auto-lifted by `call/3`",
-          trigger: "Comp.pure",
-          line_no: line_no
-        )
-
+  # Comp.return(literal) or Comp.return(variable) or Comp.return(simple_expr)
+  defp check_node(
+         {{:., _, [{:__aliases__, _, [:Comp]}, :return]}, call_meta, [arg]},
+         acc,
+         issue_meta
+       ) do
+    if trivial_arg?(arg) do
+      issue = format_trivial_issue("Comp.return", call_meta, issue_meta)
       [issue | acc]
     else
       acc
@@ -67,6 +74,16 @@ defmodule Skuld.Credo.CompPureRedundant do
   end
 
   defp check_node(_node, acc, _issue_meta), do: acc
+
+  defp format_trivial_issue(name, call_meta, issue_meta) do
+    line_no = call_meta[:line] || 1
+
+    format_issue(issue_meta,
+      message: "`#{name}` is unnecessary — bare values are auto-lifted by `call/3`",
+      trigger: name,
+      line_no: line_no
+    )
+  end
 
   # Literals: atoms, numbers, strings, booleans, nil
   defp trivial_arg?(arg) when is_atom(arg), do: true
