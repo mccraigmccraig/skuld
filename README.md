@@ -135,9 +135,9 @@ no stubs.
 ## Composability
 
 Effects compose with zero ceremony. This streaming pipeline processes
-a sequence of commands through a pure decider, persists events via a
-batched `deffetch` contract, and pushes concurrency and backpressure
-to the handler layer:
+a sequence of commands through a pure decider, persists events via an
+automatically batched `deffetch` contract (eliminating N+1
+queries!), and pushes concurrency and backpressure to the handler layer:
 
 ```elixir
 def process_stream(stream) do
