@@ -99,7 +99,7 @@ def process_stream(stream) do
       state <- State.get()
       BankAccount.decide(cmd, state)
     end
-  end, concurrency: 4)
+  end)
   |> Brook.map(&EventStore.evolve/1, concurrency: 4)
 end
 ```
