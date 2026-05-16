@@ -229,7 +229,12 @@ defmodule Skuld.Effects.Brook do
   """
   @spec map(Channel.Handle.t(), (term() -> term() | Comp.Types.computation()), keyword()) ::
           Comp.Types.computation()
-  def map(input, transform_fn, opts \\ []) do
+  def map(input, transform_fn, opts \\ [])
+  def map(input, transform_fn, opts) when is_function(input, 2) do
+    Comp.bind(input, &map(&1, transform_fn, opts))
+  end
+
+  def map(input, transform_fn, opts) do
     concurrency = Keyword.get(opts, :concurrency, 1)
     buffer = Keyword.get(opts, :buffer, 10)
 
@@ -339,7 +344,14 @@ defmodule Skuld.Effects.Brook do
       |> Brook.to_list()
       # => [1, 10, 2, 20, 3, 30]
   """
-  def flat_map(input, transform_fn, opts \\ []) do
+  @spec flat_map(Channel.Handle.t(), (term() -> [term()] | Comp.Types.computation()), keyword()) ::
+          Comp.Types.computation(Channel.Handle.t())
+  def flat_map(input, transform_fn, opts \\ [])
+  def flat_map(input, transform_fn, opts) when is_function(input, 2) do
+    Comp.bind(input, &flat_map(&1, transform_fn, opts))
+  end
+
+  def flat_map(input, transform_fn, opts) do
     concurrency = Keyword.get(opts, :concurrency, 1)
     buffer = Keyword.get(opts, :buffer, 10)
 
@@ -426,7 +438,12 @@ defmodule Skuld.Effects.Brook do
   """
   @spec filter(Channel.Handle.t(), (term() -> boolean()), keyword()) ::
           Comp.Types.computation()
-  def filter(input, pred_fn, opts \\ []) do
+  def filter(input, pred_fn, opts \\ [])
+  def filter(input, pred_fn, opts) when is_function(input, 2) do
+    Comp.bind(input, &filter(&1, pred_fn, opts))
+  end
+
+  def filter(input, pred_fn, opts) do
     buffer = Keyword.get(opts, :buffer, 10)
 
     comp do
@@ -493,6 +510,11 @@ defmodule Skuld.Effects.Brook do
       end
   """
   @spec each(Channel.Handle.t(), (term() -> any())) :: Comp.Types.computation()
+  def each(input, consumer_fn)
+  def each(input, consumer_fn) when is_function(input, 2) do
+    Comp.bind(input, &each(&1, consumer_fn))
+  end
+
   def each(input, consumer_fn) do
     comp do
       handle <- FiberPool.fiber(each_loop(input, consumer_fn))
@@ -533,6 +555,11 @@ defmodule Skuld.Effects.Brook do
   """
   @spec run(Channel.Handle.t(), (term() -> term() | Comp.Types.computation())) ::
           Comp.Types.computation()
+  def run(input, consumer_fn)
+  def run(input, consumer_fn) when is_function(input, 2) do
+    Comp.bind(input, &run(&1, consumer_fn))
+  end
+
   def run(input, consumer_fn) do
     comp do
       handle <- FiberPool.fiber(run_loop(input, consumer_fn))
@@ -600,6 +627,11 @@ defmodule Skuld.Effects.Brook do
       end
   """
   @spec to_list(Channel.Handle.t()) :: Comp.Types.computation()
+  def to_list(input)
+  def to_list(input) when is_function(input, 2) do
+    Comp.bind(input, &to_list/1)
+  end
+
   def to_list(input) do
     comp do
       handle <- FiberPool.fiber(to_list_acc(input, []))
@@ -641,9 +673,13 @@ defmodule Skuld.Effects.Brook do
         total <- Brook.reduce(source, 0, fn item, acc -> acc + item end)
       end
   """
-  @spec reduce(Channel.Handle.t(), acc, (term(), acc -> acc | Comp.Types.computation())) ::
+  @spec reduce(Channel.Handle.t(), term(), (term(), term() -> term() | Comp.Types.computation())) ::
           Comp.Types.computation()
-        when acc: term()
+  def reduce(input, initial_acc, reducer_fn)
+  def reduce(input, initial_acc, reducer_fn) when is_function(input, 2) do
+    Comp.bind(input, &reduce(&1, initial_acc, reducer_fn))
+  end
+
   def reduce(input, initial_acc, reducer_fn) do
     comp do
       handle <- FiberPool.fiber(reduce_acc(input, initial_acc, reducer_fn))

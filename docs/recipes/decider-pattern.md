@@ -93,7 +93,7 @@ end
 
 ```elixir
 defcomp process_stream(commands) do
-  events <-
+  _ <-
     commands
     |> Brook.from_enum()
     |> Brook.flat_map(fn cmd ->
@@ -110,9 +110,6 @@ defcomp process_stream(commands) do
           events
       end
     end, concurrency: 4)
-
-  _ <-
-    events
     |> Brook.map(fn event ->
       _ <- EventStore.write_event(event)
       event
