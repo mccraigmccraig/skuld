@@ -72,36 +72,76 @@ effects. `State` and `Writer` handle persistence.
 
 ## Streaming commands
 
-For a sequence of commands, `Brook.reduce` threads state through
-each step in order:
+Separate the pipeline into `decide` and `evolve` phases. `Brook.flat_map`
+runs each command through the pure decider and flattens the resulting
+event lists into a single stream. A second `Brook.map` persists each
+event — with automatic N+1 batching via `Query.Contract`.
+
+### Event store contract
+
+Define `deffetch` operations for persisting events:
+
+```elixir
+defmodule EventStore do
+  use Skuld.Query
+
+  deffetch write_event(event :: term()) :: :ok
+end
+```
+
+### The pipeline
 
 ```elixir
 defcomp process_stream(commands) do
-  final_state <-
+  events <-
     commands
     |> Brook.from_enum()
-    |> Brook.reduce(%{balance: 0}, fn cmd, state ->
+    |> Brook.flat_map(fn cmd ->
+      state <- State.get()
       events = BankAccount.decide(cmd, state)
 
       case events do
         [{:error, reason}] ->
-          state
+          _ <- Writer.tell(:errors, {cmd, reason})
+          []
 
         _ ->
-          _ <- Writer.tell(:events, events)
-          new_state = Enum.reduce(events, state, &evolve/2)
-          new_state
+          _ <- State.put(Enum.reduce(events, state, &evolve/2))
+          events
       end
-    end)
+    end, concurrency: 4)
 
-  {:ok, final_state}
+  _ <-
+    events
+    |> Brook.map(fn event ->
+      _ <- EventStore.write_event(event)
+      event
+    end, concurrency: 4)
+    |> Brook.to_list()
+
+  :ok
 end
 ```
 
-Each command flows through the pipeline in order. `reduce` passes
-the accumulated state from the previous step to the next `decide`
-call. The reducer is effectful — it can call `Writer.tell` and
-other effects within the `Brook.reduce` context.
+`flat_map` runs `decide` concurrently and flattens the event lists.
+Second phase maps each event through `write_event` — and because
+`write_event` is a `deffetch` operation under `FiberPool`, the
+scheduler batches concurrent calls for the executor:
+
+```elixir
+process_stream(commands)
+|> Skuld.Query.with_executor(EventStore, EventStore.EctoExecutor)
+|> State.with_handler(%{balance: 0})
+|> Writer.with_handler([], tag: :errors)
+|> Channel.with_handler()
+|> FiberPool.with_handler()
+|> Comp.run!()
+```
+
+The decider stays pure. The pipeline demonstrates composition:
+`Brook` for streaming, `flat_map` for flattening, `Query` for
+batched persistence — each a separate concern, combined into
+a single computation.
 
 <!-- nav:footer:start -->
 
