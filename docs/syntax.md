@@ -158,8 +158,11 @@ Generates a function `get_user/1` returning `computation(User.t() | {:error, ter
 
 ## Auto-lifting
 
-Any non-computation expression (anything that isn't a 2-arity function)
-is automatically lifted as `Comp.pure(value)`:
+Any expression that isn't a 2-arity function (a computation) is
+automatically lifted as `Comp.pure(value)`. This is what makes Skuld's
+syntax work naturally in a dynamic language — you almost never need
+to think about return types. Bare values, `case` results, `if`/`else`
+branches, and any Plain Old Elixir expression all Just Work:
 
 ```elixir
 comp do
@@ -180,6 +183,16 @@ comp do
     _ -> :other                            # auto-lifted
   end
   msg
+end
+```
+
+The one exception: if you want to return a `function/2` value, wrap
+it in `Comp.pure/1` or `return/1`. Otherwise the runtime sees a
+2-arity function and tries to invoke it as a computation:
+
+```elixir
+comp do
+  Comp.pure(fn a, b -> a + b end)          # explicit lift for function value
 end
 ```
 
