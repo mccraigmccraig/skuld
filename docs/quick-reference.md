@@ -11,7 +11,6 @@ comp do
   x <- effect()            # effectful bind
   {:ok, y} = expr          # pure pattern match
   z = expr                 # pure assignment
-  return(value)            # explicit lift (optional)
 end
 ```
 

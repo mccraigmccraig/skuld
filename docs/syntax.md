@@ -11,9 +11,18 @@ comp do
   x <- effect()             # effectful bind — run effect, bind result
   {:ok, y} = expr           # pure pattern match (left of = is the pattern)
   z = expr                  # pure assignment
-  return(value)             # explicit lift (optional)
   value                     # last expression is auto-lifted
 end
+```
+
+All expressions except the last must be `<-` or `=`. The final
+expression is implicitly wrapped in `Comp.pure/1`. Use `return(value)`
+outside of `comp` blocks or for final expressions that need an explicit
+lift:
+
+```elixir
+Comp.return(42)             # explicit pure computation
+def get_answer, do: return(42)  # in defcomp, shorthand for Comp.return/1
 ```
 
 ## `<-` bind
