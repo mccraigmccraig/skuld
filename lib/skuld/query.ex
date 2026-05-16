@@ -27,11 +27,22 @@ defmodule Skuld.Query do
   """
 
   alias Skuld.Comp
+  alias Skuld.Comp.InternalSuspend
 
   @doc false
   defmacro __using__(opts) do
     quote do
       use Skuld.Query.Contract, unquote(opts)
+    end
+  end
+
+  @doc false
+  @spec batchable_op({module(), atom()}, term()) :: Comp.Types.computation()
+  def batchable_op(batch_key, op) do
+    fn env, k ->
+      resume = fn result, resume_env -> k.(result, resume_env) end
+      suspend = InternalSuspend.batch(batch_key, op, make_ref(), resume)
+      {suspend, env}
     end
   end
 
