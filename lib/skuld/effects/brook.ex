@@ -347,7 +347,7 @@ defmodule Skuld.Effects.Brook do
   """
   @spec flat_map(
           Channel.Handle.t() | Comp.Types.computation(Channel.Handle.t()),
-          (term() -> [term()] | Comp.Types.computation()),
+          (term() -> [term()] | Comp.Types.computation([term()])),
           keyword()
         ) ::
           Comp.Types.computation(Channel.Handle.t())
