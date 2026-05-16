@@ -20,11 +20,11 @@ defmodule Skuld.Effects.Transaction.NoopTest do
           result <-
             Transaction.transact(
               comp do
-                return(:ok)
+                :ok
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
 
@@ -37,12 +37,12 @@ defmodule Skuld.Effects.Transaction.NoopTest do
           result <-
             Transaction.transact(
               comp do
-                x <- return(21)
-                return(x * 2)
+                x <- 21
+                x * 2
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
 
@@ -55,13 +55,13 @@ defmodule Skuld.Effects.Transaction.NoopTest do
           result <-
             Transaction.transact(
               comp do
-                a <- return(:first)
-                b <- return(:second)
-                return({a, b})
+                a <- :first
+                b <- :second
+                {a, b}
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
 
@@ -75,11 +75,11 @@ defmodule Skuld.Effects.Transaction.NoopTest do
             Transaction.transact(
               comp do
                 _ <- Transaction.rollback(:test_reason)
-                return(:never_reached)
+                :never_reached
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
 
@@ -93,11 +93,11 @@ defmodule Skuld.Effects.Transaction.NoopTest do
             Transaction.transact(
               comp do
                 _ <- Transaction.rollback({:validation_failed, %{field: :email}})
-                return(:never_reached)
+                :never_reached
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
 
@@ -116,14 +116,14 @@ defmodule Skuld.Effects.Transaction.NoopTest do
                   if x < 0 do
                     Transaction.rollback({:negative, x})
                   else
-                    Comp.return(x)
+                    x
                   end
 
-                return(inner_result)
+                inner_result
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
 
@@ -142,14 +142,14 @@ defmodule Skuld.Effects.Transaction.NoopTest do
                   if x < 0 do
                     Transaction.rollback({:negative, x})
                   else
-                    Comp.return(x)
+                    x
                   end
 
-                return(inner_result)
+                inner_result
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
 
@@ -162,7 +162,7 @@ defmodule Skuld.Effects.Transaction.NoopTest do
       computation =
         comp do
           _ <- Transaction.rollback(:outside_transact)
-          return(:never_reached)
+          :never_reached
         end
         |> Transaction.Noop.with_handler()
 
@@ -181,20 +181,20 @@ defmodule Skuld.Effects.Transaction.NoopTest do
           result <-
             Transaction.transact(
               comp do
-                outer <- return(:outer_value)
+                outer <- :outer_value
 
                 inner_result <-
                   Transaction.transact(
                     comp do
-                      return(:inner_value)
+                      :inner_value
                     end
                   )
 
-                return({outer, inner_result})
+                {outer, inner_result}
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
 
@@ -211,15 +211,15 @@ defmodule Skuld.Effects.Transaction.NoopTest do
                   Transaction.transact(
                     comp do
                       _ <- Transaction.rollback(:inner_rollback)
-                      return(:never_reached)
+                      :never_reached
                     end
                   )
 
-                return({:outer_ok, inner_result})
+                {:outer_ok, inner_result}
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
 
@@ -235,11 +235,11 @@ defmodule Skuld.Effects.Transaction.NoopTest do
             Transaction.transact(
               comp do
                 _ <- Throw.throw(:something_went_wrong)
-                return(:never_reached)
+                :never_reached
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
         |> Throw.with_handler()
@@ -254,13 +254,13 @@ defmodule Skuld.Effects.Transaction.NoopTest do
           result <-
             Transaction.transact(
               comp do
-                x <- return(42)
+                x <- 42
                 _ <- Throw.throw({:failed, x})
-                return(:never_reached)
+                :never_reached
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
         |> Throw.with_handler()
@@ -282,12 +282,12 @@ defmodule Skuld.Effects.Transaction.NoopTest do
                 _ <- emit(:events, :inside_tx_1)
                 _ <- emit(:events, :inside_tx_2)
                 _ <- Transaction.rollback(:test_reason)
-                return(:never_reached)
+                :never_reached
               end
             )
 
           _ <- emit(:events, :after_rollback)
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
         |> events_handler()
@@ -308,11 +308,11 @@ defmodule Skuld.Effects.Transaction.NoopTest do
               comp do
                 _ <- emit(:events, :inside_tx)
                 _ <- Throw.throw(:something_failed)
-                return(:never_reached)
+                :never_reached
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
         |> events_handler()
@@ -335,12 +335,12 @@ defmodule Skuld.Effects.Transaction.NoopTest do
             Transaction.transact(
               comp do
                 _ <- emit(:events, :inside_tx)
-                return(:ok)
+                :ok
               end
             )
 
           _ <- emit(:events, :after_tx)
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
         |> events_handler()
@@ -365,11 +365,11 @@ defmodule Skuld.Effects.Transaction.NoopTest do
                 _ <- emit(:events, :inside_tx)
                 _ <- Writer.tell(:metrics, :metric_inside)
                 _ <- Transaction.rollback(:test_reason)
-                return(:never_reached)
+                :never_reached
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler(preserve_state_on_rollback: [metrics_key])
         |> events_handler()
@@ -403,16 +403,16 @@ defmodule Skuld.Effects.Transaction.NoopTest do
                     comp do
                       _ <- emit(:events, :inner_tx)
                       _ <- Transaction.rollback(:inner_reason)
-                      return(:never_reached)
+                      :never_reached
                     end
                   )
 
                 _ <- emit(:events, :outer_after_inner)
-                return({:outer_ok, inner_result})
+                {:outer_ok, inner_result}
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
         |> events_handler()
@@ -431,11 +431,11 @@ defmodule Skuld.Effects.Transaction.NoopTest do
           result <-
             Transaction.try_transact(
               comp do
-                return(42)
+                42
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
 
@@ -449,11 +449,11 @@ defmodule Skuld.Effects.Transaction.NoopTest do
             Transaction.try_transact(
               comp do
                 _ <- Transaction.rollback(:test_reason)
-                return(:never_reached)
+                :never_reached
               end
             )
 
-          return(result)
+          result
         end
         |> Transaction.Noop.with_handler()
 
@@ -468,11 +468,11 @@ defmodule Skuld.Effects.Transaction.NoopTest do
           result <-
             Transaction.transact(
               comp do
-                return(:ok)
+                :ok
               end
             )
 
-          return(result)
+          result
         catch
           Transaction.Noop -> nil
         end
@@ -486,11 +486,11 @@ defmodule Skuld.Effects.Transaction.NoopTest do
           result <-
             Transaction.transact(
               comp do
-                return(:ok)
+                :ok
               end
             )
 
-          return(result)
+          result
         catch
           Transaction.Noop -> [preserve_state_on_rollback: []]
         end
