@@ -15,7 +15,7 @@ defmodule Skuld.AsyncCoroutineTest do
     test "runs a simple computation and sends result" do
       computation =
         comp do
-          return({:ok, 42})
+          {:ok, 42}
         end
 
       {:ok, _runner} = AsyncCoroutine.run(computation, tag: :test)
@@ -28,7 +28,7 @@ defmodule Skuld.AsyncCoroutineTest do
         comp do
           x <- Reader.ask()
           y <- State.get()
-          return(x + y)
+          x + y
         end
         |> Reader.with_handler(10)
         |> State.with_handler(32)
@@ -42,7 +42,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation =
         comp do
           _ <- Throw.throw(:something_went_wrong)
-          return(:never_reached)
+          :never_reached
         end
 
       {:ok, _runner} = AsyncCoroutine.run(computation, tag: :throwing)
@@ -55,7 +55,7 @@ defmodule Skuld.AsyncCoroutineTest do
         comp do
           x <- Yield.yield(:first)
           y <- Yield.yield(:second)
-          return(x + y)
+          x + y
         end
 
       {:ok, runner} = AsyncCoroutine.run(computation, tag: :yielding)
@@ -83,7 +83,7 @@ defmodule Skuld.AsyncCoroutineTest do
           end
         end)
 
-      computation = comp(do: return(:hello))
+      computation = comp(do: :hello)
 
       {:ok, _runner} = AsyncCoroutine.run(computation, tag: :custom_caller, caller: middleman)
 
@@ -96,7 +96,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation =
         comp do
           x <- Yield.yield(:ready)
-          return(x * 2)
+          x * 2
         end
 
       {:ok, runner, %ExternalSuspend{value: :ready}} =
@@ -107,7 +107,7 @@ defmodule Skuld.AsyncCoroutineTest do
     end
 
     test "returns result when computation completes immediately" do
-      computation = comp(do: return({:ok, 42}))
+      computation = comp(do: {:ok, 42})
 
       {:ok, _runner, {:ok, 42}} =
         AsyncCoroutine.run_sync(computation, tag: :immediate_result)
@@ -117,7 +117,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation =
         comp do
           _ <- Throw.throw(:immediate_error)
-          return(:never)
+          :never
         end
 
       {:ok, _runner, %ThrowStruct{error: :immediate_error}} =
@@ -129,7 +129,7 @@ defmodule Skuld.AsyncCoroutineTest do
         comp do
           base <- Reader.ask()
           multiplier <- Yield.yield(:get_multiplier)
-          return(base * multiplier)
+          base * multiplier
         end
         |> Reader.with_handler(21)
 
@@ -143,7 +143,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation =
         comp do
           x <- Yield.yield(:first)
-          return(x)
+          x
         end
 
       # Should succeed quickly with reasonable timeout
@@ -161,7 +161,7 @@ defmodule Skuld.AsyncCoroutineTest do
           result1 = {:processed, cmd1}
           cmd2 <- Yield.yield({:ready, result1})
           result2 = {:processed, cmd2}
-          return({:done, result1, result2})
+          {:done, result1, result2}
         end
 
       # Start sync - get first :ready yield
@@ -184,7 +184,7 @@ defmodule Skuld.AsyncCoroutineTest do
         comp do
           x <- Yield.yield(:first)
           y <- Yield.yield(:second)
-          return(x + y)
+          x + y
         end
 
       {:ok, runner} = AsyncCoroutine.run(computation, tag: :sync_yield)
@@ -203,7 +203,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation =
         comp do
           x <- Yield.yield(:get_value)
-          return({:ok, x * 2})
+          {:ok, x * 2}
         end
 
       {:ok, runner} = AsyncCoroutine.run(computation, tag: :sync_result)
@@ -217,7 +217,7 @@ defmodule Skuld.AsyncCoroutineTest do
         comp do
           x <- Yield.yield(:get_value)
           _ <- if x < 0, do: Throw.throw(:negative)
-          return(x)
+          x
         end
 
       {:ok, runner} = AsyncCoroutine.run(computation, tag: :sync_throw)
@@ -231,7 +231,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation =
         comp do
           _ <- Yield.yield(:ready)
-          return(:done)
+          :done
         end
 
       {:ok, runner} = AsyncCoroutine.run(computation, tag: :custom_timeout)
@@ -248,7 +248,7 @@ defmodule Skuld.AsyncCoroutineTest do
           a <- Yield.yield(:a)
           b <- Yield.yield(:b)
           c <- Yield.yield(:c)
-          return(a + b + c)
+          a + b + c
         end
 
       {:ok, runner} = AsyncCoroutine.run(computation, tag: :mixed)
@@ -273,7 +273,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation =
         comp do
           _ <- Yield.yield(:waiting)
-          return(:completed)
+          :completed
         end
 
       {:ok, runner} = AsyncCoroutine.run(computation, tag: :cancellable)
@@ -331,7 +331,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation =
         comp do
           _ <- Yield.yield(:waiting)
-          return(:completed)
+          :completed
         end
 
       {:ok, runner, %ExternalSuspend{value: :waiting}} =
@@ -381,7 +381,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation =
         comp do
           _ <- Yield.yield(:waiting)
-          return(:completed)
+          :completed
         end
 
       # Start with self() as caller
@@ -407,7 +407,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation =
         comp do
           _ <- Yield.yield(:waiting)
-          return(:completed)
+          :completed
         end
 
       {:ok, runner, %ExternalSuspend{value: :waiting}} =
@@ -421,7 +421,7 @@ defmodule Skuld.AsyncCoroutineTest do
 
   describe "process lifecycle" do
     test "runner process exits after sending result" do
-      computation = comp(do: return(:done))
+      computation = comp(do: :done)
 
       {:ok, runner} = AsyncCoroutine.run(computation, tag: :lifecycle)
 
@@ -469,7 +469,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation =
         comp do
           _ <- Yield.yield(:first)
-          return(:done)
+          :done
         end
         |> Skuld.Comp.with_scoped_state(:counter, 1,
           suspend: fn suspend, env ->
@@ -499,7 +499,7 @@ defmodule Skuld.AsyncCoroutineTest do
           _ <- Yield.yield(:first)
           _ <- Yield.yield(:second)
           _ <- Yield.yield(:third)
-          return(:done)
+          :done
         end
         |> Skuld.Comp.scoped(fn env ->
           # Set up transform_suspend that captures an incrementing counter
@@ -549,7 +549,7 @@ defmodule Skuld.AsyncCoroutineTest do
           _ <- Yield.yield(:first)
           _ <- State.modify(fn c -> c + 1 end)
           _ <- Yield.yield(:second)
-          return(:done)
+          :done
         end
         |> EffectLogger.with_logging()
         |> State.with_handler(0)
@@ -589,7 +589,7 @@ defmodule Skuld.AsyncCoroutineTest do
         comp do
           name <- Yield.yield(%{step: 1, prompt: "Enter name"})
           email <- Yield.yield(%{step: 2, prompt: "Enter email"})
-          return(%{name: name, email: email})
+          %{name: name, email: email}
         end
 
       {:ok, runner} = AsyncCoroutine.run(wizard, tag: :wizard)
@@ -615,7 +615,7 @@ defmodule Skuld.AsyncCoroutineTest do
         comp do
           base <- Reader.ask()
           multiplier <- Yield.yield(:get_multiplier)
-          return(base * multiplier)
+          base * multiplier
         end
         |> Reader.with_handler(21)
 
