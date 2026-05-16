@@ -11,7 +11,7 @@
 #     # First run
 #     uuid1 = comp do
 #       uuid <- Fresh.fresh_uuid()
-#       return(uuid)
+#       uuid
 #     end
 #     |> Fresh.Test.with_handler(namespace: namespace)
 #     |> Comp.run!()
@@ -19,7 +19,7 @@
 #     # Second run - same result!
 #     uuid2 = comp do
 #       uuid <- Fresh.fresh_uuid()
-#       return(uuid)
+#       uuid
 #     end
 #     |> Fresh.Test.with_handler(namespace: namespace)
 #     |> Comp.run!()
@@ -63,7 +63,7 @@ defmodule Skuld.Effects.Fresh.Test do
 
       uuid = comp do
         uuid <- Fresh.fresh_uuid()
-        return(uuid)
+        uuid
       end
       |> Fresh.Test.with_handler(namespace: namespace)
       |> Comp.run!()

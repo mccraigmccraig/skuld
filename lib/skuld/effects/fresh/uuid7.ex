@@ -9,7 +9,7 @@
 #
 #     comp do
 #       id <- Fresh.fresh_uuid()
-#       return(id)
+#       id
 #     end
 #     |> Fresh.UUID7.with_handler()
 #     |> Comp.run!()
@@ -35,7 +35,7 @@ defmodule Skuld.Effects.Fresh.UUID7 do
 
       comp do
         id <- Fresh.fresh_uuid()
-        return(id)
+  id
       end
       |> Fresh.UUID7.with_handler()
       |> Comp.run!()

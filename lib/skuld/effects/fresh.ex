@@ -20,7 +20,7 @@ defmodule Skuld.Effects.Fresh do
       comp do
         id1 <- Fresh.fresh_uuid()
         id2 <- Fresh.fresh_uuid()
-        return({id1, id2})
+        {id1, id2}
       end
       |> Fresh.with_uuid7_handler()
       |> Comp.run!()
@@ -33,7 +33,7 @@ defmodule Skuld.Effects.Fresh do
 
       comp do
         uuid <- Fresh.fresh_uuid()
-        return(uuid)
+        uuid
       end
       |> Fresh.with_test_handler(namespace: namespace)
       |> Comp.run!()
@@ -42,7 +42,7 @@ defmodule Skuld.Effects.Fresh do
       # Running again with same namespace produces same result
       comp do
         uuid <- Fresh.fresh_uuid()
-        return(uuid)
+        uuid
       end
       |> Fresh.with_test_handler(namespace: namespace)
       |> Comp.run!()
@@ -86,7 +86,7 @@ defmodule Skuld.Effects.Fresh do
 
       comp do
         id <- Fresh.fresh_uuid()
-        return(id)
+        id
       end
       |> Fresh.with_uuid7_handler()
       |> Comp.run!()
@@ -112,7 +112,7 @@ defmodule Skuld.Effects.Fresh do
 
       comp do
         uuid <- Fresh.fresh_uuid()
-        return(uuid)
+        uuid
       end
       |> Fresh.with_test_handler(namespace: namespace)
       |> Comp.run!()
