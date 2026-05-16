@@ -68,20 +68,40 @@ end
 ```
 
 `decide` and `evolve` are plain Elixir functions — testable without
-effects. `State` and `Writer` handle persistence:
+effects. `State` and `Writer` handle persistence.
+
+## Streaming commands
+
+For a sequence of commands, `Brook.reduce` threads state through
+each step in order:
 
 ```elixir
-handle(%Deposit{amount: 100})
-|> State.with_handler(%{balance: 50})
-|> Writer.with_handler([], tag: :events, output: fn r, events -> {r, Enum.reverse(events)} end)
-|> Throw.with_handler()
-|> Comp.run!()
-# => {{:ok, %{balance: 150}}, [%AmountDeposited{amount: 100}]}
+defcomp process_stream(commands) do
+  final_state <-
+    commands
+    |> Brook.from_enum()
+    |> Brook.reduce(%{balance: 0}, fn cmd, state ->
+      events = BankAccount.decide(cmd, state)
+
+      case events do
+        [{:error, reason}] ->
+          state
+
+        _ ->
+          _ <- Writer.tell(:events, events)
+          new_state = Enum.reduce(events, state, &evolve/2)
+          new_state
+      end
+    end)
+
+  {:ok, final_state}
+end
 ```
 
-The pattern separates pure domain logic (decide, evolve) from effectful
-infrastructure (state, event log). The effects handle the plumbing; the
-decider stays a plain Elixir module with no dependencies.
+Each command flows through the pipeline in order. `reduce` passes
+the accumulated state from the previous step to the next `decide`
+call. The reducer is effectful — it can call `Writer.tell` and
+other effects within the `Brook.reduce` context.
 
 <!-- nav:footer:start -->
 
