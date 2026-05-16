@@ -24,20 +24,20 @@ defmodule Skuld.Effects.Bracket do
         # Acquire resource
         comp do
           handle <- open_file("data.txt")
-          return(handle)
+          handle
         end,
         # Release (always runs)
         fn handle ->
           comp do
             _ <- close_file(handle)
-            return(:ok)
+            :ok
           end
         end,
         # Use resource
         fn handle ->
           comp do
             content <- read_file(handle)
-            return(process(content))
+            process(content)
           end
         end
       )
@@ -54,7 +54,7 @@ defmodule Skuld.Effects.Bracket do
           comp do
             # If this throws, conn is still released
             result <- dangerous_operation(conn)
-            return(result)
+            result
           end
         end
       )
@@ -77,7 +77,7 @@ defmodule Skuld.Effects.Bracket do
               fn inner -> release_inner(inner) end,
               fn inner -> use_both(outer, inner) end
             )
-            return(inner_result)
+            inner_result
           end
         end
       )
@@ -117,20 +117,20 @@ defmodule Skuld.Effects.Bracket do
         comp do
           Logger.info("Acquiring lock")
           lock <- Lock.acquire(:my_lock)
-          return(lock)
+          lock
         end,
         fn lock ->
           comp do
             Logger.info("Releasing lock")
             _ <- Lock.release(lock)
-            return(:ok)
+            :ok
           end
         end,
         fn lock ->
           comp do
             # Critical section - lock is held
             result <- do_work()
-            return(result)
+            result
           end
         end
       )
@@ -249,11 +249,11 @@ defmodule Skuld.Effects.Bracket do
         comp do
           _ <- Logger.info("Starting operation")
           result <- do_work()
-          return(result)
+          result
         end,
         comp do
           _ <- Logger.info("Operation complete")
-          return(:ok)
+          :ok
         end
       )
   """
