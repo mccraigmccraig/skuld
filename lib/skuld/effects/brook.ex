@@ -40,7 +40,6 @@ defmodule Skuld.Effects.Brook do
 
   use Skuld.Syntax
 
-  alias Skuld.Comp
   require Skuld.Comp, as: Comp
   alias Skuld.Comp.Types
   alias Skuld.Effects.Channel
