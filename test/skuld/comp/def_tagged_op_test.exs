@@ -73,7 +73,7 @@ defmodule Skuld.Comp.DefTaggedOpTest do
         comp do
           a <- TaggedEffect.get(:alpha)
           b <- TaggedEffect.get(:beta)
-          return({a, b})
+          {a, b}
         end
 
       alpha_sig = TaggedEffect.sig(:alpha)

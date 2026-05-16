@@ -602,7 +602,7 @@ defmodule Skuld.Query.QueryBlockTest do
       result =
         query do
           a <- 42
-          return(a)
+          a
         end
         |> FiberPool.with_handler()
         |> Comp.run!()
