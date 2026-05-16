@@ -11,14 +11,14 @@
 #       x <- State.get()
 #       y = x + 1
 #       _ <- State.put(y)
-#       return(y)
+#       y
 #     end
 #
 # ## Syntax
 #
 # - `x <- effect()` - bind the result of an effectful computation
 # - `x = expr` - pure variable binding (unchanged)
-# - `return(value)` - lift a pure value (optional - values are auto-lifted)
+# - Last expression is auto-lifted if not already a computation
 # - Last expression is auto-lifted if not already a computation
 #
 # ## Auto-Lifting
@@ -37,10 +37,10 @@
 #
 #     comp do
 #       {:ok, x} <- maybe_returns_error()
-#       return(x)
+#       x
 #     else
-#       {:error, reason} -> return({:failed, reason})
-#       other -> return({:unexpected, other})
+#       {:error, reason} -> {:failed, reason}
+#       other -> {:unexpected, other}
 #     end
 #
 # When a pattern in `<-` fails to match, the else clause handles the unmatched value.
@@ -56,10 +56,10 @@
 #     comp do
 #       x <- State.get()
 #       _ <- if x < 0, do: Throw.throw(:negative), else: :ok
-#       return(x * 2)
+#       x * 2
 #     catch
-#       {Throw, :negative} -> return(0)
-#       {Throw, other} -> return({:error, other})
+#       {Throw, :negative} -> 0
+#       {Throw, other} -> {:error, other}
 #     end
 #
 # When an error is thrown, it's matched against the `{Throw, pattern}` clauses.
@@ -69,9 +69,9 @@
 #
 #     comp do
 #       config <- Yield.yield(:need_config)
-#       return({:got, config})
+#       {:got, config}
 #     catch
-#       {Yield, :need_config} -> return(%{timeout: 5000})
+#       {Yield, :need_config} -> %{timeout: 5000}
 #       {Yield, other} -> Yield.yield(other)  # re-yield unhandled
 #     end
 #
@@ -88,8 +88,8 @@
 #       result <- risky_operation(config)
 #       result
 #     catch
-#       {Yield, :get_config} -> return(%{default: true})
-#       {Throw, :timeout} -> return(:retry_later)
+#       {Yield, :get_config} -> %{default: true}
+#       {Throw, :timeout} -> :retry_later
 #       {Throw, err} -> Throw.throw({:wrapped, err})
 #     end
 #
@@ -146,11 +146,11 @@
 #     comp do
 #       {:ok, x} <- might_fail_match()
 #       _ <- might_throw_error(x)
-#       return(x)
+#       x
 #     else
-#       {:error, reason} -> return({:match_failed, reason})
+#       {:error, reason} -> {:match_failed, reason}
 #     catch
-#       {Throw, :some_error} -> return(:caught_throw)
+#       {Throw, :some_error} -> :caught_throw
 #     end
 #
 # Semantic ordering: `catch(else(body))`. This means:
@@ -179,7 +179,7 @@
 #     comp do
 #       x <- State.get()
 #       y <- Reader.ask()
-#       return(x + y)
+#       x + y
 #     end
 #     |> State.with_handler(0)
 #     |> Reader.with_handler(:config)
@@ -191,23 +191,23 @@
 #     defcomp increment() do
 #       x <- State.get()
 #       _ <- State.put(x + 1)
-#       return(x + 1)
+#       x + 1
 #     end
 #
 #     defcompp private_helper() do
 #       ctx <- Reader.ask()
-#       return(ctx.value)
+#       ctx.value
 #     end
 #
 # Function definitions also support else and catch:
 #
 #     defcomp safe_get() do
 #       {:ok, x} <- fetch_value()
-#       return(x)
+#       x
 #     else
-#       {:error, _} -> return(:default)
+#       {:error, _} -> :default
 #     catch
-#       {Throw, :serious_error} -> return(:fallback)
+#       {Throw, :serious_error} -> :fallback
 #     end
 defmodule Skuld.Comp.CompBlock do
   @moduledoc false
@@ -222,16 +222,16 @@ defmodule Skuld.Comp.CompBlock do
       defcomp fetch_and_increment() do
         x <- State.get()
         _ <- State.put(x + 1)
-        return(x)
+        x
       end
 
       defcomp safe_fetch() do
         {:ok, x} <- dangerous_op()
-        return(x)
+        x
       else
-        {:error, _} -> return(:default)
+        {:error, _} -> :default
       catch
-        {Throw, :error} -> return(:fallback)
+        {Throw, :error} -> :fallback
       end
   """
   defmacro defcomp(call_ast, clauses) do
@@ -247,7 +247,7 @@ defmodule Skuld.Comp.CompBlock do
 
       defcompp internal_helper() do
         x <- Reader.ask()
-        return(x.config)
+        x.config
       end
   """
   defmacro defcompp(call_ast, clauses) do
@@ -268,18 +268,18 @@ defmodule Skuld.Comp.CompBlock do
         x <- State.get()
         y = x * 2
         _ <- State.put(y)
-        return(y)
+  y
       end
 
   With else and catch clauses:
 
       comp do
         {:ok, x} <- risky_operation()
-        return(x)
+        x
       else
-        {:error, reason} -> return({:failed, reason})
+        {:error, reason} -> {:failed, reason}
       catch
-        {Throw, :error} -> return(:default)
+        {Throw, :error} -> :default
       end
   """
   defmacro comp(clauses) do
