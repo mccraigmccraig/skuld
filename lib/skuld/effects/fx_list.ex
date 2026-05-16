@@ -86,7 +86,7 @@ defmodule Skuld.Effects.FxList do
         comp do
           count <- State.get()
           _ <- State.put(count + 1)
-          return(x * 2)
+          x * 2
         end
       end)
       # => computation returning [2, 4, 6]
@@ -120,7 +120,7 @@ defmodule Skuld.Effects.FxList do
       FxList.fx_reduce([1, 2, 3], 0, fn x, acc ->
         comp do
           _ <- Writer.tell("processing \#{x}")
-          return(acc + x)
+          acc + x
         end
       end)
       # => computation returning 6
@@ -154,7 +154,7 @@ defmodule Skuld.Effects.FxList do
         comp do
           n <- State.get()
           _ <- State.put(n + 1)
-          return(:ok)
+          :ok
         end
       end)
       # => computation returning :ok
@@ -184,7 +184,7 @@ defmodule Skuld.Effects.FxList do
       FxList.fx_filter([1, 2, 3, 4], fn x ->
         comp do
           threshold <- Reader.ask()
-          return(x > threshold)
+          x > threshold
         end
       end)
       # With threshold=2 => computation returning [3, 4]
