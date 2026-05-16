@@ -41,6 +41,7 @@ defmodule Skuld.Effects.Brook do
   use Skuld.Syntax
 
   alias Skuld.Comp
+  alias Skuld.Comp.Types
   alias Skuld.Effects.Channel
   alias Skuld.Effects.FiberPool
 
@@ -65,7 +66,7 @@ defmodule Skuld.Effects.Brook do
         Brook.to_list(source)
       end
   """
-  @spec from_enum(Enumerable.t(), keyword()) :: Comp.Types.computation()
+  @spec from_enum(Enumerable.t(), keyword()) :: Types.computation()
   def from_enum(enumerable, opts \\ []) do
     buffer = Keyword.get(opts, :buffer, 10)
 
@@ -132,7 +133,7 @@ defmodule Skuld.Effects.Brook do
           (-> {:item, term()} | {:items, [term()]} | :done | {:error, term()}),
           keyword()
         ) ::
-          Comp.Types.computation()
+          Types.computation()
   def from_function(producer_fn, opts \\ []) do
     buffer = Keyword.get(opts, :buffer, 10)
 
@@ -228,11 +229,11 @@ defmodule Skuld.Effects.Brook do
       |> DB.with_executors()
   """
   @spec map(
-          Channel.Handle.t() | Comp.Types.computation(Channel.Handle.t()),
-          (term() -> term() | Comp.Types.computation(term())),
+          Channel.Handle.t() | Types.computation(Channel.Handle.t()),
+          (term() -> term() | Types.computation(term())),
           keyword()
         ) ::
-          Comp.Types.computation(Channel.Handle.t())
+          Types.computation(Channel.Handle.t())
   def map(input, transform_fn, opts \\ [])
 
   def map(input, transform_fn, opts) when is_function(input, 2) do
@@ -350,11 +351,11 @@ defmodule Skuld.Effects.Brook do
       # => [1, 10, 2, 20, 3, 30]
   """
   @spec flat_map(
-          Channel.Handle.t() | Comp.Types.computation(Channel.Handle.t()),
-          (term() -> [term()] | Comp.Types.computation([term()])),
+          Channel.Handle.t() | Types.computation(Channel.Handle.t()),
+          (term() -> [term()] | Types.computation([term()])),
           keyword()
         ) ::
-          Comp.Types.computation(Channel.Handle.t())
+          Types.computation(Channel.Handle.t())
   def flat_map(input, transform_fn, opts \\ [])
 
   def flat_map(input, transform_fn, opts) when is_function(input, 2) do
@@ -450,11 +451,11 @@ defmodule Skuld.Effects.Brook do
       end
   """
   @spec filter(
-          Channel.Handle.t() | Comp.Types.computation(Channel.Handle.t()),
+          Channel.Handle.t() | Types.computation(Channel.Handle.t()),
           (term() -> boolean()),
           keyword()
         ) ::
-          Comp.Types.computation(Channel.Handle.t())
+          Types.computation(Channel.Handle.t())
   def filter(input, pred_fn, opts \\ [])
 
   def filter(input, pred_fn, opts) when is_function(input, 2) do
@@ -528,9 +529,9 @@ defmodule Skuld.Effects.Brook do
       end
   """
   @spec each(
-          Channel.Handle.t() | Comp.Types.computation(Channel.Handle.t()),
+          Channel.Handle.t() | Types.computation(Channel.Handle.t()),
           (term() -> any())
-        ) :: Comp.Types.computation(Channel.Handle.t())
+        ) :: Types.computation(Channel.Handle.t())
   def each(input, consumer_fn)
 
   def each(input, consumer_fn) when is_function(input, 2) do
@@ -576,9 +577,9 @@ defmodule Skuld.Effects.Brook do
       end
   """
   @spec run(
-          Channel.Handle.t() | Comp.Types.computation(Channel.Handle.t()),
-          (term() -> term() | Comp.Types.computation(term()))
-        ) :: Comp.Types.computation(Channel.Handle.t())
+          Channel.Handle.t() | Types.computation(Channel.Handle.t()),
+          (term() -> term() | Types.computation(term()))
+        ) :: Types.computation(Channel.Handle.t())
   def run(input, consumer_fn)
 
   def run(input, consumer_fn) when is_function(input, 2) do
@@ -651,8 +652,8 @@ defmodule Skuld.Effects.Brook do
         Brook.to_list(mapped)
       end
   """
-  @spec to_list(Channel.Handle.t() | Comp.Types.computation(Channel.Handle.t())) ::
-          Comp.Types.computation([term()])
+  @spec to_list(Channel.Handle.t() | Types.computation(Channel.Handle.t())) ::
+          Types.computation([term()])
   def to_list(input)
 
   def to_list(input) when is_function(input, 2) do
@@ -701,10 +702,10 @@ defmodule Skuld.Effects.Brook do
       end
   """
   @spec reduce(
-          Channel.Handle.t() | Comp.Types.computation(Channel.Handle.t()),
+          Channel.Handle.t() | Types.computation(Channel.Handle.t()),
           term(),
-          (term(), term() -> term() | Comp.Types.computation(term()))
-        ) :: Comp.Types.computation(term())
+          (term(), term() -> term() | Types.computation(term()))
+        ) :: Types.computation(term())
   def reduce(input, initial_acc, reducer_fn)
 
   def reduce(input, initial_acc, reducer_fn) when is_function(input, 2) do
