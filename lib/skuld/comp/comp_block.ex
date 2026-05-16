@@ -356,7 +356,6 @@ defmodule Skuld.Comp.CompBlock do
         end
 
       quote do
-        import Skuld.Comp.BaseOps
         unquote(result)
       end
     end
@@ -533,11 +532,9 @@ defmodule Skuld.Comp.CompBlock do
           case_clauses ++ [default_redispatch_clause(module_ast)]
         end
 
-      # Build: fn value -> import BaseOps; case value do ... end end
+      # Build: fn value -> case value do ... end end
       quote do
         fn __skuld_caught_value__ ->
-          import Skuld.Comp.BaseOps
-
           case __skuld_caught_value__ do
             unquote(final_clauses)
           end
@@ -626,8 +623,6 @@ defmodule Skuld.Comp.CompBlock do
       quote do
         fn
           %Skuld.Comp.MatchFailed{value: __skuld_match_value__} ->
-            import Skuld.Comp.BaseOps
-
             case __skuld_match_value__ do
               unquote(final_clauses)
             end

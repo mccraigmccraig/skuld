@@ -503,7 +503,6 @@ defmodule Skuld.Query.QueryBlock do
 
     defp wrap_with_imports(code) do
       quote do
-        import Skuld.Comp.BaseOps
         unquote(code)
       end
     end
