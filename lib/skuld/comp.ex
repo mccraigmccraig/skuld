@@ -44,8 +44,8 @@ defmodule Skuld.Comp do
     @moduledoc """
     Raised when a non-computation value is used where a computation is expected.
 
-    This typically indicates a programming bug such as forgetting `return(value)`
-    at the end of a comp block.
+    This typically indicates a programming bug such as a bare value
+    that should be the final expression in a comp block.
     """
     defexception [:message, :value]
   end
@@ -95,22 +95,10 @@ defmodule Skuld.Comp do
   def computation?(_value), do: false
 
   @doc """
-  Lift a pure value into a computation.
+  Lift a pure value into a computation. Alias for `pure/1`.
 
-  Alias for `pure/1`. Provided for ergonomic use both inside and outside
-  `comp` blocks. Inside `comp` blocks, use the imported `return/1` from
-  `Skuld.Comp.BaseOps`. Outside `comp` blocks, use `Comp.return/1` directly.
-
-  ## Example
-
-      # Inside a comp block (return is imported)
-      comp do
-        x <- State.get()
-        return(x + 1)
-      end
-
-      # Outside a comp block
-      fn x -> Comp.return(x * 2) end
+  Note: auto-lifting makes this unnecessary in almost all contexts.
+  Prefer bare values — they're automatically lifted via `call/3`.
   """
   @spec return(term()) :: Types.computation()
   def return(value), do: pure(value)
@@ -355,7 +343,7 @@ defmodule Skuld.Comp do
 
       comp do
         _ <- Comp.each(items, &Writer.tell/1)
-        return(:done)
+        :done
       end
   """
   @spec each(list(), (term() -> Types.computation())) :: Types.computation()
@@ -468,7 +456,7 @@ defmodule Skuld.Comp do
         comp do
           x <- State.get()
           _ <- State.put(x + 1)
-          return(x)
+          x
         end
         |> Comp.with_handler(State, &State.handle/3)
 
@@ -477,7 +465,7 @@ defmodule Skuld.Comp do
         _ <- State.put(100)
         result <- inner        # uses inner's handler
         y <- State.get()       # uses outer's handler, still 100
-        return({result, y})
+        {result, y}
       end
   """
   @spec with_handler(Types.computation(), Types.sig(), Types.handler()) :: Types.computation()
