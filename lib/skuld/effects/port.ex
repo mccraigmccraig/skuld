@@ -45,15 +45,15 @@ defmodule Skuld.Effects.Port do
       defcomp find_user(id) do
         result <- Port.request(MyApp.UserQueries, :find_by_id, [id])
         case result do
-          {:ok, user} -> return(user)
-          {:error, _} -> return(nil)
+          {:ok, user} -> user
+          {:error, _} -> nil
         end
       end
 
       # Using request!/3 - unwraps or throws
       defcomp find_user!(id) do
         user <- Port.request!(MyApp.UserQueries, :find_by_id, [id])
-        return(user)
+        user
       end
 
       # Runtime: dispatch to actual modules
