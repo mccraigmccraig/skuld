@@ -168,6 +168,8 @@ commands
 concurrency limits. Two lines of business logic. Everything else
 is handler wiring — swappable, testable, composable.
 
+[Full decider pattern →](docs/recipes/decider-pattern.md)
+
 ## Installation
 
 ```elixir
