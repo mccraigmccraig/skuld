@@ -113,17 +113,16 @@ Convenience wrapper combining Coroutine + EffectLogger for the
 common pause-serialize-resume pattern:
 
 ```elixir
-coroutine = SerializableCoroutine.new(my_comp, fn comp ->
+sc = SerializableCoroutine.new(my_comp, fn comp ->
   comp |> State.with_handler(0) |> Throw.with_handler()
 end)
 
-case Coroutine.run(coroutine) do
+case SerializableCoroutine.run(sc) do
   %Coroutine.ExternalSuspended{} = suspended ->
     json = SerializableCoroutine.serialize(SerializableCoroutine.get_log(suspended))
-    # persist json...
 
     {:ok, log} = SerializableCoroutine.deserialize(json)
-    SerializableCoroutine.run(log, my_comp, stack_fun, user_input)
+    SerializableCoroutine.run(log, sc, user_input)
 end
 ```
 

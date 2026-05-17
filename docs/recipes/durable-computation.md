@@ -29,18 +29,17 @@ Wrap the wizard with `SerializableCoroutine.new`, which installs
 `EffectLogger` innermost so every effect is captured:
 
 ```elixir
-handlers = fn comp ->
-  comp |> Yield.with_handler() |> Throw.with_handler()
-end
-
-coroutine = SerializableCoroutine.new(wizard, handlers)
+sc =
+  SerializableCoroutine.new(wizard, fn comp ->
+    comp |> Yield.with_handler() |> Throw.with_handler()
+  end)
 ```
 
 Run it — it suspends at the first yield:
 
 ```elixir
 %Coroutine.ExternalSuspended{value: :get_name} = suspended =
-  Coroutine.run(coroutine)
+  SerializableCoroutine.run(sc)
 ```
 
 Extract and inspect the log. This is the computation's complete
@@ -71,7 +70,7 @@ resume value:
 {:ok, log} = SerializableCoroutine.deserialize(json)
 
 %Coroutine.ExternalSuspended{value: :get_email} = suspended2 =
-  SerializableCoroutine.run(log, wizard, handlers, "Alice")
+  SerializableCoroutine.run(log, sc, "Alice")
 ```
 
 Inspect the log again — it now shows the full history including the
@@ -91,7 +90,7 @@ Log.to_list(log2)
 {:ok, log} = SerializableCoroutine.deserialize(json)
 
 %Coroutine.Completed{result: {:ok, %{name: "Alice", email: "alice@example.com"}}} =
-  SerializableCoroutine.run(log, wizard, handlers, "alice@example.com")
+  SerializableCoroutine.run(log, sc, "alice@example.com")
 ```
 
 ## What's captured

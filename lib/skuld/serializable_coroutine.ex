@@ -2,82 +2,68 @@ defmodule Skuld.SerializableCoroutine do
   @moduledoc """
   Helpers for building coroutines with serializable effect logs.
 
-  `new/2` constructs a Coroutine with `EffectLogger` installed innermost,
+  `new/2` constructs a struct with `EffectLogger` installed innermost,
   so every effect invocation across all handlers is captured in a
-  JSON-serializable log. The returned value is a plain `%Coroutine.Pending{}`
-  — run it, suspend it, resume it just like any other coroutine.
+  JSON-serializable log.
 
   When the coroutine suspends, the log is accessible via `get_log/1`
   (from the env in `%Coroutine.ExternalSuspended{}`). `serialize/1` and
   `deserialize/1` convert the log to/from JSON.
 
-  For resume: deserialize the log, build a new computation with
-  `EffectLogger.with_resume/4`, install handlers, and wrap in a new
-  Coroutine.
+  `run` handles all states — fresh start, live resume, and cold resume
+  from serialised state.
 
   ## Usage
 
-      coroutine =
-        SerializableCoroutine.new(my_comp, fn comp ->
-          comp
-          |> State.with_handler(0)
-          |> Throw.with_handler()
-          |> Yield.with_handler()
-        end)
+      sc = SerializableCoroutine.new(wizard, fn comp ->
+        comp |> State.with_handler(0) |> Yield.with_handler() |> Throw.with_handler()
+      end)
 
-      case Coroutine.run(coroutine) do
-        %Coroutine.ExternalSuspended{value: yielded} = suspended ->
-          json = SerializableCoroutine.serialize(SerializableCoroutine.get_log(suspended))
-          # persist json...
+      # Run fresh — suspends at first yield
+      suspended = SerializableCoroutine.run(sc)
 
-          {:ok, log} = SerializableCoroutine.deserialize(json)
-          SerializableCoroutine.run(log, my_comp, handlers_fun, user_input)
+      # Serialize and persist
+      json = SerializableCoroutine.serialize(SerializableCoroutine.get_log(suspended))
 
-        %Coroutine.Completed{result: result} ->
-          result
-      end
+      # Later: cold resume from serialised state
+      SerializableCoroutine.run(json, sc, "Alice")
 
-  ## EffectLogger placement
-
-  `EffectLogger.with_logging()` is installed **innermost** (right after
-  the computation, before `handlers_fun`), so its scope runs last and
-  wraps all subsequently installed handlers. This ensures every effect
-  invocation is captured.
+      # Or resume a live suspended coroutine directly
+      SerializableCoroutine.run(suspended, "Alice")
   """
 
-  alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
   alias Skuld.Coroutine
   alias Skuld.Effects.EffectLogger
   alias Skuld.Effects.EffectLogger.Log
 
+  defstruct [:comp, :handlers_fun]
+
+  @typedoc """
+  A serialisable coroutine capturing the computation and handler stack.
+  """
+  @type t :: %__MODULE__{
+          comp: Types.computation(),
+          handlers_fun: (Types.computation() -> Types.computation())
+        }
+
   @doc """
-  Build a Coroutine with EffectLogger installed innermost.
+  Build a serialisable coroutine.
 
   `handlers_fun` receives the computation after EffectLogger is installed.
   Install application-level handlers here (State, Throw, Yield, etc.).
 
-  Returns a plain `%Coroutine.Pending{}`.
-
   ## Example
 
       SerializableCoroutine.new(my_comp, fn comp ->
-        comp
-        |> State.with_handler(0)
-        |> Throw.with_handler()
+        comp |> State.with_handler(0) |> Throw.with_handler()
       end)
   """
-  @spec new(Types.computation(), (Types.computation() -> Types.computation())) ::
-          Coroutine.Pending.t()
+  @spec new(Types.computation(), (Types.computation() -> Types.computation())) :: t()
   def new(comp, handlers_fun)
       when is_function(comp, 2) and is_function(handlers_fun, 1) do
-    wrapped =
-      comp
-      |> EffectLogger.with_logging()
-      |> handlers_fun.()
-
-    Coroutine.new(wrapped, Env.new())
+    %__MODULE__{comp: comp, handlers_fun: handlers_fun}
   end
 
   @doc """
@@ -85,37 +71,43 @@ defmodule Skuld.SerializableCoroutine do
 
   Clauses dispatch on the input type:
 
-  - `%Coroutine.ExternalSuspended{}` — resume with a value (delegates to `Coroutine.run`)
-  - `%Coroutine.Pending{}` — start a fresh coroutine (delegates to `Coroutine.run`)
-  - `%Log{}` — cold resume from a deserialised log
-  - `binary` (JSON string) — deserialise to a log, then cold resume
-
-  For cold resume, the original computation and handler stack must be
-  provided — these aren't stored in the log.
+  - `t()` — start fresh, returns a Coroutine sum-type
+  - `t()`, `value` — resume a live suspended fiber (delegates to `Coroutine.run`)
+  - `%Log{}`, `t()`, `value` — cold resume from a deserialised log
+  - `binary`, `t()`, `value` — deserialise JSON to a log, then cold resume
+  - `Coroutine.t()`, `value` — resume a live Coroutine fiber directly
 
   ## Examples
 
-      # Resume a live suspended coroutine
+      sc = SerializableCoroutine.new(wizard, handlers)
+
+      # Start fresh
+      suspended = SerializableCoroutine.run(sc)
+
+      # Resume a live suspended fiber
       SerializableCoroutine.run(suspended, "Alice")
 
       # Cold resume from a deserialised log
-      SerializableCoroutine.run(log, wizard, handlers_fun, "Alice")
+      SerializableCoroutine.run(log, sc, "Alice")
 
-      # Cold resume from a serialised JSON string
-      SerializableCoroutine.run(json, wizard, handlers_fun, "Alice")
+      # Cold resume from serialised JSON
+      SerializableCoroutine.run(json, sc, "Alice")
   """
-  @spec run(Coroutine.t(), term()) :: Coroutine.t()
+  @spec run(t()) :: Coroutine.t()
+  def run(%__MODULE__{comp: comp, handlers_fun: handlers_fun}) do
+    comp
+    |> EffectLogger.with_logging()
+    |> handlers_fun.()
+    |> then(&Coroutine.new(&1, Env.new()))
+    |> Coroutine.run()
+  end
+
   def run(%Coroutine.ExternalSuspended{} = fiber, value) do
     Coroutine.run(fiber, value)
   end
 
-  def run(%Coroutine.Pending{} = fiber) do
-    Coroutine.run(fiber)
-  end
-
-  @spec run(Log.t(), Types.computation(), (Types.computation() -> Types.computation()), term()) ::
-          Coroutine.t()
-  def run(%Log{} = log, comp, handlers_fun, value) do
+  @spec run(Log.t(), t(), term()) :: Coroutine.t()
+  def run(%Log{} = log, %__MODULE__{comp: comp, handlers_fun: handlers_fun}, value) do
     comp
     |> EffectLogger.with_resume(log, value)
     |> handlers_fun.()
@@ -123,11 +115,10 @@ defmodule Skuld.SerializableCoroutine do
     |> Coroutine.run()
   end
 
-  @spec run(String.t(), Types.computation(), (Types.computation() -> Types.computation()), term()) ::
-          Coroutine.t()
-  def run(json, comp, handlers_fun, value) when is_binary(json) do
+  @spec run(String.t(), t(), term()) :: Coroutine.t()
+  def run(json, %__MODULE__{} = sc, value) when is_binary(json) do
     {:ok, log} = deserialize(json)
-    run(log, comp, handlers_fun, value)
+    run(log, sc, value)
   end
 
   @doc """

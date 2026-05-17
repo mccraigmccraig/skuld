@@ -3,29 +3,27 @@ defmodule Skuld.SerializableCoroutineTest do
   use Skuld.Syntax
 
   alias Skuld.Comp
-  alias Skuld.Comp.Env
   alias Skuld.Coroutine
-  alias Skuld.Effects.EffectLogger
+  alias Skuld.Effects.EffectLogger.Log
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
-  alias Skuld.Effects.Yield
   alias Skuld.Effects.Writer
-  alias Skuld.Effects.EffectLogger.Log
+  alias Skuld.Effects.Yield
   alias Skuld.SerializableCoroutine
 
   describe "new/2" do
-    test "returns a runnable Coroutine" do
+    test "returns a SerializableCoroutine struct" do
       # credo:disable-for-next-line Skuld.Credo.CompPureRedundant
       pure_comp = Comp.pure(42)
 
-      coroutine =
+      sc =
         SerializableCoroutine.new(pure_comp, fn comp ->
           comp |> Throw.with_handler()
         end)
 
-      assert %Coroutine.Pending{} = coroutine
+      assert %SerializableCoroutine{} = sc
 
-      %Coroutine.Completed{result: {42, log}} = Coroutine.run(coroutine)
+      %Coroutine.Completed{result: {42, log}} = SerializableCoroutine.run(sc)
       assert %Log{} = log
     end
 
@@ -37,7 +35,7 @@ defmodule Skuld.SerializableCoroutineTest do
           :ok
         end
 
-      coroutine =
+      sc =
         SerializableCoroutine.new(comp, fn comp ->
           comp
           |> State.with_handler(0)
@@ -45,7 +43,7 @@ defmodule Skuld.SerializableCoroutineTest do
           |> Throw.with_handler()
         end)
 
-      %Coroutine.Completed{result: {:ok, log}} = Coroutine.run(coroutine)
+      %Coroutine.Completed{result: {:ok, log}} = SerializableCoroutine.run(sc)
       log_list = Log.to_list(log)
       sigs = Enum.map(log_list, & &1.sig)
       assert Skuld.Effects.State in sigs
@@ -62,7 +60,7 @@ defmodule Skuld.SerializableCoroutineTest do
           :done
         end
 
-      coroutine =
+      sc =
         SerializableCoroutine.new(comp, fn comp ->
           comp
           |> State.with_handler(0)
@@ -72,37 +70,31 @@ defmodule Skuld.SerializableCoroutineTest do
 
       %Coroutine.ExternalSuspended{value: value} =
         suspended =
-        Coroutine.run(coroutine)
+        SerializableCoroutine.run(sc)
 
       assert value == :paused
       assert %Log{} = SerializableCoroutine.get_log(suspended)
     end
 
-    test "can resume from serialized log" do
+    test "can resume from serialized log via run/3" do
       comp =
         comp do
           x <- Yield.yield(:need_input)
           {:ok, x}
         end
 
-      handlers_fun = fn comp ->
-        comp |> Yield.with_handler() |> Throw.with_handler()
-      end
+      sc =
+        SerializableCoroutine.new(comp, fn comp ->
+          comp |> Yield.with_handler() |> Throw.with_handler()
+        end)
 
-      coroutine = SerializableCoroutine.new(comp, handlers_fun)
-
-      suspended = Coroutine.run(coroutine)
+      suspended = SerializableCoroutine.run(sc)
       log = SerializableCoroutine.get_log(suspended)
       json = SerializableCoroutine.serialize(log)
       {:ok, deserialized_log} = SerializableCoroutine.deserialize(json)
 
-      resume_coroutine =
-        comp
-        |> EffectLogger.with_resume(deserialized_log, :the_answer)
-        |> handlers_fun.()
-        |> then(&Coroutine.new(&1, Env.new()))
-
-      %Coroutine.Completed{result: {{:ok, :the_answer}, _}} = Coroutine.run(resume_coroutine)
+      %Coroutine.Completed{result: {{:ok, :the_answer}, _}} =
+        SerializableCoroutine.run(deserialized_log, sc, :the_answer)
     end
 
     test "can yield multiple times with serialize/resume cycle" do
@@ -113,39 +105,64 @@ defmodule Skuld.SerializableCoroutineTest do
           :done
         end
 
-      handlers_fun = fn comp ->
-        comp |> Yield.with_handler() |> Throw.with_handler()
-      end
+      sc =
+        SerializableCoroutine.new(comp, fn comp ->
+          comp |> Yield.with_handler() |> Throw.with_handler()
+        end)
 
-      coroutine = SerializableCoroutine.new(comp, handlers_fun)
-
-      suspended1 = Coroutine.run(coroutine)
+      suspended1 = SerializableCoroutine.run(sc)
       assert %Coroutine.ExternalSuspended{value: :step_one} = suspended1
 
       log1 = SerializableCoroutine.get_log(suspended1)
       json1 = SerializableCoroutine.serialize(log1)
       {:ok, log1d} = SerializableCoroutine.deserialize(json1)
 
-      resume1_coroutine =
-        comp
-        |> EffectLogger.with_resume(log1d, :go)
-        |> handlers_fun.()
-        |> then(&Coroutine.new(&1, Env.new()))
-
-      suspended2 = Coroutine.run(resume1_coroutine)
+      suspended2 = SerializableCoroutine.run(log1d, sc, :go)
       assert %Coroutine.ExternalSuspended{value: :step_two} = suspended2
 
       log2 = SerializableCoroutine.get_log(suspended2)
       json2 = SerializableCoroutine.serialize(log2)
       {:ok, log2d} = SerializableCoroutine.deserialize(json2)
 
-      resume2_coroutine =
-        comp
-        |> EffectLogger.with_resume(log2d, :continue)
-        |> handlers_fun.()
-        |> then(&Coroutine.new(&1, Env.new()))
+      %Coroutine.Completed{result: {:done, _log}} =
+        SerializableCoroutine.run(log2d, sc, :continue)
+    end
 
-      %Coroutine.Completed{result: {:done, _log}} = Coroutine.run(resume2_coroutine)
+    test "can resume from serialized JSON string via run/3" do
+      comp =
+        comp do
+          x <- Yield.yield(:need_input)
+          {:ok, x}
+        end
+
+      sc =
+        SerializableCoroutine.new(comp, fn comp ->
+          comp |> Yield.with_handler() |> Throw.with_handler()
+        end)
+
+      suspended = SerializableCoroutine.run(sc)
+      json = SerializableCoroutine.serialize(SerializableCoroutine.get_log(suspended))
+
+      %Coroutine.Completed{result: {{:ok, :direct_value}, _}} =
+        SerializableCoroutine.run(json, sc, :direct_value)
+    end
+
+    test "can resume a live suspended fiber via run/2" do
+      comp =
+        comp do
+          x <- Yield.yield(:need_input)
+          {:ok, x}
+        end
+
+      sc =
+        SerializableCoroutine.new(comp, fn comp ->
+          comp |> Yield.with_handler() |> Throw.with_handler()
+        end)
+
+      suspended = SerializableCoroutine.run(sc)
+
+      %Coroutine.Completed{result: {{:ok, :live_resume}, _}} =
+        SerializableCoroutine.run(suspended, :live_resume)
     end
   end
 
