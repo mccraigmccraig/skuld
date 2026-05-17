@@ -55,7 +55,7 @@ refactor, and often — impossible to property-test.
 
 ## Another way
 
-Skuld lets you write orchestration code that *describes* side effects
+Skuld lets you write *pure* orchestration code that *describes* side effects
 without performing them — then handlers decide what those descriptions mean.
 The exact same "effectful" code runs with side-effecting handlers in production
 and pure in-memory handlers in tests — fully deterministic, fully pure, and
