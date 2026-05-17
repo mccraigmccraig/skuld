@@ -46,6 +46,7 @@ defmodule Skuld.MixProject do
           "docs/recipes/property-testing.md",
           "docs/recipes/handler-stacks.md",
           "docs/recipes/liveview.md",
+          "docs/recipes/durable-computation.md",
           "docs/recipes/batch-loading.md",
           "docs/internals.md",
           "docs/reference.md"
@@ -89,6 +90,7 @@ defmodule Skuld.MixProject do
             "docs/recipes/property-testing.md",
             "docs/recipes/handler-stacks.md",
             "docs/recipes/liveview.md",
+            "docs/recipes/durable-computation.md",
             "docs/recipes/batch-loading.md"
           ],
           "Under the Hood": [
