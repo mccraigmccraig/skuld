@@ -87,8 +87,19 @@ Log.to_list(log2)
 ```elixir
 {:ok, json} = load_from_storage()
 
-%Coroutine.Completed{result: {:ok, %{name: "Alice", email: "alice@example.com"}}} =
+%Coroutine.Completed{result: {{:ok, %{name: "Alice", email: "alice@example.com"}}, final_log}} =
   SerializableCoroutine.run(json, sc, "alice@example.com")
+```
+
+The final log shows every effect through the entire lifetime of
+the computation — both yields now have resume values recorded:
+
+```elixir
+Log.to_list(final_log)
+# => [
+#   %EffectLogEntry{sig: Skuld.Effects.Yield, data: :get_name, value: "Alice", state: :executed},
+#   %EffectLogEntry{sig: Skuld.Effects.Yield, data: :get_email, value: "alice@example.com", state: :executed}
+# ]
 ```
 
 ## What's captured
