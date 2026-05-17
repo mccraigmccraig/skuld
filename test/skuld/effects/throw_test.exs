@@ -297,4 +297,73 @@ defmodule Skuld.Effects.ThrowTest do
       assert {:missing, :post, 456} = response
     end
   end
+
+  describe "stacktrace investigation" do
+    use Skuld.Syntax
+
+    test "regular raise preserves stacktrace with domain frames" do
+      comp =
+        Comp.bind(:ok, fn _ ->
+          raise("boom from inside a comp")
+        end)
+
+      {result, _env} =
+        comp
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %Comp.Throw{
+               error: %{
+                 kind: :error,
+                 payload: %RuntimeError{message: "boom from inside a comp"},
+                 stacktrace: stacktrace
+               }
+             } = result
+
+      assert Enum.any?(stacktrace, fn {mod, _fun, _arity, meta} ->
+               mod == Skuld.Effects.ThrowTest and
+                 Keyword.get(meta, :file) == ~c"test/skuld/effects/throw_test.exs"
+             end)
+    end
+
+    test "regular Elixir throw preserves stacktrace with domain frames" do
+      comp =
+        Comp.bind(:ok, fn _ ->
+          throw(:elixir_throw_value)
+        end)
+
+      {result, _env} =
+        comp
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %Comp.Throw{
+               error: %{
+                 kind: :throw,
+                 payload: :elixir_throw_value,
+                 stacktrace: stacktrace
+               }
+             } = result
+
+      assert Enum.any?(stacktrace, fn {mod, _fun, _arity, meta} ->
+               mod == Skuld.Effects.ThrowTest and
+                 Keyword.get(meta, :file) == ~c"test/skuld/effects/throw_test.exs"
+             end)
+    end
+
+    test "Skuld Throw.throw has no stacktrace" do
+      comp =
+        comp do
+          _ <- Throw.throw(:skuld_throw_value)
+          42
+        end
+
+      {result, _env} =
+        comp
+        |> Throw.with_handler()
+        |> Comp.run()
+
+      assert %Comp.Throw{error: :skuld_throw_value} = result
+    end
+  end
 end
