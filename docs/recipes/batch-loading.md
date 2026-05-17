@@ -62,7 +62,7 @@ end
 
 Feed a stream of user IDs through `Brook.map` with concurrency.
 The query system batches `deffetch` calls from *all* concurrent
-transforms together:
+`build_summary` transforms together:
 
 ```elixir
 comp do
@@ -85,7 +85,7 @@ end
 
 ## What happens
 
-With `concurrency: 4`, the FiberPool runs 4 transforms concurrently.
+With `concurrency: 4`, the FiberPool runs 4 `build_summary` transforms concurrently.
 As each transform calls `fetch_user(user_id)`, the query system holds
 the call and waits for other transforms to reach their first fetch.
 When enough calls accumulate, they're batched into a single round-trip:
