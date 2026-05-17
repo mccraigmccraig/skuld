@@ -61,10 +61,6 @@ The exact same "effectful" code runs with side-effecting handlers in production
 and pure in-memory handlers in tests — fully deterministic, fully pure, and
 straightforwardly property-testable.
 
-Because effects are first-class data, Skuld can do more — batch
-independent queries automatically, serialise partially complete computations
-for later resumption.
-
 ## The effect advantage
 
 Effectful computations condense domain logic to its essence. Handlers
