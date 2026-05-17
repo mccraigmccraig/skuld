@@ -5,7 +5,8 @@
 <!-- nav:header:end -->
 
 Two complementary mechanisms for data fetching. Together they eliminate
-N+1 queries, but each stands alone.
+N+1 queries, but each stands alone. Inspired by Facebook's
+[Haxl](https://github.com/facebook/Haxl) library.
 
 ## Query.Contract — batchable fetch operations
 
