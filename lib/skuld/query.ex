@@ -28,6 +28,7 @@ defmodule Skuld.Query do
 
   alias Skuld.Comp
   alias Skuld.Comp.InternalSuspend
+  alias Skuld.Effects.FiberPool
 
   @doc false
   defmacro __using__(opts) do
@@ -75,4 +76,18 @@ defmodule Skuld.Query do
   return cached results without re-executing.
   """
   defdelegate with_cached_executors(comp, pairs), to: Skuld.Query.Cache
+
+  @doc """
+  Map a function over items, running each result as a fiber so that
+  `deffetch` calls within each iteration batch together.
+
+  Requires `FiberPool.with_handler` in the stack. Results are returned
+  in the same order as the input items.
+
+  ## Example
+
+      details <- Query.map(order_ids, &AccountQueries.fetch_order_details/1)
+  """
+  @spec map([term()], (term() -> Comp.Types.computation())) :: Comp.Types.computation()
+  defdelegate map(items, fun), to: FiberPool
 end
