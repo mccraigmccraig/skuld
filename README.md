@@ -93,10 +93,11 @@ end
 
 # Feed a stream of users through — 4 concurrent transforms, all deffetch
 # calls batched together by FiberPool
-user_ids
-|> Brook.from_enum()
-|> Brook.map(&build_account_summary(&1, "2026-01"), concurrency: 4)
-|> Brook.to_list()
+comp do
+  source <- Brook.from_enum(user_ids)
+  summaries <- Brook.map(source, &build_account_summary(&1, "2026-01"), concurrency: 4)
+  Brook.to_list(summaries)
+end
 |> Skuld.Query.with_executor(AccountQueries, AccountExecutor)
 |> Channel.with_handler()
 |> FiberPool.with_handler()
@@ -181,32 +182,26 @@ processes, no stubs.
 
 ### Durability
 
-Effects are data you can persist. Pause a pausable state machine, save
-its entire execution history as JSON, and resume it later — after
-a restart, on a different machine:
+The same `Checkout` state machine, above, but now serialised: pause it
+mid-flight, save its entire execution history as JSON, and resume it
+later — after a restart, on a different machine. Every effect invocation
+is captured in a serialisable log:
 
 ```elixir
-flow =
-  comp do
-    name <- Yield.yield(:get_name)
-    email <- Yield.yield(:get_email)
-    {:ok, %{name: name, email: email}}
-  end
-
 sc =
-  SerializableCoroutine.new(flow, fn comp ->
+  SerializableCoroutine.new(Checkout.run(), fn comp ->
     comp |> Yield.with_handler() |> Throw.with_handler()
   end)
 
 # Run until suspension, serialize the effect log
 suspended = SerializableCoroutine.run(sc)
 json = SerializableCoroutine.serialize(SerializableCoroutine.get_log(suspended))
-# => EffectLogEntry{data: :get_name, value: nil, state: :started}
+# => EffectLogEntry{data: :get_cart, value: nil, state: :started}
 
 # Later — cold resume from JSON, no manual deserialisation needed
-suspended2 = SerializableCoroutine.run(json, sc, "Alice")
-# => EffectLogEntry{data: :get_name, value: "Alice", state: :executed}
-# => EffectLogEntry{data: :get_email, value: nil, state: :started}
+suspended2 = SerializableCoroutine.run(json, sc, %{items: [...]})
+# => EffectLogEntry{data: :get_cart, value: %{items: [...]}, state: :executed}
+# => EffectLogEntry{data: :get_payment, value: nil, state: :started}
 ```
 
 Every effect invocation — yields, state changes, writer events —

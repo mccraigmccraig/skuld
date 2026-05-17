@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 3f67efe6f310ffb47e3e7a57f25706221c1e6cb9 -->
+<!-- last-updated-against: 310f1e59e230818f8814977704581ab85e8095f4 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+
+- Stacktrace investigation tests confirming that `raise` and `throw` inside
+  computations preserve stacktraces with domain code frames, while
+  `Throw.throw` returns the bare error value without location information.
 
 ## [0.28.0] — 2026-05-16
 
