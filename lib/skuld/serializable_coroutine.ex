@@ -26,19 +26,12 @@ defmodule Skuld.SerializableCoroutine do
         end)
 
       case Coroutine.run(coroutine) do
-        %Coroutine.ExternalSuspended{value: yielded, env: env} = suspended ->
-          log = SerializableCoroutine.get_log(suspended)
-          json = SerializableCoroutine.serialize(log)
+        %Coroutine.ExternalSuspended{value: yielded} = suspended ->
+          json = SerializableCoroutine.serialize(SerializableCoroutine.get_log(suspended))
           # persist json...
 
           {:ok, log} = SerializableCoroutine.deserialize(json)
-          # build a new coroutine for resume:
-          resume_comp =
-            my_comp
-            |> EffectLogger.with_resume(log, user_input)
-            |> then(&handlers_fun.(&1))
-
-          Coroutine.run(Coroutine.new(resume_comp, Env.new()))
+          SerializableCoroutine.run(log, my_comp, handlers_fun, user_input)
 
         %Coroutine.Completed{result: result} ->
           result
@@ -52,6 +45,7 @@ defmodule Skuld.SerializableCoroutine do
   invocation is captured.
   """
 
+  alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
   alias Skuld.Coroutine
@@ -84,6 +78,56 @@ defmodule Skuld.SerializableCoroutine do
       |> handlers_fun.()
 
     Coroutine.new(wrapped, Env.new())
+  end
+
+  @doc """
+  Run a serialisable coroutine.
+
+  Clauses dispatch on the input type:
+
+  - `%Coroutine.ExternalSuspended{}` — resume with a value (delegates to `Coroutine.run`)
+  - `%Coroutine.Pending{}` — start a fresh coroutine (delegates to `Coroutine.run`)
+  - `%Log{}` — cold resume from a deserialised log
+  - `binary` (JSON string) — deserialise to a log, then cold resume
+
+  For cold resume, the original computation and handler stack must be
+  provided — these aren't stored in the log.
+
+  ## Examples
+
+      # Resume a live suspended coroutine
+      SerializableCoroutine.run(suspended, "Alice")
+
+      # Cold resume from a deserialised log
+      SerializableCoroutine.run(log, wizard, handlers_fun, "Alice")
+
+      # Cold resume from a serialised JSON string
+      SerializableCoroutine.run(json, wizard, handlers_fun, "Alice")
+  """
+  @spec run(Coroutine.t(), term()) :: Coroutine.t()
+  def run(%Coroutine.ExternalSuspended{} = fiber, value) do
+    Coroutine.run(fiber, value)
+  end
+
+  def run(%Coroutine.Pending{} = fiber) do
+    Coroutine.run(fiber)
+  end
+
+  @spec run(Log.t(), Types.computation(), (Types.computation() -> Types.computation()), term()) ::
+          Coroutine.t()
+  def run(%Log{} = log, comp, handlers_fun, value) do
+    comp
+    |> EffectLogger.with_resume(log, value)
+    |> handlers_fun.()
+    |> then(&Coroutine.new(&1, Env.new()))
+    |> Coroutine.run()
+  end
+
+  @spec run(String.t(), Types.computation(), (Types.computation() -> Types.computation()), term()) ::
+          Coroutine.t()
+  def run(json, comp, handlers_fun, value) when is_binary(json) do
+    {:ok, log} = deserialize(json)
+    run(log, comp, handlers_fun, value)
   end
 
   @doc """

@@ -119,17 +119,11 @@ end)
 
 case Coroutine.run(coroutine) do
   %Coroutine.ExternalSuspended{} = suspended ->
-    log = SerializableCoroutine.get_log(suspended)
-    json = SerializableCoroutine.serialize(log)
+    json = SerializableCoroutine.serialize(SerializableCoroutine.get_log(suspended))
     # persist json...
 
     {:ok, log} = SerializableCoroutine.deserialize(json)
-    resume_comp =
-      my_comp
-      |> EffectLogger.with_resume(log, user_input)
-      |> then(&stack_fun.(&1))
-
-    Coroutine.run(Coroutine.new(resume_comp, Env.new()))
+    SerializableCoroutine.run(log, my_comp, stack_fun, user_input)
 end
 ```
 

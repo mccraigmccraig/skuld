@@ -70,19 +70,8 @@ resume value:
 {:ok, json} = load_from_storage()
 {:ok, log} = SerializableCoroutine.deserialize(json)
 
-resume_coroutine =
-  wizard
-  |> EffectLogger.with_resume(log, "Alice")
-  |> handlers.()
-  |> then(&Coroutine.new(&1, Env.new()))
-```
-
-`with_resume` replays the logged effect history, then feeds `"Alice"`
-as the resume value for the pending `Yield.yield(:get_name)`. Run it:
-
-```elixir
 %Coroutine.ExternalSuspended{value: :get_email} = suspended2 =
-  Coroutine.run(resume_coroutine)
+  SerializableCoroutine.run(log, wizard, handlers, "Alice")
 ```
 
 Inspect the log again — it now shows the full history including the
@@ -101,14 +90,8 @@ Log.to_list(log2)
 {:ok, json} = load_from_storage()
 {:ok, log} = SerializableCoroutine.deserialize(json)
 
-final =
-  wizard
-  |> EffectLogger.with_resume(log, "alice@example.com")
-  |> handlers.()
-  |> then(&Coroutine.new(&1, Env.new()))
-
 %Coroutine.Completed{result: {:ok, %{name: "Alice", email: "alice@example.com"}}} =
-  Coroutine.run(final)
+  SerializableCoroutine.run(log, wizard, handlers, "alice@example.com")
 ```
 
 ## What's captured
