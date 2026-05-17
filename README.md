@@ -186,7 +186,7 @@ its entire execution history as JSON, and resume it later — after
 a restart, on a different machine:
 
 ```elixir
-wizard =
+flow =
   comp do
     name <- Yield.yield(:get_name)
     email <- Yield.yield(:get_email)
@@ -194,7 +194,7 @@ wizard =
   end
 
 sc =
-  SerializableCoroutine.new(wizard, fn comp ->
+  SerializableCoroutine.new(flow, fn comp ->
     comp |> Yield.with_handler() |> Throw.with_handler()
   end)
 
