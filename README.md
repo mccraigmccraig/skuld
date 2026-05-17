@@ -66,9 +66,45 @@ straightforwardly property-testable.
 Effectful computations condense domain logic to its essence. Handlers
 provide context — production vs test, concurrency, batching — without
 touching the computation. Effects are first-class data: inspect them,
-serialise them, replay them. The same mechanism that enables suspension
-and resumption in the first example also enables automatic N+1 batching
-in the second and durable computation in the third.
+serialise them, replay them. The same mechanism enables all three
+examples below.
+
+### Composability
+
+Effects compose with zero ceremony. This query function reads like
+straightforward sequential code, but when it runs, concurrency
+happens at two levels: within the `defquery` block (`fetch_user`
+and `fetch_orders` run together via dependency analysis), and
+across all streamed invocations — `Brook.map` runs 4 transforms
+concurrently, and `FiberPool` batches their `deffetch` calls into
+single round-trips:
+
+```elixir
+defquery build_account_summary(user_id, month) do
+  user <- AccountQueries.fetch_user(user_id)
+  orders <- AccountQueries.fetch_orders(user_id, month)
+  details <- Query.map(Enum.map(orders, & &1.id), &AccountQueries.fetch_order_details/1)
+  build_account_summary(user, orders, details)
+end
+
+# Feed a stream of users through — 4 concurrent transforms, all deffetch
+# calls batched together by FiberPool
+user_ids
+|> Brook.from_enum()
+|> Brook.map(&build_account_summary(&1, "2026-01"), concurrency: 4)
+|> Brook.to_list()
+|> Skuld.Query.with_executor(AccountQueries, AccountExecutor)
+|> Channel.with_handler()
+|> FiberPool.with_handler()
+|> Comp.run!()
+```
+
+`build_account_summary` knows nothing about batch sizes, concurrency limits,
+database round-trips, or the other account summaries which also need to be
+built - it's pure domain logic. Everything else is handler
+wiring — swappable, testable, composable.
+
+[Full batch loading recipe →](docs/recipes/batch-loading.md)
 
 ### Suspension & resumption
 
@@ -138,43 +174,6 @@ the entire wizard in a single function — deterministic, no processes,
 no stubs.
 
 [Full LiveView integration recipe →](docs/recipes/liveview.md)
-
-### Composability
-
-Effects compose with zero ceremony. This query function reads like
-straightforward sequential code, but when it runs, concurrency
-happens at two levels: within the `defquery` block (`fetch_user`
-and `fetch_orders` run together via dependency analysis), and
-across all streamed invocations — `Brook.map` runs 4 transforms
-concurrently, and `FiberPool` batches their `deffetch` calls into
-single round-trips:
-
-```elixir
-defquery build_account_summary(user_id, month) do
-  user <- AccountQueries.fetch_user(user_id)
-  orders <- AccountQueries.fetch_orders(user_id, month)
-  details <- Query.map(Enum.map(orders, & &1.id), &AccountQueries.fetch_order_details/1)
-  build_account_summary(user, orders, details)
-end
-
-# Feed a stream of users through — 4 concurrent transforms, all deffetch
-# calls batched together by FiberPool
-user_ids
-|> Brook.from_enum()
-|> Brook.map(&build_account_summary(&1, "2026-01"), concurrency: 4)
-|> Brook.to_list()
-|> Skuld.Query.with_executor(AccountQueries, AccountExecutor)
-|> Channel.with_handler()
-|> FiberPool.with_handler()
-|> Comp.run!()
-```
-
-`build_account_summary` knows nothing about batch sizes, concurrency limits,
-database round-trips, or the other account summaries which also need to be
-built - it's pure domain logic. Everything else is handler
-wiring — swappable, testable, composable.
-
-[Full batch loading recipe →](docs/recipes/batch-loading.md)
 
 ### Durability
 
