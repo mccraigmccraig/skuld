@@ -238,6 +238,7 @@ end
 | Eliminate N+1 queries | [Query System](docs/effects/query.md) |
 | Handler-swapping for deterministic testing | [Testing](docs/testing.md) |
 | Full effect and API reference | [Reference](docs/reference.md) |
+| Peek under the hood — CPS, evidence-passing, custom effects | [How It Really Works](docs/internals.md) |
 
 ## License
 
