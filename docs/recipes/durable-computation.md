@@ -43,24 +43,31 @@ Run it — it suspends at the first yield:
   Coroutine.run(coroutine)
 ```
 
-Extract and serialize the log. This is the computation's complete
+Extract and inspect the log. This is the computation's complete
 effect history up to the suspension point:
 
 ```elixir
 log = SerializableCoroutine.get_log(suspended)
-json = SerializableCoroutine.serialize(log)
-# => "[{\"sig\":\"Elixir.Skuld.Effects.Yield\",\"name\":\"yield\",\"args\":[\"get_name\"],\"result\":null}]"
+Log.to_list(log)
+# => [
+#   %LogEntry{sig: Skuld.Effects.Yield, name: :yield, args: [:get_name], result: nil}
+# ]
 ```
 
-The log shows that `Yield.yield(:get_name)` was called — that's the
-only effect so far. There's no `result` because the computation hasn't
-resumed yet. Persist `json` to a database, file, or message queue.
+Serialize the log to JSON for storage and persist it:
+
+```elixir
+json = SerializableCoroutine.serialize(log)
+# persist json to DB, file, or queue...
+```
 
 ## Resume
 
-Restore the log and build a new coroutine with the resume value:
+Restore the log from storage and build a new coroutine with the
+resume value:
 
 ```elixir
+{:ok, json} = load_from_storage()
 {:ok, log} = SerializableCoroutine.deserialize(json)
 
 resume_coroutine =
@@ -78,25 +85,25 @@ as the resume value for the pending `Yield.yield(:get_name)`. Run it:
   Coroutine.run(resume_coroutine)
 ```
 
-Serialize again. The log now shows the full history:
+Inspect the log again — it now shows the full history including the
+replayed resume:
 
 ```elixir
 log2 = SerializableCoroutine.get_log(suspended2)
-json2 = SerializableCoroutine.serialize(log2)
-# => "[{\"sig\":\"Elixir.Skuld.Effects.Yield\",\"name\":\"yield\",\"args\":[\"get_name\"],\"result\":\"Alice\"},
-#      {\"sig\":\"Elixir.Skuld.Effects.Yield\",\"name\":\"yield\",\"args\":[\"get_email\"],\"result\":null}]"
+Log.to_list(log2)
+# => [
+#   %LogEntry{sig: Skuld.Effects.Yield, name: :yield, args: [:get_name], result: "Alice"},
+#   %LogEntry{sig: Skuld.Effects.Yield, name: :yield, args: [:get_email], result: nil}
+# ]
 ```
 
-The first yield now has `"result":"Alice"` — the resume value was
-recorded. The second yield is pending (`"result":null`). One more
-resume to finish:
-
 ```elixir
-{:ok, log2d} = SerializableCoroutine.deserialize(json2)
+{:ok, json} = load_from_storage()
+{:ok, log} = SerializableCoroutine.deserialize(json)
 
 final =
   wizard
-  |> EffectLogger.with_resume(log2, "alice@example.com")
+  |> EffectLogger.with_resume(log, "alice@example.com")
   |> handlers.()
   |> then(&Coroutine.new(&1, Env.new()))
 
