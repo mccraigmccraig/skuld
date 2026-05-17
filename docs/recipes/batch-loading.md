@@ -4,9 +4,13 @@
 [< The Decider Pattern](decider-pattern.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:header:end -->
 
-Eliminate N+1 queries with `query do` blocks. The query system analyzes
-effect dependencies and batches independent data fetches together — no
-code restructuring needed.
+Eliminate N+1 queries with `deffetch` operations and `FiberPool`.
+Each `deffetch` call suspends the current fiber, signalling the scheduler
+to hold the request. `FiberPool` collects suspended fetch calls across
+*all* concurrent fibers and dispatches them in batches to your executor —
+no `query do` blocks needed. Within a `query do` block, dependency
+analysis adds automatic concurrency for independent fetches. Together
+they eliminate N+1 queries without restructuring code.
 
 ## The N+1 problem
 
