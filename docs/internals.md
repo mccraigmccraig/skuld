@@ -23,6 +23,66 @@ fn _env, k -> k.(42, _env) end
 `Comp.pure(value)` creates this. `comp do` blocks desugar into chains of
 `Comp.bind`.
 
+## Sequencing: the monadic core
+
+### `Comp.pure/1`
+
+Lifts a plain value into a computation:
+
+```elixir
+def pure(value) do
+  fn _env, k -> k.(value, _env) end
+end
+```
+
+The computation calls the continuation with the value — no effects, no
+environment changes.
+
+### `Comp.bind/2`
+
+The heart of effect sequencing. Takes a computation and a function that
+produces the next computation:
+
+```elixir
+def bind(comp, f) do
+  fn env, k ->
+    call(comp, env, fn a, env2 ->
+      call(f.(a), env2, k)
+    end)
+  end
+end
+```
+
+This is the monadic bind operation:
+
+1. Run the first computation `comp`
+2. When it produces value `a`, call `f.(a)` to get the next computation
+3. Run that computation with the original continuation `k`
+
+The key insight: `bind` returns another computation *function*, not a
+result. Nothing executes until someone calls the function with an
+environment and continuation. The `comp` macro transforms
+sequential-looking code into nested `bind` calls:
+
+```elixir
+comp do
+  x <- Reader.ask()
+  y <- State.get()
+  x + y
+end
+
+# Expands to:
+Comp.bind(Reader.ask(), fn x ->
+  Comp.bind(State.get(), fn y ->
+    Comp.pure(x + y)
+  end)
+end)
+```
+
+Each `<-` becomes a `bind` call. The bound variable becomes the
+parameter to the continuation function. No Process dictionary, no
+global state — just functions calling functions.
+
 ## Evidence-passing
 
 Handlers are stored in `env.scope.evidence` (a `ScopeEnv` struct containing
