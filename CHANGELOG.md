@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] — 2026-05-16
+
 ### Added
 
 - `Channel.put_all/2` — pushes a list of items onto a channel, suspending
