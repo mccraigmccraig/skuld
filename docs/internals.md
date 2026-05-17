@@ -83,6 +83,45 @@ Each `<-` becomes a `bind` call. The bound variable becomes the
 parameter to the continuation function. There's no Process dictionary or
 global state — just functions calling functions.
 
+## Query blocks
+
+While `comp` do blocks are purely sequential (`Comp.bind` chains), `query`
+blocks analyse variable dependencies and group independent bindings into
+concurrent fiber batches via `FiberPool.fiber_await_all`:
+
+```elixir
+query do
+  user   <- Users.get_user(id)
+  recent <- Orders.get_recent()
+  orders <- Orders.get_by_user(user.id)
+  {user, recent, orders}
+end
+
+# Expands to:
+FiberPool.fiber_await_all([Users.get_user(id), Orders.get_recent()])
+|> Comp.bind(fn [user, recent] ->
+  Comp.bind(Orders.get_by_user(user.id), fn orders ->
+    {user, recent, orders}
+  end)
+end)
+```
+
+`get_user` and `get_recent` are independent (neither references the
+other), so they're grouped into a single `fiber_await_all` — both run
+concurrently as fibers. `get_by_user` depends on `user`, so it's
+sequenced after the first batch completes.
+
+The desugaring pipeline:
+1. Parse bindings into `{pattern, rhs, type}` maps
+2. Extract free variables from each binding's RHS
+3. Build a dependency graph (which binding references which variable)
+4. Topological sort into independent batches (Kahn's algorithm)
+5. Emit `fiber_await_all` for batch groups, `Comp.bind` for dependencies
+
+Because each binding runs in its own fiber, `deffetch` calls within
+those bindings use `InternalSuspend.batch` — the `FiberPool` scheduler
+collects them across fibers and dispatches to the executor in batches.
+
 ## Evidence-passing
 
 Handlers are stored in `env.scope.evidence` (a `ScopeEnv` struct containing
