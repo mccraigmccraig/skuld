@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 9106dbf1c37d91d8ad86ebb4fa4398f17e4df7f7 -->
+<!-- last-updated-against: 3f67efe6f310ffb47e3e7a57f25706221c1e6cb9 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -8,6 +8,73 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+
+- `Channel.put_all/2` — pushes a list of items onto a channel, suspending
+  if the buffer fills. `Brook.flat_map/3` — same concurrent semaphore pattern
+  as `map/2`, with each transform returning a flattened list.
+- `Comp.t()` pipeline clauses on all Brook functions — `from_enum |> flat_map |>
+  map |> to_list` chains work cleanly across effectful steps. Typespecs updated
+  with `Handle | Comp.t(Handle)` params and typed computation returns.
+- `Channel.Handle` pattern guards on Brook implementation clauses for
+  early `MatchError` on wrong input types.
+- `Query.map/2` — delegates to `FiberPool.map` for intra-fiber `deffetch`
+  batching. `Query.batchable_op/2` extracted from macro into a plain function
+  for readability.
+- `SerializableCoroutine` redesigned as a struct capturing `comp` and
+  `handlers_fun`. `run` handles all states: live fiber, `%Log{}`, and JSON
+  string — cold resume without manual deserialisation.
+- Durable computation recipe with EffectLogEntry log output showing
+  effect evolution across pause/serialize/resume.
+- Three README examples: checkout wizard (Yield/AsyncCoroutine), composability
+  (Brook + batch loading with two-level concurrency), durability
+  (SerializableCoroutine with JSON resume).
+- `Computation?` made a `defguard` — usable in both guard clauses and
+  expressions. Brook pipeline clauses now use `when Comp.computation?(input)`.
+- `Comp.Types` aliased in Brook to reduce typespec noise (`Types.computation()`
+  instead of `Comp.Types.computation()`).
+- `return()` / `Comp.return()` credo check added to `CompPureRedundant`.
+- Haxl reference in query docs.
+
+### Changed
+
+- `bind` moved after `return` in `Comp` — core operations flow: pure, return,
+  bind, then call, run.
+- README quick example replaced with Yield-driven checkout wizard showing
+  suspension/resumption. Composability and Durability examples added.
+- EffectLogger docs rewritten: `EffectLogEntry` structs, `Log` API
+  (`to_json`/`from_json`/`to_list`), options (`prune_loops:`, `state_keys:`,
+  `suspend:`), hot and cold resume, `mark_loop` with `EnvStateSnapshot`.
+- Query docs separated into two mechanisms: `Query.Contract` (batchable fetches)
+  and `query do` (concurrent execution with dependency analysis).
+- Batch-loading recipe rewritten with streaming + concurrency example using
+  `Query.map`, Brook pipeline, and batch size validation.
+- Performance docs rewritten with benchmark table, iteration strategies,
+  protocol consolidation note, and commands to reproduce.
+- Handler ordering myths removed from `handler-stacks.md` and
+  `throw-bracket.md` — only `EffectLogger` must be innermost.
+- Auto-lifting docs: clarified that any non-computation auto-lifts, not just
+  `if`-without-`else`. Added nuance about function/2 edge case.
+- `Comp.return` doc de-emphasised — a nod to the Monad typeclass, superseded
+  by auto-lifting.
+- Architecture diagram updated in README with three-branch effect categorisation.
+
+### Removed
+
+- `BaseOps` module and all `import BaseOps` sites — `return()` no longer
+  auto-imported in `comp` / `query` blocks.
+- `return()` / `Comp.return()` calls stripped from all lib/ (~90 calls) and
+  test/ (~350 calls). Auto-lifting handles everything.
+- Decider pattern recipe — redundant with batch-loading, which demonstrates
+  the same streaming + batching pattern with self-explanatory function names.
+
+### Fixed
+
+- Invalid `return(value)` in `comp` block syntax examples — non-final
+  expressions must be `<-` or `=`.
+- Internals doc: `env.evidence` → `env.scope.evidence` — reflects `ScopeEnv`
+  struct refactor.
 
 ## [0.27.3] — 2026-05-15
 
