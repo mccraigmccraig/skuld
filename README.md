@@ -137,6 +137,8 @@ Same code. Production pauses at each step for user input. Tests drive
 the entire wizard in a single function — deterministic, no processes,
 no stubs.
 
+[Full LiveView integration recipe →](docs/recipes/liveview.md)
+
 ### Composability
 
 Effects compose with zero ceremony. This query function reads like
