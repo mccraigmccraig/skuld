@@ -135,10 +135,12 @@ no stubs.
 ## Composability
 
 Effects compose with zero ceremony. This query function reads like
-straightforward sequential code. When it runs, `deffetch` calls from
-all concurrent invocations are automatically batched into single
-round-trips — no batch sizes, no concurrency management, no code
-restructuring:
+straightforward sequential code, but when it runs, concurrency
+happens at two levels: within the `defquery` block (`fetch_user`
+and `fetch_orders` run together via dependency analysis), and
+across all streamed invocations — `Brook.map` runs 4 transforms
+concurrently, and `FiberPool` batches their `deffetch` calls into
+single round-trips:
 
 ```elixir
 defquery build_account_summary(user_id, month) do
@@ -161,7 +163,8 @@ user_ids
 ```
 
 `build_account_summary` knows nothing about batch sizes, concurrency limits,
-or database round-trips. Just domain logic. Everything else is handler
+database round-trips, or the other account summaries which also need to be
+built - it's pure domain logic. Everything else is handler
 wiring — swappable, testable, composable.
 
 [Full batch loading recipe →](docs/recipes/batch-loading.md)
