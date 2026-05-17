@@ -65,7 +65,16 @@ Because effects are first-class data, Skuld can do more — batch
 independent queries automatically, serialise partially complete computations
 for later resumption.
 
-## Quick example
+## The effect advantage
+
+Effectful computations condense domain logic to its essence. Handlers
+provide context — production vs test, concurrency, batching — without
+touching the computation. Effects are first-class data: inspect them,
+serialise them, replay them. The same mechanism that enables suspension
+and resumption in the first example also enables automatic N+1 batching
+in the second and durable computation in the third.
+
+### Suspension & resumption
 
 A multi-step checkout wizard. The computation *pauses* at each step,
 waiting for external input — then resumes with full effect context
@@ -132,7 +141,7 @@ Same code. Production pauses at each step for user input. Tests drive
 the entire wizard in a single function — deterministic, no processes,
 no stubs.
 
-## Composability
+### Composability
 
 Effects compose with zero ceremony. This query function reads like
 straightforward sequential code, but when it runs, concurrency
@@ -169,7 +178,7 @@ wiring — swappable, testable, composable.
 
 [Full batch loading recipe →](docs/recipes/batch-loading.md)
 
-## Durability
+### Durability
 
 Effects are data you can persist. Pause a multi-step wizard, save
 its entire execution history as JSON, and resume it later — after
