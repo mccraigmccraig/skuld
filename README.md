@@ -191,9 +191,12 @@ sc =
 # Run until suspension, serialize the effect log
 suspended = SerializableCoroutine.run(sc)
 json = SerializableCoroutine.serialize(SerializableCoroutine.get_log(suspended))
+# => EffectLogEntry{data: :get_name, value: nil, state: :started}
 
 # Later — cold resume from JSON, no manual deserialisation needed
-SerializableCoroutine.run(json, sc, "Alice")
+suspended2 = SerializableCoroutine.run(json, sc, "Alice")
+# => EffectLogEntry{data: :get_name, value: "Alice", state: :executed}
+# => EffectLogEntry{data: :get_email, value: nil, state: :started}
 ```
 
 Every effect invocation — yields, state changes, writer events —
