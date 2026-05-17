@@ -50,7 +50,7 @@ effect history up to the suspension point:
 log = SerializableCoroutine.get_log(suspended)
 Log.to_list(log)
 # => [
-#   %LogEntry{sig: Skuld.Effects.Yield, name: :yield, args: [:get_name], result: nil}
+#   %EffectLogEntry{sig: Skuld.Effects.Yield, data: :get_name, value: nil, state: :started}
 # ]
 ```
 
@@ -92,8 +92,8 @@ replayed resume:
 log2 = SerializableCoroutine.get_log(suspended2)
 Log.to_list(log2)
 # => [
-#   %LogEntry{sig: Skuld.Effects.Yield, name: :yield, args: [:get_name], result: "Alice"},
-#   %LogEntry{sig: Skuld.Effects.Yield, name: :yield, args: [:get_email], result: nil}
+#   %EffectLogEntry{sig: Skuld.Effects.Yield, data: :get_name, value: "Alice", state: :executed},
+#   %EffectLogEntry{sig: Skuld.Effects.Yield, data: :get_email, value: nil, state: :started}
 # ]
 ```
 

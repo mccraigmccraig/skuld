@@ -4,14 +4,14 @@
 [< AsyncCoroutine](async-coroutine.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [Port >](port.md)
 <!-- nav:header:end -->
 
-EffectLogger records every effect invocation in a computation into a
-serializable log. SerializableCoroutine builds on this to provide
-pause-serialize-resume workflows.
+EffectLogger records every effect invocation into a serialisable log.
+SerializableCoroutine builds on this for pause-serialize-resume workflows.
 
 ## EffectLogger
 
-Records `{mod, name, args, result}` tuples for every effect call during
-a computation's execution:
+Records each effect call as an `%EffectLogEntry{}` struct with fields
+`sig`, `data`, `value`, and `state` (`:started`, `:executed`, `:discarded`).
+The log is a flat list — flat structure, tree semantics via `leave_scope`.
 
 ```elixir
 {result, log} =
@@ -20,64 +20,109 @@ a computation's execution:
   |> State.with_handler(0)
   |> Reader.with_handler(%{})
   |> Throw.with_handler()
-  |> Comp.run!()
+  |> Comp.run()
 ```
 
-The log is a list of `%LogEntry{}` structs — JSON-serializable records
-of every effect invocation. EffectLogger must be installed **innermost**
-(first in the pipe chain) so it wraps all other handlers.
+`with_logging` returns `{result, log}` — the computation result paired
+with the `%Log{}` struct. EffectLogger must be installed **innermost**
+(first in the pipe) so it wraps all other handlers.
 
-### Durable workflows
+### Options
 
-The log enables pause-and-resume: serialize the log after a yield,
-persist it, and later rebuild the computation with exactly the same
-effect history:
+- `:effects` — list of effect sigs to log. Default `:all`.
+- `:prune_loops` — enable `mark_loop/1` pruning (default `true`).
+- `:state_keys` — filter which `env.state` keys to snapshot for cold resume.
+- `:output` — transform `(result, log)` before returning. Default wraps as tuple.
+- `:suspend` — decorate `ExternalSuspend.data` on yield. Default attaches the log.
+
+### Replay
+
+Pass an existing `%Log{}` to short-circuit completed effects:
 
 ```elixir
-# Run until suspension
-{%ExternalSuspend{value: v, data: data}, env} =
-  wizard() |> EffectLogger.with_logging() |> ...handlers... |> Comp.run()
+# First run — capture log
+{{result1, log}, _} =
+  my_comp
+  |> EffectLogger.with_logging()
+  |> State.with_handler(0)
+  |> Comp.run()
 
-# Extract and serialize the log
-log = data.log
-json = Jason.encode!(log)
+# Replay — short-circuit with logged values
+{{result2, _}, _} =
+  my_comp
+  |> EffectLogger.with_logging(log)
+  |> State.with_handler(0)
+  |> Comp.run()
 
-# Later: deserialize and resume
-log = Jason.decode!(json)
-{:ok, log_entries} = EffectLogger.Log.deserialize(log)
-
-wizard()
-|> EffectLogger.with_resume(log_entries, user_input)
-|> ...same handlers...
-|> Comp.run()
+assert result1 == result2
 ```
 
 ### Loop marking
 
-For long-running loops, `EffectLogger.mark_loop/1` prevents log
-unbounded growth by indicating restart points:
+`mark_loop/1` prevents log unbounded growth in long-running loops.
+Each mark captures an `EnvStateSnapshot` for cold resume. With
+`prune_loops: true`, completed iterations are pruned on finalisation:
 
 ```elixir
-EffectLogger.mark_loop(:process_next)
+defcomp conversation_loop(state) do
+  _ <- EffectLogger.mark_loop(ConversationLoop)
+  input <- Yield.yield(:await_input)
+  state = handle_input(state, input)
+  conversation_loop(state)
+end
+
+{{result, log}, _} =
+  conversation_loop(initial_state)
+  |> EffectLogger.with_logging(prune_loops: true)
+  |> Yield.with_handler()
+  |> Comp.run()
+```
+
+### Cold resume
+
+Replay logged history and inject a value at the suspension point.
+`with_resume/3` restores `env.state` from the most recent checkpoint,
+replays completed effects, and injects `resume_value` where the
+computation previously suspended:
+
+```elixir
+# Original run — suspended at a Yield
+{%ExternalSuspend{}, log} =
+  wizard()
+  |> EffectLogger.with_logging()
+  |> Yield.with_handler()
+  |> State.with_handler(0)
+  |> Comp.run()
+
+# Persist and restore
+json = Log.to_json(log)
+{:ok, restored_log} = Log.from_json(json)
+
+# Cold resume with injected value
+{{result, new_log}, _} =
+  wizard()
+  |> EffectLogger.with_resume(restored_log, :user_input)
+  |> Yield.with_handler()
+  |> State.with_handler(0)
+  |> Comp.run()
 ```
 
 ## SerializableCoroutine
 
-A convenience wrapper combining Coroutine + EffectLogger:
+Convenience wrapper combining Coroutine + EffectLogger for the
+common pause-serialize-resume pattern:
 
 ```elixir
 coroutine = SerializableCoroutine.new(my_comp, fn comp ->
   comp |> State.with_handler(0) |> Throw.with_handler()
 end)
 
-# Run until yield or completion
 case Coroutine.run(coroutine) do
-  %Coroutine.ExternalSuspended{value: value} = suspended ->
+  %Coroutine.ExternalSuspended{} = suspended ->
     log = SerializableCoroutine.get_log(suspended)
     json = SerializableCoroutine.serialize(log)
     # persist json...
 
-    # Later: deserialize and build a new coroutine for resume
     {:ok, log} = SerializableCoroutine.deserialize(json)
     resume_comp =
       my_comp
@@ -88,10 +133,15 @@ case Coroutine.run(coroutine) do
 end
 ```
 
-| Function | Purpose |
-|----------|---------|
-| `EffectLogger.with_logging(comp)` | Record effects during execution |
-| `EffectLogger.with_resume(comp, log, value)` | Resume with replay |
+| Operation | Purpose |
+|-----------|---------|
+| `EffectLogger.with_logging(comp, opts)` | Record effects during execution |
+| `EffectLogger.with_logging(comp, log, opts)` | Replay from existing log |
+| `EffectLogger.with_resume(comp, log, value)` | Cold resume with injected value |
+| `EffectLogger.mark_loop(loop_id)` | Mark loop iteration boundary for pruning |
+| `Log.to_list(log)` | View log entries as `%EffectLogEntry{}` list |
+| `Log.to_json(log)` | Serialize log to JSON |
+| `Log.from_json(json)` | Deserialize log from JSON |
 | `SerializableCoroutine.new(comp, stack_fn)` | Build a coroutine with EffectLogger |
 | `SerializableCoroutine.get_log(suspended)` | Extract log from suspended coroutine |
 | `SerializableCoroutine.serialize(log)` | Serialize log to JSON string |
