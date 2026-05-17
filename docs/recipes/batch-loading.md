@@ -1,7 +1,7 @@
 # Batch Loading
 
 <!-- nav:header:start -->
-[< The Decider Pattern](decider-pattern.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
+[< LiveView Integration](liveview.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:header:end -->
 
 Eliminate N+1 queries with `deffetch` operations and `FiberPool`.
@@ -134,5 +134,5 @@ loader boilerplate, no code restructuring.
 
 ---
 
-[< The Decider Pattern](decider-pattern.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
+[< LiveView Integration](liveview.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:footer:end -->

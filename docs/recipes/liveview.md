@@ -1,7 +1,7 @@
 # LiveView Integration
 
 <!-- nav:header:start -->
-[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [The Decider Pattern >](decider-pattern.md)
+[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Batch Loading >](batch-loading.md)
 <!-- nav:header:end -->
 
 `AsyncCoroutine` bridges effectful computations into Phoenix LiveView,
@@ -95,5 +95,5 @@ wizard = MyApp.Wizard.run()
 
 ---
 
-[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [The Decider Pattern >](decider-pattern.md)
+[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Batch Loading >](batch-loading.md)
 <!-- nav:footer:end -->
