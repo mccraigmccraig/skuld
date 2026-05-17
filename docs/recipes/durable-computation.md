@@ -62,15 +62,14 @@ json = SerializableCoroutine.serialize(log)
 
 ## Resume
 
-Restore the log from storage and build a new coroutine with the
-resume value:
+Restore the log from storage and resume with the new input.
+`run` accepts the JSON string directly — no manual deserialisation:
 
 ```elixir
 {:ok, json} = load_from_storage()
-{:ok, log} = SerializableCoroutine.deserialize(json)
 
 %Coroutine.ExternalSuspended{value: :get_email} = suspended2 =
-  SerializableCoroutine.run(log, sc, "Alice")
+  SerializableCoroutine.run(json, sc, "Alice")
 ```
 
 Inspect the log again — it now shows the full history including the
@@ -87,10 +86,9 @@ Log.to_list(log2)
 
 ```elixir
 {:ok, json} = load_from_storage()
-{:ok, log} = SerializableCoroutine.deserialize(json)
 
 %Coroutine.Completed{result: {:ok, %{name: "Alice", email: "alice@example.com"}}} =
-  SerializableCoroutine.run(log, sc, "alice@example.com")
+  SerializableCoroutine.run(json, sc, "alice@example.com")
 ```
 
 ## What's captured
