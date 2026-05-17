@@ -215,10 +215,12 @@ in the composability example enables durability here.
 
 ## Installation
 
+[![Hex.pm](https://img.shields.io/hexpm/v/skuld.svg)](https://hex.pm/packages/skuld)
+
 ```elixir
 def deps do
   [
-    {:skuld, "~> 0.27"}
+    {:skuld, "~> 0.28"}
   ]
 end
 ```
