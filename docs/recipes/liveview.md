@@ -5,12 +5,12 @@
 <!-- nav:header:end -->
 
 `AsyncCoroutine` bridges effectful computations into Phoenix LiveView,
-enabling multi-step wizards, conversational flows, and long-running
+enabling pausable state machines, conversational flows, and long-running
 operations without GenServer boilerplate.
 
 ## Pattern
 
-1. Write the wizard as an effectful computation using `Yield`
+1. Write the state machine as an effectful computation using `Yield`
 2. Start it with `AsyncCoroutine.run/2`
 3. Handle `{AsyncCoroutine, tag, result}` messages in `handle_info`
 4. Resume with user input via `AsyncCoroutine.run/3`

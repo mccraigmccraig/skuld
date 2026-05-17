@@ -112,8 +112,8 @@ wiring — swappable, testable, composable.
 
 ### Suspension & resumption
 
-A multi-step checkout wizard. The computation *pauses* at each step,
-waiting for external input — then resumes with full effect context
+A pausable state machine. The computation *pauses* at each `Yield`,
+waits for external input, then resumes with full effect context
 preserved:
 
 ```elixir
@@ -139,7 +139,7 @@ Run it from a LiveView with `AsyncCoroutine`:
 # mount
 {:ok, runner} = AsyncCoroutine.run(Checkout.run(), tag: :checkout)
 
-# handle_info — the wizard pauses at each yield
+# handle_info — the state machine pauses at each yield
 def handle_info({AsyncCoroutine, :checkout, %ExternalSuspend{value: :get_cart}}, socket) do
   cart = ShoppingCart.get_cart(socket.assigns.user)
   AsyncCoroutine.run(socket.assigns.runner, cart)   # resume with cart
@@ -157,7 +157,7 @@ def handle_info({AsyncCoroutine, :checkout, {:ok, order}}, socket) do
 end
 ```
 
-Test it — drive the whole wizard in a few lines:
+Test it — drive the whole machine in a few lines:
 
 ```elixir
 comp =
@@ -174,14 +174,14 @@ fiber = Coroutine.run(fiber, %{items: [...]})                  # pauses at :get_
 ```
 
 Same code. Production pauses at each step for user input. Tests drive
-the entire wizard in a single function — deterministic, no processes,
-no stubs.
+the entire state machine in a single function — deterministic, no
+processes, no stubs.
 
 [Full LiveView integration recipe →](docs/recipes/liveview.md)
 
 ### Durability
 
-Effects are data you can persist. Pause a multi-step wizard, save
+Effects are data you can persist. Pause a pausable state machine, save
 its entire execution history as JSON, and resume it later — after
 a restart, on a different machine:
 

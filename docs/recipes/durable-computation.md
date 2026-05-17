@@ -10,9 +10,9 @@ machine, whenever. Every effect invocation is recorded in a serialisable
 log. Resume replays the log so the computation continues exactly where
 it left off.
 
-## The wizard
+## The state machine
 
-A two-step wizard that collects a name and an email:
+A two-step state machine that collects a name and an email:
 
 ```elixir
 wizard =
@@ -25,7 +25,7 @@ wizard =
 
 ## Build and run
 
-Wrap the wizard with `SerializableCoroutine.new`, which installs
+Wrap the state machine with `SerializableCoroutine.new`, which installs
 `EffectLogger` innermost so every effect is captured:
 
 ```elixir
