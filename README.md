@@ -169,6 +169,40 @@ wiring — swappable, testable, composable.
 
 [Full batch loading recipe →](docs/recipes/batch-loading.md)
 
+## Durability
+
+Effects are data you can persist. Pause a multi-step wizard, save
+its entire execution history as JSON, and resume it later — after
+a restart, on a different machine:
+
+```elixir
+wizard =
+  comp do
+    name <- Yield.yield(:get_name)
+    email <- Yield.yield(:get_email)
+    {:ok, %{name: name, email: email}}
+  end
+
+sc =
+  SerializableCoroutine.new(wizard, fn comp ->
+    comp |> Yield.with_handler() |> Throw.with_handler()
+  end)
+
+# Run until suspension, serialize the effect log
+suspended = SerializableCoroutine.run(sc)
+json = SerializableCoroutine.serialize(SerializableCoroutine.get_log(suspended))
+
+# Later — cold resume from JSON, no manual deserialisation needed
+SerializableCoroutine.run(json, sc, "Alice")
+```
+
+Every effect invocation — yields, state changes, writer events —
+is captured in the log. `run` replays recorded effects and resumes
+at the suspension point. The same mechanism that enables batching
+in the composability example enables durability here.
+
+[Full durable computation recipe →](docs/recipes/durable-computation.md)
+
 ## Installation
 
 ```elixir
