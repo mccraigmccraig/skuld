@@ -5,12 +5,19 @@
 <!-- nav:header:end -->
 
 Eliminate N+1 queries with `deffetch` operations and `FiberPool`.
+
 Each `deffetch` call suspends the current fiber, signalling the scheduler
 to hold the request. `FiberPool` collects suspended fetch calls across
-*all* concurrent fibers and dispatches them in batches to your executor —
-no `query do` blocks needed. Within a `query do` block, dependency
+*all* concurrent fibers and dispatches them in batches to your executor.
+Within a `query do` block, dependency
 analysis adds automatic concurrency for independent fetches. Together
 they eliminate N+1 queries without restructuring code.
+
+In the example below, `build_summary` expresses domain logic with very
+little ceremony. When it runs, the system provides concurrency at two
+levels: within each query block (`fetch_user` and `fetch_orders` run
+together), and globally — `deffetch` calls from all concurrent
+invocations are batched into single round-trips.
 
 ## The N+1 problem
 
