@@ -11,8 +11,8 @@
 An effectful programming framework for Elixir.
 
 Bundled with a library of effects and components spanning state
-management, cooperative concurrency, streaming, automatic N+1 query
-batching, hexagonal architecture, and durable serialisable workflows:
+management, cooperative concurrency, streaming, efficient query
+execution, component architecture, and durable serialisable workflows:
 
 ```
                           Comp
