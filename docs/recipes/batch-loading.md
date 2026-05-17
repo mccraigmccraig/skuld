@@ -13,7 +13,7 @@ Within a `query do` block, dependency
 analysis adds automatic concurrency for independent fetches. Together
 they eliminate N+1 queries without restructuring code.
 
-In the example below, `build_summary` expresses domain logic with very
+In the example below, `build_account_summary` expresses domain logic with very
 little ceremony. When it runs, the system provides concurrency at two
 levels: within each query block (`fetch_user` and `fetch_orders` run
 together), and globally — `deffetch` calls from all concurrent
@@ -49,20 +49,20 @@ calls across concurrent transforms. `Query.map` spawns each detail fetch
 as a fiber so they batch together:
 
 ```elixir
-defquery build_summary(user_id, month) do
+defquery build_account_summary(user_id, month) do
   user <- AccountQueries.fetch_user(user_id)
   orders <- AccountQueries.fetch_orders(user_id, month)
   order_ids = Enum.map(orders, & &1.id)
 
   details_list <- Query.map(order_ids, &AccountQueries.fetch_order_details/1)
 
-  build_summary(user, orders, details_list)
+  build_account_summary(user, orders, details_list)
 end
 ```
 
 Feed a stream of user IDs through `Brook.map` with concurrency.
 The query system batches `deffetch` calls from *all* concurrent
-`build_summary` transforms together:
+`build_account_summary` transforms together:
 
 ```elixir
 comp do
@@ -71,7 +71,7 @@ comp do
   summaries <-
     Brook.map(
       source,
-      fn user_id -> build_summary(user_id, "2026-01") end,
+      fn user_id -> build_account_summary(user_id, "2026-01") end,
       concurrency: 4
     )
 
@@ -85,7 +85,7 @@ end
 
 ## What happens
 
-With `concurrency: 4`, the FiberPool runs 4 `build_summary` transforms concurrently.
+With `concurrency: 4`, the FiberPool runs 4 `build_account_summary` transforms concurrently.
 As each transform calls `fetch_user(user_id)`, the query system holds
 the call and waits for other transforms to reach their first fetch.
 When enough calls accumulate, they're batched into a single round-trip:

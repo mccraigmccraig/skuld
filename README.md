@@ -141,18 +141,18 @@ round-trips — no batch sizes, no concurrency management, no code
 restructuring:
 
 ```elixir
-defquery build_summary(user_id, month) do
+defquery build_account_summary(user_id, month) do
   user <- AccountQueries.fetch_user(user_id)
   orders <- AccountQueries.fetch_orders(user_id, month)
   details <- Query.map(Enum.map(orders, & &1.id), &AccountQueries.fetch_order_details/1)
-  build_summary(user, orders, details)
+  build_account_summary(user, orders, details)
 end
 
 # Feed a stream of users through — 4 concurrent transforms, all deffetch
 # calls batched together by FiberPool
 user_ids
 |> Brook.from_enum()
-|> Brook.map(&build_summary(&1, "2026-01"), concurrency: 4)
+|> Brook.map(&build_account_summary(&1, "2026-01"), concurrency: 4)
 |> Brook.to_list()
 |> Skuld.Query.with_executor(AccountQueries, AccountExecutor)
 |> Channel.with_handler()
@@ -160,7 +160,7 @@ user_ids
 |> Comp.run!()
 ```
 
-`build_summary` knows nothing about batch sizes, concurrency limits,
+`build_account_summary` knows nothing about batch sizes, concurrency limits,
 or database round-trips. Just domain logic. Everything else is handler
 wiring — swappable, testable, composable.
 
