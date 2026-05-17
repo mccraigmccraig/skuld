@@ -34,7 +34,8 @@ end
 ```
 
 Build a summary for one user. The `query` block automatically batches
-calls across concurrent transforms:
+calls across concurrent transforms. `Query.map` spawns each detail fetch
+as a fiber so they batch together:
 
 ```elixir
 defquery build_summary(user_id, month) do
@@ -42,10 +43,7 @@ defquery build_summary(user_id, month) do
   orders <- AccountQueries.fetch_orders(user_id, month)
   order_ids = Enum.map(orders, & &1.id)
 
-  details_list <-
-    Comp.sequence(Enum.map(order_ids, fn oid ->
-      AccountQueries.fetch_order_details(oid)
-    end))
+  details_list <- Query.map(order_ids, &AccountQueries.fetch_order_details/1)
 
   build_summary(user, orders, details_list)
 end
