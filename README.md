@@ -134,41 +134,37 @@ no stubs.
 
 ## Composability
 
-Effects compose with zero ceremony. This streaming pipeline processes
-a sequence of commands through a pure decider, persists events via an
-automatically batched `deffetch` contract (eliminating N+1
-queries!), and pushes concurrency and backpressure to the handler layer:
+Effects compose with zero ceremony. This query function reads like
+straightforward sequential code. When it runs, `deffetch` calls from
+all concurrent invocations are automatically batched into single
+round-trips — no batch sizes, no concurrency management, no code
+restructuring:
 
 ```elixir
-def process_stream(stream) do
-  stream
-  |> Brook.flat_map(fn cmd ->
-    comp do
-      state <- State.get()
-      BankAccount.decide(cmd, state)
-    end
-  end)
-  |> Brook.map(&EventStore.evolve/1, concurrency: 4)
+defquery build_summary(user_id, month) do
+  user <- AccountQueries.fetch_user(user_id)
+  orders <- AccountQueries.fetch_orders(user_id, month)
+  details <- Query.map(Enum.map(orders, & &1.id), &AccountQueries.fetch_order_details/1)
+  build_summary(user, orders, details)
 end
 
-# Wire everything up — batching, concurrency, error handling, persistence
-commands
+# Feed a stream of users through — 4 concurrent transforms, all deffetch
+# calls batched together by FiberPool
+user_ids
 |> Brook.from_enum()
-|> process_stream()
+|> Brook.map(&build_summary(&1, "2026-01"), concurrency: 4)
 |> Brook.to_list()
-|> Skuld.Query.with_executor(EventStore, EventStore.EctoExecutor)
-|> State.with_handler(%{balance: 0})
+|> Skuld.Query.with_executor(AccountQueries, AccountExecutor)
 |> Channel.with_handler()
 |> FiberPool.with_handler()
-|> Throw.with_handler()
 |> Comp.run!()
 ```
 
-`process_stream` knows nothing about databases, batch sizes, or
-concurrency limits. Two lines of business logic. Everything else
-is handler wiring — swappable, testable, composable.
+`build_summary` knows nothing about batch sizes, concurrency limits,
+or database round-trips. Just domain logic. Everything else is handler
+wiring — swappable, testable, composable.
 
-[Full decider pattern →](docs/recipes/decider-pattern.md)
+[Full batch loading recipe →](docs/recipes/batch-loading.md)
 
 ## Installation
 
