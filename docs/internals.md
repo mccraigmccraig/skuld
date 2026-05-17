@@ -80,7 +80,7 @@ end)
 ```
 
 Each `<-` becomes a `bind` call. The bound variable becomes the
-parameter to the continuation function. No Process dictionary, no
+parameter to the continuation function. There's no Process dictionary or
 global state — just functions calling functions.
 
 ## Evidence-passing
