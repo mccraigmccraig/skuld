@@ -235,7 +235,7 @@ end
 | State, Reader, Writer, Throw, Fresh, Random | [Foundational Effects](docs/effects/state-reader-writer.md) |
 | Yield, Coroutines, FiberPool, Channels, Async | [Coroutines & Concurrency](docs/effects/yield.md) |
 | Port, Repo, Hexagonal Architecture | [Boundaries](docs/effects/port.md) |
-| Eliminate N+1 queries | [Query System](docs/effects/query.md) |
+| Eliminate N+1 queries | [Batch Loading](docs/recipes/batch-loading.md) |
 | Handler-swapping for deterministic testing | [Testing](docs/testing.md) |
 | Full effect and API reference | [Reference](docs/reference.md) |
 | Peek under the hood — CPS, evidence-passing, custom effects | [How It Really Works](docs/internals.md) |
