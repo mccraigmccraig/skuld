@@ -21,9 +21,10 @@
 #
 #     FiberPool.fiber_await_all([Users.get_user(id), Orders.get_recent()])
 #     |> Comp.bind(fn [user, recent] ->
-#       Comp.bind(Orders.get_by_user(user.id), fn orders ->
-#         {user, recent, orders}
-#       end)
+#       Comp.bind(
+#         Comp.bind(FiberPool.fiber(Orders.get_by_user(user.id)), &FiberPool.await!/1),
+#         fn orders -> {user, recent, orders} end
+#       )
 #     end)
 #
 # ## Syntax
