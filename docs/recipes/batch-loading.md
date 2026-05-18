@@ -56,7 +56,7 @@ defquery build_account_summary(user_id, month) do
 
   details_list <- Query.map(order_ids, &AccountQueries.fetch_order_details/1)
 
-  build_account_summary(user, orders, details_list)
+  make_account_summary(user, orders, details_list)
 end
 ```
 
@@ -65,11 +65,13 @@ The query system batches `deffetch` calls from *all* concurrent
 `build_account_summary` transforms together:
 
 ```elixir
-def build_account_summaries(user_ids_source, month) do
+defcomp build_account_summaries(user_ids_source, month) do
+  concurrency <- Reader.ask(AccountQueries.Concurrency)
+
   Brook.map(
     user_ids_source,
     &build_account_summary(&1, month),
-    concurrency: 4
+    concurrency: concurrency
   )
 end
 
