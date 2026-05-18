@@ -61,8 +61,8 @@ end
 ```
 
 Feed a stream of user IDs through `Brook.map` with concurrency.
-The query system batches `deffetch` calls from *all* concurrent
-`build_account_summary` transforms together:
+The query system batches together calls of the same `deffetch` function from
+*all* concurrent `build_account_summary` transforms:
 
 ```elixir
 defcomp build_account_summaries(user_ids_source, month) do
