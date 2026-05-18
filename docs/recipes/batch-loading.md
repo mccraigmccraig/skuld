@@ -65,16 +65,17 @@ The query system batches `deffetch` calls from *all* concurrent
 `build_account_summary` transforms together:
 
 ```elixir
+def build_account_summaries(user_ids_source, month) do
+  Brook.map(
+    user_ids_source,
+    &build_account_summary(&1, month),
+    concurrency: 4
+  )
+end
+
 comp do
-  source <- Brook.from_enum(user_ids, buffer: 20)
-
-  summaries <-
-    Brook.map(
-      source,
-      fn user_id -> build_account_summary(user_id, "2026-01") end,
-      concurrency: 4
-    )
-
+  user_ids_source <- Brook.from_enum(user_ids, buffer: 20)
+  summaries <- build_account_summaries(user_ids_source, "2026-01")
   Brook.to_list(summaries)
 end
 |> Skuld.Query.with_executor(AccountQueries, AccountExecutor)
