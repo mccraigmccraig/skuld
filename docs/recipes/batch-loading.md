@@ -61,6 +61,12 @@ from(u in User,
 end)
 ```
 
+This works well when you have Ecto and SQL — the query planner does the
+heavy lifting. But it couples your domain logic to a specific query shape
+and relies on relational joins. When your data lives behind REST APIs,
+gRPC services, or other storage that supports bulk-by-id lookups, Skuld's
+approach gives you the same batching benefit without the coupling.
+
 ## Another solution: `query do` with streaming
 
 Define fetch operations with `deffetch`:
