@@ -21,16 +21,47 @@ invocations are batched into single round-trips.
 
 ## The N+1 problem
 
+Each user has orders, and each order has line items. A naive approach walks
+the tree row-by-row:
+
 ```elixir
-# N+1: one query for users, then N queries for their orders
+# 1 + N + (N * M): one query for users, then N for orders, then N * M for details
 users <- Repo.all(User)
 Enum.map(users, fn user ->
   {:ok, orders} <- Repo.get_by(Order, user_id: user.id)
+
+  orders_with_details =
+    Enum.map(orders, fn order ->
+      {:ok, details} <- Repo.get_by(OrderDetail, order_id: order.id)
+      Map.put(order, :details, details)
+    end)
+
+  {user, orders_with_details}
+end)
+```
+
+A conventional bulk approach flattens the problem into a single streaming
+query — join users to orders to details in one pass, or preload the
+associations:
+
+```elixir
+# Single streaming query with joins — no N+1, but couples queries to shape
+from(u in User,
+  join: o in Order, on: o.user_id == u.id,
+  join: d in OrderDetail, on: d.order_id == o.id,
+  select: {u, o, d}
+)
+|> Repo.stream()
+|> Stream.chunk_by(&elem(&1, 0))
+|> Enum.map(fn [{user, _, _} | _] = rows ->
+  orders = Enum.map(rows, fn {_, order, detail} ->
+    order |> Map.put(:details, [detail])
+  end)
   {user, orders}
 end)
 ```
 
-## The solution: `query do` with streaming
+## Another solution: `query do` with streaming
 
 Define fetch operations with `deffetch`:
 
