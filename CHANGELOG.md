@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: fcfc57fecfe0e60ceb901a74074764ed2fe33959 -->
+<!-- last-updated-against: 16ceda7c3a40ad9c32fe5a4a0f1af95ac6756d42 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PostService, CommentService) instead of Ecto schemas. The example now
   demonstrates batching across REST APIs where SQL joins don't exist, so the
   "why not just use Ecto preloads?" objection never arises.
+
+- Durable computation recipe rewritten with an order checkout flow that
+  branches on runtime data, retries payment validation in a loop, and
+  interleaves Port/State/Writer effects between yields. Demonstrates why
+  the effect log is necessary — a step-number approach can't determine which
+  branch was taken or what external API responses to replay on resume.
 
 ## [0.28.0] — 2026-05-16
 
