@@ -99,7 +99,7 @@ defmodule Skuld.Effects.Reader do
 
   @spec local(atom(), (term() -> term()), Types.computation()) :: Types.computation()
   def local(tag, modify, comp) when is_atom(tag) and is_function(modify, 1) do
-    sk = sig(tag)
+    sk = state_key(tag)
 
     Comp.scoped(comp, fn env ->
       current = Env.get_state!(env, sk)
@@ -156,7 +156,8 @@ defmodule Skuld.Effects.Reader do
     tag = Keyword.get(opts, :tag, @default_tag)
     output = Keyword.get(opts, :output)
     suspend = Keyword.get(opts, :suspend)
-    sk = sig(tag)
+    handler_sig = sig(tag)
+    sk = state_key(tag)
 
     scoped_opts =
       []
@@ -176,7 +177,7 @@ defmodule Skuld.Effects.Reader do
 
     comp
     |> Comp.with_scoped_state(sk, value, scoped_opts)
-    |> Comp.with_handler(sk, handler)
+    |> Comp.with_handler(handler_sig, handler)
   end
 
   @doc """
@@ -195,7 +196,7 @@ defmodule Skuld.Effects.Reader do
   @doc "Extract the context value for the given tag from an env"
   @spec get_context(Types.env(), atom()) :: term()
   def get_context(env, tag \\ @default_tag) do
-    Env.get_state(env, sig(tag))
+    Env.get_state(env, state_key(tag))
   end
 
   #############################################################################
@@ -206,9 +207,7 @@ defmodule Skuld.Effects.Reader do
   def handle(op, env, k) do
     case op do
       @ask_op ->
-        # Default-tag handler (used by with_handler when no tag given
-        # and handler_sig == __MODULE__)
-        value = Env.get_state!(env, @__sig__)
+        value = Env.get_state!(env, state_key())
         k.(value, env)
     end
   end
