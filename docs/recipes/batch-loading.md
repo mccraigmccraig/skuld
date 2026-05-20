@@ -158,9 +158,9 @@ end
 
 With `concurrency: 4`, the FiberPool runs 4 `build_user_summary`
 transforms concurrently. As each transform calls `fetch_user(user_id)`,
-the query system holds the call and waits for other transforms to reach
-their first fetch. When enough calls accumulate, they're batched into a
-single round-trip:
+the query system holds the call. When the run queue is empty and there's
+no more enqueued work, all accumulated batch suspensions are dispatched
+together in a single round-trip:
 
 - **10 users, concurrency 4**: `fetch_user` calls arrive in batches
   of [4, 4, 2] → 3 HTTP calls. Same for `fetch_posts`.
@@ -223,6 +223,14 @@ Independent operations are held and dispatched in batches via `FiberPool`.
 Dependent operations wait for their inputs and run in subsequent rounds.
 The result is automatic N+1 elimination — no manual batching, no data
 loader boilerplate, no code restructuring.
+
+This sounds like a lot, but it's the composition of individually simple
+concepts — which is exactly what algebraic effects enable. `deffetch` calls
+return a suspended computation with data describing the operation
+(`Skuld.Comp.InternalSuspend`). Fibers, like coroutines, are also suspended
+computations bundled with some state ([Coroutine](../effects/coroutine.md)).
+[FiberPool](../effects/fiberpool.md) decides which suspended computation to
+run next.
 
 Batching, concurrency, and data fetching are three separate concerns.
 Skuld gives you the first two for free so you only write the third.
