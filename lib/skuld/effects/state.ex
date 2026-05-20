@@ -59,7 +59,7 @@ defmodule Skuld.Effects.State do
   alias Skuld.Comp.Types
   alias Skuld.Data.Change
 
-  @compile {:inline, state_key: 1, sig: 1}
+  @compile {:inline, sig: 1}
 
   @default_tag __MODULE__
 
@@ -290,23 +290,4 @@ defmodule Skuld.Effects.State do
   #############################################################################
   ## State Key Helper
   #############################################################################
-
-  @doc """
-  Returns the env.state key used for a given tag.
-
-  Useful for configuring EffectLogger's `state_keys` filter.
-
-  ## Examples
-
-      # Only capture State effect data in EffectLogger snapshots
-      EffectLogger.with_logging(state_keys: [State.state_key(MyApp.Counter)])
-
-      # Multiple states
-      EffectLogger.with_logging(state_keys: [
-        State.state_key(:counter),
-        State.state_key(:user)
-      ])
-  """
-  @spec state_key(atom()) :: atom()
-  def state_key(tag), do: sig(tag)
 end

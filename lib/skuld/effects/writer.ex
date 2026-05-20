@@ -366,27 +366,4 @@ defmodule Skuld.Effects.Writer do
   def clear(tag \\ @default_tag) do
     set_log(tag, [])
   end
-
-  #############################################################################
-  ## State Key Helper
-  #############################################################################
-
-  @doc """
-  Returns the env.state key used for a given tag.
-
-  Useful for configuring EffectLogger's `state_keys` filter.
-
-  ## Examples
-
-      # Only capture Writer log in EffectLogger snapshots
-      EffectLogger.with_logging(state_keys: [Writer.state_key(:audit)])
-
-      # Multiple logs
-      EffectLogger.with_logging(state_keys: [
-        Writer.state_key(:audit),
-        Writer.state_key(:metrics)
-      ])
-  """
-  @spec state_key(atom()) :: atom()
-  def state_key(tag), do: sig(tag)
 end

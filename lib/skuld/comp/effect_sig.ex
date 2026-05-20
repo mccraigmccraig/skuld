@@ -59,6 +59,12 @@ defmodule Skuld.Comp.EffectSig do
 
         Module.concat(__MODULE__, camelized)
       end
+
+      @doc false
+      @compile {:inline, state_key: 0, state_key: 1}
+      def state_key, do: Atom.to_string(sig())
+
+      def state_key(unquote(tag_var)), do: Atom.to_string(sig(unquote(tag_var)))
     end
   end
 end

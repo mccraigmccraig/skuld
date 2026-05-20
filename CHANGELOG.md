@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 310f1e59e230818f8814977704581ab85e8095f4 -->
+<!-- last-updated-against: e171f4b7b61d67c3ddee35029ad60782aedde96e -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Changed
+
+- `EffectSig` now generates `state_key/0` and `state_key/1` that return
+  string keys (`Atom.to_string(sig(...))`) instead of atoms, preparing for
+  full string-key migration of `env.state`. Manual `state_key/1` removed
+  from `State`, `Reader`, `Writer` (now generated). `AtomicState.state_key/1`
+  updated to return a string via `defoverridable`.
 
 ### Added
 
