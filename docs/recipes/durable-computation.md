@@ -10,32 +10,39 @@ machine, whenever. Every effect invocation is recorded in a serialisable
 log. Resume replays the log so the computation continues exactly where
 it left off.
 
-## Why not just store the step number?
+## Why not just use Oban jobs?
 
-If your state machine is linear — step 1, step 2, step 3 — storing
-`{step: 2, name: "Alice"}` in a JSON column works fine. Durable
-computation earns its keep when the computation *isn't* linear:
+You can build stateful workflows with Oban jobs, GenServers, or
+database-persisted state — encoding the current step as job args or
+process state. These approaches work and are battle-tested.
+
+SerializableCoroutine is a different tradeoff. Instead of encoding
+state machine transitions as job arguments or `handle_info` clauses,
+you write them almost like normal Elixir code. The effect log captures
+the execution history automatically, so you don't manually track which
+branch was taken, how many loop iterations ran, or what API responses
+were received. This matters most when the workflow is non-linear:
 
 - **Branching.** The path taken depends on runtime data. "Step 3" could
   mean "get shipping address" for one order and "confirm payment" for
-  another. The step number alone doesn't tell you what to do next.
+  another — you'd need to encode the branch decision in job state.
 - **Looping.** A retry loop means the same logical step executes multiple
-  times. A step counter can't distinguish "first attempt" from "third
-  attempt."
+  times. The state-machine encoding already handles iteration — but the
+  encoding itself is harder to follow than reading code flow.
 - **Side effects between yields.** If the computation calls APIs or
-  mutates state between user interactions, those results are part of the
-  execution history. A naive approach would re-execute side effects on
-  resume — potentially with different results.
+  mutates state between user interactions, you can accumulate results in
+  a Map (like `Ecto.Multi`). But the logic spreads across job modules,
+  variable bindings become harder to trace, and function-wrapper
+  boilerplate adds noise.
 
-The effect log captures *everything*: which branch was taken, how many
-loop iterations ran, and the results of every side effect. Resume
-replays the log deterministically, so the computation sees exactly the
-same state it had before.
+The SerializableCoroutine approach lets you read the workflow from top
+to bottom — branches, loops, and side effects inline — without
+cross-referencing job modules to reconstruct the flow.
 
 ## The state machine
 
 An order checkout flow. It fetches customer and cart data from services,
-branches on the order total, loops on payment validation, and records
+branches on cart contents, loops on payment validation, and records
 an audit trail:
 
 ```elixir
@@ -49,14 +56,14 @@ defmodule Checkout do
     total = calculate_total(cart)
 
     # Persist the order context in State
-    _ <- State.put(%{customer: customer, cart: cart, total: total})
+    _ <- State.put(Checkout.State, %{customer: customer, cart: cart, total: total})
 
     # Yield for user confirmation — shows the cart
     :ok <- Yield.yield(:confirm_order)
 
-    # Branch on total: large orders need a shipping address
+    # Branch on cart contents: physical items need a shipping address
     shipping <-
-      if total > 100 do
+      if has_physical_items?(cart) do
         Yield.yield(:get_shipping_address)
       else
         :skip
@@ -69,7 +76,7 @@ defmodule Checkout do
     {:ok, receipt} <- Orders.process_payment(cart, payment, shipping)
 
     # Record audit entry
-    order_ctx <- State.get()
+    order_ctx <- State.get(Checkout.State)
     _ <- Writer.tell({:order_completed, order_ctx, receipt})
 
     {:ok, receipt}
@@ -78,7 +85,8 @@ defmodule Checkout do
   defp get_valid_payment do
     comp do
       _ <- EffectLogger.mark_loop(:payment_retry)
-      method <- Yield.yield(:get_payment_method)
+      %{total: total} <- State.get(Checkout.State)
+      method <- Yield.yield({:get_payment_method, total})
 
       case validate_payment(method) do
         :ok -> method
@@ -104,7 +112,7 @@ sc =
     |> Port.with_handler(%{
       Orders => Orders.Service,
     })
-    |> State.with_handler(%{})
+    |> State.with_handler(%{}, tag: Checkout.State)
     |> Writer.with_handler([])
     |> Yield.with_handler()
     |> Throw.with_handler()
@@ -135,11 +143,15 @@ Log.to_list(log)
 # ]
 ```
 
-This is the key difference from storing a step number. The log records
-*what the APIs returned* and *what State contained*. On resume, the
-system replays these entries rather than re-executing them — so the
-computation sees the same customer, the same cart, and the same `total:
-142.50` that triggered the shipping-address branch.
+This is the key difference from storing state manually. The log records
+*what the APIs returned* and *what State contained*. On cold resume
+(from serialised JSON), the system replays these entries rather than
+re-executing them, rebuilding the closures and variable bindings from the
+original computation — so the computation sees the same customer, the same
+cart, and the same cart contents that triggered the shipping-address
+branch. On hot resume (a live suspended fiber), no replay is needed —
+the computation state is still held in a closure and continues
+immediately.
 
 ## Serialize and persist
 
@@ -161,9 +173,9 @@ and injects the resume value at the suspension point:
   SerializableCoroutine.run(json, sc, :confirmed)
 ```
 
-The branch was taken because `total > 100` was `true` — the log replayed
-`State.put` with the original cart data, so `total` was restored to
-`142.50` and the `if` took the same path. No step-number tracking needed.
+The branch was taken because `has_physical_items?` was `true` — the log
+replayed `State.put` with the original cart data, so the cart contents
+were restored and the `if` took the same path. No step tracking needed.
 
 Inspect the updated log — the yield was resolved, and the log shows the
 transition:
@@ -178,20 +190,22 @@ Log.to_list(SerializableCoroutine.get_log(suspended2))
 ```
 
 Continue through the remaining steps — shipping address, payment retry
-loop, payment processing:
+loop, payment processing. The intermediate steps use hot resume
+(`run/2` with the live suspended fiber — the closure is still available,
+no replay needed). The final step shows cold resume from persisted JSON:
 
 ```elixir
-# Shipping address
+# Hot resume: the fiber is still live in memory
 suspended3 = SerializableCoroutine.run(suspended2, "123 Main St")
 
 # Payment (first attempt fails, loops)
-%ExternalSuspended{value: :get_payment_method} = suspended4 =
+%ExternalSuspended{value: {:get_payment_method, 142.50}} = suspended4 =
   SerializableCoroutine.run(suspended3, %{type: :card, number: "bad"})
 
 # Payment retry
 suspended5 = SerializableCoroutine.run(suspended4, %{type: :card, number: "4111..."})
 
-# Complete
+# Cold resume: after serialisation and process restart
 {:ok, json} = load_from_storage()
 %Coroutine.Completed{result: {{:ok, receipt}, final_log}} =
   SerializableCoroutine.run(json, sc, %{type: :card, number: "4111..."})
