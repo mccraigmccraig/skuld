@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: e171f4b7b61d67c3ddee35029ad60782aedde96e -->
+<!-- last-updated-against: f1986718c3c5d283fd8a63232b284097e1de3c40 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -11,11 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `EffectSig` now generates `state_key/0` and `state_key/1` that return
-  string keys (`Atom.to_string(sig(...))`) instead of atoms, preparing for
-  full string-key migration of `env.state`. Manual `state_key/1` removed
-  from `State`, `Reader`, `Writer` (now generated). `AtomicState.state_key/1`
-  updated to return a string via `defoverridable`.
+- All `env.state` keys migrated from atoms/tagged-tuples to strings:
+  - `EffectSig` now generates `state_key/0` and `state_key/1` returning
+    `Atom.to_string(sig(...))` instead of atoms. Manual `state_key/1` removed
+    from `State`, `Reader`, `Writer` (now generated). `AtomicState.state_key/1`
+    updated with `defoverridable` and string conversion.
+  - `State`, `Reader`, `Writer` handlers split `handler_sig` (atom, for
+    evidence dispatch) from `sk` (string, for env.state). `IHandle`
+    implementations updated to use `state_key()`.
+  - `EffectLogger` internal keys (`:log`, `:state_keys`, `:resume_value`)
+    converted from tagged tuples to `"Elixir.Module::key"` strings.
+  - `Command`, `Port`, `Transaction.Ecto`, `Transaction.Noop`,
+    `BatchExecutor` `@state_key` converted from tagged tuples/atoms to strings.
+  - `EnvStateSnapshot` simplified: `encode_key`/`decode_key` removed
+    (strings pass through JSON natively). Eliminates `String.to_existing_atom/1`
+    fragility. Fixes cold resume test failures.
 
 ### Added
 
