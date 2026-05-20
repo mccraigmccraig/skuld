@@ -9,115 +9,146 @@ Eliminate N+1 queries with `deffetch` operations and `FiberPool`.
 Each `deffetch` call suspends the current fiber, signalling the scheduler
 to hold the request. `FiberPool` collects suspended fetch calls across
 *all* concurrent fibers and dispatches them in batches to your executor.
-Within a `query do` block, dependency
-analysis adds automatic concurrency for independent fetches. Together
-they eliminate N+1 queries without restructuring code.
+Within a `query do` block, dependency analysis adds automatic concurrency
+for independent fetches. Together they eliminate N+1 queries without
+restructuring code.
 
-In the example below, `build_account_summary` expresses domain logic with very
-little ceremony. When it runs, the system provides concurrency at two
-levels: within each query block (`fetch_user` and `fetch_orders` run
-together), and globally — `deffetch` calls from all concurrent
-invocations are batched into single round-trips.
+## When you need this
 
-## The N+1 problem
+If your data lives in a single SQL database, Ecto joins and preloads
+handle N+1 well — the query planner does the heavy lifting. This recipe
+is for when your data lives *behind remote APIs*: REST services, gRPC
+endpoints, GraphQL resolvers, S3 listings — anything without a join engine.
 
-Each user has orders, and each order has line items. A naive approach walks
-the tree row-by-row:
+## The N+1 problem with remote APIs
+
+You're building a blog analytics dashboard. Users, posts, and comments
+live behind three separate services — each exposes a "batch by ID"
+endpoint, but none can join across services.
+
+A naive approach walks the tree row-by-row, making one HTTP call per
+entity:
 
 ```elixir
-# 1 + N + (N * M): one query for users, then N for orders, then N * M for details
-users <- Repo.all(User)
-Enum.map(users, fn user ->
-  {:ok, orders} <- Repo.get_by(Order, user_id: user.id)
+# 1 + N + (N * M) HTTP calls: one for users, then N for posts, then N * M for comments
+{:ok, users} <- UserService.list_users()
 
-  orders_with_details =
-    Enum.map(orders, fn order ->
-      {:ok, details} <- Repo.get_by(OrderDetail, order_id: order.id)
-      Map.put(order, :details, details)
+Enum.map(users, fn user ->
+  {:ok, posts} <- PostService.get_posts(user.id)
+
+  posts_with_counts =
+    Enum.map(posts, fn post ->
+      {:ok, comments} <- CommentService.get_comments(post.id)
+      Map.put(post, :comment_count, length(comments))
     end)
 
-  {user, orders_with_details}
+  {user, posts_with_counts}
 end)
 ```
 
-A conventional bulk approach flattens the problem into a single streaming
-query — join users to orders to details in one pass, or preload the
-associations:
+For 10 users averaging 5 posts each, that's 1 + 10 + 50 = 61 HTTP
+round-trips. Each round-trip might be 50-200ms. Your dashboard takes
+*seconds* to render.
+
+## The manual batching alternative
+
+Each service has bulk endpoints (`/users?ids=1,2,3`), so you batch
+manually:
 
 ```elixir
-# Single streaming query with joins — no N+1, but couples queries to shape
-from(u in User,
-  join: o in Order, on: o.user_id == u.id,
-  join: d in OrderDetail, on: d.order_id == o.id,
-  select: {u, o, d}
-)
-|> Repo.stream()
-|> Stream.chunk_by(&elem(&1, 0))
-|> Enum.map(fn [{user, _, _} | _] = rows ->
-  orders = Enum.map(rows, fn {_, order, detail} ->
-    order |> Map.put(:details, [detail])
+# Step 1: batch all users
+{:ok, users} <- UserService.list_users()
+user_ids = Enum.map(users, & &1.id)
+
+# Step 2: batch all posts for all users
+{:ok, posts} <- PostService.get_posts_bulk(user_ids)
+
+# Step 3: group posts by user, extract post IDs, batch comments
+posts_by_user = Enum.group_by(posts, & &1.user_id)
+post_ids = Enum.map(posts, & &1.id)
+{:ok, comments} <- CommentService.get_comments_bulk(post_ids)
+comments_by_post = Enum.group_by(comments, & &1.post_id)
+
+# Step 4: reassemble the tree
+Enum.map(users, fn user ->
+  user_posts = Map.get(posts_by_user, user.id, [])
+  |> Enum.map(fn post ->
+    count = Map.get(comments_by_post, post.id, []) |> length()
+    Map.put(post, :comment_count, count)
   end)
-  {user, orders}
+  {user, user_posts}
 end)
 ```
 
-This works well when you have Ecto and SQL — the query planner does the
-heavy lifting. But it couples your domain logic to a specific query shape
-and relies on relational joins. When your data lives behind REST APIs,
-gRPC services, or other storage that supports bulk-by-id lookups, Skuld's
-approach gives you the same batching benefit without the coupling.
+This works — 3 HTTP calls instead of 61. But the orchestration code is
+brittle: three `Enum.group_by` calls, manual ID extraction at each level,
+and the reassembly logic is coupled to the batching strategy. Add another
+level of nesting (comment reactions? sub-comments?) and it gets worse.
 
-## Another solution: `query do` with streaming
+## Skuld's approach
 
-Define fetch operations with `deffetch`:
+Declare the fetches as `deffetch` operations. Each one describes a single
+logical fetch — the batching is automatic:
 
 ```elixir
-defmodule AccountQueries do
+defmodule BlogQueries do
   use Skuld.Query
 
   deffetch fetch_user(id :: String.t()) :: User.t() | nil
-  deffetch fetch_orders(user_id :: String.t()) :: [Order.t()]
-  deffetch fetch_order_details(order_id :: String.t()) :: [OrderDetail.t()]
+  deffetch fetch_posts(user_id :: String.t()) :: [Post.t()]
+  deffetch fetch_comment_count(post_id :: String.t()) :: non_neg_integer()
 end
 ```
 
 Build a summary for one user. The `query` block automatically batches
-calls across concurrent transforms. `Query.map` spawns each detail fetch
-as a fiber so they batch together:
+calls across concurrent transforms. `Query.map` spawns each comment-count
+fetch as a fiber so they batch together:
 
 ```elixir
-defquery build_account_summary(user_id, month) do
-  user <- AccountQueries.fetch_user(user_id)
-  orders <- AccountQueries.fetch_orders(user_id, month)
-  order_ids = Enum.map(orders, & &1.id)
+defquery build_user_summary(user_id) do
+  user <- BlogQueries.fetch_user(user_id)
+  posts <- BlogQueries.fetch_posts(user_id)
 
-  details_list <- Query.map(order_ids, &AccountQueries.fetch_order_details/1)
+  post_ids = Enum.map(posts, & &1.id)
+  comment_counts <- Query.map(post_ids, &BlogQueries.fetch_comment_count/1)
 
-  make_account_summary(user, orders, details_list)
+  posts_with_counts =
+    Enum.zip_with(posts, comment_counts, fn post, count ->
+      Map.put(post, :comment_count, count)
+    end)
+
+  {user, posts_with_counts}
 end
 ```
 
-Feed a stream of user IDs through `Brook.map` with concurrency.
-The query system batches together calls of the same `deffetch` function from
-*all* concurrent `build_account_summary` transforms:
+Notice there's no batching code — no `Enum.group_by`, no manual ID
+extraction, no tree reassembly. You write the domain logic for *one*
+user, and the system handles the rest.
+
+## Streaming with concurrency
+
+Feed a stream of user IDs through `Brook.map` with concurrency. The
+query system batches `deffetch` calls from *all* concurrent
+`build_user_summary` transforms:
 
 ```elixir
-defcomp build_account_summaries(user_ids_source, month) do
-  concurrency <- Reader.ask(AccountQueries.Concurrency)
+defcomp build_user_summaries(user_ids_source) do
+  concurrency <- Reader.ask(BlogQueries.Concurrency)
 
   Brook.map(
     user_ids_source,
-    &build_account_summary(&1, month),
+    &build_user_summary/1,
     concurrency: concurrency
   )
 end
 
 comp do
   user_ids_source <- Brook.from_enum(user_ids, buffer: 20)
-  summaries <- build_account_summaries(user_ids_source, "2026-01")
+  summaries <- build_user_summaries(user_ids_source)
   Brook.to_list(summaries)
 end
-|> Skuld.Query.with_executor(AccountQueries, AccountExecutor)
+|> Skuld.Query.with_executor(BlogQueries, BlogAPIExecutor)
+|> Reader.with_handler(%{BlogQueries.Concurrency => 4})
 |> Channel.with_handler()
 |> FiberPool.with_handler()
 |> Comp.run!()
@@ -125,42 +156,65 @@ end
 
 ## What happens
 
-With `concurrency: 4`, the FiberPool runs 4 `build_account_summary` transforms concurrently.
-As each transform calls `fetch_user(user_id)`, the query system holds
-the call and waits for other transforms to reach their first fetch.
-When enough calls accumulate, they're batched into a single round-trip:
+With `concurrency: 4`, the FiberPool runs 4 `build_user_summary`
+transforms concurrently. As each transform calls `fetch_user(user_id)`,
+the query system holds the call and waits for other transforms to reach
+their first fetch. When enough calls accumulate, they're batched into a
+single round-trip:
 
 - **10 users, concurrency 4**: `fetch_user` calls arrive in batches
-  of [4, 4, 2]. Same for `fetch_orders`.
-- **5 users, concurrency 1**: each batch has only 1 call — no
-  batching benefit.
+  of [4, 4, 2] → 3 HTTP calls. Same for `fetch_posts`.
+- **10 users, concurrency 1**: each batch has only 1 call → no
+  batching benefit (10 HTTP calls per fetch type).
 
-Dependent calls (like `fetch_order_details` which depends on
-`orders` from the previous fetch) wait for their inputs and run in
-subsequent rounds.
+Dependent calls (like `fetch_comment_count` which depends on `posts`
+from the previous fetch) wait for their inputs and run in subsequent
+rounds — but they still batch across all concurrent transforms.
 
-## Wiring an executor
+## Wiring the executor
+
+The executor receives a *list* of `{ref, op}` tuples — all the calls
+that were batched together — and returns a map keyed by ref:
 
 ```elixir
-defmodule AccountExecutor do
-  @behaviour AccountQueries
+defmodule BlogAPIExecutor do
+  @behaviour BlogQueries
 
   @impl true
   def fetch_user(ops) do
-    results = ops |> Enum.map(fn {_ref, op} -> op end) |> BulkAPI.bulk_fetch_users()
-    Map.new(ops, fn {ref, op} -> {ref, Map.fetch!(results, op)} end)
+    ids = Enum.map(ops, fn {_ref, %BlogQueries.FetchUser{id: id}} -> id end)
+    results = UserAPI.bulk_get_users(ids)
+
+    Map.new(ops, fn {ref, %{id: id}} ->
+      {ref, Map.get(results, id)}
+    end)
   end
 
   @impl true
-  def fetch_orders(ops) do
-    results = ops |> Enum.map(fn {_ref, op} -> op end) |> BulkAPI.bulk_fetch_orders()
-    Map.new(ops, fn {ref, op} -> {ref, Map.fetch!(results, op)} end)
+  def fetch_posts(ops) do
+    user_ids = Enum.map(ops, fn {_ref, %BlogQueries.FetchPosts{user_id: uid}} -> uid end)
+    results = PostAPI.bulk_get_posts_by_users(user_ids)
+
+    Map.new(ops, fn {ref, %{user_id: uid}} ->
+      {ref, Map.get(results, uid, [])}
+    end)
+  end
+
+  @impl true
+  def fetch_comment_count(ops) do
+    post_ids = Enum.map(ops, fn {_ref, %BlogQueries.FetchCommentCount{post_id: pid}} -> pid end)
+    results = CommentAPI.bulk_get_comment_counts(post_ids)
+
+    Map.new(ops, fn {ref, %{post_id: pid}} ->
+      {ref, Map.fetch!(results, pid)}
+    end)
   end
 end
 ```
 
-Each executor method receives a *list* of `{ref, op}` tuples — all the
-calls that were batched together. Return a map keyed by ref.
+The batching interface is the same regardless of what's behind the
+executor: a REST API, a gRPC stub, a Cachex cache, or an in-memory
+map for testing.
 
 ## How it works
 
@@ -169,6 +223,9 @@ Independent operations are held and dispatched in batches via `FiberPool`.
 Dependent operations wait for their inputs and run in subsequent rounds.
 The result is automatic N+1 elimination — no manual batching, no data
 loader boilerplate, no code restructuring.
+
+Batching, concurrency, and data fetching are three separate concerns.
+Skuld gives you the first two for free so you only write the third.
 
 <!-- nav:footer:start -->
 

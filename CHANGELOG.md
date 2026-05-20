@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: f1986718c3c5d283fd8a63232b284097e1de3c40 -->
+<!-- last-updated-against: fcfc57fecfe0e60ceb901a74074764ed2fe33959 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stacktrace investigation tests confirming that `raise` and `throw` inside
   computations preserve stacktraces with domain code frames, while
   `Throw.throw` returns the bare error value without location information.
+
+### Improved
+
+- Batch-loading recipe rewritten with remote API data sources (UserService,
+  PostService, CommentService) instead of Ecto schemas. The example now
+  demonstrates batching across REST APIs where SQL joins don't exist, so the
+  "why not just use Ecto preloads?" objection never arises.
 
 ## [0.28.0] — 2026-05-16
 
