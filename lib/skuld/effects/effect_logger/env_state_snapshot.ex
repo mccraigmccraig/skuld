@@ -32,9 +32,9 @@ defmodule Skuld.Effects.EffectLogger.EnvStateSnapshot do
 
   alias Skuld.Comp.SerializableStruct
 
-  @effect_logger_state_key {Skuld.Effects.EffectLogger, :log}
-  @resume_value_key {Skuld.Effects.EffectLogger, :resume_value}
-  @state_keys_key {Skuld.Effects.EffectLogger, :state_keys}
+  @effect_logger_state_key "Elixir.Skuld.Effects.EffectLogger::log"
+  @resume_value_key "Elixir.Skuld.Effects.EffectLogger::resume_value"
+  @state_keys_key "Elixir.Skuld.Effects.EffectLogger::state_keys"
 
   defstruct entries: %{}
 

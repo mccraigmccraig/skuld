@@ -171,8 +171,8 @@ defmodule Skuld.Effects.EffectLogger do
   alias Skuld.Effects.EffectLogger.EnvStateSnapshot
   alias Skuld.Effects.EffectLogger.Log
 
-  @state_key {__MODULE__, :log}
-  @state_keys_key {__MODULE__, :state_keys}
+  @state_key "Elixir.Skuld.Effects.EffectLogger::log"
+  @state_keys_key "Elixir.Skuld.Effects.EffectLogger::state_keys"
   @sig __MODULE__
 
   #############################################################################
@@ -758,7 +758,7 @@ defmodule Skuld.Effects.EffectLogger do
   ## Cold Resume
   #############################################################################
 
-  @resume_value_key {__MODULE__, :resume_value}
+  @resume_value_key "Elixir.Skuld.Effects.EffectLogger::resume_value"
 
   # Resume value helpers - use wrapper tuple to distinguish nil from unset
   defp get_resume_value(env) do
