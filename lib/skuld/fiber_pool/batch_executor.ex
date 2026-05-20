@@ -40,7 +40,7 @@ defmodule Skuld.FiberPool.BatchExecutor do
   alias Skuld.Comp
   alias Skuld.Comp.Env
 
-  @state_key {__MODULE__, :executors}
+  @state_key "Elixir.Skuld.FiberPool.BatchExecutor::executors"
 
   @type batch_key :: term()
   @type request_id :: reference()

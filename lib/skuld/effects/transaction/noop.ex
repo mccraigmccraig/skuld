@@ -37,7 +37,7 @@ defmodule Skuld.Effects.Transaction.Noop do
   alias Skuld.Comp.Types
   alias Skuld.Effects.Transaction
 
-  @state_key {__MODULE__, :config}
+  @state_key "Elixir.Skuld.Effects.Transaction.Noop::config"
 
   @doc """
   Install a no-op Transaction handler.

@@ -27,7 +27,7 @@ if Code.ensure_loaded?(Ecto) do
     alias Skuld.Comp.Types
     alias Skuld.Effects.Transaction
 
-    @state_key {__MODULE__, :config}
+    @state_key "Elixir.Skuld.Effects.Transaction.Ecto::config"
 
     #############################################################################
     ## Handler Installation

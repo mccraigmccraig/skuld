@@ -91,7 +91,7 @@ defmodule Skuld.Effects.Port do
   alias Skuld.Effects.Throw
   # Single atom key for all Port state — sig() is __MODULE__ (a plain atom),
   # faster than tuple keys in map lookups.
-  @state_key @__sig__
+  @state_key "Elixir.Skuld.Effects.Port"
 
   #############################################################################
   ## Effect State
