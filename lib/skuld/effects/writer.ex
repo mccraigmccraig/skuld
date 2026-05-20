@@ -246,7 +246,8 @@ defmodule Skuld.Effects.Writer do
     tag = Keyword.get(opts, :tag, @default_tag)
     output = Keyword.get(opts, :output)
     suspend = Keyword.get(opts, :suspend)
-    sk = sig(tag)
+    handler_sig = sig(tag)
+    sk = state_key(tag)
 
     scoped_opts =
       [default: []]
@@ -278,7 +279,7 @@ defmodule Skuld.Effects.Writer do
 
     comp
     |> Comp.with_scoped_state(sk, initial, scoped_opts)
-    |> Comp.with_handler(sk, handler)
+    |> Comp.with_handler(handler_sig, handler)
   end
 
   @doc """
@@ -306,7 +307,7 @@ defmodule Skuld.Effects.Writer do
   """
   @spec get_log(Types.env(), atom()) :: [term()]
   def get_log(env, tag \\ @default_tag) do
-    Env.get_state(env, sig(tag), [])
+    Env.get_state(env, state_key(tag), [])
   end
 
   #############################################################################
@@ -315,19 +316,21 @@ defmodule Skuld.Effects.Writer do
 
   @impl Skuld.Comp.IHandle
   def handle(op, env, k) do
+    sk = state_key()
+
     case op do
       {@tell_op, msg} ->
-        current = Env.get_state!(env, @__sig__)
+        current = Env.get_state!(env, sk)
         updated = [msg | current]
-        new_env = Env.put_state(env, @__sig__, updated)
+        new_env = Env.put_state(env, sk, updated)
         k.(updated, new_env)
 
       @peek_op ->
-        current = Env.get_state!(env, @__sig__)
+        current = Env.get_state!(env, sk)
         k.(current, env)
 
       {@set_log_op, new_log} ->
-        new_env = Env.put_state(env, @__sig__, new_log)
+        new_env = Env.put_state(env, sk, new_log)
         k.(:ok, new_env)
     end
   end
