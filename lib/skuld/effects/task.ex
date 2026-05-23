@@ -22,7 +22,7 @@ defmodule Skuld.Effects.Task do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Coroutine.Handle
-  alias Skuld.Effects.Fresh
+  alias Skuld.Effects.FreshInt
   alias Skuld.FiberPool.PendingWork
 
   @sig __MODULE__
@@ -153,8 +153,8 @@ defmodule Skuld.Effects.Task do
       """
     end
 
-    {handle_id, env} = Comp.call(Fresh.fresh_uuid(), env, &Comp.identity_k/2)
-    {pool_id, env} = Comp.call(Fresh.fresh_uuid(), env, &Comp.identity_k/2)
+    {handle_id, env} = Comp.call(FreshInt.fresh_integer(), env, &Comp.identity_k/2)
+    {pool_id, env} = Comp.call(FreshInt.fresh_integer(), env, &Comp.identity_k/2)
     handle = Handle.new(handle_id, pool_id)
 
     pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())

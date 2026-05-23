@@ -57,7 +57,7 @@ defmodule Skuld.FiberPool.Main do
       {result, env}
     else
       task_sup = Env.get_state(env, Skuld.Effects.Task.task_supervisor_key())
-      {pool_id, env} = Comp.call(Skuld.Effects.Fresh.fresh_uuid(), env, &Comp.identity_k/2)
+      {pool_id, env} = Comp.call(Skuld.Effects.FreshInt.fresh_integer(), env, &Comp.identity_k/2)
       state = FiberPoolState.new(id: pool_id, task_supervisor: task_sup)
 
       # Seed state.env_state from main computation's env.state,

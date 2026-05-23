@@ -4,8 +4,7 @@ defmodule Skuld.Query.ContractTest do
 
   alias Skuld.Comp
   alias Skuld.Effects.FiberPool
-  alias Skuld.Effects.Fresh
-  alias Skuld.Effects.Fresh.Test, as: FreshTest
+  alias Skuld.Effects.FreshInt
   alias Skuld.FiberPool.BatchExecutor
 
   # ---------------------------------------------------------------
@@ -165,11 +164,8 @@ defmodule Skuld.Query.ContractTest do
 
       env =
         Skuld.Comp.Env.new()
-        |> Skuld.Comp.Env.put_state(Fresh.sig(), %FreshTest.State{
-          counter: 0,
-          namespace: Uniq.UUID.uuid4()
-        })
-        |> Skuld.Comp.Env.with_handler(Fresh, &FreshTest.handle/3)
+        |> Skuld.Comp.Env.put_state(FreshInt.sig(), %FreshInt.State{counter: 0})
+        |> Skuld.Comp.Env.with_handler(FreshInt, &FreshInt.handle/3)
 
       k = fn result, e -> {result, e} end
       {suspend, _env} = comp.(env, k)
@@ -182,7 +178,7 @@ defmodule Skuld.Query.ContractTest do
                }
              } = suspend
 
-      assert is_binary(ref)
+      assert is_integer(ref)
     end
   end
 

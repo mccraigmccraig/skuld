@@ -52,7 +52,7 @@ defmodule Skuld.Effects.FiberPool do
   alias Skuld.FiberPool.Main, as: FiberPoolMain
   alias Skuld.FiberPool.PendingWork
   alias Skuld.Effects.Throw
-  alias Skuld.Effects.Fresh
+  alias Skuld.Effects.FreshInt
 
   @sig __MODULE__
 
@@ -475,7 +475,7 @@ defmodule Skuld.Effects.FiberPool do
       end)
 
     drain_comp
-    |> Fresh.Test.with_handler()
+    |> FreshInt.with_handler()
     |> Comp.with_scoped_state(PendingWork.env_key(), PendingWork.new())
     |> Comp.with_handler(@sig, &handle/3)
   end
@@ -486,8 +486,8 @@ defmodule Skuld.Effects.FiberPool do
 
   defp handle(%FiberOp{comp: comp, opts: _opts}, env, k) do
     # Generate a unique fiber ID and pool ID via Fresh
-    {id, id_env} = Comp.call(Fresh.fresh_uuid(), env, &Comp.identity_k/2)
-    {pool_id, id_env} = Comp.call(Fresh.fresh_uuid(), id_env, &Comp.identity_k/2)
+    {id, id_env} = Comp.call(FreshInt.fresh_integer(), env, &Comp.identity_k/2)
+    {pool_id, id_env} = Comp.call(FreshInt.fresh_integer(), id_env, &Comp.identity_k/2)
 
     fiber_env = fiber_env(id_env)
     fiber = Coroutine.new(comp, fiber_env, id: id)
@@ -592,8 +592,8 @@ defmodule Skuld.Effects.FiberPool do
 
   # Initialise scope tracking state in env.
   defp setup_scope(env) do
-    {uuid, env} = Comp.call(Fresh.fresh_uuid(), env, &Comp.identity_k/2)
-    scope_key = {__MODULE__, :scope_fibers, uuid}
+    {id, env} = Comp.call(FreshInt.fresh_integer(), env, &Comp.identity_k/2)
+    scope_key = {__MODULE__, :scope_fibers, id}
     env = Env.put_state(env, scope_key, [])
     {env, scope_key}
   end
