@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 0769e6e02dc41dd1be57da7d0799538351c3ce34 -->
+<!-- last-updated-against: 99016cef225b80753a3a917a9238f9d8b7118e2f -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+
+- `FreshInt` effect — zero-dependency integer counter for unique ID
+  generation. `fresh_integer()` returns the current counter and increments.
+  `with_handler(comp, seed: 0)` sets the starting value. Unlike `Fresh`
+  (which requires `Uniq` for UUID generation), `FreshInt` has no external
+  dependencies. A single `with_handler` works for both test and production.
+
+### Changed
+
+- FiberPool, Task, Channel, and Query now use `FreshInt.fresh_integer()`
+  for ID generation instead of `Fresh.fresh_uuid()`. Removes the `Uniq`
+  dependency from the core concurrency and query modules.
+- FiberPool auto-installs `FreshInt.with_handler()` (was `Fresh.Test`).
 
 ## [0.29.0] — 2026-05-23
 
