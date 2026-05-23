@@ -21,7 +21,7 @@ defmodule Skuld.CoroutineTest do
       env = Env.new()
       comp = 42
 
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       assert match?(%Pending{}, fiber)
       assert fiber.computation == comp
@@ -33,8 +33,8 @@ defmodule Skuld.CoroutineTest do
       env = Env.new()
       comp = 42
 
-      fiber1 = Coroutine.new(comp, env)
-      fiber2 = Coroutine.new(comp, env)
+      fiber1 = Coroutine.new(comp, env, id: make_ref())
+      fiber2 = Coroutine.new(comp, env, id: make_ref())
 
       refute fiber1.id == fiber2.id
     end
@@ -62,7 +62,7 @@ defmodule Skuld.CoroutineTest do
         |> State.with_handler(5)
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%Completed{}, fiber)
@@ -78,7 +78,7 @@ defmodule Skuld.CoroutineTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
@@ -96,7 +96,7 @@ defmodule Skuld.CoroutineTest do
         |> Throw.with_handler()
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%Errored{}, fiber)
@@ -110,7 +110,7 @@ defmodule Skuld.CoroutineTest do
       end
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%Errored{}, fiber)
@@ -141,7 +141,7 @@ defmodule Skuld.CoroutineTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
@@ -161,7 +161,7 @@ defmodule Skuld.CoroutineTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
@@ -189,7 +189,7 @@ defmodule Skuld.CoroutineTest do
         |> Throw.with_handler()
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
@@ -236,7 +236,7 @@ defmodule Skuld.CoroutineTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
@@ -265,7 +265,7 @@ defmodule Skuld.CoroutineTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       cancelled = Coroutine.cancel(fiber, :timeout)
@@ -301,7 +301,7 @@ defmodule Skuld.CoroutineTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
@@ -321,7 +321,7 @@ defmodule Skuld.CoroutineTest do
         |> Yield.with_handler()
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
@@ -335,7 +335,7 @@ defmodule Skuld.CoroutineTest do
     test "cancel without leave_scope (simple suspend, no scoped effects)" do
       comp = Yield.yield(:value) |> Yield.with_handler()
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%ExternalSuspended{}, fiber)
@@ -369,7 +369,7 @@ defmodule Skuld.CoroutineTest do
         |> Throw.with_handler()
 
       env = Env.new()
-      fiber = Coroutine.new(comp, env)
+      fiber = Coroutine.new(comp, env, id: make_ref())
 
       fiber = Coroutine.run(fiber)
       assert match?(%Errored{}, fiber)
