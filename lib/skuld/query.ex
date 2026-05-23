@@ -29,6 +29,7 @@ defmodule Skuld.Query do
   alias Skuld.Comp
   alias Skuld.Comp.InternalSuspend
   alias Skuld.Effects.FiberPool
+  alias Skuld.Effects.Fresh
 
   @doc false
   defmacro __using__(opts) do
@@ -42,7 +43,8 @@ defmodule Skuld.Query do
   def batchable_op(batch_key, op) do
     fn env, k ->
       resume = fn result, resume_env -> k.(result, resume_env) end
-      suspend = InternalSuspend.batch(batch_key, op, make_ref(), resume)
+      {request_id, env} = Comp.call(Fresh.fresh_uuid(), env, &Comp.identity_k/2)
+      suspend = InternalSuspend.batch(batch_key, op, request_id, resume)
       {suspend, env}
     end
   end

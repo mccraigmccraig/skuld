@@ -4,6 +4,8 @@ defmodule Skuld.Query.ContractTest do
 
   alias Skuld.Comp
   alias Skuld.Effects.FiberPool
+  alias Skuld.Effects.Fresh
+  alias Skuld.Effects.Fresh.Test, as: FreshTest
   alias Skuld.FiberPool.BatchExecutor
 
   # ---------------------------------------------------------------
@@ -161,9 +163,15 @@ defmodule Skuld.Query.ContractTest do
     test "caller produces InternalSuspend with correct batch key and op" do
       comp = TestQueries.get_user("123")
 
-      env = Skuld.Comp.Env.new()
-      k = fn result, e -> {result, e} end
+      env =
+        Skuld.Comp.Env.new()
+        |> Skuld.Comp.Env.put_state(Fresh.sig(), %FreshTest.State{
+          counter: 0,
+          namespace: Uniq.UUID.uuid4()
+        })
+        |> Skuld.Comp.Env.with_handler(Fresh, &FreshTest.handle/3)
 
+      k = fn result, e -> {result, e} end
       {suspend, _env} = comp.(env, k)
 
       assert %Skuld.Comp.InternalSuspend{
@@ -174,7 +182,7 @@ defmodule Skuld.Query.ContractTest do
                }
              } = suspend
 
-      assert is_reference(ref)
+      assert is_binary(ref)
     end
   end
 
