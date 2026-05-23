@@ -11,7 +11,6 @@ defmodule Skuld.FiberPool.FiberPoolStateTest do
     test "creates empty state" do
       state = FiberPoolState.new()
 
-      assert is_reference(state.id)
       assert state.fibers == %{}
       assert :queue.is_empty(state.run_queue)
       assert state.suspensions == %{}

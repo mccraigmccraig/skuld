@@ -485,9 +485,9 @@ defmodule Skuld.Effects.FiberPool do
   #############################################################################
 
   defp handle(%FiberOp{comp: comp, opts: _opts}, env, k) do
-    # Generate a unique fiber ID via the Fresh effect (installed by with_handler/1)
+    # Generate a unique fiber ID and pool ID via Fresh
     {id, id_env} = Comp.call(Fresh.fresh_uuid(), env, &Comp.identity_k/2)
-    pool_id = Env.get_state(id_env, {__MODULE__, :pool_id}, make_ref())
+    {pool_id, id_env} = Comp.call(Fresh.fresh_uuid(), id_env, &Comp.identity_k/2)
 
     fiber_env = fiber_env(id_env)
     fiber = Coroutine.new(comp, fiber_env, id: id)

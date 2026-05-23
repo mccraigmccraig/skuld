@@ -64,7 +64,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
   end
 
   @type t :: %__MODULE__{
-          id: reference(),
+          id: term(),
           fibers: %{fiber_id() => Coroutine.t()},
           run_queue: :queue.queue(fiber_id()),
           suspensions: %{awaiter_id() => Suspension.t()},
@@ -106,7 +106,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
     %__MODULE__{
-      id: make_ref(),
+      id: Keyword.get(opts, :id),
       fibers: %{},
       run_queue: :queue.new(),
       suspensions: %{},
