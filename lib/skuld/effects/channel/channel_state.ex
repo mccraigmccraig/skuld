@@ -7,7 +7,7 @@
 #
 # ## Fields
 #
-# - `id` - Unique channel identifier (reference)
+# - `id` - Unique channel identifier
 # - `capacity` - Maximum buffer size (positive integer)
 # - `buffer` - Queue of buffered items
 # - `status` - `:open`, `:closed`, or `{:error, reason}`
@@ -38,8 +38,8 @@
 defmodule Skuld.Effects.Channel.ChannelState do
   @moduledoc false
 
-  @type channel_id :: reference()
-  @type fiber_id :: reference()
+  @type channel_id :: term()
+  @type fiber_id :: term()
   @type status :: :open | :closed | {:error, term()}
 
   @type waiting_put :: {fiber_id(), term()}
@@ -69,10 +69,10 @@ defmodule Skuld.Effects.Channel.ChannelState do
   A capacity of 0 creates a rendezvous/synchronous channel where put always
   blocks until there is a matching take (direct handoff, no buffering).
   """
-  @spec new(non_neg_integer()) :: t()
-  def new(capacity) when is_integer(capacity) and capacity >= 0 do
+  @spec new(non_neg_integer(), keyword()) :: t()
+  def new(capacity, opts \\ []) when is_integer(capacity) and capacity >= 0 do
     %__MODULE__{
-      id: make_ref(),
+      id: Keyword.get(opts, :id),
       capacity: capacity,
       buffer: :queue.new(),
       status: :open,

@@ -57,6 +57,7 @@ defmodule Skuld.Effects.Channel do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
+  alias Skuld.Effects.Fresh
   alias Skuld.Comp.InternalSuspend
   alias Skuld.FiberPool.ChannelCoordinationState
   alias Skuld.Effects.Channel.ChannelState
@@ -73,7 +74,7 @@ defmodule Skuld.Effects.Channel do
     @moduledoc false
 
     @type t :: %__MODULE__{
-            id: reference()
+            id: term()
           }
 
     defstruct [:id]
@@ -108,7 +109,8 @@ defmodule Skuld.Effects.Channel do
   @spec new(non_neg_integer()) :: Comp.Types.computation()
   def new(capacity) when is_integer(capacity) and capacity >= 0 do
     fn env, k ->
-      state = ChannelState.new(capacity)
+      {id, env} = Comp.call(Fresh.fresh_uuid(), env, &Comp.identity_k/2)
+      state = ChannelState.new(capacity, id: id)
       env = register_channel(env, state)
       k.(Handle.new(state.id), env)
     end
