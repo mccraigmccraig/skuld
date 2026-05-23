@@ -592,7 +592,8 @@ defmodule Skuld.Effects.FiberPool do
 
   # Initialise scope tracking state in env.
   defp setup_scope(env) do
-    scope_key = {__MODULE__, :scope_fibers, make_ref()}
+    {uuid, env} = Comp.call(Fresh.fresh_uuid(), env, &Comp.identity_k/2)
+    scope_key = {__MODULE__, :scope_fibers, uuid}
     env = Env.put_state(env, scope_key, [])
     {env, scope_key}
   end
