@@ -52,6 +52,7 @@ defmodule Skuld.Effects.FiberPool do
   alias Skuld.FiberPool.Main, as: FiberPoolMain
   alias Skuld.FiberPool.PendingWork
   alias Skuld.Effects.Throw
+  alias Skuld.Effects.Fresh
 
   @sig __MODULE__
 
@@ -474,6 +475,7 @@ defmodule Skuld.Effects.FiberPool do
       end)
 
     drain_comp
+    |> Fresh.Test.with_handler()
     |> Comp.with_scoped_state(PendingWork.env_key(), PendingWork.new())
     |> Comp.with_handler(@sig, &handle/3)
   end

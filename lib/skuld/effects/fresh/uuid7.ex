@@ -43,7 +43,7 @@ defmodule Skuld.Effects.Fresh.UUID7 do
   """
   @spec with_handler(Comp.Types.computation()) :: Comp.Types.computation()
   def with_handler(comp) do
-    Comp.with_handler(comp, @sig, &handle/3)
+    Comp.with_new_handler(comp, @sig, &handle/3)
   end
 
   @impl Skuld.Comp.IInstall

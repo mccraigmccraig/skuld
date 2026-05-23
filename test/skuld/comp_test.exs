@@ -303,6 +303,50 @@ defmodule Skuld.CompTest do
     end
   end
 
+  describe "with_new_handler/3" do
+    alias Skuld.Effects.State
+
+    @state_key State.state_key(State)
+
+    test "installs handler when none exists" do
+      # State handler needs scoped state for its initial value
+      comp =
+        State.get()
+        |> Comp.with_scoped_state(@state_key, 42)
+        |> Comp.with_new_handler(State, &State.handle/3)
+
+      {result, _env} = Comp.run(comp)
+
+      assert result == 42
+    end
+
+    test "is a no-op when handler is already installed by an outer wrapper" do
+      # State.with_handler(comp, 100) is the outer wrapper — it runs first
+      # and installs both the State handler and scoped state. Then
+      # with_new_handler runs inner and sees the handler already present.
+      comp =
+        State.get()
+        |> Comp.with_new_handler(State, fn _, _, _ -> :wrong end)
+        |> State.with_handler(100)
+
+      {result, _env} = Comp.run(comp)
+
+      assert result == 100
+    end
+
+    test "handler is removed after scope exits" do
+      comp =
+        State.get()
+        |> Comp.with_scoped_state(@state_key, 7)
+        |> Comp.with_new_handler(State, &State.handle/3)
+
+      {result, final_env} = Comp.run(comp)
+
+      assert result == 7
+      assert Env.get_handler(final_env, State) == nil
+    end
+  end
+
   describe "with_handler/3 scoped handlers" do
     alias Skuld.Effects.State
 

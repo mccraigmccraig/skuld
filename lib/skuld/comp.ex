@@ -490,6 +490,32 @@ defmodule Skuld.Comp do
   end
 
   @doc """
+  Install a scoped handler for an effect, but only if no handler is already
+  installed for that signature. If a handler exists, this is a no-op —
+  the computation runs unchanged.
+
+  This is useful when a module wants a default handler but shouldn't shadow
+  an explicitly-installed one from an outer scope.
+
+  ## Example
+
+      # FiberPool auto-installs a test Fresh handler. If production code has
+      # already installed Fresh.with_uuid7_handler, this is a no-op.
+      comp
+      |> Comp.with_new_handler(Fresh, Fresh.Test.handle/2)
+  """
+  @spec with_new_handler(Types.computation(), Types.sig(), Types.handler()) :: Types.computation()
+  def with_new_handler(comp, sig, handler) do
+    fn env, k ->
+      if Env.get_handler(env, sig) do
+        call(comp, env, k)
+      else
+        call(with_handler(comp, sig, handler), env, k)
+      end
+    end
+  end
+
+  @doc """
   Install scoped state for a computation with automatic save/restore.
 
   This is a common pattern used by effect handlers to manage state that should

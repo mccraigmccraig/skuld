@@ -91,7 +91,7 @@ defmodule Skuld.Effects.Fresh.Test do
 
     comp
     |> Comp.with_scoped_state(@sig, initial_state, scoped_opts)
-    |> Comp.with_handler(@sig, &handle/3)
+    |> Comp.with_new_handler(@sig, &handle/3)
   end
 
   @impl Skuld.Comp.IInstall
