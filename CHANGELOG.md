@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] — 2026-05-23
+
 ### Added
 
 - `Comp.with_new_handler/3` — installs a scoped handler only if no handler
@@ -16,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Enables modules to provide default handlers without shadowing explicitly
   installed ones (e.g., `FiberPool` auto-installs `Fresh.Test` as a default;
   if `Fresh.UUID7` is already installed by the caller, it's a no-op).
+- Stacktrace investigation tests confirming that `raise` and `throw` inside
+  computations preserve stacktraces with domain code frames, while
+  `Throw.throw` returns the bare error value without location information.
 
 ### Changed
 
@@ -40,9 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ExternalSuspended`, `Completed`, `Errored`, `Cancelled`) relaxed from
   `id: reference()` to `id: term()`. Same for `Handle`, `FiberPoolState`,
   `ChannelState`, and `FiberPoolState.fiber_id`.
-
-### Changed
-
 - All `env.state` keys migrated from atoms/tagged-tuples to strings:
   - `EffectSig` now generates `state_key/0` and `state_key/1` returning
     `Atom.to_string(sig(...))` instead of atoms. Manual `state_key/1` removed
@@ -59,19 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (strings pass through JSON natively). Eliminates `String.to_existing_atom/1`
     fragility. Fixes cold resume test failures.
 
-### Added
-
-- Stacktrace investigation tests confirming that `raise` and `throw` inside
-  computations preserve stacktraces with domain code frames, while
-  `Throw.throw` returns the bare error value without location information.
-
 ### Improved
 
 - Batch-loading recipe rewritten with remote API data sources (UserService,
   PostService, CommentService) instead of Ecto schemas. The example now
   demonstrates batching across REST APIs where SQL joins don't exist, so the
   "why not just use Ecto preloads?" objection never arises.
-
 - Durable computation recipe rewritten with an order checkout flow that
   branches on runtime data, retries payment validation in a loop, and
   interleaves Port/State/Writer effects between yields. Demonstrates why
