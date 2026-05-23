@@ -18,8 +18,8 @@ defmodule Skuld.Coroutine.Handle do
   @moduledoc false
 
   @type t :: %__MODULE__{
-          id: reference(),
-          pool_id: reference()
+          id: term(),
+          pool_id: term()
         }
 
   @enforce_keys [:id, :pool_id]
@@ -33,11 +33,11 @@ defmodule Skuld.Coroutine.Handle do
 
   ## Parameters
 
-  - `fiber_id` - The fiber's unique identifier (reference)
-  - `pool_id` - The FiberPool's unique identifier (reference)
+  - `fiber_id` - The fiber's unique identifier
+  - `pool_id` - The FiberPool's unique identifier
   """
-  @spec new(reference(), reference()) :: t()
-  def new(fiber_id, pool_id) when is_reference(fiber_id) and is_reference(pool_id) do
+  @spec new(term(), term()) :: t()
+  def new(fiber_id, pool_id) do
     %__MODULE__{id: fiber_id, pool_id: pool_id}
   end
 
@@ -46,7 +46,7 @@ defmodule Skuld.Coroutine.Handle do
 
   Used internally by FiberPool to look up the fiber.
   """
-  @spec fiber_id(t()) :: reference()
+  @spec fiber_id(t()) :: term()
   def fiber_id(%__MODULE__{id: id}), do: id
 
   @doc """
@@ -54,6 +54,6 @@ defmodule Skuld.Coroutine.Handle do
 
   Used to verify a handle belongs to the expected pool.
   """
-  @spec pool_id(t()) :: reference()
+  @spec pool_id(t()) :: term()
   def pool_id(%__MODULE__{pool_id: pool_id}), do: pool_id
 end

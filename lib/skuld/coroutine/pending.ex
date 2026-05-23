@@ -15,7 +15,7 @@ defmodule Skuld.Coroutine.Pending do
   alias Skuld.Comp.Types
 
   @type t :: %__MODULE__{
-          id: reference(),
+          id: term(),
           computation: Types.computation(),
           env: Env.t()
         }

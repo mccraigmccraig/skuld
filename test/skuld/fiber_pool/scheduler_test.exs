@@ -10,7 +10,7 @@ defmodule Skuld.FiberPool.SchedulerTest do
     test "runs one fiber and returns :continue" do
       state = FiberPoolState.new()
       env = Env.new()
-      fiber = Coroutine.new(42, env)
+      fiber = Coroutine.new(42, env, id: 42)
       {_fid, state} = FiberPoolState.add_fiber(state, fiber)
 
       {:continue, state} = Scheduler.step(state, env)
@@ -32,9 +32,9 @@ defmodule Skuld.FiberPool.SchedulerTest do
       state = FiberPoolState.new()
       env = Env.new()
 
-      fiber1 = Coroutine.new(1, env)
-      fiber2 = Coroutine.new(2, env)
-      fiber3 = Coroutine.new(3, env)
+      fiber1 = Coroutine.new(1, env, id: 1)
+      fiber2 = Coroutine.new(2, env, id: 2)
+      fiber3 = Coroutine.new(3, env, id: 3)
 
       {fid1, state} = FiberPoolState.add_fiber(state, fiber1)
       {fid2, state} = FiberPoolState.add_fiber(state, fiber2)
@@ -65,7 +65,7 @@ defmodule Skuld.FiberPool.SchedulerTest do
         raise "boom"
       end
 
-      fiber = Coroutine.new(error_comp, env)
+      fiber = Coroutine.new(error_comp, env, id: :error_fiber)
       {fid, state} = FiberPoolState.add_fiber(state, fiber)
 
       {:done, results, _state} = Scheduler.run(state, env)
@@ -80,8 +80,8 @@ defmodule Skuld.FiberPool.SchedulerTest do
       state = FiberPoolState.new()
       env = Env.new()
 
-      fiber1 = Coroutine.new(1, env)
-      fiber2 = Coroutine.new(2, env)
+      fiber1 = Coroutine.new(1, env, id: 1)
+      fiber2 = Coroutine.new(2, env, id: 2)
 
       {_fid1, state} = FiberPoolState.add_fiber(state, fiber1)
       {_fid2, state} = FiberPoolState.add_fiber(state, fiber2)

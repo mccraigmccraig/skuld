@@ -16,7 +16,7 @@ defmodule Skuld.Coroutine.InternalSuspended do
   alias Skuld.Comp.Types
 
   @type t :: %__MODULE__{
-          id: reference(),
+          id: term(),
           k: Types.k(),
           suspend: InternalSuspend.t(),
           env: Env.t()

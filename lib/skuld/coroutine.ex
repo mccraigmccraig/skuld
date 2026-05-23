@@ -91,10 +91,10 @@ defmodule Skuld.Coroutine do
       fiber = Coroutine.new(my_comp, env)
       assert match?(%Coroutine.Pending{}, fiber)
   """
-  @spec new(Types.computation(), Types.env()) :: Pending.t()
-  def new(comp, env) do
+  @spec new(Types.computation(), Types.env(), keyword()) :: Pending.t()
+  def new(comp, env, opts \\ []) do
     %Pending{
-      id: make_ref(),
+      id: Keyword.get(opts, :id),
       computation: comp,
       env: env
     }

@@ -12,7 +12,7 @@ defmodule Skuld.Coroutine.Completed do
   alias Skuld.Comp.Env
 
   @type t :: %__MODULE__{
-          id: reference(),
+          id: term(),
           result: term(),
           env: Env.t()
         }

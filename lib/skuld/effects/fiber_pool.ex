@@ -485,20 +485,21 @@ defmodule Skuld.Effects.FiberPool do
   #############################################################################
 
   defp handle(%FiberOp{comp: comp, opts: _opts}, env, k) do
-    # Create a fiber for the computation
-    pool_id = Env.get_state(env, {__MODULE__, :pool_id}, make_ref())
+    # Generate a unique fiber ID via the Fresh effect (installed by with_handler/1)
+    {id, id_env} = Comp.call(Fresh.fresh_uuid(), env, &Comp.identity_k/2)
+    pool_id = Env.get_state(id_env, {__MODULE__, :pool_id}, make_ref())
 
-    fiber_env = fiber_env(env)
-    fiber = Coroutine.new(comp, fiber_env)
+    fiber_env = fiber_env(id_env)
+    fiber = Coroutine.new(comp, fiber_env, id: id)
     handle = Handle.new(fiber.id, pool_id)
 
     # Add to pending fibers list (scheduler will pick them up)
-    pending_work = Env.get_state(env, PendingWork.env_key(), PendingWork.new())
+    pending_work = Env.get_state(id_env, PendingWork.env_key(), PendingWork.new())
     pending_work = PendingWork.add_fiber(pending_work, fiber.id, fiber)
-    env = Env.put_state(env, PendingWork.env_key(), pending_work)
+    id_env = Env.put_state(id_env, PendingWork.env_key(), pending_work)
 
-    # Return handle immediately
-    k.(handle, env)
+    # Return handle immediately — use id_env so Fresh counter is threaded
+    k.(handle, id_env)
   end
 
   defp handle(%Await{handle: handle, raising: raising, consume: consume}, env, k) do

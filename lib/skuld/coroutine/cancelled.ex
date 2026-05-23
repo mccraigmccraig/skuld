@@ -13,7 +13,7 @@ defmodule Skuld.Coroutine.Cancelled do
   alias Skuld.Comp.Env
 
   @type t :: %__MODULE__{
-          id: reference(),
+          id: term(),
           reason: term(),
           env: Env.t() | nil
         }

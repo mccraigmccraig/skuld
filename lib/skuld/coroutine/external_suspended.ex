@@ -15,7 +15,7 @@ defmodule Skuld.Coroutine.ExternalSuspended do
   alias Skuld.Comp.Types
 
   @type t :: %__MODULE__{
-          id: reference(),
+          id: term(),
           value: term(),
           data: term(),
           k: Types.k(),

@@ -21,7 +21,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
   alias Skuld.Coroutine
   alias Skuld.Comp.InternalSuspend
 
-  @type fiber_id :: reference()
+  @type fiber_id :: term()
   # awaiter_id can be a fiber reference or :main for the main computation
   @type awaiter_id :: fiber_id() | :main
   @type task_ref :: reference()

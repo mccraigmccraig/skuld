@@ -13,7 +13,7 @@ defmodule Skuld.Coroutine.Errored do
   alias Skuld.Comp.Env
 
   @type t :: %__MODULE__{
-          id: reference(),
+          id: term(),
           error: term(),
           env: Env.t()
         }
