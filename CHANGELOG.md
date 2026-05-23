@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 99016cef225b80753a3a917a9238f9d8b7118e2f -->
+<!-- last-updated-against: ad5278b27f4b651d36c9100088b34f9c73ad2796 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.30.0] — 2026-05-23
 
 ### Added
 
