@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 16ceda7c3a40ad9c32fe5a4a0f1af95ac6756d42 -->
+<!-- last-updated-against: 0769e6e02dc41dd1be57da7d0799538351c3ce34 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -8,6 +8,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+
+- `Comp.with_new_handler/3` — installs a scoped handler only if no handler
+  already exists for the signature. If a handler is present, it's a no-op.
+  Enables modules to provide default handlers without shadowing explicitly
+  installed ones (e.g., `FiberPool` auto-installs `Fresh.Test` as a default;
+  if `Fresh.UUID7` is already installed by the caller, it's a no-op).
+
+### Changed
+
+- `make_ref/0` eliminated from all Skuld core and pure handler modules.
+  Unique IDs are now generated via the `Fresh.fresh_uuid()` effect, keeping
+  core computation primitives side-effect-free. The only remaining
+  `make_ref()` is in `AsyncCoroutine` for IPC mailbox correlation.
+- `Coroutine.new/2` becomes `Coroutine.new/3` with an `:id` option
+  — the caller provides the fiber ID instead of generating it internally.
+- `Handle.new/2` guards relaxed from `is_reference/1` to accept any term
+  (fiber IDs are now UUID strings from `Fresh`).
+- `FiberPool` auto-installs `Fresh.Test` as a default handler via
+  `with_new_handler`, and generates fiber/scope/pool IDs via
+  `Comp.call(Fresh.fresh_uuid(), ...)`.
+- `ChannelState.new/1` accepts an `:id` option; `Channel.new/1` generates
+  the ID via `Fresh.fresh_uuid()`.
+- `Query.batchable_op/2` generates batch request IDs via `Fresh.fresh_uuid()`.
+- `FiberPoolState.new/1` accepts an `:id` option; pool state IDs generated
+  via `Fresh.fresh_uuid()` in `drain_pending`.
+- `Task` handler generates `handle_id` and `pool_id` via `Fresh.fresh_uuid()`.
+- Coroutine struct type specs (`Pending`, `InternalSuspended`,
+  `ExternalSuspended`, `Completed`, `Errored`, `Cancelled`) relaxed from
+  `id: reference()` to `id: term()`. Same for `Handle`, `FiberPoolState`,
+  `ChannelState`, and `FiberPoolState.fiber_id`.
 
 ### Changed
 
