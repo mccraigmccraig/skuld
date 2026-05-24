@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `Skuld.Credo.CompPureRedundant` wrapped in `if Code.ensure_loaded?(Credo.Check)`
+  so Skuld can be compiled as a transitive dependency without Credo installed.
+
 ## [0.30.0] — 2026-05-23
 
 ### Added
