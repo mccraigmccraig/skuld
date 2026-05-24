@@ -13,6 +13,8 @@ defmodule Skuld.Comp.ForeignSuspend do
 
   ## Fields
 
+  - `id` — unique identifier (from `FreshInt.fresh_integer()`), used by the
+    foreign platform to correlate a resolved resource back to this suspension
   - `resume` — continuation, receives `(val, env) -> {result, env}`
   - `payload` — opaque handle for the foreign platform
   """
@@ -20,11 +22,13 @@ defmodule Skuld.Comp.ForeignSuspend do
   alias Skuld.Comp.Env
 
   @type t :: %__MODULE__{
+          id: term(),
           resume: (term(), Env.t() -> {term(), Env.t()}),
           payload: term()
         }
 
-  defstruct [:resume, :payload]
+  @enforce_keys [:id, :resume, :payload]
+  defstruct [:id, :resume, :payload]
 
   defimpl Skuld.Comp.ISentinel do
     def run(suspend, env) do
