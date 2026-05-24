@@ -115,14 +115,14 @@ defmodule Skuld.ForeignSuspendTest do
 
       resume = fn resolved ->
         assert resolved == %{1 => :done}
-        :closure_returned
+        {:closure_returned, Env.new()}
       end
 
       env = Env.new()
       agg = %ForeignSuspensions{id: :a, suspensions: suspends, env: env, resume: resume}
 
       result = Coroutine.call(agg, %{1 => :done})
-      assert result == :closure_returned
+      assert %Completed{id: :a, result: :closure_returned} = result
     end
   end
 
@@ -143,12 +143,12 @@ defmodule Skuld.ForeignSuspendTest do
     end
 
     test "run ForeignSuspensions delegates to resume closure" do
-      resume = fn _resolved -> :ran end
+      resume = fn _resolved -> {:ran, Env.new()} end
       env = Env.new()
       agg = %ForeignSuspensions{id: :a, suspensions: [], env: env, resume: resume}
 
       result = Coroutine.run(agg, %{1 => :val})
-      assert result == :ran
+      assert %Completed{id: :a, result: :ran} = result
     end
   end
 

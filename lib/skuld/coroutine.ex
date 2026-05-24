@@ -177,8 +177,16 @@ defmodule Skuld.Coroutine do
     execute_and_handle(fiber, sentinel_env, fn -> {sentinel_result, sentinel_env} end)
   end
 
-  def run(%ForeignSuspensions{resume: resume}, resolved) do
-    resume.(resolved)
+  def run(%ForeignSuspensions{resume: resume, id: id}, resolved) do
+    {result, result_env} = resume.(resolved)
+
+    case result do
+      %ForeignSuspensions{} = fs ->
+        ISentinel.run(fs, result_env)
+
+      _ ->
+        %Completed{id: id, result: result, env: result_env}
+    end
   end
 
   def run(fiber, _value) do
@@ -240,8 +248,14 @@ defmodule Skuld.Coroutine do
     do_resume(fiber, resume, value, env)
   end
 
-  def call(%ForeignSuspensions{resume: resume}, resolved) do
-    resume.(resolved)
+  def call(%ForeignSuspensions{resume: resume, id: id}, resolved) do
+    {result, result_env} = resume.(resolved)
+
+    case result do
+      %ForeignSuspensions{} = fs -> fs
+      %Completed{} = c -> c
+      _ -> %Completed{id: id, result: result, env: result_env}
+    end
   end
 
   def call(fiber, _value) do
