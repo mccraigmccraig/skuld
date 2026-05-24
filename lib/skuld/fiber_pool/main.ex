@@ -209,13 +209,6 @@ defmodule Skuld.FiberPool.Main do
       {:batch_ready, state} ->
         {state, env} = Batching.execute_pending_batches(state, env)
         run_until_await_satisfied(state, env, awaiter_id, resume, mode)
-
-      {:foreign_suspends, state} ->
-        bundle_foreign_suspensions(state, env, awaiter_id, resume, mode)
-
-        # Reserved for future error handling
-        # {:error, reason, _state} ->
-        #   {{:error, reason}, env}
     end
   end
 
