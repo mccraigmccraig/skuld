@@ -24,6 +24,7 @@ defmodule Skuld.FiberPool.Scheduler do
   alias Skuld.Coroutine.Completed
   alias Skuld.Coroutine.Errored
   alias Skuld.Coroutine.ExternalSuspended
+  alias Skuld.Coroutine.ForeignSuspended
   alias Skuld.Coroutine.InternalSuspended
   alias Skuld.FiberPool.FiberPoolState
   alias Skuld.FiberPool.PendingWork
@@ -43,6 +44,7 @@ defmodule Skuld.FiberPool.Scheduler do
           | {:suspended, Coroutine.t(), FiberPoolState.t()}
           | {:waiting_for_tasks, FiberPoolState.t()}
           | {:batch_ready, FiberPoolState.t()}
+          | {:foreign_suspends, FiberPoolState.t()}
           | {:error, term(), FiberPoolState.t()}
 
   #############################################################################
@@ -162,13 +164,17 @@ defmodule Skuld.FiberPool.Scheduler do
 
         # Check if we now have work to do
         if FiberPoolState.queue_empty?(state) do
-          # Check if there are still running tasks
-          if FiberPoolState.has_tasks?(state) do
-            {:waiting_for_tasks, state}
-          else
-            # Collect results for completed fibers/tasks
-            results = collect_results(state)
-            {:done, results, state}
+          cond do
+            map_size(state.foreign_suspends) > 0 ->
+              {:foreign_suspends, state}
+
+            FiberPoolState.has_tasks?(state) ->
+              {:waiting_for_tasks, state}
+
+            true ->
+              # Collect results for completed fibers/tasks
+              results = collect_results(state)
+              {:done, results, state}
           end
         else
           run_loop(state, env)
@@ -269,6 +275,13 @@ defmodule Skuld.FiberPool.Scheduler do
     state = FiberPoolState.put_env_state(state, env.state)
     {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
     handle_internal_suspension(state, fiber, internal_suspend, payload)
+  end
+
+  defp handle_fiber_result(%ForeignSuspended{env: env} = fiber, state) do
+    state = FiberPoolState.put_env_state(state, env.state)
+    {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
+    foreign_suspends = Map.put(state.foreign_suspends, fiber.id, fiber)
+    {:continue, %{state | foreign_suspends: foreign_suspends}}
   end
 
   defp handle_fiber_result(%Errored{error: error, env: env} = fiber, state) do

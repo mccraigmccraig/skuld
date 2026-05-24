@@ -12,6 +12,7 @@
 # - `wake_signals` - Map of awaiter_id => resume_value for fibers ready to wake
 # - `consume_ids` - Map of fiber_id => [fiber_id] for deferred result cleanup
 # - `awaiting` - Map of fiber_id => [awaiter_fiber_id] reverse index for wake-up
+# - `foreign_suspends` - Map of fiber_id => Coroutine.t() for fibers suspended on foreign resources
 # - `tasks` - Map of task_ref => handle_id for running BEAM tasks
 # - `task_supervisor` - Task.Supervisor pid for spawning tasks
 # - `opts` - Configuration options
@@ -72,6 +73,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
           wake_signals: %{awaiter_id() => term()},
           consume_ids: %{fiber_id() => [fiber_id()]},
           awaiting: %{fiber_id() => [fiber_id()]},
+          foreign_suspends: %{fiber_id() => Coroutine.t()},
           tasks: %{task_ref() => fiber_id()},
           task_supervisor: pid() | nil,
           env_state: %{term() => term()},
@@ -87,6 +89,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
     :wake_signals,
     :consume_ids,
     :awaiting,
+    :foreign_suspends,
     :tasks,
     :task_supervisor,
     :env_state,
@@ -114,6 +117,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
       wake_signals: %{},
       consume_ids: %{},
       awaiting: %{},
+      foreign_suspends: %{},
       tasks: %{},
       task_supervisor: Keyword.get(opts, :task_supervisor),
       env_state: Keyword.get(opts, :env_state, %{}),

@@ -31,7 +31,12 @@ defmodule Skuld.FiberPool.Main do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
+  alias Skuld.Comp.ForeignSuspend
   alias Skuld.Comp.InternalSuspend
+  alias Skuld.Coroutine
+  alias Skuld.Coroutine.ForeignSuspended
+  alias Skuld.Coroutine.ForeignSuspensions
+  alias Skuld.Coroutine.Pending
   alias Skuld.FiberPool.FiberPoolState
   alias Skuld.FiberPool.Scheduler
   alias Skuld.FiberPool.PendingWork
@@ -117,6 +122,9 @@ defmodule Skuld.FiberPool.Main do
         else
           {{:error, {:deadlock, deadlock_diagnostic(state)}}, env}
         end
+
+      {:foreign_suspends, state} ->
+        bundle_foreign_suspensions(state, env)
     end
   end
 
@@ -275,6 +283,53 @@ defmodule Skuld.FiberPool.Main do
       counts: FiberPoolState.counts(state),
       suspended_fiber_ids: Map.keys(state.suspensions)
     }
+  end
+
+  # Bundle all foreign-suspended fibers into a ForeignSuspensions aggregate
+  # with a resume closure that re-enters the scheduler when Promises resolve.
+  defp bundle_foreign_suspensions(state, env) do
+    suspends =
+      for {_fiber_id, %ForeignSuspended{suspend: s}} <- state.foreign_suspends, do: s
+
+    resume = build_foreign_resume(state, env)
+
+    {%ForeignSuspensions{id: state.id, suspensions: suspends, env: env, resume: resume}, env}
+  end
+
+  # Build the resume closure that batch-wakes resolved fibers.
+  # Takes `%{ForeignSuspend.id => resolved_value}` and re-enters the scheduler.
+  defp build_foreign_resume(state, env) do
+    fn resolved ->
+      resolved_fibers =
+        Enum.flat_map(state.foreign_suspends, fn {fiber_id, fiber} ->
+          %ForeignSuspended{suspend: %ForeignSuspend{id: s_id} = suspend} = fiber
+
+          case Map.fetch(resolved, s_id) do
+            {:ok, value} ->
+              {result, new_env} = suspend.resume.(value, fiber.env)
+              new_fiber = Coroutine.new(result, new_env, id: s_id)
+              [{fiber_id, new_fiber}]
+
+            :error ->
+              []
+          end
+        end)
+
+      # Remove resolved fibers from foreign_suspends and add to run queue
+      state =
+        Enum.reduce(resolved_fibers, state, fn {fiber_id, _new_fiber}, acc ->
+          %{acc | foreign_suspends: Map.delete(acc.foreign_suspends, fiber_id)}
+        end)
+
+      state =
+        Enum.reduce(resolved_fibers, state, fn {_old_fiber_id, new_fiber}, acc ->
+          {_new_id, acc} = FiberPoolState.add_fiber(acc, new_fiber)
+          acc
+        end)
+
+      # Re-run the scheduler to process any newly ready fibers
+      run_fibers_to_completion(state, env, :foreign_resume)
+    end
   end
 
   # Check if a result is an await suspension
