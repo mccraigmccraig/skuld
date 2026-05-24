@@ -1,17 +1,11 @@
 defmodule Skuld.Coroutine.ForeignSuspended do
   @moduledoc """
-  Fiber state returned when the scheduler has processed all internal work
-  and bundles all pending foreign (platform-specific) suspensions together.
+  Fiber state when the scheduler has bundled all foreign suspensions from the
+  last run. Also serves as a sentinel returned to the caller via `ISentinel.run`.
 
-  The `:suspends` list contains one or more `Comp.ForeignSuspend` values —
-  one per fiber that suspended on a foreign resource. The caller (e.g., the
-  Hologram JS runtime) extracts the opaque `payload` from each, resolves
-  them via the foreign platform's event loop, and resumes each fiber with
-  the result via `Coroutine.run/2`.
-
-  No separate `ForeignSuspensions` aggregate is needed — the FiberPool
-  scheduler bundles foreign suspends into this state when the run queue
-  and internal suspensions are exhausted.
+  The caller (e.g., the Hologram JS runtime) extracts the individual
+  `ForeignSuspend` values from the `:suspensions` list, resolves them via the
+  foreign platform's event loop, and resumes each fiber with the result.
   """
 
   alias Skuld.Comp.Env
@@ -19,9 +13,27 @@ defmodule Skuld.Coroutine.ForeignSuspended do
 
   @type t :: %__MODULE__{
           id: term(),
-          suspends: [ForeignSuspend.t()],
+          suspensions: [ForeignSuspend.t()],
           env: Env.t()
         }
 
-  defstruct [:id, :suspends, :env]
+  defstruct [:id, :suspensions, :env]
+
+  defimpl Skuld.Comp.ISentinel do
+    def run(suspensions, env) do
+      {suspensions, env}
+    end
+
+    def run!(%Skuld.Coroutine.ForeignSuspended{}) do
+      raise "Computation suspended on foreign resources — must be handled by a foreign scheduler"
+    end
+
+    def sentinel?(_), do: true
+    def suspend?(_), do: true
+    def error?(_), do: false
+
+    def serializable_payload(%Skuld.Coroutine.ForeignSuspended{}) do
+      raise "ForeignSuspended cannot be serialized — payloads are opaque foreign-platform handles"
+    end
+  end
 end

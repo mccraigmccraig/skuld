@@ -13,6 +13,7 @@ defmodule Skuld.Coroutine do
   - `%Coroutine.Pending{id, computation, env}` — ready to start
   - `%Coroutine.InternalSuspended{id, k, suspend, env}` — suspended, needs scheduler
   - `%Coroutine.ExternalSuspended{id, k, env}` — suspended, external callback
+  - `%Coroutine.ForeignSuspended{id, suspensions, env}` — bundled foreign suspensions
   - `%Coroutine.Completed{id, result, env}` — finished successfully
   - `%Coroutine.Errored{id, error, env}` — finished with error
   - `%Coroutine.Cancelled{id, reason, env}` — cancelled before completion
@@ -297,6 +298,9 @@ defmodule Skuld.Coroutine do
       {%InternalSuspend{} = internal_suspend, internal_env} ->
         handle_internal_suspend(fiber, internal_suspend, internal_env)
 
+      {%Comp.ForeignSuspend{} = suspend, suspend_env} ->
+        handle_foreign_suspend(fiber, suspend, suspend_env)
+
       {%Comp.Throw{} = throw, throw_env} ->
         error = normalize_throw_error(throw.error)
         %Errored{id: fiber.id, error: error, env: throw_env}
@@ -337,6 +341,19 @@ defmodule Skuld.Coroutine do
     end
 
     %ExternalSuspended{id: fiber.id, value: value, data: data, k: k, env: env}
+  end
+
+  # Handle a foreign suspend — wrap into ForeignSuspensions aggregate
+  defp handle_foreign_suspend(
+         fiber,
+         %Comp.ForeignSuspend{} = suspend,
+         env
+       ) do
+    %ForeignSuspended{
+      id: fiber.id,
+      suspensions: [suspend],
+      env: env
+    }
   end
 
   # Handle an internal suspend (receives env at resume time)
