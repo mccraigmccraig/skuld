@@ -33,10 +33,11 @@ defmodule Skuld.Coroutine do
   ## Lifecycle
 
   1. Create with `new/2` — returns `%Pending{}`
-  2. Step with `call/1` or `run/1` — returns `%Completed{}`, `%InternalSuspended{}`,
-     `%ExternalSuspended{}`, or `%Errored{}`
-  3. Resume with `call/2` or `run/2` — match on `%InternalSuspended{}` or
-     `%ExternalSuspended{}`, pass the resume value
+   2. Step with `call/1` or `run/1` — returns `%Completed{}`, `%InternalSuspended{}`,
+      `%ExternalSuspended{}`, `%ForeignSuspended{}`, or `%Errored{}`
+   3. Resume with `call/2` or `run/2` — match on `%InternalSuspended{}`,
+      `%ExternalSuspended{}`, or `%ForeignSuspended{}`, pass the resume value.
+      `%ForeignSuspensions{}` accepts `%{id => value}` for batch resumption.
   4. Cancel with `cancel/2` — invokes leave_scope cleanup, returns `%Cancelled{}`
 
   ## Example (standalone, with `run`)
@@ -131,7 +132,12 @@ defmodule Skuld.Coroutine do
       end
   """
   @spec run(t()) ::
-          Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
+          Completed.t()
+          | InternalSuspended.t()
+          | ExternalSuspended.t()
+          | ForeignSuspended.t()
+          | ForeignSuspensions.t()
+          | Errored.t()
   def run(%Pending{computation: comp, env: env} = fiber) do
     {result, result_env} = Comp.call(comp, env, &Comp.identity_k/2)
     {sentinel_result, sentinel_env} = ISentinel.run(result, result_env)
@@ -144,7 +150,12 @@ defmodule Skuld.Coroutine do
   end
 
   @spec run(t(), term()) ::
-          Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
+          Completed.t()
+          | InternalSuspended.t()
+          | ExternalSuspended.t()
+          | ForeignSuspended.t()
+          | ForeignSuspensions.t()
+          | Errored.t()
   def run(%InternalSuspended{k: k, env: env} = fiber, value) do
     {result, result_env} = k.(value, env)
     {sentinel_result, sentinel_env} = ISentinel.run(result, result_env)
@@ -192,7 +203,12 @@ defmodule Skuld.Coroutine do
       end
   """
   @spec call(t()) ::
-          Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
+          Completed.t()
+          | InternalSuspended.t()
+          | ExternalSuspended.t()
+          | ForeignSuspended.t()
+          | ForeignSuspensions.t()
+          | Errored.t()
   def call(%Pending{computation: comp, env: env} = fiber) do
     do_call(fiber, comp, env)
   end
@@ -203,7 +219,12 @@ defmodule Skuld.Coroutine do
   end
 
   @spec call(t(), term()) ::
-          Completed.t() | InternalSuspended.t() | ExternalSuspended.t() | Errored.t()
+          Completed.t()
+          | InternalSuspended.t()
+          | ExternalSuspended.t()
+          | ForeignSuspended.t()
+          | ForeignSuspensions.t()
+          | Errored.t()
   def call(%InternalSuspended{k: k, env: env} = fiber, value) do
     do_resume(fiber, k, value, env)
   end

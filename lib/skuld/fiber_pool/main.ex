@@ -36,7 +36,6 @@ defmodule Skuld.FiberPool.Main do
   alias Skuld.Coroutine
   alias Skuld.Coroutine.ForeignSuspended
   alias Skuld.Coroutine.ForeignSuspensions
-  alias Skuld.Coroutine.Pending
   alias Skuld.FiberPool.FiberPoolState
   alias Skuld.FiberPool.Scheduler
   alias Skuld.FiberPool.PendingWork
