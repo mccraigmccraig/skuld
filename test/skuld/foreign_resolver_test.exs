@@ -6,10 +6,11 @@ defmodule Skuld.ForeignResolverTest do
   alias Skuld.Comp.ForeignSuspend
   alias Skuld.Effects.FiberPool
   alias Skuld.ForeignResolver
+  alias Skuld.Test.ForeignResolver, as: TestResolver
 
   describe "ForeignResolver protocol" do
     test "Test resolver resolves immediately" do
-      resolver = ForeignResolver.Test.new()
+      resolver = TestResolver.new()
 
       suspends = [
         %ForeignSuspend{id: :a, resume: fn v, e -> {v, e} end, payload: :ref_a},
@@ -47,7 +48,7 @@ defmodule Skuld.ForeignResolverTest do
         FiberPool.fiber(foreign_comp.(:task_1))
         |> Comp.bind(fn h -> FiberPool.await!(h) end)
         |> FiberPool.with_handler()
-        |> Comp.run(ForeignResolver.Test.new())
+        |> Comp.run(TestResolver.new())
 
       assert result == :ok
     end
@@ -77,7 +78,7 @@ defmodule Skuld.ForeignResolverTest do
           end)
         end)
         |> FiberPool.with_handler()
-        |> Comp.run(ForeignResolver.Test.new())
+        |> Comp.run(TestResolver.new())
 
       assert result == [:ok, :ok, :ok]
     end

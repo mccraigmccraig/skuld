@@ -213,7 +213,7 @@ defmodule Skuld.Comp do
 
       comp
       |> FiberPool.with_handler()
-      |> Comp.run(ForeignResolver.Test.new())
+      |> Comp.run(Skuld.Test.ForeignResolver.new())
   """
   @spec run(Types.computation(), Skuld.ForeignResolver.t()) :: term()
   def run(comp, resolver) do
