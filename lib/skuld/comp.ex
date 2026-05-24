@@ -202,6 +202,46 @@ defmodule Skuld.Comp do
     ISentinel.run!(result)
   end
 
+  @doc """
+  Run a computation through a ForeignResolver resolution loop.
+
+  Runs the computation to completion (or first foreign suspension), then
+  resolves any foreign suspensions via the resolver protocol, and continues
+  the loop until the computation completes.
+
+  ## Example
+
+      comp
+      |> FiberPool.with_handler()
+      |> Comp.run(ForeignResolver.Test.new())
+  """
+  @spec run(Types.computation(), Skuld.ForeignResolver.t()) :: term()
+  def run(comp, resolver) do
+    {result, _env} = run(comp)
+
+    case result do
+      %Skuld.Coroutine.ForeignSuspensions{} = fs ->
+        resolve_foreign_loop(fs, resolver)
+
+      other ->
+        other
+    end
+  end
+
+  defp resolve_foreign_loop(fs, resolver) do
+    Skuld.ForeignResolver.await_resolutions(resolver, fs.suspensions, fn resolved ->
+      next = Skuld.Coroutine.call(fs, resolved)
+
+      case next do
+        %Skuld.Coroutine.ForeignSuspensions{} = next_fs ->
+          resolve_foreign_loop(next_fs, resolver)
+
+        %Skuld.Coroutine.Completed{result: result} ->
+          result
+      end
+    end)
+  end
+
   #############################################################################
   ## Cancellation
   #############################################################################
