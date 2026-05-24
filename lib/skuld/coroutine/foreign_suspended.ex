@@ -1,11 +1,10 @@
 defmodule Skuld.Coroutine.ForeignSuspended do
   @moduledoc """
-  Fiber state when the scheduler has bundled all foreign suspensions from the
-  last run. Also serves as a sentinel returned to the caller via `ISentinel.run`.
+  Fiber state when a single fiber suspends on a foreign resource.
 
-  The caller (e.g., the Hologram JS runtime) extracts the individual
-  `ForeignSuspend` values from the `:suspensions` list, resolves them via the
-  foreign platform's event loop, and resumes each fiber with the result.
+  The FiberPool scheduler collects all `ForeignSuspended` fibers, extracts
+  their individual `ForeignSuspend` values, and bundles them into a
+  `Coroutine.ForeignSuspensions` aggregate to return to the caller.
   """
 
   alias Skuld.Comp.Env
@@ -13,27 +12,9 @@ defmodule Skuld.Coroutine.ForeignSuspended do
 
   @type t :: %__MODULE__{
           id: term(),
-          suspensions: [ForeignSuspend.t()],
+          suspend: ForeignSuspend.t(),
           env: Env.t()
         }
 
-  defstruct [:id, :suspensions, :env]
-
-  defimpl Skuld.Comp.ISentinel do
-    def run(suspensions, env) do
-      {suspensions, env}
-    end
-
-    def run!(%Skuld.Coroutine.ForeignSuspended{}) do
-      raise "Computation suspended on foreign resources — must be handled by a foreign scheduler"
-    end
-
-    def sentinel?(_), do: true
-    def suspend?(_), do: true
-    def error?(_), do: false
-
-    def serializable_payload(%Skuld.Coroutine.ForeignSuspended{}) do
-      raise "ForeignSuspended cannot be serialized — payloads are opaque foreign-platform handles"
-    end
-  end
+  defstruct [:id, :suspend, :env]
 end
