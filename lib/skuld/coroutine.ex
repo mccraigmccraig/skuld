@@ -13,7 +13,8 @@ defmodule Skuld.Coroutine do
   - `%Coroutine.Pending{id, computation, env}` — ready to start
   - `%Coroutine.InternalSuspended{id, k, suspend, env}` — suspended, needs scheduler
   - `%Coroutine.ExternalSuspended{id, k, env}` — suspended, external callback
-  - `%Coroutine.ForeignSuspended{id, suspensions, env}` — bundled foreign suspensions
+  - `%Coroutine.ForeignSuspended{id, suspend, env}` — suspended on foreign resource
+  - `%Coroutine.ForeignSuspensions{id, suspensions, env, resume}` — bundled foreign suspensions
   - `%Coroutine.Completed{id, result, env}` — finished successfully
   - `%Coroutine.Errored{id, error, env}` — finished with error
   - `%Coroutine.Cancelled{id, reason, env}` — cancelled before completion
@@ -59,6 +60,7 @@ defmodule Skuld.Coroutine do
   alias Skuld.Coroutine.Errored
   alias Skuld.Coroutine.ExternalSuspended
   alias Skuld.Coroutine.ForeignSuspended
+  alias Skuld.Coroutine.ForeignSuspensions
   alias Skuld.Coroutine.InternalSuspended
   alias Skuld.Coroutine.Pending
 
@@ -67,13 +69,14 @@ defmodule Skuld.Coroutine do
 
   Callers pattern-match on the struct name to determine state:
   `%Pending{}`, `%InternalSuspended{}`, `%ExternalSuspended{}`,
-  `%ForeignSuspended{}`, `%Completed{}`, `%Errored{}`, `%Cancelled{}`.
+  `%ForeignSuspended{}`, `%ForeignSuspensions{}`, `%Completed{}`, `%Errored{}`, `%Cancelled{}`.
   """
   @type t ::
           Pending.t()
           | InternalSuspended.t()
           | ExternalSuspended.t()
           | ForeignSuspended.t()
+          | ForeignSuspensions.t()
           | Completed.t()
           | Errored.t()
           | Cancelled.t()
@@ -154,9 +157,22 @@ defmodule Skuld.Coroutine do
     execute_and_handle(fiber, sentinel_env, fn -> {sentinel_result, sentinel_env} end)
   end
 
+  def run(
+        %ForeignSuspended{suspend: %Comp.ForeignSuspend{resume: resume}, env: env} = fiber,
+        value
+      ) do
+    {result, result_env} = resume.(value, env)
+    {sentinel_result, sentinel_env} = ISentinel.run(result, result_env)
+    execute_and_handle(fiber, sentinel_env, fn -> {sentinel_result, sentinel_env} end)
+  end
+
+  def run(%ForeignSuspensions{resume: resume}, resolved) do
+    resume.(resolved)
+  end
+
   def run(fiber, _value) do
     raise ArgumentError,
-          "Cannot run fiber: expected %Coroutine.Pending{}, %Coroutine.InternalSuspended{}, or %Coroutine.ExternalSuspended{}, got #{inspect(fiber.__struct__)}"
+          "Cannot run fiber: expected %Coroutine.Pending{}, %Coroutine.InternalSuspended{}, %Coroutine.ExternalSuspended{}, %Coroutine.ForeignSuspended{}, or %Coroutine.ForeignSuspensions{}, got #{inspect(fiber.__struct__)}"
   end
 
   @doc """
@@ -196,9 +212,20 @@ defmodule Skuld.Coroutine do
     do_resume(fiber, k, value, env)
   end
 
+  def call(
+        %ForeignSuspended{suspend: %Comp.ForeignSuspend{resume: resume}, env: env} = fiber,
+        value
+      ) do
+    do_resume(fiber, resume, value, env)
+  end
+
+  def call(%ForeignSuspensions{resume: resume}, resolved) do
+    resume.(resolved)
+  end
+
   def call(fiber, _value) do
     raise ArgumentError,
-          "Cannot call fiber: expected %Coroutine.Pending{}, %Coroutine.InternalSuspended{}, or %Coroutine.ExternalSuspended{}, got #{inspect(fiber.__struct__)}"
+          "Cannot call fiber: expected %Coroutine.Pending{}, %Coroutine.InternalSuspended{}, %Coroutine.ExternalSuspended{}, %Coroutine.ForeignSuspended{}, or %Coroutine.ForeignSuspensions{}, got #{inspect(fiber.__struct__)}"
   end
 
   @doc """
@@ -240,6 +267,18 @@ defmodule Skuld.Coroutine do
   end
 
   def cancel(%ExternalSuspended{id: id, env: env} = _fiber, reason) do
+    cancelled = %Comp.Cancelled{reason: reason}
+    {_result, final_env} = Env.run_leave_scope(env, cancelled)
+    %Cancelled{id: id, reason: reason, env: final_env}
+  end
+
+  def cancel(%ForeignSuspended{id: id, env: env} = _fiber, reason) do
+    cancelled = %Comp.Cancelled{reason: reason}
+    {_result, final_env} = Env.run_leave_scope(env, cancelled)
+    %Cancelled{id: id, reason: reason, env: final_env}
+  end
+
+  def cancel(%ForeignSuspensions{id: id, env: env} = _fiber, reason) do
     cancelled = %Comp.Cancelled{reason: reason}
     {_result, final_env} = Env.run_leave_scope(env, cancelled)
     %Cancelled{id: id, reason: reason, env: final_env}
@@ -351,7 +390,7 @@ defmodule Skuld.Coroutine do
        ) do
     %ForeignSuspended{
       id: fiber.id,
-      suspensions: [suspend],
+      suspend: suspend,
       env: env
     }
   end
