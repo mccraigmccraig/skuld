@@ -57,6 +57,7 @@ defmodule Skuld.Coroutine do
   alias Skuld.Coroutine.Error
   alias Skuld.Coroutine.Errored
   alias Skuld.Coroutine.ExternalSuspended
+  alias Skuld.Coroutine.ForeignSuspended
   alias Skuld.Coroutine.InternalSuspended
   alias Skuld.Coroutine.Pending
 
@@ -65,12 +66,13 @@ defmodule Skuld.Coroutine do
 
   Callers pattern-match on the struct name to determine state:
   `%Pending{}`, `%InternalSuspended{}`, `%ExternalSuspended{}`,
-  `%Completed{}`, `%Errored{}`, `%Cancelled{}`.
+  `%ForeignSuspended{}`, `%Completed{}`, `%Errored{}`, `%Cancelled{}`.
   """
   @type t ::
           Pending.t()
           | InternalSuspended.t()
           | ExternalSuspended.t()
+          | ForeignSuspended.t()
           | Completed.t()
           | Errored.t()
           | Cancelled.t()
