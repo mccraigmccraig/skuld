@@ -1,13 +1,51 @@
 # Changelog
 
-<!-- last-updated-against: ad5278b27f4b651d36c9100088b34f9c73ad2796 -->
+<!-- last-updated-against: 3e9ad8c9584e45db4bd0d5827e57e57a0c4f10ee -->
 
 All notable changes to Skuld will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.31.0] — 2026-05-25
+
+### Added
+
+- `Comp.ForeignSuspend` sentinel — suspension on external/foreign resources
+  (e.g., JS Promises). Holds `id`, `resume (val, env) -> {result, env}`, and
+  opaque `payload` for the foreign platform.
+- `Coroutine.ForeignSuspended` — per-fiber state when a single fiber suspends
+  on a foreign resource. Collected by the scheduler into `ForeignSuspensions`.
+- `Coroutine.ForeignSuspensions` aggregate — bundled foreign suspensions with
+  a `resume` closure that batch-wakes resolved fibers.
+- `Skuld.ForeignResolver` protocol — dispatches on `ForeignSuspend.payload`
+  type. `await_resolutions(payload, suspends, continuation)` enables both
+  synchronous (BEAM test) and asynchronous (JS Promise) resolution.
+- `Skuld.ForeignResolver.Runner` — resolution loop calling the protocol until
+  all foreign suspensions resolve. Returns the computation's final result.
+- Foreign suspend lifecycle in `Coroutine` (`call/run/cancel` clauses for
+  `ForeignSuspended` and `ForeignSuspensions`).
+- Foreign suspend detection in `FiberPool.Scheduler` — `foreign_suspends` map
+  in state, bundled when no internal work remains.
+- `FiberPool.Main` — `bundle_foreign_suspensions`, `apply_foreign_resolutions`,
+  and await-aware variant for re-entering the scheduler after resolution.
+- Test support: `Skuld.Test.Payload`, `Skuld.Test.Doubler`, `Skuld.Test.Adder`,
+  `Skuld.Test.MultiRound`, `Skuld.Test.Mapper` — ForeignResolver protocol impls
+  for deterministic testing.
+- 31 new tests (17 unit + 6 integration for ForeignSuspend, 2 protocol,
+  6 Runner integration).
+
+### Removed
+
+- `Comp.run/2` — resolution now via `ForeignResolver.Runner.run/1`. The
+  protocol handles platform dispatch; no need for a separate `Comp.run/2`.
+
+### Changed
+
+- `FreshInt` replaces `make_ref/0` for unique ID generation in Skuld core
+  (v0.29.0, v0.30.0).
+- `Comp.with_new_handler/3` — installs handler only if absent, enabling
+  FiberPool to auto-install a default Fresh handler.
 
 ### Fixed
 
