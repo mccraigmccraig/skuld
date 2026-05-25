@@ -181,6 +181,8 @@ Each sentinel type has its own `ISentinel` implementation:
 |----------|-------------------|
 | `ExternalSuspend` | Apply `transform_suspend` to decorate `data` |
 | `InternalSuspend` | Invoke `FiberPool.Main.drain_pending` (scheduler) |
+| `ForeignSuspend` | Pass through unchanged (opaque, resolved externally) |
+| `ForeignSuspensions` | Pass through unchanged (aggregate of foreign suspends) |
 | `Throw` | Run `leave_scope` for cleanup |
 | `Cancelled` | Run `leave_scope` |
 | Plain value | Run `leave_scope` |
@@ -203,6 +205,65 @@ Two chains on the environment:
 returns raw typed states; `run/1,2` adds `ISentinel.run` for standalone
 use. `FiberPool` schedules coroutines cooperatively within one process.
 `AsyncCoroutine` bridges them across processes.
+
+## ForeignSuspend — platform-native suspension
+
+`ForeignSuspend` is a sentinel for suspension on external resources
+outside Skuld's control (e.g., JavaScript Promises, OS I/O completion
+ports). Unlike `InternalSuspend` (which the FiberPool scheduler handles
+itself), foreign suspends are opaque — Skuld bundles them and hands them
+back to the caller for resolution.
+
+### Lifecycle
+
+1. A fiber raises a foreign effect (e.g., `Hologram.Skuld.Effects.JS.call`)
+   → the handler creates a `%ForeignSuspend{id, resume, payload}`.
+   The `payload` is an opaque handle for the foreign platform (e.g., a
+   reference to a JS Promise in the browser's `NativeObjectRegistry`).
+2. `Coroutine.execute_and_handle/3` detects `ForeignSuspend` and wraps it
+   in `%ForeignSuspended{}` — a per-fiber state record.
+3. The FiberPool scheduler collects all `ForeignSuspended` fibers into
+   `%ForeignSuspensions{}` — an aggregate with a `resume` closure that
+   knows how to wake all resolved fibers at once.
+4. The aggregate is returned to the caller, who extracts individual
+   `ForeignSuspend` values, resolves them via the foreign platform, and
+   passes a `%{suspend_id => resolved_value}` map back to
+   `Coroutine.call/2`.
+5. The fiber resumes at its suspended point and continues executing —
+   possibly hitting another foreign suspend, repeating the cycle.
+
+### ForeignResolver protocol
+
+`Skuld.ForeignResolver` dispatches on the `payload` type of the first
+`ForeignSuspend` in the aggregate. Platform-specific implementations
+resolve all suspensions and call a `continuation` function:
+
+```elixir
+defimpl Skuld.ForeignResolver, for: MyPlatform.Payload do
+  def await_resolutions(_payload, suspends, continuation) do
+    # Platform-specific resolution — may be sync (BEAM test) or async (JS Promise)
+    resolved = Map.new(suspends, &{&1.id, resolve(&1.payload)})
+    continuation.(resolved)
+  end
+end
+```
+
+### Runner
+
+`Skuld.ForeignResolver.Runner.run/1` wraps a computation in a resolution
+loop: run through `Comp.run`, detect `ForeignSuspensions`, call the
+protocol, pass the resolved map to `Coroutine.call`, and repeat until
+a `%Completed{}` result is reached.
+
+```elixir
+comp
+|> FiberPool.with_handler()
+|> ForeignResolver.Runner.run()
+```
+
+The Runner is platform-agnostic — the same `run/1` call works whether
+the protocol impl resolves synchronously (BEAM tests) or asynchronously
+(returning a JS Promise in the Hologram browser runtime).
 
 ## Writing a custom effect
 

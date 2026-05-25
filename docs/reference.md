@@ -26,9 +26,19 @@ for later resumption.
 
 **Bind** (`<-`) — Sequences two computations. Desugars to `Comp.bind/2`.
 
-**Sentinel** — A special return value (`%Throw{}`, `%ExternalSuspend{}`)
+**Sentinel** — A special return value (`%Throw{}`, `%ExternalSuspend{}`,
+`%InternalSuspend{}`, `%ForeignSuspend{}`, `%ForeignSuspensions{}`)
 signalling abnormal completion. The `ISentinel` protocol dispatches
 behaviour.
+
+**ForeignSuspend** — Suspension on an external/foreign resource
+(e.g., a JS Promise). Carries an opaque `payload` and a `resume`
+continuation. The `ForeignResolver` protocol resolves these across
+platforms.
+
+**ForeignSuspensions** — Aggregate of all pending `ForeignSuspend`
+values bundled by the FiberPool scheduler, with a `resume` closure
+for batch-waking resolved fibers.
 
 **Scope** — A handler boundary with cleanup. `Comp.scoped/2` guarantees
 cleanup runs on exit or Throw, but not on Suspend.
@@ -48,6 +58,7 @@ in `Comp.pure/1`.
 | Throw | `Skuld.Effects.Throw` | `throw`, `catch_error` | `with_handler(comp)` | Same |
 | Bracket | `Skuld.Effects.Bracket` | `bracket`, `bracket_`, `finally` | None (combinator) | Same |
 | Fresh | `Skuld.Effects.Fresh` | `fresh_uuid` | `with_uuid7_handler()` | `with_test_handler()` |
+| FreshInt | `Skuld.Effects.FreshInt` | `fresh_integer` | `with_handler(comp, seed: 0)` | Same |
 | Random | `Skuld.Effects.Random` | `random`, `random_int`, `random_element`, `shuffle` | `with_handler()` | `with_seed_handler(seed:)` |
 | FxList | `Skuld.Effects.FxList` | `fx_map`, `fx_reduce`, `fx_each`, `fx_filter` | None (combinator) | Same |
 | Command | `Skuld.Effects.Command` | `execute` | `with_handler(comp, fn)` | Swap fn |
@@ -74,6 +85,7 @@ in `Comp.pure/1`.
 | Repo | Built-in DB contract. `InMemory`, `Ecto`, `Stub` handlers. |
 | Adapter | `use Skuld.Adapter, contract: M, impl: I, stack: &f/1` |
 | AsyncCoroutine | Cross-process coroutines. `run/2,3`, `run_sync/2,3`, `cancel/1,2` |
+| ForeignResolver | Protocol for resolving `ForeignSuspend` values across platforms. `await_resolutions/3` (continuation-passing). `Runner.run/1` for resolution loop. |
 
 ### Cross-cutting
 
