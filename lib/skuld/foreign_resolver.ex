@@ -60,6 +60,12 @@ defprotocol Skuld.ForeignResolver do
   def await_resolutions(payload, suspends, continuation)
 end
 
+defimpl Skuld.ForeignResolver, for: Atom do
+  def await_resolutions(:skuld_foreign_resolver_fallback, _suspends, _continuation) do
+    :ok
+  end
+end
+
 defmodule Skuld.ForeignResolver.Runner do
   @moduledoc """
   Resolution loop for `ForeignSuspend` values.
