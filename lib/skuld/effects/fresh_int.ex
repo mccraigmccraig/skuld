@@ -83,8 +83,7 @@ defmodule Skuld.Effects.FreshInt do
 
   @doc false
   def handle(@__fresh_integer_op__, env, k) do
-    state = Env.get_state!(env, @sig)
-    counter = state.counter
+    %State{counter: counter} = state = Env.get_state!(env, @sig)
     new_env = Env.put_state(env, @sig, %{state | counter: counter + 1})
     k.(counter, new_env)
   end
