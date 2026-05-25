@@ -1,11 +1,23 @@
 # Changelog
 
-<!-- last-updated-against: 3e9ad8c9584e45db4bd0d5827e57e57a0c4f10ee -->
+<!-- last-updated-against: 48f05f66790f573b84805e4bcd29be7e4d83251e -->
 
 All notable changes to Skuld will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.31.1] — 2026-05-25
+
+### Fixed
+
+- `FreshInt.handle/3`: replaced struct pattern match `%State{counter: counter}`
+  with dot-access (`state.counter`) for Hologram JS runtime compatibility.
+  Hologram's compiled JS cannot pattern-match on Elixir structs at runtime.
+
+### Changed
+
+- Added fallback `defimpl Skuld.ForeignResolver, for: Atom` to suppress the
+  "no implementations" compiler warning in Elixir 1.19 when Skuld is used
+  as a library dependency. Real implementations are provided by consumers
+  (e.g., `Hologram.Skuld.JSRef`).
 
 ## [0.31.0] — 2026-05-25
 
