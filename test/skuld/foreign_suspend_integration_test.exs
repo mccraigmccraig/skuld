@@ -8,6 +8,7 @@ defmodule Skuld.ForeignSuspendIntegrationTest do
   alias Skuld.Coroutine.Completed
   alias Skuld.Coroutine.ForeignSuspensions
   alias Skuld.Effects.FiberPool
+  alias Skuld.Effects.FreshInt
 
   describe "FiberPool bundling of foreign suspends" do
     test "single foreign suspend is collected and returned" do
@@ -116,6 +117,102 @@ defmodule Skuld.ForeignSuspendIntegrationTest do
       }
 
       {suspend, env}
+    end
+  end
+
+  describe "async handler pattern: resume calling handler k" do
+    defmodule AsyncBugEffect do
+      @moduledoc false
+      defstruct [:function, :args]
+    end
+
+    test "resume closure that calls k (the handler continuation) re-enters comp block" do
+      # Reproduces the bug in the JS async handler (now fixed):
+      # The resume must NOT call k — it must use identity_k so the fiber
+      # completes naturally through the Handle → await! mechanism.
+
+      sig = AsyncBugEffect
+
+      comp =
+        Comp.bind(fiber_like_async(sig, :bug), fn h ->
+          FiberPool.await!(h)
+        end)
+        |> Comp.with_handler(sig, &handle_async_bug/3)
+        |> FiberPool.with_handler()
+
+      {agg, _env} = Comp.run(comp)
+
+      assert %ForeignSuspensions{suspensions: suspends} = agg
+      s_id = hd(suspends).id
+
+      result = Coroutine.call(agg, %{s_id => 42})
+
+      assert %Completed{result: 42} = result
+    end
+
+    test "fixed: identity_k resume — fiber completes through Handle" do
+      # The correct pattern: ForeignSuspend.resume uses identity_k,
+      # the fiber completes, Handle delivers result to await!.
+
+      sig = AsyncBugEffect
+
+      comp =
+        Comp.bind(fiber_like_async(sig, :fixed), fn h ->
+          FiberPool.await!(h)
+        end)
+        |> Comp.with_handler(sig, &handle_async_bug_fixed/3)
+        |> FiberPool.with_handler()
+
+      {agg, _env} = Comp.run(comp)
+
+      assert %ForeignSuspensions{suspensions: suspends} = agg
+      s_id = hd(suspends).id
+
+      result = Coroutine.call(agg, %{s_id => 42})
+
+      assert %Completed{result: 42} = result
+    end
+
+    def fiber_like_async(sig, _mode) do
+      Comp.effect(sig, %AsyncBugEffect{function: :test, args: []})
+    end
+
+    # Bug: resume calls k, causing multi-shot continuation
+    def handle_async_bug(%AsyncBugEffect{}, env, k) do
+      {id, id_env} = Comp.call(FreshInt.fresh_integer(), env, &Comp.identity_k/2)
+
+      resume = fn value, resume_env ->
+        k.(value, resume_env)
+      end
+
+      fiber_comp = fn suspend_env, _suspend_k ->
+        suspend = %ForeignSuspend{
+          id: id,
+          resume: resume,
+          payload: :test_payload
+        }
+
+        {suspend, suspend_env}
+      end
+
+      Comp.call(FiberPool.fiber(fiber_comp), id_env, k)
+    end
+
+    # Fixed: resume uses identity_k, fiber completes through Handle
+    def handle_async_bug_fixed(%AsyncBugEffect{}, env, k) do
+      {id, id_env} = Comp.call(FreshInt.fresh_integer(), env, &Comp.identity_k/2)
+
+      fiber_comp = fn suspend_env, _suspend_k ->
+        suspend = %ForeignSuspend{
+          id: id,
+          resume: &Comp.identity_k/2,
+          payload: :test_payload
+        }
+
+        {suspend, suspend_env}
+      end
+
+      Comp.call(FiberPool.fiber(fiber_comp), id_env, k)
     end
   end
 end
