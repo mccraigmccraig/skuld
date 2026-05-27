@@ -1,10 +1,10 @@
 # Changelog
 
-<!-- last-updated-against: 86309d0d18e4c58fecffe2f58416739114019539 -->
+<!-- last-updated-against: 08a78e2 -->
 
 All notable changes to Skuld will be documented in this file.
 
-## [Unreleased]
+## [0.31.2] — 2026-05-27
 
 ### Fixed
 
@@ -17,13 +17,8 @@ All notable changes to Skuld will be documented in this file.
 
 ### Added
 
-- `Skuld.ForeignSuspendIntegrationTest`: reproduction + verification tests
+- `Skuld.ForeignSuspendIntegrationTest`: reproduction + regression tests
   for the async handler multi-shot continuation bug.
-- `HologramFeatureTests.JSDebug.wrap_debug/3`: unified debug wrapper with
-  per-arg `JSON.stringify`/`String()` fallback, positional args, and
-  automatic Promise detection. Replaces dual `wrap_pure`/`wrap_promise`.
-- `HologramFeatureTests.JSDebug.log/2`: scatterable printf-debug with
-  `setup_log/0` activation and `log_keys/0` + `dump_keys/2` readback.
 
 ## [0.31.1] — 2026-05-25
 
