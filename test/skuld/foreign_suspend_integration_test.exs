@@ -126,10 +126,11 @@ defmodule Skuld.ForeignSuspendIntegrationTest do
       defstruct [:function, :args]
     end
 
-    test "resume closure that calls k (the handler continuation) re-enters comp block" do
-      # Reproduces the bug in the JS async handler (now fixed):
-      # The resume must NOT call k — it must use identity_k so the fiber
-      # completes naturally through the Handle → await! mechanism.
+    test "resume closure that calls k causes BadMapError when multi-shot" do
+      # Regression: ForeignSuspend.resume must use identity_k, not call the
+      # handler continuation k. Calling k a second time with the resolved
+      # value re-enters the comp block and triggers BadMapError when the
+      # scheduler tries to dereference the value as a Handle struct.
 
       sig = AsyncBugEffect
 
@@ -145,9 +146,9 @@ defmodule Skuld.ForeignSuspendIntegrationTest do
       assert %ForeignSuspensions{suspensions: suspends} = agg
       s_id = hd(suspends).id
 
-      result = Coroutine.call(agg, %{s_id => 42})
-
-      assert %Completed{result: 42} = result
+      assert_raise BadMapError, fn ->
+        Coroutine.call(agg, %{s_id => 42})
+      end
     end
 
     test "fixed: identity_k resume — fiber completes through Handle" do
