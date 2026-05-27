@@ -1,8 +1,29 @@
 # Changelog
 
-<!-- last-updated-against: 48f05f66790f573b84805e4bcd29be7e4d83251e -->
+<!-- last-updated-against: 86309d0d18e4c58fecffe2f58416739114019539 -->
 
 All notable changes to Skuld will be documented in this file.
+
+## [Unreleased]
+
+### Fixed
+
+- `Hologram.Skuld.Effects.JS.handle/3` (async branch): the ForeignSuspend
+  `resume` closure no longer calls the handler continuation `k`. It now uses
+  `&Comp.identity_k/2` so the fiber completes through the Handle → await!
+  mechanism naturally, eliminating a multi-shot continuation that caused a
+  `BadMapError` in the Hologram JS runtime when the scheduler tried to
+  dereference the resolved value as a Handle.
+
+### Added
+
+- `Skuld.ForeignSuspendIntegrationTest`: reproduction + verification tests
+  for the async handler multi-shot continuation bug.
+- `HologramFeatureTests.JSDebug.wrap_debug/3`: unified debug wrapper with
+  per-arg `JSON.stringify`/`String()` fallback, positional args, and
+  automatic Promise detection. Replaces dual `wrap_pure`/`wrap_promise`.
+- `HologramFeatureTests.JSDebug.log/2`: scatterable printf-debug with
+  `setup_log/0` activation and `log_keys/0` + `dump_keys/2` readback.
 
 ## [0.31.1] — 2026-05-25
 
