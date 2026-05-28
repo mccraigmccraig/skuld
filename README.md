@@ -113,7 +113,7 @@ wiring — swappable, testable, composable.
 
 ### Suspension & resumption
 
-A pausable state machine. The computation *pauses* at each `Yield`,
+A pausable computation that implements a state machine as normal code. The computation *pauses* at each `Yield`,
 waits for external input, then resumes with full effect context
 preserved:
 
