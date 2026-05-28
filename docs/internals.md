@@ -224,13 +224,16 @@ back to the caller for resolution.
    in `%ForeignSuspended{}` — a per-fiber state record.
 3. The FiberPool scheduler collects all `ForeignSuspended` fibers into
    `%ForeignSuspensions{}` — an aggregate with a `resume` closure that
-   knows how to wake all resolved fibers at once.
+    knows how to wake resolved fibers and re-bundle any still-pending ones.
 4. The aggregate is returned to the caller, who extracts individual
-   `ForeignSuspend` values, resolves them via the foreign platform, and
-   passes a `%{suspend_id => resolved_value}` map back to
-   `Coroutine.call/2`.
-5. The fiber resumes at its suspended point and continues executing —
-   possibly hitting another foreign suspend, repeating the cycle.
+   `ForeignSuspend` values and resolves whichever are ready via the
+   foreign platform. Only resolved suspends need to be passed —
+   `Coroutine.call/2` receives `%{suspend_id => resolved_value}` with
+   any subset of the aggregate. Pending suspends are re-bundled into a
+   fresh `ForeignSuspensions` aggregate for the next resolution round.
+5. Resolution repeats until all suspends are resolved and the fiber
+   completes. Multiple partial resolution rounds are the normal case —
+   the caller is not required to resolve everything at once.
 
 ### ForeignResolver protocol
 
