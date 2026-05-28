@@ -70,7 +70,7 @@ straightforwardly property-testable.
 Effectful computations condense domain logic to its essence. Handlers
 provide context — production vs test, concurrency, batching — without
 touching the computation. Effects are first-class data: inspect them,
-serialise them, replay them. The same mechanism enables all three
+serialise them, replay them. The same mechanism enables both
 examples below.
 
 ### Composability
@@ -113,23 +113,50 @@ wiring — swappable, testable, composable.
 
 ### Suspension & resumption
 
-A pausable computation that implements a state machine as normal code. The computation *pauses* at each `Yield`,
-waits for external input, then resumes with full effect context
-preserved:
+A pausable computation that implements a state machine as normal
+code. Branching is just `if` — no state enum or dispatch table.
+Every `<-` pattern-match is a validation gate and the `else` clause
+catches unhappy paths at any step:
 
 ```elixir
-defmodule Checkout do
+defmodule LoanApp do
   use Skuld.Syntax
 
   alias Skuld.Effects.Yield
 
-  defcomp run do
-    cart <- Yield.yield(:get_cart)
-    {:ok, inventory} <- Inventory.check_stock(cart.items)
-    payment <- Yield.yield(:get_payment)
-    {:ok, order} <- Orders.place(cart, payment)
-    _ <- Emailer.send_confirmation(order)
-    {:ok, order}
+  @threshold 100_000
+
+  defcomp apply do
+    {:ok,
+     %{
+       employment: employment,
+       income: income,
+       employer_id: employer_id
+     }} <- Yield.yield(:personal_info)
+
+    {:ok, _} <- if employment == :self_employed do
+      verify_business(employer_id)
+    else
+      verify_employer(employer_id)
+    end
+
+    {:ok, _} <- if income > @threshold do
+      Yield.yield(:additional_verification)
+    else
+      {:ok, :skip}
+    end
+
+    {:ok, decision} <- Yield.yield(:review_and_submit)
+    Underwriter.decide(employment, income)
+  else
+    other -> other
+  end
+
+  defcomp verify_business(employer_id) do
+    {:ok, _} <- Yield.yield(:business_verification)
+    do_verify_business(employer_id)
+  else
+    other -> other
   end
 end
 ```
@@ -138,78 +165,57 @@ Run it from a LiveView with `AsyncCoroutine`:
 
 ```elixir
 # mount
-{:ok, runner} = AsyncCoroutine.run(Checkout.run(), tag: :checkout)
+{:ok, runner} = AsyncCoroutine.run(LoanApp.apply(), tag: :loan)
 
 # handle_info — the state machine pauses at each yield
-def handle_info({AsyncCoroutine, :checkout, %ExternalSuspend{value: :get_cart}}, socket) do
-  cart = ShoppingCart.get_cart(socket.assigns.user)
-  AsyncCoroutine.run(socket.assigns.runner, cart)   # resume with cart
+def handle_info({AsyncCoroutine, :loan, %ExternalSuspend{value: :personal_info}}, socket) do
+  personal = Accounts.get_personal_info(socket.assigns.user_id)
+  AsyncCoroutine.run(socket.assigns.runner, {:ok, personal})
   {:noreply, socket}
 end
 
-def handle_info({AsyncCoroutine, :checkout, %ExternalSuspend{value: :get_payment}}, socket) do
-  payment = socket.assigns.payment_form |> to_payment_method()
-  AsyncCoroutine.run(socket.assigns.runner, payment) # resume with payment
+# Only reached for self-employed applicants
+def handle_info({AsyncCoroutine, :loan, %ExternalSuspend{value: :business_verification}}, socket) do
+  docs = socket.assigns.business_docs_form |> to_business_docs()
+  AsyncCoroutine.run(socket.assigns.runner, {:ok, docs})
   {:noreply, socket}
 end
 
-def handle_info({AsyncCoroutine, :checkout, {:ok, order}}, socket) do
-  {:noreply, assign(socket, order: order, step: :done)}
+def handle_info({AsyncCoroutine, :loan, {:ok, decision}}, socket) do
+  {:noreply, assign(socket, decision: decision, step: :done)}
 end
 ```
 
-Test it — drive the whole machine in a few lines:
+Test it — two paths through the same computation, deterministic,
+no processes, no stubs:
 
 ```elixir
 comp =
-  Checkout.run()
-  |> Port.with_handler(%{Inventory => Inventory.Test, Orders => Orders.Test})
-  |> Port.with_test_handler(%{Port.key(Emailer, :send_confirmation, [_]) => :ok})
+  LoanApp.apply()
   |> Yield.with_handler()
   |> Throw.with_handler()
 
-fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()    # pauses at :get_cart
-fiber = Coroutine.run(fiber, %{items: [...]})                  # pauses at :get_payment
-%Coroutine.Completed{result: {:ok, order}} =
-  Coroutine.run(fiber, %{card: "4242..."})                     # completes
+# Self-employed, high income — all 4 yields
+fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+fiber = Coroutine.run(fiber, {:ok, %{employment: :self_employed,
+                                      income: 200_000, employer_id: nil}})
+fiber = Coroutine.run(fiber, {:ok, %{license: "LIC-123"}})
+fiber = Coroutine.run(fiber, {:ok, %{verified: true}})
+%Coroutine.Completed{result: {:ok, _}} = Coroutine.run(fiber, {:ok, :submitted})
+
+# Employed, low income — skips business and additional verification
+fiber2 = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+fiber2 = Coroutine.run(fiber2, {:ok, %{employment: :employed,
+                                        income: 50_000, employer_id: "ACME"}})
+%Coroutine.Completed{result: {:ok, _}} = Coroutine.run(fiber2, {:ok, :submitted})
 ```
 
-Same code. Production pauses at each step for user input. Tests drive
-the entire state machine in a single function — deterministic, no
-processes, no stubs.
+An event-decomposed state machine would encode every unique path
+as dispatch state — `employment` branches, `income` branches,
+interaction between them. Here the branches are just `if` in the
+code. Same computation, same handlers, same testability.
 
 [Full LiveView integration recipe →](docs/recipes/liveview.md)
-
-### Durability
-
-The same `Checkout` state machine, above, but now serialised: pause it
-mid-flight, save its entire execution history as JSON, and resume it
-later — after a restart, on a different machine. Every effect invocation
-is captured in a serialisable log:
-
-```elixir
-sc =
-  SerializableCoroutine.new(Checkout.run(), fn comp ->
-    comp |> Yield.with_handler() |> Throw.with_handler()
-  end)
-
-# Run until suspension, serialize the effect log
-suspended = SerializableCoroutine.run(sc)
-json = SerializableCoroutine.serialize(SerializableCoroutine.get_log(suspended))
-# => EffectLogEntry{data: :get_cart, value: nil, state: :started}
-
-# Later — cold resume from JSON, no manual deserialisation needed
-suspended2 = SerializableCoroutine.run(json, sc, %{items: [...]})
-# => EffectLogEntry{data: :get_cart, value: %{items: [...]}, state: :executed}
-# => EffectLogEntry{data: :get_payment, value: nil, state: :started}
-```
-
-Every effect invocation — yields, state changes, writer events —
-is captured in the log. `run` replays recorded effects and resumes
-at the suspension point. The same mechanism that enables batching
-in the composability example enables durability here.
-
-[Full durable computation recipe →](docs/recipes/durable-computation.md)
 
 ## Installation
 
