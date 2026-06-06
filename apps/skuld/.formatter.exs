@@ -13,10 +13,9 @@
   ],
   inputs: [
     "{mix,.formatter}.exs",
-    "apps/skuld/{mix,.formatter}.exs",
-    "apps/skuld/priv/*/seeds.exs",
-    "apps/skuld/priv/*/seeds/**/*.{ex,exs}",
-    "apps/skuld/priv/*/data_migrations/**/*.{ex,exs}",
-    "apps/skuld/{lib,test}/**/*.{ex,exs}"
+    "priv/*/seeds.exs",
+    "priv/*/seeds/**/*.{ex,exs}",
+    "priv/*/data_migrations/**/*.{ex,exs}",
+    "{lib,test}/**/*.{ex,exs}"
   ]
 ]
