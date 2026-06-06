@@ -6,6 +6,26 @@ defmodule Skuld.Umbrella.MixProject do
       apps_path: "apps",
       version: "0.0.0",
       start_permanent: false,
+      dialyzer: [
+        plt_add_apps: [
+          :skuld,
+          :skuld_concurrency,
+          :skuld_port,
+          :skuld_query,
+          :skuld_repo,
+          :skuld_process,
+          :skuld_durable
+        ],
+        paths: [
+          "_build/#{Mix.env()}/lib/skuld/ebin",
+          "_build/#{Mix.env()}/lib/skuld_concurrency/ebin",
+          "_build/#{Mix.env()}/lib/skuld_port/ebin",
+          "_build/#{Mix.env()}/lib/skuld_query/ebin",
+          "_build/#{Mix.env()}/lib/skuld_repo/ebin",
+          "_build/#{Mix.env()}/lib/skuld_process/ebin",
+          "_build/#{Mix.env()}/lib/skuld_durable/ebin"
+        ]
+      ],
       deps: deps()
     ]
   end
