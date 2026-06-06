@@ -134,9 +134,6 @@ defmodule Skuld.MixProject do
             Skuld.Effects.Port,
             Skuld.Repo
           ],
-          "Cross-cutting": [
-            Skuld.Query.Contract
-          ],
           "Core Types": [
             Skuld.Comp.Env,
             Skuld.Comp.Types,

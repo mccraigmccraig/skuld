@@ -1,6 +1,7 @@
 defmodule Skuld.Integration.StreamingBatchingTest do
   use ExUnit.Case, async: true
   use Skuld.Syntax
+  import Skuld.Query.QueryBlock
 
   alias Skuld.Comp
   alias Skuld.Effects.Brook
@@ -32,7 +33,7 @@ defmodule Skuld.Integration.StreamingBatchingTest do
   # ---------------------------------------------------------------
 
   defmodule Queries do
-    use Skuld.Query
+    use Skuld.QueryContract
 
     deffetch fetch_user(id :: String.t()) :: User.t() | nil
     deffetch fetch_user_orders(user_id :: String.t(), month :: String.t()) :: [Order.t()]
@@ -176,7 +177,7 @@ defmodule Skuld.Integration.StreamingBatchingTest do
 
           Brook.to_list(summaries)
         end
-        |> Skuld.Query.with_executor(Queries, Executor)
+        |> Skuld.QueryContract.with_executor(Queries, Executor)
         |> Channel.with_handler()
         |> FiberPool.with_handler()
         |> Comp.run!()
@@ -237,7 +238,7 @@ defmodule Skuld.Integration.StreamingBatchingTest do
 
           Brook.to_list(summaries)
         end
-        |> Skuld.Query.with_executor(Queries, Executor)
+        |> Skuld.QueryContract.with_executor(Queries, Executor)
         |> Channel.with_handler()
         |> FiberPool.with_handler()
         |> Comp.run!()

@@ -1,6 +1,6 @@
 defmodule Skuld.Syntax do
   @moduledoc """
-  Unified syntax module providing do-notation macros for Skuld computations.
+  Syntax module providing the computation do-notation macro.
 
   ## Usage
 
@@ -9,8 +9,6 @@ defmodule Skuld.Syntax do
       # Now you have access to:
       # - comp (inline computation block)
       # - defcomp, defcompp (function definitions)
-      # - query (inline query block with automatic batching)
-      # - defquery, defqueryp (query function definitions)
 
   ## Example
 
@@ -37,18 +35,10 @@ defmodule Skuld.Syntax do
         ctx.value
       end
 
-  ## Query Functions
+  ## Query Syntax
 
-      defquery user_with_orders(id) do
-        user <- Users.get_user(id)
-        orders <- Orders.get_by_user(user.id)
-        {user, orders}
-      end
-
-      defqueryp private_fetch(id) do
-        data <- DataSource.fetch(id)
-        data
-      end
+  For `query`, `defquery`, and `defqueryp` macros, use `use Skuld.Query`
+  (provided by the `skuld_query` package).
 
   ## Syntax Reference
 
@@ -68,12 +58,12 @@ defmodule Skuld.Syntax do
 
   - `Skuld.Comp.CompBlock` - macro implementation details
   - `Skuld.Comp` - core computation primitives
+  - `Skuld.Query` - query do-notation macros (in `skuld_query` package)
   """
 
   defmacro __using__(_opts) do
     quote do
       import Skuld.Comp.CompBlock
-      import Skuld.Query.QueryBlock
     end
   end
 end

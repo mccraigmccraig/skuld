@@ -1,6 +1,7 @@
 defmodule Skuld.Query.QueryBlockTest do
   use ExUnit.Case, async: true
   use Skuld.Syntax
+  use Skuld.Query
 
   import ExUnit.CaptureIO
 
@@ -17,7 +18,7 @@ defmodule Skuld.Query.QueryBlockTest do
   end
 
   defmodule TestQueries do
-    use Skuld.Query
+    use Skuld.QueryContract
 
     deffetch get_user(id :: String.t()) :: map()
     deffetch get_orders(user_id :: String.t()) :: [map()]
@@ -390,7 +391,7 @@ defmodule Skuld.Query.QueryBlockTest do
           orders <- TestQueries.get_orders(user.id)
           {user, recent, orders}
         end
-        |> Skuld.Query.with_executor(TestQueries, TestExecutor)
+        |> Skuld.QueryContract.with_executor(TestQueries, TestExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -445,7 +446,7 @@ defmodule Skuld.Query.QueryBlockTest do
           recent <- TestQueries.get_recent()
           {user, recent}
         end
-        |> Skuld.Query.with_executor(TestQueries, TestExecutor)
+        |> Skuld.QueryContract.with_executor(TestQueries, TestExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -465,7 +466,7 @@ defmodule Skuld.Query.QueryBlockTest do
           orders <- TestQueries.get_orders(user.id)
           {user, orders}
         end
-        |> Skuld.Query.with_executor(TestQueries, TestExecutor)
+        |> Skuld.QueryContract.with_executor(TestQueries, TestExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -485,7 +486,7 @@ defmodule Skuld.Query.QueryBlockTest do
           orders <- TestQueries.get_orders(user.id)
           {user, recent, orders}
         end
-        |> Skuld.Query.with_executor(TestQueries, TestExecutor)
+        |> Skuld.QueryContract.with_executor(TestQueries, TestExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -509,7 +510,7 @@ defmodule Skuld.Query.QueryBlockTest do
           u3 <- TestQueries.get_user("3")
           {u1, u2, u3}
         end
-        |> Skuld.Query.with_executor(TestQueries, TestExecutor)
+        |> Skuld.QueryContract.with_executor(TestQueries, TestExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -699,7 +700,7 @@ defmodule Skuld.Query.QueryBlockTest do
     test "defquery batches independent contract queries" do
       {user, recent} =
         fetch_user_and_recent("1")
-        |> Skuld.Query.with_executor(TestQueries, TestExecutor)
+        |> Skuld.QueryContract.with_executor(TestQueries, TestExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -713,7 +714,7 @@ defmodule Skuld.Query.QueryBlockTest do
     test "defquery sequences dependent contract queries" do
       {user, orders} =
         fetch_user_with_orders("1")
-        |> Skuld.Query.with_executor(TestQueries, TestExecutor)
+        |> Skuld.QueryContract.with_executor(TestQueries, TestExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 

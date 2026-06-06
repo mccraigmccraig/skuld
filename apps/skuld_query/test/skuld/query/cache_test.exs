@@ -19,21 +19,21 @@ defmodule Skuld.Query.CacheTest do
   end
 
   defmodule TestQueries do
-    use Skuld.Query
+    use Skuld.QueryContract
 
     deffetch get_user(id :: String.t()) :: User.t() | nil
     deffetch list_users(org_id :: String.t()) :: [User.t()]
   end
 
   defmodule CacheOptQueries do
-    use Skuld.Query
+    use Skuld.QueryContract
 
     deffetch get_user(id :: String.t()) :: User.t() | nil
     deffetch get_random(seed :: String.t()) :: term(), cache: false
   end
 
   defmodule OrderQueries do
-    use Skuld.Query
+    use Skuld.QueryContract
 
     deffetch get_order(id :: String.t()) :: Order.t() | nil
   end

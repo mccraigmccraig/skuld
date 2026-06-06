@@ -1,11 +1,11 @@
-defmodule Skuld.Query do
+defmodule Skuld.QueryContract do
   @moduledoc """
   Primary API for query contracts, wiring, and caching.
 
   ## Defining a query contract
 
       defmodule MyApp.Queries do
-        use Skuld.Query
+        use Skuld.QueryContract
 
         deffetch get_user(id :: String.t()) :: User.t() | nil
         deffetch get_orders(user_id :: String.t()) :: [Order.t()]
@@ -14,14 +14,14 @@ defmodule Skuld.Query do
   ## Wiring executors
 
       comp
-      |> Skuld.Query.with_executor(MyApp.Queries, MyApp.Queries.EctoExecutor)
+      |> Skuld.QueryContract.with_executor(MyApp.Queries, MyApp.Queries.EctoExecutor)
       |> FiberPool.with_handler()
       |> Comp.run()
 
   ## With caching
 
       comp
-      |> Skuld.Query.with_cached_executor(MyApp.Queries, MyApp.Queries.EctoExecutor)
+      |> Skuld.QueryContract.with_cached_executor(MyApp.Queries, MyApp.Queries.EctoExecutor)
       |> FiberPool.with_handler()
       |> Comp.run()
   """

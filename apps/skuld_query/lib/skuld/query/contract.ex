@@ -255,7 +255,7 @@ defmodule Skuld.Query.Contract do
       unquote(doc_ast)
       @spec unquote(name)(unquote_splicing(spec_params)) :: Skuld.Comp.Types.unquote(comp_type)
       def unquote(name)(unquote_splicing(param_vars)) do
-        Skuld.Query.batchable_op(
+        Skuld.QueryContract.batchable_op(
           {unquote(contract_module), unquote(name)},
           %unquote(struct_module){unquote_splicing(struct_fields)}
         )

@@ -13,10 +13,9 @@
   ],
   inputs: [
     "{mix,.formatter}.exs",
-    "apps/*/{mix,.formatter}.exs",
-    "apps/*/priv/*/seeds.exs",
-    "apps/*/priv/*/seeds/**/*.{ex,exs}",
-    "apps/*/priv/*/data_migrations/**/*.{ex,exs}",
-    "apps/*/{lib,test}/**/*.{ex,exs}"
+    "priv/*/seeds.exs",
+    "priv/*/seeds/**/*.{ex,exs}",
+    "priv/*/data_migrations/**/*.{ex,exs}",
+    "{lib,test}/**/*.{ex,exs}"
   ]
 ]

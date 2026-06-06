@@ -20,7 +20,7 @@ defmodule Skuld.Query.ContractTest do
   end
 
   defmodule TestQueries do
-    use Skuld.Query
+    use Skuld.QueryContract
 
     deffetch get_user(id :: String.t()) :: User.t() | nil
     deffetch get_users_by_org(org_id :: String.t()) :: [User.t()]
@@ -28,7 +28,7 @@ defmodule Skuld.Query.ContractTest do
   end
 
   defmodule OkErrorQueries do
-    use Skuld.Query
+    use Skuld.QueryContract
 
     deffetch find_user(id :: String.t()) :: {:ok, User.t()} | {:error, term()}
     deffetch find_post(id :: String.t()) :: Post.t() | nil
@@ -36,20 +36,20 @@ defmodule Skuld.Query.ContractTest do
   end
 
   defmodule PostQueries do
-    use Skuld.Query
+    use Skuld.QueryContract
 
     deffetch get_post(id :: String.t()) :: Post.t() | nil
     deffetch get_posts_by_user(user_id :: String.t()) :: [Post.t()]
   end
 
   defmodule ZeroArgQueries do
-    use Skuld.Query
+    use Skuld.QueryContract
 
     deffetch health_check() :: :ok
   end
 
   defmodule CacheOptQueries do
-    use Skuld.Query
+    use Skuld.QueryContract
 
     deffetch get_user(id :: String.t()) :: User.t() | nil
     deffetch get_random() :: term(), cache: false
@@ -189,7 +189,7 @@ defmodule Skuld.Query.ContractTest do
           h <- FiberPool.fiber(TestQueries.get_user("1"))
           FiberPool.await!(h)
         end
-        |> Skuld.Query.with_executor(TestQueries, TestExecutor)
+        |> Skuld.QueryContract.with_executor(TestQueries, TestExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -281,7 +281,7 @@ defmodule Skuld.Query.ContractTest do
           h3 <- FiberPool.fiber(TestQueries.get_user_count("org-1"))
           FiberPool.await_all!([h1, h2, h3])
         end
-        |> Skuld.Query.with_executor(TestQueries, TestExecutor)
+        |> Skuld.QueryContract.with_executor(TestQueries, TestExecutor)
         |> FiberPool.with_handler()
         |> Comp.run!()
 
@@ -461,7 +461,7 @@ defmodule Skuld.Query.ContractTest do
       assert_raise CompileError, fn ->
         Code.compile_string("""
         defmodule BadQuery do
-          use Skuld.Query
+          use Skuld.QueryContract
 
           deffetch not_valid_syntax
         end
@@ -473,7 +473,7 @@ defmodule Skuld.Query.ContractTest do
       assert_raise CompileError, ~r/has no deffetch declarations/, fn ->
         Code.compile_string("""
         defmodule EmptyContract do
-          use Skuld.Query
+          use Skuld.QueryContract
         end
         """)
       end
