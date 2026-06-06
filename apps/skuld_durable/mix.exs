@@ -28,6 +28,7 @@ defmodule Skuld.Durable.MixProject do
   defp deps do
     [
       {:skuld, in_umbrella: true},
+      {:skuld_concurrency, in_umbrella: true},
       {:jason, "~> 1.4"}
     ]
   end
