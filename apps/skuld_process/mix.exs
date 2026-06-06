@@ -4,7 +4,7 @@ defmodule Skuld.Process.MixProject do
   def project do
     [
       app: :skuld_process,
-      version: "0.1.0",
+      version: File.read!("VERSION") |> String.trim(),
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
@@ -38,7 +38,7 @@ defmodule Skuld.Process.MixProject do
   defp package do
     [
       name: "skuld_process",
-      files: ~w(lib .formatter.exs mix.exs),
+      files: ~w(lib .formatter.exs mix.exs VERSION),
       licenses: ["MIT"],
       links: %{
         "GitHub" => "https://github.com/mccraigmccraig/skuld"
