@@ -10,7 +10,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
   alias Skuld.Effects.State
   alias Skuld.Effects.Throw
   alias Skuld.Effects.Yield
-  alias Skuld.Data.Change
+  alias Skuld.Effects.State.Change
 
   # Helper to filter out the root mark from log entries for easier testing
   defp user_entries(log) do

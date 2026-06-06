@@ -57,7 +57,7 @@ defmodule Skuld.Effects.State do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
-  alias Skuld.Data.Change
+  alias Skuld.Effects.State.Change
 
   @compile {:inline, sig: 1}
 

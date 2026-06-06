@@ -308,7 +308,7 @@ defmodule Skuld.Effects.EffectLogger.MarkLoopTest do
       [_root, outer_mark, inner_mark, put_entry] = entries_after
       assert outer_mark.data.loop_id == OuterLoop
       assert inner_mark.data.loop_id == InnerLoop
-      assert %Skuld.Data.Change{} = put_entry.value
+      assert %Skuld.Effects.State.Change{} = put_entry.value
     end
 
     test "three-level nesting prunes correctly" do

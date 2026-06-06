@@ -1,4 +1,4 @@
-defmodule Skuld.Data.Change do
+defmodule Skuld.Effects.State.Change do
   @moduledoc """
   Represents a state change with old and new values.
 
@@ -40,7 +40,7 @@ defmodule Skuld.Data.Change do
   end
 end
 
-defimpl Jason.Encoder, for: Skuld.Data.Change do
+defimpl Jason.Encoder, for: Skuld.Effects.State.Change do
   def encode(value, opts) do
     value
     |> Skuld.Comp.SerializableStruct.encode()
