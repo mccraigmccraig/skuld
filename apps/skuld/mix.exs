@@ -19,7 +19,7 @@ defmodule Skuld.MixProject do
       docs: [
         main: "readme",
         extras: [
-          "../../README.md",
+          "README.md",
           "docs/why.md",
           "docs/what.md",
           "docs/getting-started.md",
@@ -42,7 +42,7 @@ defmodule Skuld.MixProject do
         ],
         groups_for_extras: [
           Introduction: [
-            "../../README.md",
+            "README.md",
             "docs/why.md",
             "docs/what.md",
             "docs/getting-started.md",
