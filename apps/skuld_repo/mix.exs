@@ -60,7 +60,7 @@ defmodule Skuld.Repo.MixProject do
   defp package do
     [
       name: "skuld_repo",
-      files: ~w(lib .formatter.exs mix.exs VERSION),
+      files: ~w(lib .formatter.exs mix.exs VERSION CHANGELOG.md),
       licenses: ["MIT"],
       links: %{
         "GitHub" => "https://github.com/mccraigmccraig/skuld"

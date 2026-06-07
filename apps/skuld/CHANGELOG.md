@@ -1,8 +1,21 @@
 # Changelog
 
-<!-- last-updated-against: 08a78e2 -->
+<!-- last-updated-against: ca199b2 -->
 
 All notable changes to Skuld will be documented in this file.
+
+## [0.32.0] — 2026-06-07
+
+### Changed
+
+- Monolithic library split into 7 independently-versioned packages.
+  The core `skuld` package retains the computation engine (`Comp`), syntax
+  macros (`Syntax`), and foundational effects (State, Reader, Writer, Throw,
+  Bracket, Fresh, Random, FxList, Yield) along with the environment,
+  sentinels, and protocol infrastructure. All concurrency, port/adapter,
+  query batching, Ecto repo, durable execution, and multi-process features
+  moved to their own packages: `skuld_concurrency`, `skuld_port`,
+  `skuld_query`, `skuld_repo`, `skuld_durable`, `skuld_process`.
 
 ## [0.31.2] — 2026-05-27
 

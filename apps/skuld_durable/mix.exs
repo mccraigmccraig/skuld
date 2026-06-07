@@ -59,7 +59,7 @@ defmodule Skuld.Durable.MixProject do
   defp package do
     [
       name: "skuld_durable",
-      files: ~w(lib .formatter.exs mix.exs VERSION),
+      files: ~w(lib .formatter.exs mix.exs VERSION CHANGELOG.md),
       licenses: ["MIT"],
       links: %{
         "GitHub" => "https://github.com/mccraigmccraig/skuld"

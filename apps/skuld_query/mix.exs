@@ -56,7 +56,7 @@ defmodule Skuld.QueryMixProject do
   defp package do
     [
       name: "skuld_query",
-      files: ~w(lib .formatter.exs mix.exs VERSION),
+      files: ~w(lib .formatter.exs mix.exs VERSION CHANGELOG.md),
       licenses: ["MIT"],
       links: %{
         "GitHub" => "https://github.com/mccraigmccraig/skuld"
