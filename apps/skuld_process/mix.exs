@@ -12,7 +12,15 @@ defmodule Skuld.Process.MixProject do
       description: description(),
       package: package(),
       source_url: "https://github.com/mccraigmccraig/skuld",
-      homepage_url: "https://github.com/mccraigmccraig/skuld"
+      homepage_url: "https://github.com/mccraigmccraig/skuld",
+      docs: [
+        groups_for_modules: [
+          Process: [
+            Skuld.Effects.Parallel,
+            Skuld.Effects.AtomicState
+          ]
+        ]
+      ]
     ]
   end
 
@@ -27,7 +35,8 @@ defmodule Skuld.Process.MixProject do
 
   defp deps do
     [
-      {:skuld, in_umbrella: true}
+      {:skuld, in_umbrella: true},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
 

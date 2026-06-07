@@ -30,18 +30,7 @@ defmodule Skuld.MixProject do
           "docs/effects/throw-bracket.md",
           "docs/effects/fresh-random.md",
           "docs/effects/fxlist.md",
-          "docs/effects/command-transaction.md",
           "docs/effects/yield.md",
-          "docs/effects/coroutine.md",
-          "docs/effects/fiberpool.md",
-          "docs/effects/channel-brook.md",
-          "docs/effects/async-coroutine.md",
-          "docs/effects/effectlogger.md",
-          "docs/effects/port.md",
-          "docs/effects/effectful-facade.md",
-          "docs/effects/adapter.md",
-          "docs/effects/repo.md",
-          "docs/effects/query.md",
           "docs/recipes/hexagonal-architecture.md",
           "docs/recipes/property-testing.md",
           "docs/recipes/handler-stacks.md",
@@ -66,24 +55,7 @@ defmodule Skuld.MixProject do
             "docs/effects/throw-bracket.md",
             "docs/effects/fresh-random.md",
             "docs/effects/fxlist.md",
-            "docs/effects/command-transaction.md"
-          ],
-          "Coroutines & Concurrency": [
-            "docs/effects/yield.md",
-            "docs/effects/coroutine.md",
-            "docs/effects/fiberpool.md",
-            "docs/effects/channel-brook.md",
-            "docs/effects/async-coroutine.md",
-            "docs/effects/effectlogger.md"
-          ],
-          Boundaries: [
-            "docs/effects/port.md",
-            "docs/effects/effectful-facade.md",
-            "docs/effects/adapter.md",
-            "docs/effects/repo.md"
-          ],
-          "Cross-cutting": [
-            "docs/effects/query.md"
+            "docs/effects/yield.md"
           ],
           Recipes: [
             "docs/recipes/hexagonal-architecture.md",
@@ -102,10 +74,7 @@ defmodule Skuld.MixProject do
           Core: [
             Skuld,
             Skuld.Comp,
-            Skuld.Syntax,
-            Skuld.AsyncCoroutine,
-            Skuld.Coroutine,
-            Skuld.Adapter
+            Skuld.Syntax
           ],
           "Foundational Effects": [
             Skuld.Effects.State,
@@ -117,28 +86,13 @@ defmodule Skuld.MixProject do
             Skuld.Effects.Random,
             Skuld.Effects.FxList,
             Skuld.Effects.FxFasterList,
-            Skuld.Effects.Command,
-            Skuld.Effects.Transaction,
             Skuld.Effects.Yield
-          ],
-          "Coroutines & Concurrency": [
-            Skuld.Effects.FiberPool,
-            Skuld.Effects.Channel,
-            Skuld.Effects.Brook,
-            Skuld.Effects.Parallel,
-            Skuld.Effects.AtomicState,
-            Skuld.Effects.Task,
-            Skuld.Effects.EffectLogger
-          ],
-          Boundaries: [
-            Skuld.Effects.Port,
-            Skuld.Repo
           ],
           "Core Types": [
             Skuld.Comp.Env,
             Skuld.Comp.Types,
             Skuld.Comp.ExternalSuspend,
-            Skuld.Comp.InternalSuspend,
+            Skuld.Comp.ForeignSuspend,
             Skuld.Comp.Throw,
             Skuld.Comp.Cancelled
           ],
@@ -156,10 +110,6 @@ defmodule Skuld.MixProject do
             Skuld.Comp.InvalidComputation,
             Skuld.Comp.MatchFailed
           ]
-        ],
-        nest_modules_by_prefix: [
-          Skuld.Effects.EffectLogger,
-          Skuld.Effects.Transaction
         ]
       ]
     ]

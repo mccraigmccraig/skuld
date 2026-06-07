@@ -12,7 +12,22 @@ defmodule Skuld.QueryMixProject do
       description: description(),
       package: package(),
       source_url: "https://github.com/mccraigmccraig/skuld",
-      homepage_url: "https://github.com/mccraigmccraig/skuld"
+      homepage_url: "https://github.com/mccraigmccraig/skuld",
+      docs: [
+        main: "Query",
+        extras: [
+          "docs/effects/query.md"
+        ],
+        groups_for_modules: [
+          Query: [
+            Skuld.Query,
+            Skuld.QueryContract,
+            Skuld.Query.Contract,
+            Skuld.Query.Cache,
+            Skuld.Query.QueryBlock
+          ]
+        ]
+      ]
     ]
   end
 
@@ -29,7 +44,8 @@ defmodule Skuld.QueryMixProject do
     [
       {:skuld, in_umbrella: true},
       {:skuld_concurrency, in_umbrella: true},
-      {:double_down, "~> 0.58"}
+      {:double_down, "~> 0.58"},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
 

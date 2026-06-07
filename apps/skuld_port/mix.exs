@@ -12,7 +12,43 @@ defmodule Skuld.Port.MixProject do
       description: description(),
       package: package(),
       source_url: "https://github.com/mccraigmccraig/skuld",
-      homepage_url: "https://github.com/mccraigmccraig/skuld"
+      homepage_url: "https://github.com/mccraigmccraig/skuld",
+      docs: [
+        main: "port",
+        extras: [
+          "docs/effects/port.md",
+          "docs/effects/effectful-facade.md",
+          "docs/effects/adapter.md",
+          "docs/effects/command-transaction.md"
+        ],
+        groups_for_extras: [
+          Boundaries: [
+            "docs/effects/port.md",
+            "docs/effects/effectful-facade.md",
+            "docs/effects/adapter.md",
+            "docs/effects/command-transaction.md"
+          ]
+        ],
+        groups_for_modules: [
+          Port: [
+            Skuld.Effects.Port
+          ],
+          Facade: [
+            Skuld.Effects.Port.EffectfulFacade
+          ],
+          Adapter: [
+            Skuld.Adapter,
+            Skuld.Adapter.EffectfulContract
+          ],
+          Operations: [
+            Skuld.Effects.Command,
+            Skuld.Effects.Transaction
+          ]
+        ],
+        nest_modules_by_prefix: [
+          Skuld.Effects.Transaction
+        ]
+      ]
     ]
   end
 
@@ -28,7 +64,8 @@ defmodule Skuld.Port.MixProject do
   defp deps do
     [
       {:skuld, in_umbrella: true},
-      {:double_down, "~> 0.58"}
+      {:double_down, "~> 0.58"},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
 

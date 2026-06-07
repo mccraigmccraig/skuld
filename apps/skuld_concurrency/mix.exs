@@ -12,7 +12,62 @@ defmodule Skuld.Concurrency.MixProject do
       description: description(),
       package: package(),
       source_url: "https://github.com/mccraigmccraig/skuld",
-      homepage_url: "https://github.com/mccraigmccraig/skuld"
+      homepage_url: "https://github.com/mccraigmccraig/skuld",
+      docs: [
+        main: "coroutine",
+        extras: [
+          "docs/effects/coroutine.md",
+          "docs/effects/fiberpool.md",
+          "docs/effects/channel-brook.md",
+          "docs/effects/async-coroutine.md"
+        ],
+        groups_for_extras: [
+          "Coroutines & Concurrency": [
+            "docs/effects/coroutine.md",
+            "docs/effects/fiberpool.md",
+            "docs/effects/channel-brook.md",
+            "docs/effects/async-coroutine.md"
+          ]
+        ],
+        groups_for_modules: [
+          Coroutine: [
+            Skuld.Coroutine,
+            Skuld.Coroutine.Handle,
+            Skuld.Coroutine.Pending,
+            Skuld.Coroutine.Completed,
+            Skuld.Coroutine.Errored,
+            Skuld.Coroutine.Cancelled,
+            Skuld.Coroutine.InternalSuspended,
+            Skuld.Coroutine.ExternalSuspended,
+            Skuld.Coroutine.ForeignSuspended,
+            Skuld.Coroutine.ForeignSuspensions,
+            Skuld.Coroutine.Error
+          ],
+          Scheduler: [
+            Skuld.Effects.FiberPool,
+            Skuld.FiberPool.Main,
+            Skuld.FiberPool.Scheduler,
+            Skuld.FiberPool.BatchExecutor,
+            Skuld.FiberPool.Batching,
+            Skuld.FiberPool.FiberPoolState,
+            Skuld.FiberPool.ChannelCoordinationState,
+            Skuld.FiberPool.PendingWork,
+            Skuld.FiberPool.Tasks
+          ],
+          Streaming: [
+            Skuld.Effects.Channel,
+            Skuld.Effects.Brook
+          ],
+          Async: [
+            Skuld.AsyncCoroutine,
+            Skuld.Effects.Task
+          ],
+          CrossPlatform: [
+            Skuld.ForeignResolver,
+            Skuld.Comp.InternalSuspend
+          ]
+        ]
+      ]
     ]
   end
 
@@ -27,7 +82,8 @@ defmodule Skuld.Concurrency.MixProject do
 
   defp deps do
     [
-      {:skuld, in_umbrella: true}
+      {:skuld, in_umbrella: true},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
 
