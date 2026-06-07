@@ -5,7 +5,6 @@ defmodule Skuld.QueryMixProject do
     [
       app: :skuld_query,
       build_path: "../../_build",
-      config_path: "../../config/config.exs",
       deps_path: "../../deps",
       lockfile: "../../mix.lock",      version: File.read!("VERSION") |> String.trim(),
       elixir: "~> 1.19",
