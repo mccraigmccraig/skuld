@@ -6,7 +6,7 @@ defmodule Skuld.Port.MixProject do
       app: :skuld_port,
       build_path: "../../_build",
       deps_path: "../../deps",
-      lockfile: "../../mix.lock",      version: File.read!("VERSION") |> String.trim(),
+      config_path: "../../config/config.exs",      lockfile: "../../mix.lock",      version: File.read!("VERSION") |> String.trim(),
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
