@@ -63,10 +63,20 @@ defmodule Skuld.Port.MixProject do
 
   defp deps do
     [
-      {:skuld, in_umbrella: true},
+      skuld_dep(),
       {:double_down, "~> 0.58"},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
+  end
+
+  @skuld_version File.read!("../skuld/VERSION") |> String.trim()
+
+  defp skuld_dep do
+    if System.get_env("HEX_PUBLISH") == "true" do
+      {:skuld, "~> #{@skuld_version}"}
+    else
+      {:skuld, in_umbrella: true}
+    end
   end
 
   defp description do

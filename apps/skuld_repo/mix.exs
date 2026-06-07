@@ -45,12 +45,32 @@ defmodule Skuld.Repo.MixProject do
 
   defp deps do
     [
-      {:skuld, in_umbrella: true},
-      {:skuld_port, in_umbrella: true},
+      skuld_dep(),
+      skuld_port_dep(),
       {:double_down, "~> 0.58"},
       {:ecto, "~> 3.12", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
+  end
+
+  @skuld_version File.read!("../skuld/VERSION") |> String.trim()
+
+  defp skuld_dep do
+    if System.get_env("HEX_PUBLISH") == "true" do
+      {:skuld, "~> #{@skuld_version}"}
+    else
+      {:skuld, in_umbrella: true}
+    end
+  end
+
+  @skuld_port_version File.read!("../skuld_port/VERSION") |> String.trim()
+
+  defp skuld_port_dep do
+    if System.get_env("HEX_PUBLISH") == "true" do
+      {:skuld_port, "~> #{@skuld_version}"}
+    else
+      {:skuld_port, in_umbrella: true}
+    end
   end
 
   defp description do

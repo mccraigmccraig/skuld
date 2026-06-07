@@ -45,11 +45,31 @@ defmodule Skuld.Durable.MixProject do
 
   defp deps do
     [
-      {:skuld, in_umbrella: true},
-      {:skuld_concurrency, in_umbrella: true},
+      skuld_dep(),
+      skuld_concurrency_dep(),
       {:jason, "~> 1.4"},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
+  end
+
+  @skuld_version File.read!("../skuld/VERSION") |> String.trim()
+
+  defp skuld_dep do
+    if System.get_env("HEX_PUBLISH") == "true" do
+      {:skuld, "~> #{@skuld_version}"}
+    else
+      {:skuld, in_umbrella: true}
+    end
+  end
+
+  @skuld_concurrency_version File.read!("../skuld_concurrency/VERSION") |> String.trim()
+
+  defp skuld_concurrency_dep do
+    if System.get_env("HEX_PUBLISH") == "true" do
+      {:skuld_concurrency, "~> #{@skuld_version}"}
+    else
+      {:skuld_concurrency, in_umbrella: true}
+    end
   end
 
   defp description do
