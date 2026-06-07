@@ -4,7 +4,10 @@ defmodule Skuld.Concurrency.MixProject do
   def project do
     [
       app: :skuld_concurrency,
-      version: File.read!("VERSION") |> String.trim(),
+      build_path: "../../_build",
+      config_path: "../../config/config.exs",
+      deps_path: "../../deps",
+      lockfile: "../../mix.lock",      version: File.read!("VERSION") |> String.trim(),
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,

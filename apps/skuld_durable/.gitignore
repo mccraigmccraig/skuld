@@ -24,3 +24,4 @@ erl_crash.dump
 
 # Temporary files, for example, from tests.
 /tmp/
+mix.lock
