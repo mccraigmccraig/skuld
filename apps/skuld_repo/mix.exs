@@ -51,7 +51,7 @@ defmodule Skuld.Repo.MixProject do
     [
       skuld_dep(),
       skuld_port_dep(),
-      {:double_down, "~> 0.58"},
+      {:double_down, "~> 0.59.0"},
       {:ecto, "~> 3.12"},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]

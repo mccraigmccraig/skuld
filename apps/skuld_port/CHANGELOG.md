@@ -1,8 +1,19 @@
 # Changelog
 
-<!-- last-updated-against: ca199b2 -->
+<!-- last-updated-against: c84d21d -->
 
 All notable changes to `skuld_port` will be documented in this file.
+
+## [Unreleased]
+
+### Fixed
+
+- Fixed `unwrap_defer` to use correct module path for `DoubleDown.Contract.Dispatch.Defer` — the
+  guard was checking for the wrong module, so Defer structs from DD fakes were never unwrapped.
+
+### Changed
+
+- Tightened `double_down` constraint to `~> 0.59.0` (from `~> 0.58`) to ensure compatible API.
 
 ## [0.32.0] — 2026-06-07
 

@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 97d0fef -->
+<!-- last-updated-against: c84d21d -->
 
 All notable changes to `skuld_repo` will be documented in this file.
 
@@ -11,6 +11,8 @@ All notable changes to `skuld_repo` will be documented in this file.
 - **Ecto** is now a required rather than optional dependency — it was previously
   optional on the monolithic `skuld` package but is always required by
   `skuld_repo`.
+- Tightened `double_down` constraint to `~> 0.59.0` (from `~> 0.58`) — adds
+  `DoubleDown.Repo.Stub` which was not available in 0.58.0.
 
 ### Fixed
 
