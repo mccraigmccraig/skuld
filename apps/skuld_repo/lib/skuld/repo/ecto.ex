@@ -12,62 +12,60 @@
 #     |> Port.with_handler(%{Port.Repo => MyApp.Repo.Port})
 #     |> Comp.run!()
 #
-if Code.ensure_loaded?(Ecto) do
-  defmodule Skuld.Repo.Ecto do
-    @moduledoc """
-    Macro for generating a `Port.Repo.Behaviour` implementation that delegates
-    to a specific Ecto Repo module.
+defmodule Skuld.Repo.Ecto do
+  @moduledoc """
+  Macro for generating a `Port.Repo.Behaviour` implementation that delegates
+  to a specific Ecto Repo module.
 
-    Each operation in the `Port.Repo` contract is implemented by calling
-    the corresponding function on the configured Repo module with the
-    same arguments.
+  Each operation in the `Port.Repo` contract is implemented by calling
+  the corresponding function on the configured Repo module with the
+  same arguments.
 
-    ## Usage
+  ## Usage
 
-        defmodule MyApp.Repo.Port do
-          use Skuld.Repo.Ecto, repo: MyApp.Repo
-        end
-
-    This generates a module satisfying `Skuld.Repo.Behaviour`
-    with functions like:
-
-        def insert(changeset), do: MyApp.Repo.insert(changeset)
-        def update(changeset), do: MyApp.Repo.update(changeset)
-        # ... etc.
-
-    ## Handler Installation
-
-        alias Skuld.Effects.Port
-
-        comp
-        |> Port.with_handler(%{Port.Repo => MyApp.Repo.Port})
-        |> Comp.run!()
-    """
-
-    defmacro __using__(opts) do
-      repo = Keyword.fetch!(opts, :repo)
-
-      operations = Skuld.Repo.Contract.__callbacks__()
-
-      delegations =
-        Enum.map(operations, fn %{name: name, params: params, arity: arity} ->
-          param_vars = Enum.map(params, fn p -> Macro.var(p, nil) end)
-
-          quote do
-            @impl true
-            def unquote(name)(unquote_splicing(param_vars)) do
-              unquote(repo).unquote(name)(unquote_splicing(param_vars))
-            end
-
-            defoverridable [{unquote(name), unquote(arity)}]
-          end
-        end)
-
-      quote do
-        @behaviour Skuld.Repo.Contract
-
-        unquote_splicing(delegations)
+      defmodule MyApp.Repo.Port do
+        use Skuld.Repo.Ecto, repo: MyApp.Repo
       end
+
+  This generates a module satisfying `Skuld.Repo.Behaviour`
+  with functions like:
+
+      def insert(changeset), do: MyApp.Repo.insert(changeset)
+      def update(changeset), do: MyApp.Repo.update(changeset)
+      # ... etc.
+
+  ## Handler Installation
+
+      alias Skuld.Effects.Port
+
+      comp
+      |> Port.with_handler(%{Port.Repo => MyApp.Repo.Port})
+      |> Comp.run!()
+  """
+
+  defmacro __using__(opts) do
+    repo = Keyword.fetch!(opts, :repo)
+
+    operations = Skuld.Repo.Contract.__callbacks__()
+
+    delegations =
+      Enum.map(operations, fn %{name: name, params: params, arity: arity} ->
+        param_vars = Enum.map(params, fn p -> Macro.var(p, nil) end)
+
+        quote do
+          @impl true
+          def unquote(name)(unquote_splicing(param_vars)) do
+            unquote(repo).unquote(name)(unquote_splicing(param_vars))
+          end
+
+          defoverridable [{unquote(name), unquote(arity)}]
+        end
+      end)
+
+    quote do
+      @behaviour Skuld.Repo.Contract
+
+      unquote_splicing(delegations)
     end
   end
 end

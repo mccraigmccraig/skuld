@@ -1,8 +1,20 @@
 # Changelog
 
-<!-- last-updated-against: ca199b2 -->
+<!-- last-updated-against: 97d0fef -->
 
 All notable changes to `skuld_repo` will be documented in this file.
+
+## [Unreleased]
+
+### Changed
+
+- **Ecto** is now a required rather than optional dependency — it was previously
+  optional on the monolithic `skuld` package but is always required by
+  `skuld_repo`.
+
+### Fixed
+
+- Use correct sibling version attribute for `skuld_port` Hex dep constraint.
 
 ## [0.32.0] — 2026-06-07
 

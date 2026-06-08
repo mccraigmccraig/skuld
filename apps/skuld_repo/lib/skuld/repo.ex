@@ -10,28 +10,26 @@
 #       {user, found}
 #     end
 #
-if Code.ensure_loaded?(Ecto) do
-  defmodule Skuld.Repo do
-    @moduledoc """
-    Effectful dispatch facade for `Skuld.Repo.Effectful`.
+defmodule Skuld.Repo do
+  @moduledoc """
+  Effectful dispatch facade for `Skuld.Repo.Effectful`.
 
-    Provides effectful caller functions, bang variants, and key helpers
-    for the standard Ecto Repo operations.
+  Provides effectful caller functions, bang variants, and key helpers
+  for the standard Ecto Repo operations.
 
-    ## Usage
+  ## Usage
 
-        alias Skuld.Repo
+      alias Skuld.Repo
 
-        comp do
-          user <- Repo.insert!(changeset)
-          found <- Repo.get(User, user.id)
-          {user, found}
-        end
-        |> Port.with_handler(%{Repo.Effectful => MyApp.Repo.Ecto})
-        |> Throw.with_handler()
-        |> Comp.run!()
-    """
+      comp do
+        user <- Repo.insert!(changeset)
+        found <- Repo.get(User, user.id)
+        {user, found}
+      end
+      |> Port.with_handler(%{Repo.Effectful => MyApp.Repo.Ecto})
+      |> Throw.with_handler()
+      |> Comp.run!()
+  """
 
-    use Skuld.Effects.Port.EffectfulFacade, contract: Skuld.Repo.Effectful
-  end
+  use Skuld.Effects.Port.EffectfulFacade, contract: Skuld.Repo.Effectful
 end
