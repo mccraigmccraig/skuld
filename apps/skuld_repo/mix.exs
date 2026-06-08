@@ -6,7 +6,9 @@ defmodule Skuld.Repo.MixProject do
       app: :skuld_repo,
       build_path: "../../_build",
       deps_path: "../../deps",
-      config_path: "../../config/config.exs",      lockfile: "../../mix.lock",      version: File.read!("VERSION") |> String.trim(),
+      config_path: "../../config/config.exs",
+      lockfile: "../../mix.lock",
+      version: File.read!("VERSION") |> String.trim(),
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
@@ -69,7 +71,7 @@ defmodule Skuld.Repo.MixProject do
 
   defp skuld_port_dep do
     if System.get_env("HEX_PUBLISH") == "true" do
-      {:skuld_port, "~> #{@skuld_version}"}
+      {:skuld_port, "~> #{@skuld_port_version}"}
     else
       {:skuld_port, in_umbrella: true}
     end

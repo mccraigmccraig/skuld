@@ -6,7 +6,9 @@ defmodule Skuld.Durable.MixProject do
       app: :skuld_durable,
       build_path: "../../_build",
       deps_path: "../../deps",
-      config_path: "../../config/config.exs",      lockfile: "../../mix.lock",      version: File.read!("VERSION") |> String.trim(),
+      config_path: "../../config/config.exs",
+      lockfile: "../../mix.lock",
+      version: File.read!("VERSION") |> String.trim(),
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
@@ -68,7 +70,7 @@ defmodule Skuld.Durable.MixProject do
 
   defp skuld_concurrency_dep do
     if System.get_env("HEX_PUBLISH") == "true" do
-      {:skuld_concurrency, "~> #{@skuld_version}"}
+      {:skuld_concurrency, "~> #{@skuld_concurrency_version}"}
     else
       {:skuld_concurrency, in_umbrella: true}
     end
