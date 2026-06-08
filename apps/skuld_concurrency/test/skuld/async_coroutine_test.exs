@@ -539,47 +539,6 @@ defmodule Skuld.AsyncCoroutineTest do
 
       Agent.stop(agent)
     end
-
-    test "applies transform_suspend with EffectLogger on all yields" do
-      alias Skuld.Effects.EffectLogger
-
-      computation =
-        comp do
-          _ <- State.modify(fn c -> c + 1 end)
-          _ <- Yield.yield(:first)
-          _ <- State.modify(fn c -> c + 1 end)
-          _ <- Yield.yield(:second)
-          :done
-        end
-        |> EffectLogger.with_logging()
-        |> State.with_handler(0)
-
-      {:ok, runner, %ExternalSuspend{value: :first, data: data1}} =
-        AsyncCoroutine.run_sync(computation, tag: :effectlogger_transform)
-
-      # First yield should have EffectLogger data
-      assert is_map(data1)
-      assert Map.has_key?(data1, EffectLogger)
-      log1 = data1[EffectLogger]
-      assert log1 != nil
-      entries1 = EffectLogger.Log.to_list(log1)
-
-      # Resume and get second yield
-      %ExternalSuspend{value: :second, data: data2} = AsyncCoroutine.run_sync(runner, :ok)
-
-      # Second yield should ALSO have EffectLogger data (this was the bug!)
-      assert is_map(data2)
-      assert Map.has_key?(data2, EffectLogger)
-      log2 = data2[EffectLogger]
-      assert log2 != nil
-      entries2 = EffectLogger.Log.to_list(log2)
-
-      # Log should have grown (more entries after the second State.modify)
-      assert length(entries2) > length(entries1)
-
-      # Final result is {:done, log} because EffectLogger wraps the result
-      {:done, _final_log} = AsyncCoroutine.run_sync(runner, :ok)
-    end
   end
 
   describe "integration scenarios" do

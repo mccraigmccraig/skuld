@@ -3,6 +3,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
 
   import Skuld.Comp.CompBlock
 
+  alias Skuld.AsyncCoroutine
   alias Skuld.Comp
   alias Skuld.Effects.EffectLogger
   alias Skuld.Effects.EffectLogger.EffectLogEntry
@@ -928,6 +929,43 @@ defmodule Skuld.Effects.EffectLoggerTest do
         |> Comp.run()
 
       assert data[:my_key] == "attached"
+    end
+  end
+
+  describe "with AsyncCoroutine" do
+    test "applies transform_suspend on all yields" do
+      computation =
+        comp do
+          _ <- State.modify(fn c -> c + 1 end)
+          _ <- Yield.yield(:first)
+          _ <- State.modify(fn c -> c + 1 end)
+          _ <- Yield.yield(:second)
+          :done
+        end
+        |> EffectLogger.with_logging()
+        |> State.with_handler(0)
+
+      {:ok, runner, %Comp.ExternalSuspend{value: :first, data: data1}} =
+        AsyncCoroutine.run_sync(computation, tag: :effectlogger_transform)
+
+      assert is_map(data1)
+      assert Map.has_key?(data1, EffectLogger)
+      log1 = data1[EffectLogger]
+      assert log1 != nil
+      entries1 = EffectLogger.Log.to_list(log1)
+
+      %Comp.ExternalSuspend{value: :second, data: data2} =
+        AsyncCoroutine.run_sync(runner, :ok)
+
+      assert is_map(data2)
+      assert Map.has_key?(data2, EffectLogger)
+      log2 = data2[EffectLogger]
+      assert log2 != nil
+      entries2 = EffectLogger.Log.to_list(log2)
+
+      assert length(entries2) > length(entries1)
+
+      {:done, _final_log} = AsyncCoroutine.run_sync(runner, :ok)
     end
   end
 end
