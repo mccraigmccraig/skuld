@@ -8,45 +8,21 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/skuld.svg)](https://hex.pm/packages/skuld)
 [![Documentation](https://img.shields.io/badge/documentation-gray)](https://hexdocs.pm/skuld/)
 
-An effectful programming framework for Elixir.
+A pure effect system for Elixir: write business logic as effect descriptions,
+swap handlers for deterministic testing. Distributed across seven independently-versioned
+packages:
 
-Bundled with a library of effects and components spanning state
-management, cooperative concurrency, streaming, efficient query
-execution, component architecture, and durable serialisable workflows:
+| Package | Provides |
+|---|---|
+| [`skuld`](https://hex.pm/packages/skuld) | Core engine (`Comp`), syntax (`Syntax`), foundational effects |
+| [`skuld_concurrency`](https://hex.pm/packages/skuld_concurrency) | Coroutines, `FiberPool`, `Channel`/`Brook` streaming, `AsyncCoroutine` |
+| [`skuld_port`](https://hex.pm/packages/skuld_port) | `Port` dispatch, `EffectfulFacade`, `Adapter`, `Command`/`Transaction` |
+| [`skuld_durable`](https://hex.pm/packages/skuld_durable) | `SerializableCoroutine`, `EffectLogger` for durable workflows |
+| [`skuld_query`](https://hex.pm/packages/skuld_query) | Auto-batching data fetches via `Query` do-notation (Haxl-style) |
+| [`skuld_repo`](https://hex.pm/packages/skuld_repo) | Ecto Repo integration (`InMemory`, `Ecto`, `Stub`) |
+| [`skuld_process`](https://hex.pm/packages/skuld_process) | `Parallel` fan-out, `AtomicState` for process-level state |
 
-```
-                          Comp
-                     (lazy computation,
-                      evidence-passing,
-                      scoped handlers)
-                            │
-      ┌─────────────────────┼───────────────────────────┐
-      │                     │                           │
- //Foundational       //Coroutines &               //Boundaries
- //Effects            //Concurrency                     │
-      │                     │                           │
-      │                 Coroutine                ┌──────┼────┐
-      │                     │                    │      │    │
- State, Reader,    ┌────────┼─────────┐          │      │  Port
- Writer, Throw,    │        │         │          │      │  Port.EffectfulFacade
- Bracket, Fresh,   │  Serializable-   │          │      │  Repo
- Random, FxList,   │   Coroutine      │          │      │
- Yield,            │                  │          │      │
- EffectLogger,  AsyncCoroutine     FiberPool     │  Adapter
- Parallel,                            │          │  Adapter.EffectfulContract
- AtomicState,                         ├─────────┐│
- Transaction,                         │         ││
- Command                              │         ││
-                                 ┌────┴────┐    ││
-                              Channel    Task   ││
-                                 │              ││
-                               Brook            ││
-                                                ││
-                                           Query.Contract
-                                           QueryBlock
-                                           (Haxl-like: auto-batches fetches
-                                           via Coroutine fibers)
-```
+See the [package architecture](https://hexdocs.pm/skuld/architecture.html) for a detailed breakdown of how these fit together.
 
 ## The old problem
 
@@ -219,15 +195,29 @@ code. Same computation, same handlers, same testability.
 
 ## Installation
 
-[![Hex.pm](https://img.shields.io/hexpm/v/skuld.svg)](https://hex.pm/packages/skuld)
+Start with the core package:
 
 ```elixir
 def deps do
   [
-    {:skuld, "~> 0.28"}
+    {:skuld, "~> 0.32"}
   ]
 end
 ```
+
+Add sibling packages as you need their capabilities:
+
+```elixir
+{:skuld_concurrency, "~> 0.32"},   # coroutines, streaming
+{:skuld_port, "~> 0.32"},          # Port/adapter boundaries
+{:skuld_durable, "~> 0.32"},       # durable workflows
+{:skuld_query, "~> 0.32"},         # query batching
+{:skuld_repo, "~> 0.32"},          # Ecto integration
+{:skuld_process, "~> 0.32"},       # parallel execution
+```
+
+Each package is independently versioned. Check the latest versions on the
+[skuld hex.pm page](https://hex.pm/packages/skuld).
 
 ## Where next?
 
@@ -237,10 +227,11 @@ end
 | See how effects and handlers work | [How It Works](docs/what.md) |
 | Write your first computation | [Getting Started](docs/getting-started.md) |
 | State, Reader, Writer, Throw, Fresh, Random | [Foundational Effects](docs/effects/state-reader-writer.md) |
+| Understand the package architecture | [Package Architecture](docs/architecture.md) |
 | Yield, Coroutines, FiberPool, Channels, Async | [Coroutines & Concurrency](docs/effects/yield.md) |
 | Port, Repo, Hexagonal Architecture | [Boundaries](docs/effects/port.md) |
 | Eliminate N+1 queries | [Batch Loading](docs/recipes/batch-loading.md) |
-| Handler-swapping for deterministic testing | [Testing](docs/testing.md) |
+| Handler-swapping for deterministic testing | [Property Testing](docs/recipes/property-testing.md) |
 | Full effect and API reference | [Reference](docs/reference.md) |
 | Peek under the hood — CPS, evidence-passing, custom effects | [How It Really Works](docs/internals.md) |
 

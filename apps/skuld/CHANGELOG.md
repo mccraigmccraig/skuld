@@ -22,11 +22,20 @@ All notable changes to Skuld will be documented in this file.
   as the core computation engine plus foundational effects. Adds a clear list
   of provided effects and directs readers to sibling packages for concurrency,
   query batching, port/adapter boundaries, etc. Removed stale Freyja reference.
+- README architecture diagram moved to `docs/architecture.md`; replaced with
+  a concise 7-package table with hex.pm links.
+- README installation section updated to show all 7 packages with
+  guidance on when to add each.
 - `mix.exs` description updated to reflect the umbrella split — no longer
   claims to bundle coroutines, query batching, or DoubleDown integration;
   points to sibling packages instead.
 - Added `ignore_warnings` to umbrella root `mix.exs` dialyzer config, pointing
   to `apps/skuld/.dialyzer_ignore.exs` for the mix task file.
+
+### Fixed
+
+- README "Where next?" table: broken `docs/testing.md` link replaced with
+  `docs/recipes/property-testing.md`. Added link to the new architecture page.
 
 ## [0.32.0] — 2026-06-07
 

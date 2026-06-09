@@ -78,6 +78,44 @@ on what they need:
 
 ## Mental Model
 
+The Skuld ecosystem is organised around the core `Comp` engine. Foundational
+effects ship with the base `skuld` package; everything else is opt-in:
+
+```
+                          Comp
+                     (lazy computation,
+                      evidence-passing,
+                      scoped handlers)
+                            │
+      ┌─────────────────────┼───────────────────────────┐
+      │                     │                           │
+ //skuld              //skuld_concurrency           //skuld_port
+ //(core)                  │                      //skuld_repo
+      │                     │                           │
+      │                 Coroutine                ┌──────┼────┐
+      │                     │                    │      │    │
+ State, Reader,    ┌────────┼─────────┐          │      │  Port
+ Writer, Throw,    │        │         │          │      │  Port.EffectfulFacade
+ Bracket, Fresh,   │  Serializable-   │          │      │  Repo
+ Random, FxList,   │   Coroutine      │          │      │
+ Yield             │   (skuld_durable)│          │      │
+                   │                  │          │      │
+              AsyncCoroutine     FiberPool     │  Adapter
+                   │                 │          │  Adapter.EffectfulContract
+                   │                 ├─────────┐│
+              skuld_process         │         ││
+                   │                 │         ││
+              Parallel         Channel    Task   ││
+              AtomicState         │              ││
+                                Brook            ││
+                                                 ││
+                                            Query.Contract
+                                            QueryBlock
+                                            (skuld_query:
+                                             auto-batches fetches
+                                             via FiberPool)
+```
+
 Start with `skuld`. It gives you the computation engine and the foundational
 effects — everything you need to write pure effectful code with handler-swapping
 for deterministic testing.
