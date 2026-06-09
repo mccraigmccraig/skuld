@@ -19,6 +19,7 @@ defmodule Skuld.Durable.MixProject do
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
         main: "SerializableCoroutine",
+        umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
           "docs/effects/effectlogger.md"
         ],

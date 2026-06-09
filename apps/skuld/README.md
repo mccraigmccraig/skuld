@@ -1,5 +1,9 @@
 # Skuld
 
+<!-- nav:header:start -->
+[Why Effects? >](docs/why.md)
+<!-- nav:header:end -->
+
 Effectful programming for Elixir — the core package.
 
 `skuld` provides the computation engine (`Comp`), syntax macros (`Syntax`),
@@ -14,3 +18,10 @@ effects (`skuld_process`).
 
 See the [full project README](https://github.com/mccraigmccraig/skuld)
 for installation, examples, and documentation.
+
+<!-- nav:footer:start -->
+
+---
+
+[Why Effects? >](docs/why.md)
+<!-- nav:footer:end -->

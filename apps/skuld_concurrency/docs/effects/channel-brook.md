@@ -1,7 +1,7 @@
 # Channel & Brook
 
 <!-- nav:header:start -->
-[< FiberPool](fiberpool.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [AsyncCoroutine >](async-coroutine.md)
+[< FiberPool](fiberpool.md) | [Up: Coroutines & Concurrency](coroutine.md) | [Index](coroutine.md) | [AsyncCoroutine >](async-coroutine.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Channel provides backpressure-aware communication between fibers.
@@ -99,5 +99,5 @@ end
 
 ---
 
-[< FiberPool](fiberpool.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [AsyncCoroutine >](async-coroutine.md)
+[< FiberPool](fiberpool.md) | [Up: Coroutines & Concurrency](coroutine.md) | [Index](coroutine.md) | [AsyncCoroutine >](async-coroutine.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

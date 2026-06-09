@@ -1,7 +1,7 @@
 # EffectLogger & SerializableCoroutine
 
 <!-- nav:header:start -->
-[< AsyncCoroutine](async-coroutine.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [Port >](port.md)
+[Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 EffectLogger records every effect invocation into a serialisable log.
@@ -144,5 +144,5 @@ end
 
 ---
 
-[< AsyncCoroutine](async-coroutine.md) | [Up: Coroutines & Concurrency](yield.md) | [Index](../../README.md) | [Port >](port.md)
+[Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

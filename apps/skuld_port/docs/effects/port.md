@@ -1,7 +1,7 @@
 # Port
 
 <!-- nav:header:start -->
-[< EffectLogger & SerializableCoroutine](effectlogger.md) | [Index](../../README.md) | [Port.EffectfulFacade >](effectful-facade.md)
+[Port.EffectfulFacade >](effectful-facade.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Port is the dispatch effect for external integration. It routes
@@ -103,5 +103,5 @@ conflict. When the inner scope exits, the previous registry is restored.
 
 ---
 
-[< EffectLogger & SerializableCoroutine](effectlogger.md) | [Index](../../README.md) | [Port.EffectfulFacade >](effectful-facade.md)
+[Port.EffectfulFacade >](effectful-facade.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

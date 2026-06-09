@@ -1,7 +1,7 @@
 # Hexagonal Architecture
 
 <!-- nav:header:start -->
-[< Query System](../effects/query.md) | [Index](../../README.md) | [Property-Based Testing >](property-testing.md)
+[< Yield](../effects/yield.md) | [Index](../../README.md) | [Property-Based Testing >](property-testing.md)
 <!-- nav:header:end -->
 
 Hexagonal architecture (ports and adapters) separates domain logic from
@@ -113,5 +113,5 @@ adapted gradually through `Skuld.Adapter`.
 
 ---
 
-[< Query System](../effects/query.md) | [Index](../../README.md) | [Property-Based Testing >](property-testing.md)
+[< Yield](../effects/yield.md) | [Index](../../README.md) | [Property-Based Testing >](property-testing.md)
 <!-- nav:footer:end -->

@@ -19,6 +19,7 @@ defmodule Skuld.Port.MixProject do
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
         main: "port",
+        umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
           "docs/effects/port.md",
           "docs/effects/effectful-facade.md",

@@ -18,6 +18,7 @@ defmodule Skuld.Process.MixProject do
       source_url: "https://github.com/mccraigmccraig/skuld",
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
+        umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         groups_for_modules: [
           Process: [
             Skuld.Effects.Parallel,

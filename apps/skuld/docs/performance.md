@@ -1,7 +1,7 @@
 # Performance
 
 <!-- nav:header:start -->
-[< Quick Reference](quick-reference.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader & Writer >](effects/state-reader-writer.md)
+[< Quick Reference](quick-reference.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Package Architecture >](architecture.md)
 <!-- nav:header:end -->
 
 Each effect invocation involves handler lookup (O(1) map atom key),
@@ -106,5 +106,5 @@ MIX_ENV=prod mix run bench/brook_vs_genstage.exs
 
 ---
 
-[< Quick Reference](quick-reference.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader & Writer >](effects/state-reader-writer.md)
+[< Quick Reference](quick-reference.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [Package Architecture >](architecture.md)
 <!-- nav:footer:end -->

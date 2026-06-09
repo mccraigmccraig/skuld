@@ -1,7 +1,7 @@
 # Command & Transaction
 
 <!-- nav:header:start -->
-[< FxList](fxlist.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Yield >](yield.md)
+[< Adapter](adapter.md) | [Up: Boundaries](port.md) | [Index](port.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Dispatch and transactional boundaries.
@@ -70,5 +70,5 @@ computation
 
 ---
 
-[< FxList](fxlist.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Yield >](yield.md)
+[< Adapter](adapter.md) | [Up: Boundaries](port.md) | [Index](port.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

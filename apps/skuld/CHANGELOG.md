@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: adc4cf7 -->
+<!-- last-updated-against: 091e9f4 -->
 
 All notable changes to Skuld will be documented in this file.
 
@@ -8,6 +8,11 @@ All notable changes to Skuld will be documented in this file.
 
 ### Added
 
+- `mix skuld.docs.nav` task (adapted from double_down) — injects prev/up/index/next
+  navigation into doc markdown files. Supports `--check` and `--strip` modes.
+  Reads `umbrella_home` from docs config to add cross-package `[Umbrella →]` links.
+- `umbrella_home` config in all 6 sibling package `mix.exs` docs config,
+  pointing to `https://hexdocs.pm/skuld/architecture.html`.
 - `docs/architecture.md` — umbrella-level page describing all 7 packages,
   their dependency relationships, and a complete effect-to-package map.
 

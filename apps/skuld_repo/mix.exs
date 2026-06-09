@@ -19,6 +19,7 @@ defmodule Skuld.Repo.MixProject do
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
         main: "Repo",
+        umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
           "docs/effects/repo.md"
         ],

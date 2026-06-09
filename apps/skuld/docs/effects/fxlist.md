@@ -1,7 +1,7 @@
 # FxList
 
 <!-- nav:header:start -->
-[< Fresh & Random](fresh-random.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Command & Transaction >](command-transaction.md)
+[< Fresh & Random](fresh-random.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Yield >](yield.md)
 <!-- nav:header:end -->
 
 Effectful iteration over collections — each element can trigger effects
@@ -55,5 +55,5 @@ each element, running the provided effectful function, collecting results.
 
 ---
 
-[< Fresh & Random](fresh-random.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Command & Transaction >](command-transaction.md)
+[< Fresh & Random](fresh-random.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Yield >](yield.md)
 <!-- nav:footer:end -->

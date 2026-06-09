@@ -1,7 +1,7 @@
 # Query System
 
 <!-- nav:header:start -->
-[< Repo](repo.md) | [Index](../../README.md) | [Hexagonal Architecture >](../recipes/hexagonal-architecture.md)
+[Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Two complementary mechanisms for data fetching. Together they eliminate
@@ -100,5 +100,5 @@ computation
 
 ---
 
-[< Repo](repo.md) | [Index](../../README.md) | [Hexagonal Architecture >](../recipes/hexagonal-architecture.md)
+[Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

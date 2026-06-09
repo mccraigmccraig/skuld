@@ -1,7 +1,7 @@
 # Package Architecture
 
 <!-- nav:header:start -->
-[< Performance](performance.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader, Writer >](effects/state-reader-writer.md)
+[< Performance](performance.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader & Writer >](effects/state-reader-writer.md)
 <!-- nav:header:end -->
 
 Skuld is distributed across seven independently-versioned Hex packages. This
@@ -93,3 +93,10 @@ Add sibling packages as you need their capabilities:
 
 Each package is opt-in. A simple computation that only uses `State` and
 `Reader` needs nothing beyond `skuld`.
+
+<!-- nav:footer:start -->
+
+---
+
+[< Performance](performance.md) | [Up: Introduction](../README.md) | [Index](../README.md) | [State, Reader & Writer >](effects/state-reader-writer.md)
+<!-- nav:footer:end -->

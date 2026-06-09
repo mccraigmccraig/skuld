@@ -19,6 +19,7 @@ defmodule Skuld.QueryMixProject do
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
         main: "Query",
+        umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
           "docs/effects/query.md"
         ],

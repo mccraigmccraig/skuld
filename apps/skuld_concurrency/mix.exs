@@ -19,6 +19,7 @@ defmodule Skuld.Concurrency.MixProject do
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
         main: "coroutine",
+        umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
           "docs/effects/coroutine.md",
           "docs/effects/fiberpool.md",

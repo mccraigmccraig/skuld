@@ -10,7 +10,7 @@ defmodule Skuld.MixProject do
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
-      dialyzer: [plt_add_apps: [:mix, :credo]],
+      dialyzer: [plt_add_apps: [:mix, :credo], ignore_warnings: ".dialyzer_ignore.exs"],
       deps: deps(),
       description: description(),
       package: package(),
@@ -123,7 +123,8 @@ defmodule Skuld.MixProject do
     ]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(:test), do: ["lib", "test/support", "mix_tasks"]
+  defp elixirc_paths(:dev), do: ["lib", "mix_tasks"]
   defp elixirc_paths(_), do: ["lib"]
 
   defp deps do
