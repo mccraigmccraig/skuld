@@ -139,7 +139,7 @@ defmodule Skuld.MixProject do
   end
 
   defp description do
-    "Effectful programming for Elixir: write business logic as pure effect descriptions, swap handlers for testing. Built on algebraic effects and bundled with a substantial library of effects including cooperative coroutines, automatic query batching, and DoubleDown boundary integration."
+    "Core effect system for Elixir: write business logic as pure effect descriptions, swap handlers for testing. Provides the computation engine (Comp) and foundational effects (State, Reader, Writer, Throw, Yield). For coroutines, query batching, port/adapter boundaries, and database integration, see sibling packages."
   end
 
   defp package do

@@ -1,8 +1,20 @@
 # Changelog
 
-<!-- last-updated-against: ca199b2 -->
+<!-- last-updated-against: adc4cf7 -->
 
 All notable changes to Skuld will be documented in this file.
+
+## [Unreleased]
+
+### Changed
+
+- `Skuld.Comp` `@moduledoc` rewritten to describe the package's actual scope
+  as the core computation engine plus foundational effects. Adds a clear list
+  of provided effects and directs readers to sibling packages for concurrency,
+  query batching, port/adapter boundaries, etc. Removed stale Freyja reference.
+- `mix.exs` description updated to reflect the umbrella split — no longer
+  claims to bundle coroutines, query batching, or DoubleDown integration;
+  points to sibling packages instead.
 
 ## [0.32.0] — 2026-06-07
 

@@ -1,6 +1,28 @@
 defmodule Skuld.Comp do
   @moduledoc """
-  Skuld.Comp: Evidence-passing algebraic effects with scoped handlers.
+  Core computation engine and foundational effects for the Skuld ecosystem.
+
+  `Skuld.Comp` is the runtime that powers algebraic effects in Elixir. It
+  executes effectful computations — pure descriptions of side effects — against
+  pluggable handlers. The same computation runs with production handlers or
+  deterministic test handlers, with no stubs or mocks.
+
+  This package (`skuld`) provides the engine plus foundational effects:
+
+    * **State** — mutable state scoped to a handler
+    * **Reader** — read-only environment with scoped overrides
+    * **Writer** — append-only accumulated output
+    * **Throw** — early-exit errors with handler recovery
+    * **Bracket** — resource acquisition and guaranteed cleanup
+    * **Fresh** — unique identifier generation (UUID v7)
+    * **Random** — deterministic random generation for tests
+    * **FxList** / **FxFasterList** — effectful iteration over collections
+    * **Yield** — suspend a computation and wait for external input
+
+  For coroutines, concurrency, query batching, port/adapter boundaries, durable
+  execution, and database integration, see the sibling packages:
+  `skuld_concurrency`, `skuld_query`, `skuld_port`, `skuld_durable`,
+  `skuld_repo`, and `skuld_process`.
 
   ## Auto-Lifting
 
@@ -30,10 +52,9 @@ defmodule Skuld.Comp do
 
   ## Architecture
 
-  Unlike Freyja's centralised interpreter, Skuld uses decentralised
-  evidence-passing. Run acts as a **control authority** - it recognizes
-  the ExternalSuspend sentinel and invokes the leave-scope chain - but treats
-  results as opaque.
+  Skuld uses decentralised evidence-passing. Run acts as a **control authority** -
+  it recognizes the ExternalSuspend sentinel and invokes the leave-scope chain -
+  but treats results as opaque.
 
   Scoped effects (Reader.local, Catch) install leave-scope handlers
   that can clean up env or redirect control flow.
