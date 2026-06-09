@@ -6,6 +6,11 @@ All notable changes to `skuld_repo` will be documented in this file.
 
 ## [Unreleased]
 
+### Improved
+
+- `Skuld.Repo` `@moduledoc` now includes a package-level intro describing
+  what `skuld_repo` provides and linking to the architecture guide.
+
 ### Changed
 
 - **Ecto** is now a required rather than optional dependency — it was previously

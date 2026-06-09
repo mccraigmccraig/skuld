@@ -4,6 +4,13 @@
 
 All notable changes to `skuld_durable` will be documented in this file.
 
+## [Unreleased]
+
+### Improved
+
+- `Skuld.SerializableCoroutine` `@moduledoc` now includes a package-level intro
+  describing what `skuld_durable` provides and linking to the architecture guide.
+
 ## [0.32.0] — 2026-06-07
 
 Initial release. Extracted from `skuld` v0.32.0.

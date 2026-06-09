@@ -2,6 +2,12 @@ defmodule Skuld.SerializableCoroutine do
   @moduledoc """
   Helpers for building coroutines with serializable effect logs.
 
+  Part of the `skuld_durable` package, which provides durable execution
+  through SerializableCoroutine (pause-serialize-resume workflows) and
+  EffectLogger (execution logging and replay). See the
+  [architecture guide](https://hexdocs.pm/skuld/architecture.html)
+  for how these fit into the Skuld ecosystem.
+
   `new/2` constructs a struct with `EffectLogger` installed innermost,
   so every effect invocation across all handlers is captured in a
   JSON-serializable log.

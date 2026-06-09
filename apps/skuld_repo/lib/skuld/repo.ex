@@ -14,6 +14,12 @@ defmodule Skuld.Repo do
   @moduledoc """
   Effectful dispatch facade for `Skuld.Repo.Effectful`.
 
+  Part of the `skuld_repo` package, which provides Ecto Repo integration
+  with InMemory (closed-world store), Ecto adapter, and Stub (stateless
+  test double). See the
+  [architecture guide](https://hexdocs.pm/skuld/architecture.html)
+  for how this fits into the Skuld ecosystem.
+
   Provides effectful caller functions, bang variants, and key helpers
   for the standard Ecto Repo operations.
 

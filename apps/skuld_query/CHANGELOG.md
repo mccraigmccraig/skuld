@@ -6,6 +6,11 @@ All notable changes to `skuld_query` will be documented in this file.
 
 ## [Unreleased]
 
+### Improved
+
+- `Skuld.Query` `@moduledoc` now includes a package-level intro describing
+  what `skuld_query` provides and linking to the architecture guide.
+
 ### Changed
 
 - Tightened `double_down` constraint to `~> 0.59.0` (from `~> 0.58`) to ensure compatible API.

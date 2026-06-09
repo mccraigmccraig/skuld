@@ -2,6 +2,11 @@ defmodule Skuld.Query do
   @moduledoc """
   Syntax module providing the query do-notation macro.
 
+  Part of the `skuld_query` package, which provides Haxl-style auto-batching
+  data fetches via dependency analysis and concurrent FiberPool dispatch.
+  See the [architecture guide](https://hexdocs.pm/skuld/architecture.html)
+  for how this fits into the Skuld ecosystem.
+
   `use Skuld.Query` imports `query`, `defquery`, and `defqueryp` macros
   for writing batchable data-fetching computations.
 

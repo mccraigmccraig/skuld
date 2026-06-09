@@ -2,6 +2,12 @@ defmodule Skuld.Effects.Port do
   @moduledoc """
   Effect for dispatching parameterizable blocking calls to pluggable backends.
 
+  Part of the `skuld_port` package, which provides the Port dispatch effect,
+  EffectfulFacade for typed contracts, Adapter for bridging effectful and
+  plain code, and Command/Transaction for operations. See the
+  [architecture guide](https://hexdocs.pm/skuld/architecture.html)
+  for how these fit into the Skuld ecosystem.
+
   This effect lets domain code express "call this function" without binding to a
   particular implementation. Each request specifies:
 

@@ -6,6 +6,11 @@ All notable changes to `skuld_port` will be documented in this file.
 
 ## [Unreleased]
 
+### Improved
+
+- `Skuld.Effects.Port` `@moduledoc` now includes a package-level intro
+  describing what `skuld_port` provides and linking to the architecture guide.
+
 ### Fixed
 
 - Fixed `unwrap_defer` to use correct module path for `DoubleDown.Contract.Dispatch.Defer` — the

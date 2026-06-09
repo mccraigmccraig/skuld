@@ -15,6 +15,8 @@ All notable changes to `skuld_process` will be documented in this file.
 
 ### Fixed
 
+- `Skuld.Effects.Parallel` `@moduledoc` now includes a package-level intro
+  describing what `skuld_process` provides and linking to the architecture guide.
 - `mix.exs` description no longer claims to provide `Task` effect (which lives
   in `skuld_concurrency`). Now reads "Parallel and AtomicState effects."
 

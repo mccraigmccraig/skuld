@@ -2,6 +2,11 @@ defmodule Skuld.Effects.Parallel do
   @moduledoc """
   Parallel effect - simple fork-join concurrency with built-in boundaries.
 
+  Part of the `skuld_process` package, which provides Parallel for
+  multi-process fan-out and AtomicState for process-level mutable state.
+  See the [architecture guide](https://hexdocs.pm/skuld/architecture.html)
+  for how these fit into the Skuld ecosystem.
+
   Provides high-level parallel operations where each call is self-contained
   with automatic task management. Unlike `Async`, there are no handles to
   track or boundaries to manage - each operation spawns tasks, awaits results,

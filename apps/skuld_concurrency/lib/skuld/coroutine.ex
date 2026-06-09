@@ -2,6 +2,12 @@ defmodule Skuld.Coroutine do
   @moduledoc """
   Cooperative fiber primitive for the FiberPool scheduler.
 
+  Part of the `skuld_concurrency` package, which provides cooperative
+  coroutines, the FiberPool scheduler, Channel/Brook streaming, and
+  AsyncCoroutine process bridging. See the
+  [architecture guide](https://hexdocs.pm/skuld/architecture.html)
+  for how these fit into the Skuld ecosystem.
+
   A Fiber wraps a computation that can be run incrementally, suspended when it
   yields, and resumed with a value. This is the fundamental building block for
   cooperative concurrency in Skuld.
