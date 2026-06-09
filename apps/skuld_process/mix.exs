@@ -18,7 +18,18 @@ defmodule Skuld.Process.MixProject do
       source_url: "https://github.com/mccraigmccraig/skuld",
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
+        main: "parallel",
         umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
+        extras: [
+          "docs/effects/parallel.md",
+          "docs/effects/atomic-state.md"
+        ],
+        groups_for_extras: [
+          Effects: [
+            "docs/effects/parallel.md",
+            "docs/effects/atomic-state.md"
+          ]
+        ],
         groups_for_modules: [
           Process: [
             Skuld.Effects.Parallel,
@@ -56,7 +67,7 @@ defmodule Skuld.Process.MixProject do
   end
 
   defp description do
-    "Multi-process execution for Skuld: Task, Parallel, and AtomicState effects."
+    "Multi-process execution for Skuld: Parallel and AtomicState effects."
   end
 
   defp package do

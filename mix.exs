@@ -7,6 +7,7 @@ defmodule Skuld.Umbrella.MixProject do
       version: "0.0.0",
       start_permanent: false,
       dialyzer: [
+        ignore_warnings: "apps/skuld/.dialyzer_ignore.exs",
         plt_add_apps: [
           :skuld,
           :skuld_concurrency,

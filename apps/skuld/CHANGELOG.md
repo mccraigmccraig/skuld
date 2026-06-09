@@ -25,6 +25,8 @@ All notable changes to Skuld will be documented in this file.
 - `mix.exs` description updated to reflect the umbrella split — no longer
   claims to bundle coroutines, query batching, or DoubleDown integration;
   points to sibling packages instead.
+- Added `ignore_warnings` to umbrella root `mix.exs` dialyzer config, pointing
+  to `apps/skuld/.dialyzer_ignore.exs` for the mix task file.
 
 ## [0.32.0] — 2026-06-07
 
