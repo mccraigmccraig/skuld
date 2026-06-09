@@ -6,6 +6,11 @@ All notable changes to Skuld will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/architecture.md` — umbrella-level page describing all 7 packages,
+  their dependency relationships, and a complete effect-to-package map.
+
 ### Changed
 
 - `Skuld.Comp` `@moduledoc` rewritten to describe the package's actual scope

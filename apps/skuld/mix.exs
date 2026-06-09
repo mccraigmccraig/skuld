@@ -26,6 +26,7 @@ defmodule Skuld.MixProject do
           "docs/syntax.md",
           "docs/quick-reference.md",
           "docs/performance.md",
+          "docs/architecture.md",
           "docs/effects/state-reader-writer.md",
           "docs/effects/throw-bracket.md",
           "docs/effects/fresh-random.md",
@@ -48,7 +49,8 @@ defmodule Skuld.MixProject do
             "docs/getting-started.md",
             "docs/syntax.md",
             "docs/quick-reference.md",
-            "docs/performance.md"
+            "docs/performance.md",
+            "docs/architecture.md"
           ],
           "Foundational Effects": [
             "docs/effects/state-reader-writer.md",
