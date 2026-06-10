@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+#
+# Publish Skuld umbrella packages to hex.pm.
+#
+# Reads each package's local VERSION, compares against the latest version on
+# hex.pm via the public API, and runs `mix hex.publish` interactively for any
+# package where the local version is strictly greater than the hex version.
+#
+# Packages are published in dependency order:
+#   skuld (no sibling deps)
+#   skuld_concurrency, skuld_port, skuld_process (depend on skuld)
+#   skuld_durable (depends on skuld + skuld_concurrency)
+#   skuld_query (depends on skuld + skuld_concurrency)
+#   skuld_repo (depends on skuld + skuld_port)
+#
+# Usage:
+#   scripts/publish.sh          # interactive (prompts for 2FA)
+#   scripts/publish.sh --check  # dry-run: show what would be published
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Packages in dependency order
+declare -a PACKAGES=(
+  "skuld"
+  "skuld_concurrency"
+  "skuld_port"
+  "skuld_process"
+  "skuld_durable"
+  "skuld_query"
+  "skuld_repo"
+)
+
+CHECK_ONLY=false
+if [[ "${1:-}" == "--check" ]]; then
+  CHECK_ONLY=true
+  echo "=== DRY RUN — no packages will be published ==="
+fi
+
+# Resolve version via local file
+get_local_version() {
+  local pkg="$1"
+  cat "$ROOT/apps/$pkg/VERSION" | tr -d '\n\r'
+}
+
+# Resolve latest hex.pm version via the public API
+# Returns "0.0.0" if not yet published or API fetch fails
+get_hex_version() {
+  local pkg="$1"
+  local url="https://hex.pm/api/packages/$pkg"
+
+  local version
+  version=$(curl -fsS "$url" 2>/dev/null | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    releases = data.get('releases', [])
+    if releases:
+        print(releases[0]['version'])
+    else:
+        print('0.0.0')
+except:
+    print('0.0.0')
+" 2>/dev/null)
+
+  echo "${version:-0.0.0}"
+}
+
+# Compare semver strings using sort -V (version sort)
+is_newer() {
+  local local_ver="$1"
+  local hex_ver="$2"
+  local sorted
+  sorted=$(printf '%s\n%s\n' "$local_ver" "$hex_ver" | sort -V | tail -1)
+  [[ "$sorted" == "$local_ver" && "$local_ver" != "$hex_ver" ]]
+}
+
+main() {
+  local published_count=0
+  local skipped_count=0
+
+  for pkg in "${PACKAGES[@]}"; do
+    local local_ver hex_ver
+    local_ver=$(get_local_version "$pkg")
+    hex_ver=$(get_hex_version "$pkg")
+
+    if is_newer "$local_ver" "$hex_ver"; then
+      if $CHECK_ONLY; then
+        echo "  $pkg  $hex_ver -> $local_ver  (would publish)"
+      else
+        echo "=== Publishing $pkg $local_ver (hex: $hex_ver) ==="
+        (cd "$ROOT/apps/$pkg" && mix hex.publish)
+        published_count=$((published_count + 1))
+      fi
+    else
+      echo "  $pkg  $local_ver  (up to date, hex: $hex_ver)"
+      skipped_count=$((skipped_count + 1))
+    fi
+  done
+
+  echo ""
+  if $CHECK_ONLY; then
+    echo "Dry run complete. $published_count package(s) would be published, $skipped_count skipped."
+  else
+    echo "Done. $published_count package(s) published, $skipped_count skipped."
+  fi
+}
+
+main

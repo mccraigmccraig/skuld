@@ -191,17 +191,17 @@ Tag naming convention: `<package>-v<version>`.
 
 ### 3.e — Publish to Hex
 
-Publish in dependency order from within each app directory:
+Use the publish script which checks each package's local VERSION against
+hex.pm and publishes only those that are newer:
 
 ```
-cd apps/skuld && mix hex.publish
-cd apps/skuld_concurrency && mix hex.publish
-cd apps/skuld_port && mix hex.publish
-...
+scripts/publish.sh --check   # dry run: see what would be published
+scripts/publish.sh           # publish interactively (prompts for 2FA)
 ```
 
-Wait for each publish to complete before starting the next — downstream
-packages' `in_umbrella: true` deps resolve to the newly-published version.
+Packages are published in dependency order (skuld first, then
+skuld_concurrency / skuld_port / skuld_process, then skuld_durable /
+skuld_query, then skuld_repo).
 
 ### 3.f — Immutability
 
