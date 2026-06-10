@@ -14,8 +14,10 @@
 #   skuld_repo (depends on skuld + skuld_port)
 #
 # Usage:
-#   scripts/publish.sh          # interactive (prompts for 2FA)
-#   scripts/publish.sh --check  # dry-run: show what would be published
+#   scripts/publish.sh            # publish interactively (prompts for 2FA)
+#   scripts/publish.sh --check    # dry-run: show what would be published
+#   scripts/publish.sh --docs     # publish documentation only
+#   scripts/publish.sh --docs --check  # dry-run for docs-only
 #
 set -euo pipefail
 
@@ -34,9 +36,20 @@ declare -a PACKAGES=(
 )
 
 CHECK_ONLY=false
-if [[ "${1:-}" == "--check" ]]; then
-  CHECK_ONLY=true
+DOCS_ONLY=false
+for arg in "$@"; do
+  case "$arg" in
+    --check) CHECK_ONLY=true ;;
+    --docs)  DOCS_ONLY=true ;;
+  esac
+done
+
+if $CHECK_ONLY && $DOCS_ONLY; then
+  echo "=== DRY RUN (docs only) — no packages will be published ==="
+elif $CHECK_ONLY; then
   echo "=== DRY RUN — no packages will be published ==="
+elif $DOCS_ONLY; then
+  echo "=== DOCS ONLY — publishing documentation updates ==="
 fi
 
 # Resolve version via local file
@@ -86,7 +99,20 @@ main() {
     local_ver=$(get_local_version "$pkg")
     hex_ver=$(get_hex_version "$pkg")
 
-    if is_newer "$local_ver" "$hex_ver"; then
+    if $DOCS_ONLY; then
+      if [[ "$hex_ver" != "0.0.0" ]]; then
+        if $CHECK_ONLY; then
+          echo "  $pkg  docs (would publish)"
+        else
+          echo "=== Publishing docs for $pkg ==="
+          (cd "$ROOT/apps/$pkg" && mix hex.publish docs)
+        fi
+        published_count=$((published_count + 1))
+      else
+        echo "  $pkg  (not yet published, skip)"
+        skipped_count=$((skipped_count + 1))
+      fi
+    elif is_newer "$local_ver" "$hex_ver"; then
       if $CHECK_ONLY; then
         echo "  $pkg  $hex_ver -> $local_ver  (would publish)"
       else
