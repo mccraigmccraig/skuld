@@ -18,10 +18,19 @@ defmodule Skuld.Repo.MixProject do
       source_url: "https://github.com/mccraigmccraig/skuld",
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
-        main: "Repo",
+        main: "readme",
         umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
+          "README.md",
           "docs/effects/repo.md"
+        ],
+        groups_for_extras: [
+          Introduction: [
+            "README.md"
+          ],
+          Effects: [
+            "docs/effects/repo.md"
+          ]
         ],
         groups_for_modules: [
           Repo: [
@@ -85,7 +94,7 @@ defmodule Skuld.Repo.MixProject do
   defp package do
     [
       name: "skuld_repo",
-      files: ~w(lib .formatter.exs mix.exs VERSION CHANGELOG.md),
+      files: ~w(lib .formatter.exs mix.exs README.md VERSION CHANGELOG.md),
       licenses: ["MIT"],
       links: %{
         "GitHub" => "https://github.com/mccraigmccraig/skuld"

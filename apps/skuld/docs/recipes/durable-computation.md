@@ -1,7 +1,7 @@
 # Durable Computation
 
 <!-- nav:header:start -->
-[< SerializableCoroutine](../../../../docs/effects/serializable-coroutine.md) | [Index](../../../../docs/effects/effectlogger.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< SerializableCoroutine](../../../../docs/effects/serializable-coroutine.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Pause a computation mid-flight, save its entire execution history as
@@ -239,5 +239,5 @@ without disturbing outer loop boundaries.
 
 ---
 
-[< SerializableCoroutine](../../../../docs/effects/serializable-coroutine.md) | [Index](../../../../docs/effects/effectlogger.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< SerializableCoroutine](../../../../docs/effects/serializable-coroutine.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

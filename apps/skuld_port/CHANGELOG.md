@@ -27,6 +27,8 @@ All notable changes to `skuld_port` will be documented in this file.
 Initial release. Extracted from `skuld` v0.32.0.
 
 ### Added
+- `README.md` with package overview, installation, and quick start.
+
 
 - **Port** — effect for dispatching parameterizable blocking calls to pluggable backends. Supports direct, module, function, effectful, test stub, fn handler, and stateful handler backends
 - **Port.EffectfulFacade** — generates effectful dispatch facades from DoubleDown contracts. Supports single-module, combined, and separate contract+facade patterns

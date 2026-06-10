@@ -7,6 +7,8 @@ All notable changes to `skuld_process` will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `README.md` with package overview, installation, and quick start.
+
 
 - `docs/effects/parallel.md` — covers `Parallel.all`, `race`, `map`, production
   and sequential handlers, error handling, and catch syntax.
@@ -30,6 +32,8 @@ All notable changes to `skuld_process` will be documented in this file.
 Initial release. Extracted from `skuld` v0.32.0.
 
 ### Added
+- `README.md` with package overview, installation, and quick start.
+
 
 - **Task** — Elixir Task integration for running computations in separate processes
 - **Parallel** — multi-process parallel execution with result collection

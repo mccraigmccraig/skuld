@@ -1,7 +1,7 @@
 # AtomicState
 
 <!-- nav:header:start -->
-[< Parallel](parallel.md) | [Up: Effects](parallel.md) | [Index](parallel.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Parallel](parallel.md) | [Up: Effects](parallel.md) | [Index](../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Thread-safe mutable state for concurrent contexts. Unlike the regular
@@ -112,5 +112,5 @@ end
 
 ---
 
-[< Parallel](parallel.md) | [Up: Effects](parallel.md) | [Index](parallel.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Parallel](parallel.md) | [Up: Effects](parallel.md) | [Index](../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

@@ -1,7 +1,7 @@
 # Hexagonal Architecture
 
 <!-- nav:header:start -->
-[< Command & Transaction](../../../../docs/effects/command-transaction.md) | [Index](../../../../docs/effects/port.md) | [Property-Based Testing >](property-testing.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Command & Transaction](../../../../docs/effects/command-transaction.md) | [Index](../../../../README.md) | [Property-Based Testing >](property-testing.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Hexagonal architecture (ports and adapters) separates domain logic from
@@ -113,5 +113,5 @@ adapted gradually through `Skuld.Adapter`.
 
 ---
 
-[< Command & Transaction](../../../../docs/effects/command-transaction.md) | [Index](../../../../docs/effects/port.md) | [Property-Based Testing >](property-testing.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Command & Transaction](../../../../docs/effects/command-transaction.md) | [Index](../../../../README.md) | [Property-Based Testing >](property-testing.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

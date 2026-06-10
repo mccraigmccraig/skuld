@@ -1,7 +1,7 @@
 # LiveView Integration
 
 <!-- nav:header:start -->
-[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../docs/effects/coroutine.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 `AsyncCoroutine` bridges effectful computations into Phoenix LiveView,
@@ -95,5 +95,5 @@ wizard = MyApp.Wizard.run()
 
 ---
 
-[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../docs/effects/coroutine.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

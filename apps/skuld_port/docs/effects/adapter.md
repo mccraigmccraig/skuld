@@ -1,7 +1,7 @@
 # Adapter
 
 <!-- nav:header:start -->
-[< Port.EffectfulFacade](effectful-facade.md) | [Up: Boundaries](port.md) | [Index](port.md) | [Command & Transaction >](command-transaction.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Port.EffectfulFacade](effectful-facade.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Command & Transaction >](command-transaction.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Bridge between effectful and plain Elixir code — both directions.
@@ -74,5 +74,5 @@ auto-detection by the Port system.
 
 ---
 
-[< Port.EffectfulFacade](effectful-facade.md) | [Up: Boundaries](port.md) | [Index](port.md) | [Command & Transaction >](command-transaction.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Port.EffectfulFacade](effectful-facade.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Command & Transaction >](command-transaction.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

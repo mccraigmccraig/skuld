@@ -1,7 +1,7 @@
 # Parallel
 
 <!-- nav:header:start -->
-[AtomicState >](atomic-state.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< skuld_process](../../README.md) | [Index](../../README.md) | [AtomicState >](atomic-state.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Fork-join concurrency with automatic task lifecycle management. Each
@@ -78,5 +78,5 @@ end
 
 ---
 
-[AtomicState >](atomic-state.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< skuld_process](../../README.md) | [Index](../../README.md) | [AtomicState >](atomic-state.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

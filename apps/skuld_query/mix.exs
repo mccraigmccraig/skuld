@@ -18,13 +18,17 @@ defmodule Skuld.QueryMixProject do
       source_url: "https://github.com/mccraigmccraig/skuld",
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
-        main: "Query",
+        main: "readme",
         umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
+          "README.md",
           "docs/effects/query.md",
           "../skuld/docs/recipes/batch-loading.md"
         ],
         groups_for_extras: [
+          Introduction: [
+            "README.md"
+          ],
           Effects: [
             "docs/effects/query.md"
           ],
@@ -90,7 +94,7 @@ defmodule Skuld.QueryMixProject do
   defp package do
     [
       name: "skuld_query",
-      files: ~w(lib .formatter.exs mix.exs VERSION CHANGELOG.md),
+      files: ~w(lib .formatter.exs mix.exs README.md VERSION CHANGELOG.md),
       licenses: ["MIT"],
       links: %{
         "GitHub" => "https://github.com/mccraigmccraig/skuld"

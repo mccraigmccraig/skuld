@@ -18,13 +18,17 @@ defmodule Skuld.Process.MixProject do
       source_url: "https://github.com/mccraigmccraig/skuld",
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
-        main: "parallel",
+        main: "readme",
         umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
+          "README.md",
           "docs/effects/parallel.md",
           "docs/effects/atomic-state.md"
         ],
         groups_for_extras: [
+          Introduction: [
+            "README.md"
+          ],
           Effects: [
             "docs/effects/parallel.md",
             "docs/effects/atomic-state.md"
@@ -73,7 +77,7 @@ defmodule Skuld.Process.MixProject do
   defp package do
     [
       name: "skuld_process",
-      files: ~w(lib .formatter.exs mix.exs VERSION CHANGELOG.md),
+      files: ~w(lib .formatter.exs mix.exs README.md VERSION CHANGELOG.md),
       licenses: ["MIT"],
       links: %{
         "GitHub" => "https://github.com/mccraigmccraig/skuld"

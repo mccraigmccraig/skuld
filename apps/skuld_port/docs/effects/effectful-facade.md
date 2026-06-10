@@ -1,7 +1,7 @@
 # Port.EffectfulFacade
 
 <!-- nav:header:start -->
-[< Port](port.md) | [Up: Boundaries](port.md) | [Index](port.md) | [Adapter >](adapter.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Port](port.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Adapter >](adapter.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Generates typed effectful caller functions from `defcallback` declarations.
@@ -84,5 +84,5 @@ current effect context.
 
 ---
 
-[< Port](port.md) | [Up: Boundaries](port.md) | [Index](port.md) | [Adapter >](adapter.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Port](port.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Adapter >](adapter.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

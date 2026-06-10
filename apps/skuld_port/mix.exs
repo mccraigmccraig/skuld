@@ -18,9 +18,10 @@ defmodule Skuld.Port.MixProject do
       source_url: "https://github.com/mccraigmccraig/skuld",
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
-        main: "port",
+        main: "readme",
         umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
+          "README.md",
           "docs/effects/port.md",
           "docs/effects/effectful-facade.md",
           "docs/effects/adapter.md",
@@ -29,6 +30,9 @@ defmodule Skuld.Port.MixProject do
           "../skuld/docs/recipes/property-testing.md"
         ],
         groups_for_extras: [
+          Introduction: [
+            "README.md"
+          ],
           Boundaries: [
             "docs/effects/port.md",
             "docs/effects/effectful-facade.md",
@@ -97,7 +101,7 @@ defmodule Skuld.Port.MixProject do
   defp package do
     [
       name: "skuld_port",
-      files: ~w(lib .formatter.exs mix.exs VERSION CHANGELOG.md),
+      files: ~w(lib .formatter.exs mix.exs README.md VERSION CHANGELOG.md),
       licenses: ["MIT"],
       links: %{
         "GitHub" => "https://github.com/mccraigmccraig/skuld"

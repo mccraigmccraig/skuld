@@ -7,6 +7,8 @@ All notable changes to `skuld_query` will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `README.md` with package overview, installation, and quick start.
+
 
 - `batch-loading.md` recipe added to extras (shared from skuld package docs).
 
@@ -24,6 +26,8 @@ All notable changes to `skuld_query` will be documented in this file.
 Initial release. Extracted from `skuld` v0.32.0.
 
 ### Added
+- `README.md` with package overview, installation, and quick start.
+
 
 - **Query** — syntax module providing `query`, `defquery`, and `defqueryp` macros for automatic concurrent batching via dependency analysis
 - **QueryContract** — typed batchable fetch contracts with `deffetch` declarations, executor wiring, and automatic batching via FiberPool

@@ -18,14 +18,18 @@ defmodule Skuld.Durable.MixProject do
       source_url: "https://github.com/mccraigmccraig/skuld",
       homepage_url: "https://github.com/mccraigmccraig/skuld",
       docs: [
-        main: "SerializableCoroutine",
+        main: "readme",
         umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
+          "README.md",
           "docs/effects/effectlogger.md",
           "docs/effects/serializable-coroutine.md",
           "../skuld/docs/recipes/durable-computation.md"
         ],
         groups_for_extras: [
+          Introduction: [
+            "README.md"
+          ],
           Effects: [
             "docs/effects/effectlogger.md",
             "docs/effects/serializable-coroutine.md"
@@ -95,7 +99,7 @@ defmodule Skuld.Durable.MixProject do
   defp package do
     [
       name: "skuld_durable",
-      files: ~w(lib .formatter.exs mix.exs VERSION CHANGELOG.md),
+      files: ~w(lib .formatter.exs mix.exs README.md VERSION CHANGELOG.md),
       licenses: ["MIT"],
       links: %{
         "GitHub" => "https://github.com/mccraigmccraig/skuld"

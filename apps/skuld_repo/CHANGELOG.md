@@ -28,6 +28,8 @@ All notable changes to `skuld_repo` will be documented in this file.
 Initial release. Extracted from `skuld` v0.32.0.
 
 ### Added
+- `README.md` with package overview, installation, and quick start.
+
 
 - **Repo** — effectful dispatch facade for standard Ecto Repo operations, generated via Port.EffectfulFacade
 - **Repo.Effectful** — effectful contract defining standard Ecto Repo operations as effects

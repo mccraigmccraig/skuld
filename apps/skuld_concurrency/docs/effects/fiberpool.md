@@ -1,7 +1,7 @@
 # FiberPool
 
 <!-- nav:header:start -->
-[< Coroutine](coroutine.md) | [Up: Coroutines & Concurrency](coroutine.md) | [Index](coroutine.md) | [Channel & Brook >](channel-brook.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Coroutine](coroutine.md) | [Up: Coroutines & Concurrency](coroutine.md) | [Index](../../README.md) | [Channel & Brook >](channel-brook.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 FiberPool is a cooperative scheduler that runs multiple `Coroutine`
@@ -88,5 +88,5 @@ its own handler.
 
 ---
 
-[< Coroutine](coroutine.md) | [Up: Coroutines & Concurrency](coroutine.md) | [Index](coroutine.md) | [Channel & Brook >](channel-brook.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Coroutine](coroutine.md) | [Up: Coroutines & Concurrency](coroutine.md) | [Index](../../README.md) | [Channel & Brook >](channel-brook.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

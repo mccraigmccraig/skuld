@@ -7,6 +7,8 @@ All notable changes to `skuld_concurrency` will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `README.md` with package overview, installation, and quick start.
+
 
 - `liveview.md` and `batch-loading.md` recipes added to extras (shared from
   skuld package docs).
@@ -21,6 +23,8 @@ All notable changes to `skuld_concurrency` will be documented in this file.
 Initial release. Extracted from `skuld` v0.32.0.
 
 ### Added
+- `README.md` with package overview, installation, and quick start.
+
 
 - **Coroutine** — cooperative fiber primitive with sum-type state machine (Pending, InternalSuspended, ExternalSuspended, ForeignSuspended, ForeignSuspensions, Completed, Errored, Cancelled)
 - **FiberPool** — cooperative fiber scheduler with structured concurrency (fiber, await!, await_all!, await_any!, scope, cancel), automatic batch collection and dispatch

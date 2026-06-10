@@ -1,7 +1,7 @@
 # Repo
 
 <!-- nav:header:start -->
-[Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< skuld_repo](../../README.md) | [Index](../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Skuld's built-in database contract. Operations dispatch via the Port
@@ -79,5 +79,5 @@ Bang variants: `insert!/1,2`, `update!/1,2`, `delete!/1,2`, `get!/2,3`,
 
 ---
 
-[Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< skuld_repo](../../README.md) | [Index](../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

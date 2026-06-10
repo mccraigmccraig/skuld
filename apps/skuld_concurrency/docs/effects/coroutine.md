@@ -1,7 +1,7 @@
 # Coroutine
 
 <!-- nav:header:start -->
-[FiberPool >](fiberpool.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< skuld_concurrency](../../README.md) | [Index](../../README.md) | [FiberPool >](fiberpool.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 A Coroutine wraps a computation into a resumable fiber with typed states.
@@ -82,5 +82,5 @@ fiber = Coroutine.new(comp, Env.new())
 
 ---
 
-[FiberPool >](fiberpool.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< skuld_concurrency](../../README.md) | [Index](../../README.md) | [FiberPool >](fiberpool.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

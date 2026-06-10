@@ -1,7 +1,7 @@
 # EffectLogger & SerializableCoroutine
 
 <!-- nav:header:start -->
-[SerializableCoroutine >](serializable-coroutine.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< skuld_durable](../../README.md) | [Index](../../README.md) | [SerializableCoroutine >](serializable-coroutine.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 EffectLogger records every effect invocation into a serialisable log.
@@ -144,5 +144,5 @@ end
 
 ---
 
-[SerializableCoroutine >](serializable-coroutine.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< skuld_durable](../../README.md) | [Index](../../README.md) | [SerializableCoroutine >](serializable-coroutine.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->
