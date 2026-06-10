@@ -1,10 +1,10 @@
 # Changelog
 
-<!-- last-updated-against: 091e9f4 -->
+<!-- last-updated-against: 0b88768 -->
 
 All notable changes to Skuld will be documented in this file.
 
-## [Unreleased]
+## [0.32.1] — 2026-06-10
 
 ### Added
 

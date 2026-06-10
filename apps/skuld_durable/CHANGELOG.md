@@ -1,10 +1,10 @@
 # Changelog
 
-<!-- last-updated-against: ca199b2 -->
+<!-- last-updated-against: 0b88768 -->
 
 All notable changes to `skuld_durable` will be documented in this file.
 
-## [Unreleased]
+## [0.32.1] — 2026-06-10
 
 ### Added
 - `README.md` with package overview, installation, and quick start.

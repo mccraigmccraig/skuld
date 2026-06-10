@@ -1,10 +1,10 @@
 # Changelog
 
-<!-- last-updated-against: c84d21d -->
+<!-- last-updated-against: 0b88768 -->
 
 All notable changes to `skuld_repo` will be documented in this file.
 
-## [Unreleased]
+## [0.32.1] — 2026-06-10
 
 ### Improved
 

@@ -142,7 +142,7 @@ defmodule Skuld.MixProject do
   end
 
   defp description do
-    "Core effect system for Elixir: write business logic as pure effect descriptions, swap handlers for testing. Provides the computation engine (Comp) and foundational effects (State, Reader, Writer, Throw, Yield). For coroutines, query batching, port/adapter boundaries, and database integration, see sibling packages."
+    "Core effect system for Elixir: write business logic as pure effect descriptions, swap handlers for testing. Provides the Comp engine and foundational effects (State, Reader, Writer, Throw, Yield)."
   end
 
   defp package do
