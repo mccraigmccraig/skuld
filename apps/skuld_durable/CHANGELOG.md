@@ -6,6 +6,12 @@ All notable changes to `skuld_durable` will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/effects/serializable-coroutine.md` — covers building durable coroutines,
+  running (fresh, live resume, cold resume), serializing/deserializing logs,
+  and how the EffectLogger integration works.
+
 ### Improved
 
 - `Skuld.SerializableCoroutine` `@moduledoc` now includes a package-level intro

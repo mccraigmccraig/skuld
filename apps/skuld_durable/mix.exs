@@ -21,7 +21,14 @@ defmodule Skuld.Durable.MixProject do
         main: "SerializableCoroutine",
         umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
-          "docs/effects/effectlogger.md"
+          "docs/effects/effectlogger.md",
+          "docs/effects/serializable-coroutine.md"
+        ],
+        groups_for_extras: [
+          Effects: [
+            "docs/effects/effectlogger.md",
+            "docs/effects/serializable-coroutine.md"
+          ]
         ],
         groups_for_modules: [
           Durable: [
