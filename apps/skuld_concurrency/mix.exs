@@ -24,7 +24,9 @@ defmodule Skuld.Concurrency.MixProject do
           "docs/effects/coroutine.md",
           "docs/effects/fiberpool.md",
           "docs/effects/channel-brook.md",
-          "docs/effects/async-coroutine.md"
+          "docs/effects/async-coroutine.md",
+          "../skuld/docs/recipes/liveview.md",
+          "../skuld/docs/recipes/batch-loading.md"
         ],
         groups_for_extras: [
           "Coroutines & Concurrency": [
@@ -32,6 +34,10 @@ defmodule Skuld.Concurrency.MixProject do
             "docs/effects/fiberpool.md",
             "docs/effects/channel-brook.md",
             "docs/effects/async-coroutine.md"
+          ],
+          Recipes: [
+            "../skuld/docs/recipes/liveview.md",
+            "../skuld/docs/recipes/batch-loading.md"
           ]
         ],
         groups_for_modules: [

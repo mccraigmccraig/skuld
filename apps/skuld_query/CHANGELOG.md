@@ -6,6 +6,10 @@ All notable changes to `skuld_query` will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `batch-loading.md` recipe added to extras (shared from skuld package docs).
+
 ### Improved
 
 - `Skuld.Query` `@moduledoc` now includes a package-level intro describing

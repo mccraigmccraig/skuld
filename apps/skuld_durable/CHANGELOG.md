@@ -9,8 +9,8 @@ All notable changes to `skuld_durable` will be documented in this file.
 ### Added
 
 - `docs/effects/serializable-coroutine.md` — covers building durable coroutines,
-  running (fresh, live resume, cold resume), serializing/deserializing logs,
-  and how the EffectLogger integration works.
+  running (fresh, live resume, cold resume), serializing/deserializing logs.
+- `durable-computation.md` recipe added to extras (shared from skuld package docs).
 
 ### Improved
 

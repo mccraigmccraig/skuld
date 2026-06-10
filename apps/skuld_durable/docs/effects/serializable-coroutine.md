@@ -1,7 +1,7 @@
 # SerializableCoroutine
 
 <!-- nav:header:start -->
-[< EffectLogger & SerializableCoroutine](effectlogger.md) | [Up: Effects](effectlogger.md) | [Index](effectlogger.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< EffectLogger & SerializableCoroutine](effectlogger.md) | [Up: Effects](effectlogger.md) | [Index](effectlogger.md) | [Durable Computation >](../../../skuld/docs/recipes/durable-computation.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Pause-serialize-resume support for durable workflows. Wraps a coroutine
@@ -75,5 +75,5 @@ SerializableCoroutine.run(log, sc, resume_value)
 
 ---
 
-[< EffectLogger & SerializableCoroutine](effectlogger.md) | [Up: Effects](effectlogger.md) | [Index](effectlogger.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< EffectLogger & SerializableCoroutine](effectlogger.md) | [Up: Effects](effectlogger.md) | [Index](effectlogger.md) | [Durable Computation >](../../../skuld/docs/recipes/durable-computation.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

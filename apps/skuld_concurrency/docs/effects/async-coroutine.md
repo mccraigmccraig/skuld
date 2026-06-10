@@ -1,7 +1,7 @@
 # AsyncCoroutine
 
 <!-- nav:header:start -->
-[< Channel & Brook](channel-brook.md) | [Up: Coroutines & Concurrency](coroutine.md) | [Index](coroutine.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Channel & Brook](channel-brook.md) | [Up: Coroutines & Concurrency](coroutine.md) | [Index](coroutine.md) | [LiveView Integration >](../../../skuld/docs/recipes/liveview.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Run a coroutine in a separate BEAM process, bridging yields, errors,
@@ -97,5 +97,5 @@ end
 
 ---
 
-[< Channel & Brook](channel-brook.md) | [Up: Coroutines & Concurrency](coroutine.md) | [Index](coroutine.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Channel & Brook](channel-brook.md) | [Up: Coroutines & Concurrency](coroutine.md) | [Index](coroutine.md) | [LiveView Integration >](../../../skuld/docs/recipes/liveview.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

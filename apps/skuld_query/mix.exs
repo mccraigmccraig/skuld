@@ -21,7 +21,16 @@ defmodule Skuld.QueryMixProject do
         main: "Query",
         umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
-          "docs/effects/query.md"
+          "docs/effects/query.md",
+          "../skuld/docs/recipes/batch-loading.md"
+        ],
+        groups_for_extras: [
+          Effects: [
+            "docs/effects/query.md"
+          ],
+          Recipes: [
+            "../skuld/docs/recipes/batch-loading.md"
+          ]
         ],
         groups_for_modules: [
           Query: [

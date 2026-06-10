@@ -1,7 +1,7 @@
 # Durable Computation
 
 <!-- nav:header:start -->
-[< LiveView Integration](liveview.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Batch Loading >](batch-loading.md)
+[< SerializableCoroutine](../../../../docs/effects/serializable-coroutine.md) | [Index](../../../../docs/effects/effectlogger.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Pause a computation mid-flight, save its entire execution history as
@@ -239,5 +239,5 @@ without disturbing outer loop boundaries.
 
 ---
 
-[< LiveView Integration](liveview.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Batch Loading >](batch-loading.md)
+[< SerializableCoroutine](../../../../docs/effects/serializable-coroutine.md) | [Index](../../../../docs/effects/effectlogger.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

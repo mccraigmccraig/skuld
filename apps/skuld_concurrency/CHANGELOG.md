@@ -6,6 +6,11 @@ All notable changes to `skuld_concurrency` will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `liveview.md` and `batch-loading.md` recipes added to extras (shared from
+  skuld package docs).
+
 ### Improved
 
 - `Skuld.Coroutine` `@moduledoc` now includes a package-level intro describing

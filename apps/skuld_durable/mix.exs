@@ -22,12 +22,16 @@ defmodule Skuld.Durable.MixProject do
         umbrella_home: "https://hexdocs.pm/skuld/architecture.html",
         extras: [
           "docs/effects/effectlogger.md",
-          "docs/effects/serializable-coroutine.md"
+          "docs/effects/serializable-coroutine.md",
+          "../skuld/docs/recipes/durable-computation.md"
         ],
         groups_for_extras: [
           Effects: [
             "docs/effects/effectlogger.md",
             "docs/effects/serializable-coroutine.md"
+          ],
+          Recipes: [
+            "../skuld/docs/recipes/durable-computation.md"
           ]
         ],
         groups_for_modules: [

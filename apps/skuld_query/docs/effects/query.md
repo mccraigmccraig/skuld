@@ -1,7 +1,7 @@
 # Query System
 
 <!-- nav:header:start -->
-[Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[Batch Loading >](../../../skuld/docs/recipes/batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Two complementary mechanisms for data fetching. Together they eliminate
@@ -100,5 +100,5 @@ computation
 
 ---
 
-[Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[Batch Loading >](../../../skuld/docs/recipes/batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

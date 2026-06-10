@@ -1,7 +1,7 @@
 # Command & Transaction
 
 <!-- nav:header:start -->
-[< Adapter](adapter.md) | [Up: Boundaries](port.md) | [Index](port.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Adapter](adapter.md) | [Up: Boundaries](port.md) | [Index](port.md) | [Hexagonal Architecture >](../../../skuld/docs/recipes/hexagonal-architecture.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Dispatch and transactional boundaries.
@@ -70,5 +70,5 @@ computation
 
 ---
 
-[< Adapter](adapter.md) | [Up: Boundaries](port.md) | [Index](port.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Adapter](adapter.md) | [Up: Boundaries](port.md) | [Index](port.md) | [Hexagonal Architecture >](../../../skuld/docs/recipes/hexagonal-architecture.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->

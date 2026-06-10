@@ -24,7 +24,9 @@ defmodule Skuld.Port.MixProject do
           "docs/effects/port.md",
           "docs/effects/effectful-facade.md",
           "docs/effects/adapter.md",
-          "docs/effects/command-transaction.md"
+          "docs/effects/command-transaction.md",
+          "../skuld/docs/recipes/hexagonal-architecture.md",
+          "../skuld/docs/recipes/property-testing.md"
         ],
         groups_for_extras: [
           Boundaries: [
@@ -32,6 +34,10 @@ defmodule Skuld.Port.MixProject do
             "docs/effects/effectful-facade.md",
             "docs/effects/adapter.md",
             "docs/effects/command-transaction.md"
+          ],
+          Recipes: [
+            "../skuld/docs/recipes/hexagonal-architecture.md",
+            "../skuld/docs/recipes/property-testing.md"
           ]
         ],
         groups_for_modules: [

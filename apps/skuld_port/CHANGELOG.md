@@ -10,6 +10,8 @@ All notable changes to `skuld_port` will be documented in this file.
 
 - `Skuld.Effects.Port` `@moduledoc` now includes a package-level intro
   describing what `skuld_port` provides and linking to the architecture guide.
+- `hexagonal-architecture.md` and `property-testing.md` recipes added to
+  extras (shared from skuld package docs).
 
 ### Fixed
 
