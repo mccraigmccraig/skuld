@@ -105,7 +105,7 @@ main() {
           echo "  $pkg  docs (would publish)"
         else
           echo "=== Publishing docs for $pkg ==="
-          (cd "$ROOT/apps/$pkg" && mix deps.get && HEX_PUBLISH=true mix hex.publish docs)
+          (cd "$ROOT/apps/$pkg" && HEX_PUBLISH=true mix deps.get && HEX_PUBLISH=true mix hex.publish docs)
         fi
         published_count=$((published_count + 1))
       else
@@ -117,7 +117,7 @@ main() {
         echo "  $pkg  $hex_ver -> $local_ver  (would publish)"
       else
         echo "=== Publishing $pkg $local_ver (hex: $hex_ver) ==="
-          (cd "$ROOT/apps/$pkg" && mix deps.get && HEX_PUBLISH=true mix hex.publish)
+          (cd "$ROOT/apps/$pkg" && HEX_PUBLISH=true mix deps.get && HEX_PUBLISH=true mix hex.publish)
         published_count=$((published_count + 1))
       fi
     else
