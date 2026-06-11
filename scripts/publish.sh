@@ -131,6 +131,9 @@ main() {
     echo "Dry run complete. $published_count package(s) would be published, $skipped_count skipped."
   else
     echo "Done. $published_count package(s) published, $skipped_count skipped."
+    # Restore mix.lock — sibling deps resolved as hex packages during publish
+    # pollute the umbrella mix.lock with hex entries that don't belong there.
+    git -C "$ROOT" checkout mix.lock 2>/dev/null || true
   fi
 }
 
