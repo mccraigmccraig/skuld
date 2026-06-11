@@ -1,7 +1,7 @@
 # Yield
 
 <!-- nav:header:start -->
-[< FxList](fxlist.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Hexagonal Architecture >](../recipes/hexagonal-architecture.md)
+[< FxList](fxlist.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Command & Transaction >](command-transaction.md)
 <!-- nav:header:end -->
 
 Yield suspends a computation mid-flight, returning control to the caller
@@ -88,5 +88,5 @@ handler manages its own effect independently.
 
 ---
 
-[< FxList](fxlist.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Hexagonal Architecture >](../recipes/hexagonal-architecture.md)
+[< FxList](fxlist.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Command & Transaction >](command-transaction.md)
 <!-- nav:footer:end -->

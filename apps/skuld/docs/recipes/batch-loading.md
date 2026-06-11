@@ -1,7 +1,7 @@
 # Batch Loading
 
 <!-- nav:header:start -->
-[< Query System](../../../../docs/effects/query.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Durable Computation](durable-computation.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:header:end -->
 
 Eliminate N+1 queries with `deffetch` operations and `FiberPool`.
@@ -239,5 +239,5 @@ Skuld gives you the first two for free so you only write the third.
 
 ---
 
-[< Query System](../../../../docs/effects/query.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Durable Computation](durable-computation.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:footer:end -->

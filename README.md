@@ -16,7 +16,7 @@ packages:
 |---|---|
 | [`skuld`](https://hex.pm/packages/skuld) | Core engine (`Comp`), syntax (`Syntax`), foundational effects |
 | [`skuld_concurrency`](https://hex.pm/packages/skuld_concurrency) | Coroutines, `FiberPool`, `Channel`/`Brook` streaming, `AsyncCoroutine` |
-| [`skuld_port`](https://hex.pm/packages/skuld_port) | `Port` dispatch, `EffectfulFacade`, `Adapter`, `Command`/`Transaction` |
+| [`skuld_port`](https://hex.pm/packages/skuld_port) | `Port` dispatch, `EffectfulFacade`, `Adapter` |
 | [`skuld_durable`](https://hex.pm/packages/skuld_durable) | `SerializableCoroutine`, `EffectLogger` for durable workflows |
 | [`skuld_query`](https://hex.pm/packages/skuld_query) | Auto-batching data fetches via `Query` do-notation (Haxl-style) |
 | [`skuld_repo`](https://hex.pm/packages/skuld_repo) | Ecto Repo integration (`InMemory`, `Ecto`, `Stub`) |

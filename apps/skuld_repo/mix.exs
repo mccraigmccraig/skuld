@@ -41,7 +41,8 @@ defmodule Skuld.Repo.MixProject do
             Skuld.Repo.InMemory,
             Skuld.Repo.OpenInMemory,
             Skuld.Repo.Stub,
-            Skuld.Repo.Test
+            Skuld.Repo.Test,
+            Skuld.Effects.Transaction.Ecto
           ]
         ]
       ]

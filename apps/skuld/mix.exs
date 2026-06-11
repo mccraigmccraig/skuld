@@ -32,6 +32,7 @@ defmodule Skuld.MixProject do
           "docs/effects/fresh-random.md",
           "docs/effects/fxlist.md",
           "docs/effects/yield.md",
+          "docs/effects/command-transaction.md",
           "docs/recipes/hexagonal-architecture.md",
           "docs/recipes/property-testing.md",
           "docs/recipes/handler-stacks.md",
@@ -57,7 +58,8 @@ defmodule Skuld.MixProject do
             "docs/effects/throw-bracket.md",
             "docs/effects/fresh-random.md",
             "docs/effects/fxlist.md",
-            "docs/effects/yield.md"
+            "docs/effects/yield.md",
+            "docs/effects/command-transaction.md"
           ],
           Recipes: [
             "docs/recipes/hexagonal-architecture.md",
@@ -88,7 +90,9 @@ defmodule Skuld.MixProject do
             Skuld.Effects.Random,
             Skuld.Effects.FxList,
             Skuld.Effects.FxFasterList,
-            Skuld.Effects.Yield
+            Skuld.Effects.Yield,
+            Skuld.Effects.Command,
+            Skuld.Effects.Transaction
           ],
           "Core Types": [
             Skuld.Comp.Env,
@@ -112,6 +116,9 @@ defmodule Skuld.MixProject do
             Skuld.Comp.InvalidComputation,
             Skuld.Comp.MatchFailed
           ]
+        ],
+        nest_modules_by_prefix: [
+          Skuld.Effects.Transaction
         ]
       ]
     ]

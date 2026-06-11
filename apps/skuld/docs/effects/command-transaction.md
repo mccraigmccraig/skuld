@@ -1,7 +1,7 @@
 # Command & Transaction
 
 <!-- nav:header:start -->
-[< Adapter](adapter.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Hexagonal Architecture >](../../../skuld/docs/recipes/hexagonal-architecture.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Yield](yield.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Hexagonal Architecture >](../recipes/hexagonal-architecture.md)
 <!-- nav:header:end -->
 
 Dispatch and transactional boundaries.
@@ -70,5 +70,5 @@ computation
 
 ---
 
-[< Adapter](adapter.md) | [Up: Boundaries](port.md) | [Index](../../README.md) | [Hexagonal Architecture >](../../../skuld/docs/recipes/hexagonal-architecture.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Yield](yield.md) | [Up: Foundational Effects](state-reader-writer.md) | [Index](../../README.md) | [Hexagonal Architecture >](../recipes/hexagonal-architecture.md)
 <!-- nav:footer:end -->

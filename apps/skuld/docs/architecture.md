@@ -12,9 +12,9 @@ which effects live where.
 
 | Package | What it provides |
 |---|---|
-| `skuld` | Core computation engine (`Comp`), syntax macros (`Syntax`), and foundational effects |
+| `skuld` | Core computation engine (`Comp`), syntax macros (`Syntax`), and foundational effects including `Command` and `Transaction` |
 | `skuld_concurrency` | Cooperative coroutines, the `FiberPool` scheduler, `Channel`/`Brook` streaming, and `AsyncCoroutine` process bridging |
-| `skuld_port` | `Port` effect for dispatching to pluggable backends, `EffectfulFacade` for typed contracts, `Adapter` for bridging effectful and plain code, and `Command`/`Transaction` for operations |
+| `skuld_port` | `Port` effect for dispatching to pluggable backends, `EffectfulFacade` for typed contracts, and `Adapter` for bridging effectful and plain code |
 | `skuld_process` | `Parallel` for multi-process fan-out and `AtomicState` for process-level mutable state |
 | `skuld_durable` | `SerializableCoroutine` for pause-serialize-resume workflows and `EffectLogger` for execution logging and replay |
 | `skuld_query` | `Query` do-notation for auto-batching data fetches via dependency analysis and concurrent `FiberPool` dispatch (Haxl-style) |
@@ -58,6 +58,8 @@ on what they need:
 | `Random` | `skuld` |
 | `FxList` / `FxFasterList` | `skuld` |
 | `Yield` | `skuld` |
+| `Command` | `skuld` |
+| `Transaction` | `skuld` |
 | `Coroutine` | `skuld_concurrency` |
 | `FiberPool` | `skuld_concurrency` |
 | `Channel` | `skuld_concurrency` |
@@ -67,14 +69,13 @@ on what they need:
 | `Port` | `skuld_port` |
 | `Port.EffectfulFacade` | `skuld_port` |
 | `Adapter` | `skuld_port` |
-| `Command` | `skuld_port` |
-| `Transaction` | `skuld_port` |
 | `Parallel` | `skuld_process` |
 | `AtomicState` | `skuld_process` |
 | `SerializableCoroutine` | `skuld_durable` |
 | `EffectLogger` | `skuld_durable` |
 | `Query` / `QueryBlock` | `skuld_query` |
 | `Repo` | `skuld_repo` |
+| `Transaction.Ecto` | `skuld_repo` |
 
 ## Mental Model
 

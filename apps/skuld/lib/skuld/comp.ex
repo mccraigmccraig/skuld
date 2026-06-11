@@ -18,6 +18,8 @@ defmodule Skuld.Comp do
     * **Random** — deterministic random generation for tests
     * **FxList** / **FxFasterList** — effectful iteration over collections
     * **Yield** — suspend a computation and wait for external input
+    * **Command** — dispatch commands through a handler pipeline
+    * **Transaction** — env state rollback with optional database transactions
 
   For coroutines, concurrency, query batching, port/adapter boundaries, durable
   execution, and database integration, see the sibling packages:
