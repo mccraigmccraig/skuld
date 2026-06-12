@@ -37,6 +37,8 @@ defmodule Skuld.Effects.Fresh.Test do
 
   @sig Fresh.sig()
   @fresh_uuid_op Fresh.fresh_uuid_op()
+  @uuid4_op Fresh.uuid4_op()
+  @uuid7_op Fresh.uuid7_op()
 
   # Default namespace for deterministic UUID generation (a fixed v4 UUID)
   @default_namespace "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
@@ -99,7 +101,7 @@ defmodule Skuld.Effects.Fresh.Test do
   def __handle__(comp, _config), do: with_handler(comp)
 
   @impl Skuld.Comp.IHandle
-  def handle(@fresh_uuid_op, env, k) do
+  def handle(op, env, k) when op in [@fresh_uuid_op, @uuid4_op, @uuid7_op] do
     %State{counter: counter, namespace: namespace} = state = Env.get_state!(env, @sig)
     uuid = Uniq.UUID.uuid5(namespace, Integer.to_string(counter))
     new_env = Env.put_state(env, @sig, %{state | counter: counter + 1})

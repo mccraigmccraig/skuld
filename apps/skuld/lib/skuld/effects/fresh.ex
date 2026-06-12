@@ -2,7 +2,17 @@ defmodule Skuld.Effects.Fresh do
   @moduledoc """
   Fresh effect - generate fresh/unique UUIDs.
 
-  Provides two handler modes:
+  Provides three operations:
+
+    * `Fresh.fresh_uuid()` — generate a UUID (version unspecified)
+    * `Fresh.uuid4()` — explicitly request a v4 UUID
+    * `Fresh.uuid7()` — explicitly request a v7 UUID
+
+  The caller expresses the version they want; the handler decides what to
+  actually emit. A production handler honours the contract; a test handler
+  returns deterministic values from all three operations for reproducibility.
+
+  Two handler modes:
 
   - **Production** (`with_uuid7_handler/1`): Generates v7 UUIDs which are
     time-ordered and suitable for database primary keys (good data locality,
@@ -19,7 +29,7 @@ defmodule Skuld.Effects.Fresh do
 
       comp do
         id1 <- Fresh.fresh_uuid()
-        id2 <- Fresh.fresh_uuid()
+        id2 <- Fresh.uuid7()
         {id1, id2}
       end
       |> Fresh.with_uuid7_handler()
@@ -68,10 +78,20 @@ defmodule Skuld.Effects.Fresh do
   #############################################################################
 
   def_op(fresh_uuid())
+  def_op(uuid4())
+  def_op(uuid7())
 
   @doc false
   @spec fresh_uuid_op() :: atom()
   def fresh_uuid_op, do: @__fresh_uuid_op__
+
+  @doc false
+  @spec uuid4_op() :: atom()
+  def uuid4_op, do: @__uuid4_op__
+
+  @doc false
+  @spec uuid7_op() :: atom()
+  def uuid7_op, do: @__uuid7_op__
 
   #############################################################################
   ## Handler Delegation

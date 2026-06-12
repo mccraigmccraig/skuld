@@ -25,6 +25,8 @@ defmodule Skuld.Effects.Fresh.UUID7 do
 
   @sig Fresh.sig()
   @fresh_uuid_op Fresh.fresh_uuid_op()
+  @uuid4_op Fresh.uuid4_op()
+  @uuid7_op Fresh.uuid7_op()
 
   @doc """
   Install a v7 UUID handler for production use.
@@ -50,7 +52,7 @@ defmodule Skuld.Effects.Fresh.UUID7 do
   def __handle__(comp, _config), do: with_handler(comp)
 
   @impl Skuld.Comp.IHandle
-  def handle(@fresh_uuid_op, env, k) do
+  def handle(op, env, k) when op in [@fresh_uuid_op, @uuid4_op, @uuid7_op] do
     uuid = Uniq.UUID.uuid7()
     k.(uuid, env)
   end
