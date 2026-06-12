@@ -8,8 +8,9 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/skuld.svg)](https://hex.pm/packages/skuld)
 [![Documentation](https://img.shields.io/badge/documentation-gray)](https://hexdocs.pm/skuld/)
 
-A pure effect system for Elixir: write business logic as effect descriptions,
-swap handlers for deterministic testing. Distributed across seven independently-versioned
+An effect system for Elixir: write pure business logic which emits effect
+description data, provide handlers which implement effects. The pattern is
+simple and very powerful. Distributed across seven independently-versioned
 packages:
 
 | Package | Provides |
