@@ -14,10 +14,12 @@
 #   skuld_repo (depends on skuld + skuld_port)
 #
 # Usage:
-#   scripts/publish.sh            # publish interactively (prompts for 2FA)
-#   scripts/publish.sh --check    # dry-run: show what would be published
-#   scripts/publish.sh --docs     # publish documentation only
+#   scripts/publish.sh                 # publish all interactively
+#   scripts/publish.sh --check         # dry-run: show what would be published
+#   scripts/publish.sh --docs          # publish documentation only
 #   scripts/publish.sh --docs --check  # dry-run for docs-only
+#   scripts/publish.sh skuld_port              # publish only skuld_port
+#   scripts/publish.sh --docs skuld_port,skuld_concurrency  # docs for selected pkgs
 #
 set -euo pipefail
 
@@ -25,7 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Packages in dependency order
-declare -a PACKAGES=(
+declare -a ALL_PACKAGES=(
   "skuld"
   "skuld_concurrency"
   "skuld_port"
@@ -37,12 +39,36 @@ declare -a PACKAGES=(
 
 CHECK_ONLY=false
 DOCS_ONLY=false
+SELECTED_PKGS=""
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK_ONLY=true ;;
     --docs)  DOCS_ONLY=true ;;
+    *)       SELECTED_PKGS="$arg" ;;
   esac
 done
+
+# Build the filtered package list (maintains dependency order)
+declare -a PACKAGES=()
+if [[ -n "$SELECTED_PKGS" ]]; then
+  IFS=',' read -ra REQUESTED <<< "$SELECTED_PKGS"
+  for pkg in "${ALL_PACKAGES[@]}"; do
+    for req in "${REQUESTED[@]}"; do
+      req="$(echo "$req" | xargs)"  # trim whitespace
+      if [[ "$pkg" == "$req" ]]; then
+        PACKAGES+=("$pkg")
+        break
+      fi
+    done
+  done
+  if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+    echo "Error: no matching packages found for filter: $SELECTED_PKGS"
+    echo "Valid packages: ${ALL_PACKAGES[*]}"
+    exit 1
+  fi
+else
+  PACKAGES=("${ALL_PACKAGES[@]}")
+fi
 
 if $CHECK_ONLY && $DOCS_ONLY; then
   echo "=== DRY RUN (docs only) — no packages will be published ==="
