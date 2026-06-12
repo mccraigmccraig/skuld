@@ -1,7 +1,7 @@
 # Batch Loading
 
 <!-- nav:header:start -->
-[< LiveView Integration](liveview.md) | [Up: Recipes](liveview.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Query System](../../../../docs/effects/query.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
 Eliminate N+1 queries with `deffetch` operations and `FiberPool`.
@@ -239,5 +239,5 @@ Skuld gives you the first two for free so you only write the third.
 
 ---
 
-[< LiveView Integration](liveview.md) | [Up: Recipes](liveview.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Query System](../../../../docs/effects/query.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:footer:end -->
