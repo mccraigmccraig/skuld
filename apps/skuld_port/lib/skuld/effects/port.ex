@@ -1,6 +1,7 @@
 defmodule Skuld.Effects.Port do
   @moduledoc """
-  Effect for dispatching parameterizable blocking calls to pluggable backends.
+  Effect for dispatching function calls to pluggable backends — both plain
+  (blocking) and effectful (computation-returning).
 
   Part of the `skuld_port` package, which provides the Port dispatch effect,
   EffectfulFacade for typed contracts, Adapter for bridging effectful and
@@ -17,27 +18,29 @@ defmodule Skuld.Effects.Port do
 
   ## Use Cases
 
-  Port is ideal for wrapping any existing side-effecting Elixir code:
+  Port works with any external code, whether plain or effectful:
 
-    * Database queries
-    * HTTP API calls
-    * File system operations
-    * External service integrations
-    * Legacy code that performs I/O
+    * Database queries, HTTP API calls, file system operations
+    * External service integrations and legacy code
+    * Effectful implementations behind typed contracts — decompose a large
+      effect system into swappable cells with compile-time verified boundaries
 
-  ## Result Tuple Convention
+  ## Result Tuple Convention (plain resolvers)
 
-  Port handlers should return `{:ok, value}` or `{:error, reason}` tuples.
+  Plain handlers should return `{:ok, value}` or `{:error, reason}` tuples.
   This convention enables two request modes:
 
     * `request/3` – returns the result tuple as-is for caller to handle
     * `request!/3` – unwraps `{:ok, value}` or dispatches `Throw` on error
 
+  Effectful resolvers return computations that are inlined into the current
+  effect context — no result tuple convention applies.
+
   ## Example
 
       alias Skuld.Effects.Port
 
-      # Implementation returns result tuples
+      # Plain implementation
       defmodule MyApp.UserQueries do
         def find_by_id(id) do
           case Repo.get(User, id) do
