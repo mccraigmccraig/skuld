@@ -4,6 +4,14 @@
 
 All notable changes to `skuld_concurrency` will be documented in this file.
 
+## [Unreleased]
+
+### Improved
+
+- `README.md` enriched with capability descriptions for each component
+  (Coroutine, FiberPool, Channel, Brook, AsyncCoroutine, Task) and a
+  concurrent stream-processing example with links to deeper reading.
+
 ## [0.32.1] — 2026-06-10
 
 ### Added
