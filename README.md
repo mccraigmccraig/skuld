@@ -47,8 +47,7 @@ straightforwardly property-testable.
 Effectful computations condense domain logic to its essence. Handlers
 provide context — production vs test, concurrency, batching — without
 touching the computation. Effects are first-class data: inspect them,
-serialise them, replay them. The same mechanism enables both
-examples below.
+serialise them, replay them.
 
 Under the hood, the `comp` macro transforms sequential-looking code
 into nested `Comp.bind` calls — there's no magic, just functions
