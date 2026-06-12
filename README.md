@@ -1,7 +1,7 @@
 # Skuld
 
 <!-- nav:header:start -->
-[Why Effects? >](docs/why.md)
+[Why Effects? >](https://hexdocs.pm/skuld/why.html)
 <!-- nav:header:end -->
 
 [![Test](https://github.com/mccraigmccraig/skuld/actions/workflows/test.yml/badge.svg)](https://github.com/mccraigmccraig/skuld/actions/workflows/test.yml)
@@ -71,7 +71,7 @@ end)
 Each `<-` becomes a `bind` call, each bound variable becomes a
 continuation parameter. Every expression that looks side-effecting
 is just a function constructing another function. [Read the full
-internals →](docs/internals.md)
+internals →](https://hexdocs.pm/skuld/internals.html)
 
 ### Composability
 
@@ -109,7 +109,7 @@ database round-trips, or the other account summaries which also need to be
 built - it's pure domain logic. Everything else is handler
 wiring — swappable, testable, composable.
 
-[Full batch loading recipe →](docs/recipes/batch-loading.md)
+[Full batch loading recipe →](https://hexdocs.pm/skuld/recipes/batch-loading.html)
 
 ### Suspension & resumption
 
@@ -215,7 +215,7 @@ as dispatch state — `employment` branches, `income` branches,
 interaction between them. Here the branches are just `if` in the
 code. Same computation, same handlers, same testability.
 
-[Full LiveView integration recipe →](docs/recipes/liveview.md)
+[Full LiveView integration recipe →](https://hexdocs.pm/skuld/recipes/liveview.html)
 
 ## Installation
 
@@ -247,17 +247,17 @@ Each package is independently versioned. Check the latest versions on the
 
 | If you want to... | Read |
 |---|---|
-| Understand the problem effects solve | [Why Effects?](docs/why.md) |
-| See how effects and handlers work | [How It Works](docs/what.md) |
-| Write your first computation | [Getting Started](docs/getting-started.md) |
-| State, Reader, Writer, Throw, Fresh, Random | [Foundational Effects](docs/effects/state-reader-writer.md) |
-| Understand the package architecture | [Package Architecture](docs/architecture.md) |
-| Yield, Coroutines, FiberPool, Channels, Async | [Coroutines & Concurrency](docs/effects/yield.md) |
-| Port, Repo, Hexagonal Architecture | [Boundaries](docs/effects/port.md) |
-| Eliminate N+1 queries | [Batch Loading](docs/recipes/batch-loading.md) |
-| Handler-swapping for deterministic testing | [Property Testing](docs/recipes/property-testing.md) |
-| Full effect and API reference | [Reference](docs/reference.md) |
-| Peek under the hood — CPS, evidence-passing, custom effects | [How It Really Works](docs/internals.md) |
+| Understand the problem effects solve | [Why Effects?](https://hexdocs.pm/skuld/why.html) |
+| See how effects and handlers work | [How It Works](https://hexdocs.pm/skuld/what.html) |
+| Write your first computation | [Getting Started](https://hexdocs.pm/skuld/getting-started.html) |
+| State, Reader, Writer, Throw, Fresh, Random | [Foundational Effects](https://hexdocs.pm/skuld/effects/state-reader-writer.html) |
+| Understand the package architecture | [Package Architecture](https://hexdocs.pm/skuld/architecture.html) |
+| Yield, Coroutines, FiberPool, Channels, Async | [Coroutines & Concurrency](https://hexdocs.pm/skuld/effects/yield.html) |
+| Port, Repo, Hexagonal Architecture | [Boundaries](https://hexdocs.pm/skuld/effects/port.html) |
+| Eliminate N+1 queries | [Batch Loading](https://hexdocs.pm/skuld/recipes/batch-loading.html) |
+| Handler-swapping for deterministic testing | [Property Testing](https://hexdocs.pm/skuld/recipes/property-testing.html) |
+| Full effect and API reference | [Reference](https://hexdocs.pm/skuld/reference.html) |
+| Peek under the hood — CPS, evidence-passing, custom effects | [How It Really Works](https://hexdocs.pm/skuld/internals.html) |
 
 ## License
 
@@ -267,5 +267,5 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-[Why Effects? >](docs/why.md)
+[Why Effects? >](https://hexdocs.pm/skuld/why.html)
 <!-- nav:footer:end -->
