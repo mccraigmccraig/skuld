@@ -31,8 +31,9 @@ Between pure business logic and side-effecting infrastructure
 sits the orchestration layer — "fetch the user, check permissions, load
 their subscription, hit some APIs, compute a price, write an invoice."
 This code encodes your most important business rules, but it's tangled with
-databases, APIs, and randomness — making it hard to test, hard to
-refactor, and often — impossible to property-test.
+databases, APIs, and randomness — making it harder to reason about,
+harder to refactor, harder to test, and much harder or even impossible to
+property-test.
 
 ## Another way
 
