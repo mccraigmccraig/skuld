@@ -50,6 +50,30 @@ touching the computation. Effects are first-class data: inspect them,
 serialise them, replay them. The same mechanism enables both
 examples below.
 
+Under the hood, the `comp` macro transforms sequential-looking code
+into nested `Comp.bind` calls — there's no magic, just functions
+calling functions:
+
+```elixir
+comp do
+  x <- Reader.ask()
+  y <- State.get()
+  x + y
+end
+
+# Expands to:
+Comp.bind(Reader.ask(), fn x ->
+  Comp.bind(State.get(), fn y ->
+    Comp.pure(x + y)
+  end)
+end)
+```
+
+Each `<-` becomes a `bind` call, each bound variable becomes a
+continuation parameter. Every expression that looks side-effecting
+is just a function constructing another function. [Read the full
+internals →](docs/internals.md)
+
 ### Composability
 
 Effects compose with zero ceremony. This query function reads like
