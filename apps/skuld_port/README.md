@@ -61,7 +61,7 @@ defmodule MyApp.Payments.Stripe do
   use Skuld.Syntax
   use MyApp.Payments
 
-  @impl true
+  @impl MyApp.Payments
   defcomp charge(amount) do
     {:ok, _} <- StripeAPI.create_charge(amount)
     {:ok, %{charge_id: UUID.uuid4()}}
