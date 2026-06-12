@@ -64,7 +64,8 @@ defmodule MyApp.Payments.Stripe do
   @impl MyApp.Payments
   defcomp charge(amount) do
     {:ok, _} <- StripeAPI.create_charge(amount)
-    {:ok, %{charge_id: Fresh.uuid4()}}
+    charge_id <- Fresh.uuid4()
+    {:ok, %{charge_id: charge_id}}
   end
 end
 
