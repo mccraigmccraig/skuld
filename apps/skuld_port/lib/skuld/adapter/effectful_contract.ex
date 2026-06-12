@@ -93,6 +93,22 @@ defmodule Skuld.Adapter.EffectfulContract do
 
       @doc false
       def __port_effectful__?, do: true
+
+      @doc """
+      Declare this module as an effectful implementation of
+      `#{inspect(unquote(env.module))}`.
+
+      Generates `@behaviour`, `__port_effectful__?/0`, and compile-time
+      callback verification.
+      """
+      defmacro __using__(_opts) do
+        contract = unquote(env.module)
+
+        quote do
+          @behaviour unquote(contract)
+          def __port_effectful__?, do: true
+        end
+      end
     end
   end
 
