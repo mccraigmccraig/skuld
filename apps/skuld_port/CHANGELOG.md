@@ -4,6 +4,12 @@
 
 All notable changes to `skuld_port` will be documented in this file.
 
+## [Unreleased]
+
+### Improved
+
+- `README.md` enriched with capability descriptions, the four-direction boundary matrix, and a single-module effectful boundary example.
+
 ## [0.32.1] — 2026-06-10
 
 ### Improved
