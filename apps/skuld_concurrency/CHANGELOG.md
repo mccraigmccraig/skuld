@@ -1,8 +1,26 @@
 # Changelog
 
-<!-- last-updated-against: 957e6541f8399f8818a2adb9f60c17b22649676c -->
+<!-- last-updated-against: 766af198cc5edaf777292521039079c99d0f6826 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [0.34.0] — 2026-06-13
+
+### Added
+
+- `Skuld.AsyncCoroutine.PageMachine` — `use` macro that generates `handle_info/2`
+  clauses from callback options, eliminating LiveView boilerplate. Includes
+  `run/2-3` and `cancel/1` delegation so consumers only need one module.
+- `Skuld.AsyncCoroutine.PageMachine` — test suite covering all callback
+  combinations and edge cases.
+
+### Changed
+
+- **Breaking**: `AsyncCoroutine.run/2` and `AsyncCoroutine.run_sync/2` now
+  take `tag` as a required positional argument instead of a keyword option.
+  `AsyncCoroutine.run(computation, :my_tag)` replaces
+  `AsyncCoroutine.run(computation, tag: :my_tag)`. Convenience 2-arity
+  wrappers added for both start and resume variants.
 
 ## [0.33.0] — 2026-06-13
 
