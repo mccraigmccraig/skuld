@@ -346,6 +346,51 @@ single error path — ideal when the flow is complex and branching is
 natural. Both test fast without processes. Pick the one that reads most
 naturally for the problem at hand.
 
+## Testing with Coroutine.PageMachine
+
+The `CheckoutFlow` module is the same — only the test harness changes.
+`Coroutine.PageMachine` wraps the raw `Coroutine.run` calls, returning
+tagged tuples instead of sum types:
+
+```elixir
+alias Skuld.Coroutine.PageMachine
+
+comp = CheckoutFlow.flow(cart)
+|> Port.with_handler(%{Inventory => InventoryStub, Orders => OrdersStub})
+|> Yield.with_handler()
+|> Throw.with_handler()
+
+# Start — inventory reservation runs, then yields for shipping
+{:yield, fiber, :shipping} = PageMachine.run(comp)
+
+# Submit shipping — yields for payment
+{:yield, fiber, :payment} = PageMachine.run(fiber, {:ok, %{address: "123 Main"}})
+
+# Submit payment — order placed, machine completes
+{:complete, {:ok, order}} = PageMachine.run(fiber, {:ok, %{card: "4242"}})
+
+# Or: cancel at any step
+{:cancel, :cancelled} = PageMachine.cancel(fiber)
+
+# Or: inventory failure
+comp = CheckoutFlow.flow(cart) |> Port.with_handler(%{Inventory => SoldOutStub})
+|> Yield.with_handler() |> Throw.with_handler()
+{:complete, {:error, :sold_out}} = PageMachine.run(comp)
+```
+
+Compare to the raw `Coroutine` test on page 158:
+
+| | Raw Coroutine | Coroutine.PageMachine |
+|---|---|---|
+| Call sites | `Coroutine.new(comp, Env.new())` + `Coroutine.run(fiber, val)` | `PageMachine.run(comp)` + `PageMachine.run(fiber, val)` |
+| Assertions | `assert %Coroutine.ExternalSuspended{value: :shipping} = fiber` | `assert {:yield, fiber, :shipping} = result` |
+| Errors | `%Coroutine.Errored{error: %Error{...}}` | `{:error, reason}` |
+| Boilerplate | ~4 lines per step | ~1 line per step |
+
+`Coroutine.PageMachine` for in-process testing, `AsyncPageMachine` for
+LiveView integration. Same flow, same terminology, your choice of
+sync or async backing.
+
 <!-- nav:footer:start -->
 
 ---
