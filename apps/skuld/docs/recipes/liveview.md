@@ -268,11 +268,11 @@ flow = MyApp.CheckoutFlow.run(cart)
 
 ## Operation reference
 
-| Operation | Purpose |
-|---|---|
-| `PageMachine.run/2` | Start flow (async) |
-| `PageMachine.run/3` | Resume with user input |
-| `PageMachine.cancel/1` | Cancel flow |
+| Operation              | Purpose                |
+|------------------------|------------------------|
+| `PageMachine.run/2`    | Start flow (async)     |
+| `PageMachine.run/3`    | Resume with user input |
+| `PageMachine.cancel/1` | Cancel flow            |
 
 <!-- nav:footer:start -->
 
