@@ -1,10 +1,8 @@
 defmodule Skuld.Coroutine.PageMachineTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Skuld.Coroutine.PageMachine
   alias Skuld.Effects.{Throw, Yield}
-
-  doctest PageMachine
 
   defmodule TestFlow do
     use Skuld.Syntax
@@ -14,6 +12,11 @@ defmodule Skuld.Coroutine.PageMachineTest do
       b <- Yield.yield(:second)
       {:ok, {arg, a, b}}
     end
+  end
+
+  defmodule ImmediateFlow do
+    use Skuld.Syntax
+    defcomp(flow, do: 42)
   end
 
   defmodule BrokenFlow do
@@ -26,55 +29,96 @@ defmodule Skuld.Coroutine.PageMachineTest do
     end
   end
 
-  defmodule ImmediateFlow do
-    use Skuld.Syntax
+  defp fake_socket, do: %{assigns: %{}}
 
-    defcomp flow do
-      42
+  defp comp do
+    TestFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
+  end
+
+  describe "run/3" do
+    test "yields through on_yield" do
+      result =
+        PageMachine.run(comp(), fake_socket(),
+          on_yield: fn value, socket ->
+            assert value in [:first, :second]
+            {:noreply, socket}
+          end,
+          on_complete: fn _, s -> {:noreply, s} end
+        )
+
+      assert {:noreply, %{assigns: %{pm: %PageMachine{}}}} = result
+    end
+
+    test "completes through on_complete" do
+      result =
+        PageMachine.run(ImmediateFlow.flow(), fake_socket(),
+          on_yield: fn _, s -> {:noreply, s} end,
+          on_complete: fn result, socket ->
+            assert result == 42
+            {:noreply, socket}
+          end
+        )
+
+      assert {:noreply, _} = result
+    end
+
+    test "errors through on_error" do
+      comp = BrokenFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
+
+      {:noreply, socket} =
+        PageMachine.run(comp, fake_socket(),
+          on_yield: fn _, s -> {:noreply, s} end,
+          on_error: fn error, socket ->
+            assert error == :boom
+            {:noreply, socket}
+          end
+        )
+
+      {:noreply, _} = PageMachine.run(socket.assigns.pm, :go, socket)
+    end
+
+    test "missing on_yield raises" do
+      assert_raise KeyError, fn ->
+        PageMachine.run(comp(), fake_socket(), on_error: fn _, s -> {:noreply, s} end)
+      end
     end
   end
 
-  describe "run/1" do
-    test "starts and returns {:yield, fiber, value}" do
-      comp = TestFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
-      {:yield, %Skuld.Coroutine.ExternalSuspended{}, :first} = PageMachine.run(comp)
-    end
+  describe "run/3 resume" do
+    test "resumes through full flow" do
+      {:noreply, socket} =
+        PageMachine.run(comp(), fake_socket(),
+          on_yield: fn _, s -> {:noreply, s} end,
+          on_complete: fn result, socket ->
+            assert {:ok, {:hello, 10, 20}} == result
+            {:noreply, socket}
+          end
+        )
 
-    test "immediate completion returns {:complete, result}" do
-      comp = ImmediateFlow.flow()
-      assert {:complete, 42} = PageMachine.run(comp)
-    end
-  end
-
-  describe "run/2" do
-    test "resumes from yield tuple through all steps" do
-      comp = TestFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
-
-      {:yield, fiber, :first} = PageMachine.run(comp)
-      {:yield, fiber, :second} = PageMachine.run(fiber, 10)
-      assert {:complete, {:ok, {:hello, 10, 20}}} = PageMachine.run(fiber, 20)
-    end
-
-    test "resumes from raw fiber too" do
-      comp = TestFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
-      fiber = comp |> Skuld.Coroutine.new(Skuld.Comp.Env.new()) |> Skuld.Coroutine.run()
-      {:yield, _, :first} = PageMachine.run(fiber)
+      {:noreply, socket} = PageMachine.run(socket.assigns.pm, 10, socket)
+      {:noreply, _} = PageMachine.run(socket.assigns.pm, 20, socket)
     end
   end
 
   describe "cancel/1" do
-    test "cancels a yielded computation from yield tuple" do
-      comp = TestFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
-      {:yield, fiber, :first} = PageMachine.run(comp)
-      assert {:cancel, :cancelled} = PageMachine.cancel(fiber)
-    end
-  end
+    test "dispatches through on_cancel" do
+      {:noreply, socket} =
+        PageMachine.run(comp(), fake_socket(),
+          on_yield: fn _, s -> {:noreply, s} end,
+          on_cancel: fn reason, socket ->
+            assert reason == :cancelled
+            {:noreply, socket}
+          end
+        )
 
-  describe "error handling" do
-    test "returns {:error, reason} for thrown errors" do
-      comp = BrokenFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
-      {:yield, fiber, :start} = PageMachine.run(comp)
-      assert {:error, :boom} = PageMachine.run(fiber, :go)
+      {:noreply, _} = PageMachine.cancel(socket.assigns.pm)
+    end
+
+    test "no on_cancel is graceful" do
+      {:noreply, socket} =
+        PageMachine.run(comp(), fake_socket(), on_yield: fn _, s -> {:noreply, s} end)
+
+      assert {:noreply, _} = PageMachine.cancel(socket.assigns.pm)
     end
   end
 end

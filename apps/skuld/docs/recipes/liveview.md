@@ -348,10 +348,9 @@ naturally for the problem at hand.
 
 ## Sync LiveView with Coroutine.PageMachine
 
-For flows where effects are fast (or absent), you can skip the process
-overhead entirely. `Coroutine.PageMachine` runs in-process — `handle_event`
-advances the state machine directly, and the caller pattern-matches the
-tagged tuple to update the socket:
+For flows where effects are fast (or absent), `Coroutine.PageMachine`
+runs in-process with no separate BEAM process. Callbacks are provided
+once at mount; `handle_event` is a one-liner:
 
 ```elixir
 alias Skuld.Coroutine.PageMachine
@@ -370,29 +369,23 @@ defmodule MyApp.CheckoutLive do
       |> Yield.with_handler()
       |> Throw.with_handler()
 
-    {:yield, fiber, step} = PageMachine.run(comp)
-    {:ok, assign(socket, fiber: fiber, step: step)}
+    PageMachine.run(comp, socket,
+      on_yield: fn step, socket -> {:noreply, assign(socket, step: step)} end,
+      on_complete: fn {:ok, order}, socket -> {:noreply, assign(socket, order: order, step: :done)} end,
+      on_error: fn
+        :sold_out, socket -> {:noreply, put_flash(socket, :error, "No longer available")}
+        reason, socket -> {:noreply, put_flash(socket, :error, inspect(reason))}
+      end,
+      on_cancel: fn _reason, socket -> {:noreply, push_navigate(socket, to: ~p"/cart")} end
+    )
   end
 
   @impl true
-  def handle_event("submit_shipping", %{"address" => addr}, socket) do
-    case PageMachine.run(socket.assigns.fiber, {:ok, %{address: addr}}) do
-      {:yield, fiber, step} -> {:noreply, assign(socket, fiber: fiber, step: step)}
-      {:complete, {:ok, order}} -> {:noreply, assign(socket, order: order, step: :done)}
-      {:error, :sold_out} -> {:noreply, put_flash(socket, :error, "No longer available")}
-      {:error, reason} -> {:noreply, put_flash(socket, :error, inspect(reason))}
-      {:cancel, _} -> {:noreply, push_navigate(socket, to: ~p"/cart")}
-    end
-  end
+  def handle_event("submit_shipping", %{"address" => a}, socket),
+    do: PageMachine.run(socket.assigns.pm, {:ok, %{address: a}}, socket)
 
-  def handle_event("submit_payment", %{"payment" => payment}, socket) do
-    case PageMachine.run(socket.assigns.fiber, {:ok, payment}) do
-      {:yield, fiber, step} -> {:noreply, assign(socket, fiber: fiber, step: step)}
-      {:complete, {:ok, order}} -> {:noreply, assign(socket, order: order, step: :done)}
-      {:error, reason} -> {:noreply, put_flash(socket, :error, "Payment failed: #{inspect(reason)}")}
-      {:cancel, _} -> {:noreply, push_navigate(socket, to: ~p"/cart")}
-    end
-  end
+  def handle_event("submit_payment", %{"payment" => p}, socket),
+    do: PageMachine.run(socket.assigns.pm, {:ok, p}, socket)
 
   @impl true
   def render(assigns) do
@@ -405,14 +398,11 @@ defmodule MyApp.CheckoutLive do
 end
 ```
 
-No process, no message-passing, no `handle_info` — just `case` on the
-return value. This is the simplest possible integration: a pure function
-call in a `handle_event`.
+No process, no `handle_info`, no `case` in `handle_event`. Callbacks defined
+once, dispatched automatically. The fiber is stored in `socket.assigns.pm`.
 
-The trade-off: `PageMachine.run` blocks the LiveView process while effects
-execute. For sub-millisecond effects this is fine. For I/O-bound effects
-(database calls, HTTP), use `AsyncPageMachine` to keep the LiveView
-responsive.
+For I/O-bound effects use `AsyncPageMachine` to keep the LiveView responsive.
+For fast effects this is the simplest possible integration.
 
 <!-- nav:footer:start -->
 
