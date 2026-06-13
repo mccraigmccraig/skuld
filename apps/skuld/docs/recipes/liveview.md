@@ -346,50 +346,73 @@ single error path — ideal when the flow is complex and branching is
 natural. Both test fast without processes. Pick the one that reads most
 naturally for the problem at hand.
 
-## Testing with Coroutine.PageMachine
+## Sync LiveView with Coroutine.PageMachine
 
-The `CheckoutFlow` module is the same — only the test harness changes.
-`Coroutine.PageMachine` wraps the raw `Coroutine.run` calls, returning
-tagged tuples instead of sum types:
+For flows where effects are fast (or absent), you can skip the process
+overhead entirely. `Coroutine.PageMachine` runs in-process — `handle_event`
+advances the state machine directly, and the caller pattern-matches the
+tagged tuple to update the socket:
 
 ```elixir
 alias Skuld.Coroutine.PageMachine
 
-comp = CheckoutFlow.flow(cart)
-|> Port.with_handler(%{Inventory => InventoryStub, Orders => OrdersStub})
-|> Yield.with_handler()
-|> Throw.with_handler()
+defmodule MyApp.CheckoutLive do
+  use MyAppWeb, :live_view
 
-# Start — inventory reservation runs, then yields for shipping
-{:yield, fiber, :shipping} = PageMachine.run(comp)
+  @impl true
+  def mount(_params, _session, socket) do
+    comp =
+      MyApp.CheckoutFlow.flow(socket.assigns.cart)
+      |> Port.with_handler(%{
+        MyApp.Inventory => MyApp.Inventory.Service,
+        MyApp.Orders => MyApp.Orders.Ecto
+      })
+      |> Yield.with_handler()
+      |> Throw.with_handler()
 
-# Submit shipping — yields for payment
-{:yield, fiber, :payment} = PageMachine.run(fiber, {:ok, %{address: "123 Main"}})
+    {:yield, fiber, step} = PageMachine.run(comp)
+    {:ok, assign(socket, fiber: fiber, step: step)}
+  end
 
-# Submit payment — order placed, machine completes
-{:complete, {:ok, order}} = PageMachine.run(fiber, {:ok, %{card: "4242"}})
+  @impl true
+  def handle_event("submit_shipping", %{"address" => addr}, socket) do
+    case PageMachine.run(socket.assigns.fiber, {:ok, %{address: addr}}) do
+      {:yield, fiber, step} -> {:noreply, assign(socket, fiber: fiber, step: step)}
+      {:complete, {:ok, order}} -> {:noreply, assign(socket, order: order, step: :done)}
+      {:error, :sold_out} -> {:noreply, put_flash(socket, :error, "No longer available")}
+      {:error, reason} -> {:noreply, put_flash(socket, :error, inspect(reason))}
+      {:cancel, _} -> {:noreply, push_navigate(socket, to: ~p"/cart")}
+    end
+  end
 
-# Or: cancel at any step
-{:cancel, :cancelled} = PageMachine.cancel(fiber)
+  def handle_event("submit_payment", %{"payment" => payment}, socket) do
+    case PageMachine.run(socket.assigns.fiber, {:ok, payment}) do
+      {:yield, fiber, step} -> {:noreply, assign(socket, fiber: fiber, step: step)}
+      {:complete, {:ok, order}} -> {:noreply, assign(socket, order: order, step: :done)}
+      {:error, reason} -> {:noreply, put_flash(socket, :error, "Payment failed: #{inspect(reason)}")}
+      {:cancel, _} -> {:noreply, push_navigate(socket, to: ~p"/cart")}
+    end
+  end
 
-# Or: inventory failure
-comp = CheckoutFlow.flow(cart) |> Port.with_handler(%{Inventory => SoldOutStub})
-|> Yield.with_handler() |> Throw.with_handler()
-{:complete, {:error, :sold_out}} = PageMachine.run(comp)
+  @impl true
+  def render(assigns) do
+    case assigns.step do
+      :shipping -> ~H|<.shipping_form myself={@myself} />|
+      :payment -> ~H|<.payment_form myself={@myself} />|
+      :done -> ~H|<.order_summary order={@order} />|
+    end
+  end
+end
 ```
 
-Compare to the raw `Coroutine` test on page 158:
+No process, no message-passing, no `handle_info` — just `case` on the
+return value. This is the simplest possible integration: a pure function
+call in a `handle_event`.
 
-| | Raw Coroutine | Coroutine.PageMachine |
-|---|---|---|
-| Call sites | `Coroutine.new(comp, Env.new())` + `Coroutine.run(fiber, val)` | `PageMachine.run(comp)` + `PageMachine.run(fiber, val)` |
-| Assertions | `assert %Coroutine.ExternalSuspended{value: :shipping} = fiber` | `assert {:yield, fiber, :shipping} = result` |
-| Errors | `%Coroutine.Errored{error: %Error{...}}` | `{:error, reason}` |
-| Boilerplate | ~4 lines per step | ~1 line per step |
-
-`Coroutine.PageMachine` for in-process testing, `AsyncPageMachine` for
-LiveView integration. Same flow, same terminology, your choice of
-sync or async backing.
+The trade-off: `PageMachine.run` blocks the LiveView process while effects
+execute. For sub-millisecond effects this is fine. For I/O-bound effects
+(database calls, HTTP), use `AsyncPageMachine` to keep the LiveView
+responsive.
 
 <!-- nav:footer:start -->
 
