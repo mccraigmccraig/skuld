@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 0b88768 -->
+<!-- last-updated-against: 957e6541f8399f8818a2adb9f60c17b22649676c -->
 
 All notable changes to `skuld_durable` will be documented in this file.
 
