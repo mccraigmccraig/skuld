@@ -221,19 +221,43 @@ map for testing.
 
 ## How it works
 
-`query do` blocks desugar into `deffetch` calls with dependency analysis.
-Independent operations are held and dispatched in batches via `FiberPool`.
-Dependent operations wait for their inputs and run in subsequent rounds.
-The result is automatic N+1 elimination — no manual batching, no data
-loader boilerplate, no code restructuring.
+Under the hood, `defquery` desugars into `FiberPool.fiber_await_all` for
+independent operations and `Comp.bind` for dependent ones:
 
-This sounds like a lot, but it's the composition of individually simple
-concepts — which is exactly what algebraic effects enable. `deffetch` calls
-return a suspended computation with data describing the operation
-(`Skuld.Comp.InternalSuspend`). Fibers, like coroutines, are also suspended
-computations bundled with some state ([Coroutine](../effects/coroutine.md)).
-[FiberPool](../effects/fiberpool.md) decides which suspended computation to
-run next.
+```elixir
+defquery build_user_summary(user_id) do
+  user  <- BlogQueries.fetch_user(user_id)
+  posts <- BlogQueries.fetch_posts(user_id)
+  {user, posts}
+end
+
+# Expands to:
+FiberPool.fiber_await_all([
+  BlogQueries.fetch_user(user_id),
+  BlogQueries.fetch_posts(user_id)
+])
+|> Comp.bind(fn [user, posts] ->
+  Comp.pure({user, posts})
+end)
+```
+
+`fetch_user` and `fetch_posts` are independent — neither references the
+other — so they're grouped into a single `fiber_await_all` and run
+concurrently as fibers.
+
+The desugaring pipeline:
+
+1. Parse bindings into `{pattern, rhs, type}` maps
+2. Extract free variables from each binding's RHS
+3. Build a dependency graph and topologically sort into independent
+   batches (Kahn's algorithm)
+4. Emit `FiberPool.fiber_await_all` for concurrent groups,
+   `Comp.bind` for sequential dependencies
+
+Because each binding runs in its own fiber, `deffetch` calls within
+those bindings emit `InternalSuspend.batch` — the `FiberPool` scheduler
+collects them across all fibers and dispatches them in a single
+round-trip to your executor.
 
 Batching, concurrency, and data fetching are three separate concerns.
 Skuld gives you the first two for free so you only write the third.
