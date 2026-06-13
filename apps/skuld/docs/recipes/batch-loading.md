@@ -93,10 +93,11 @@ level of nesting (comment reactions? threads?) and it gets worse.
 ## Skuld's approach
 
 Declare the fetches as `deffetch` operations. Each one generates a function
-that returns a suspended computation (`InternalSuspend`) carrying the
-operation data — a description of the fetch, not the fetch itself. The
-FiberPool scheduler collects these across all concurrent fibers and
-dispatches them in batches to your executor:
+that returns a computation. When `defquery` wraps it in a fiber and runs
+it, that computation emits an `InternalSuspend` carrying the operation
+data — a description of the fetch, not the fetch itself. The FiberPool
+scheduler collects these across all concurrent fibers and dispatches
+them in batches to your executor:
 
 ```elixir
 defmodule BlogQueries do
