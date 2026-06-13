@@ -2,32 +2,29 @@ defmodule Skuld.Coroutine.PageMachine do
   @moduledoc """
   Synchronous page-machine for effectful state machines.
 
-  Wraps `Skuld.Coroutine`, returning tagged tuples instead of raw sum types.
-  Use this when you want in-process testing without the overhead of a
-  separate BEAM process. For cross-process use (e.g. LiveView), see
+  Wraps `Skuld.Coroutine`, returning tagged tuples with the fiber embedded
+  in the `:yield` case so callers can resume without an extra conversion
+  step. For cross-process use (e.g. LiveView), see
   `Skuld.AsyncCoroutine.AsyncPageMachine`.
 
   ## Example
 
       alias Skuld.Coroutine.PageMachine
 
-      # Start — returns raw Coroutine sum type
-      fiber = PageMachine.run(MyApp.CheckoutFlow.flow(cart))
-      {:yield, :shipping} = PageMachine.dispatch(fiber)
+      # Start
+      {:yield, fiber, :shipping} = PageMachine.run(MyApp.CheckoutFlow.flow(cart))
 
       # Resume
-      fiber = PageMachine.run(fiber, {:ok, %{address: "123 Main"}})
-      {:yield, :payment} = PageMachine.dispatch(fiber)
+      {:yield, fiber, :payment} = PageMachine.run(fiber, {:ok, %{address: "123 Main"}})
 
       # Complete
-      fiber = PageMachine.run(fiber, {:ok, %{card: "4242"}})
-      {:complete, {:ok, order}} = PageMachine.dispatch(fiber)
+      {:complete, {:ok, order}} = PageMachine.run(fiber, {:ok, %{card: "4242"}})
 
-  ## Return values (from `dispatch/1`)
+  ## Return values
 
-  - `{:yield, value}` — computation yielded, waiting for input
+  - `{:yield, fiber, value}` — computation yielded, waiting for input
   - `{:complete, result}` — computation finished successfully
-  - `{:error, error}` — computation threw or errored
+  - `{:error, reason}` — computation threw or errored
   - `{:cancel, reason}` — computation was cancelled
   """
 
@@ -35,42 +32,45 @@ defmodule Skuld.Coroutine.PageMachine do
   alias Skuld.Coroutine
 
   @doc """
-  Start a computation. Returns the raw Coroutine sum type.
-
-  Use `dispatch/1` to convert to a tagged tuple when you're ready to
-  pattern-match on the outcome.
+  Start a computation. Returns a tagged tuple.
   """
   def run(computation) when is_function(computation, 2) do
-    computation |> Coroutine.new(Env.new()) |> Coroutine.run()
+    dispatch(computation |> Coroutine.new(Env.new()) |> Coroutine.run())
   end
 
-  @doc """
-  Resume a yielded computation with a value. Returns the raw Coroutine
-  sum type.
-  """
+  def run(%Coroutine.ExternalSuspended{} = fiber) do
+    dispatch(fiber)
+  end
+
+  def run({:yield, fiber, _value}, value) do
+    dispatch(fiber |> Coroutine.run(value))
+  end
+
   def run(%Coroutine.ExternalSuspended{} = fiber, value) do
-    fiber |> Coroutine.run(value)
+    dispatch(fiber |> Coroutine.run(value))
   end
 
   @doc """
-  Cancel a running computation. Returns the raw Coroutine sum type.
+  Cancel a computation from a `{:yield, fiber, _}` tuple or raw fiber.
+
+  Returns `{:cancel, reason}`.
   """
-  def cancel(%Coroutine.ExternalSuspended{} = fiber, reason \\ :cancelled) do
-    fiber |> Coroutine.cancel(reason)
+  def cancel(fiber, reason \\ :cancelled)
+
+  def cancel({:yield, fiber, _value}, reason) do
+    dispatch(fiber |> Coroutine.cancel(reason))
   end
 
-  @doc """
-  Convert a raw Coroutine sum type to a tagged tuple for pattern matching.
+  def cancel(%Coroutine.ExternalSuspended{} = fiber, reason) do
+    dispatch(fiber |> Coroutine.cancel(reason))
+  end
 
-  Returns `{:yield, value}`, `{:complete, result}`, `{:error, error}`,
-  or `{:cancel, reason}`.
-  """
-  def dispatch(%Coroutine.ExternalSuspended{value: value}), do: {:yield, value}
-  def dispatch(%Coroutine.Completed{result: result}), do: {:complete, result}
+  defp dispatch(%Coroutine.ExternalSuspended{value: value} = fiber), do: {:yield, fiber, value}
+  defp dispatch(%Coroutine.Completed{result: result}), do: {:complete, result}
 
-  def dispatch(%Coroutine.Errored{error: %Coroutine.Error{type: :throw, error: error}}),
+  defp dispatch(%Coroutine.Errored{error: %Coroutine.Error{type: :throw, error: error}}),
     do: {:error, error}
 
-  def dispatch(%Coroutine.Errored{error: error}), do: {:error, error}
-  def dispatch(%Coroutine.Cancelled{reason: reason}), do: {:cancel, reason}
+  defp dispatch(%Coroutine.Errored{error: error}), do: {:error, error}
+  defp dispatch(%Coroutine.Cancelled{reason: reason}), do: {:cancel, reason}
 end

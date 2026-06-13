@@ -34,50 +34,47 @@ defmodule Skuld.Coroutine.PageMachineTest do
     end
   end
 
-  describe "run/1 + dispatch/1" do
-    test "starts and dispatches first yield" do
+  describe "run/1" do
+    test "starts and returns {:yield, fiber, value}" do
       comp = TestFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
-      fiber = PageMachine.run(comp)
-      assert {:yield, :first} = PageMachine.dispatch(fiber)
+      {:yield, %Skuld.Coroutine.ExternalSuspended{}, :first} = PageMachine.run(comp)
     end
 
-    test "immediate completion" do
+    test "immediate completion returns {:complete, result}" do
       comp = ImmediateFlow.flow()
-      fiber = PageMachine.run(comp)
-      assert {:complete, 42} = PageMachine.dispatch(fiber)
+      assert {:complete, 42} = PageMachine.run(comp)
     end
   end
 
-  describe "run/2 + dispatch/1" do
-    test "resumes through all yields to completion" do
+  describe "run/2" do
+    test "resumes from yield tuple through all steps" do
       comp = TestFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
 
-      fiber = PageMachine.run(comp)
-      assert {:yield, :first} = PageMachine.dispatch(fiber)
+      {:yield, fiber, :first} = PageMachine.run(comp)
+      {:yield, fiber, :second} = PageMachine.run(fiber, 10)
+      assert {:complete, {:ok, {:hello, 10, 20}}} = PageMachine.run(fiber, 20)
+    end
 
-      fiber = PageMachine.run(fiber, 10)
-      assert {:yield, :second} = PageMachine.dispatch(fiber)
-
-      fiber = PageMachine.run(fiber, 20)
-      assert {:complete, {:ok, {:hello, 10, 20}}} = PageMachine.dispatch(fiber)
+    test "resumes from raw fiber too" do
+      comp = TestFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
+      fiber = comp |> Skuld.Coroutine.new(Skuld.Comp.Env.new()) |> Skuld.Coroutine.run()
+      {:yield, _, :first} = PageMachine.run(fiber)
     end
   end
 
-  describe "cancel/1 + dispatch/1" do
-    test "cancels a yielded computation" do
+  describe "cancel/1" do
+    test "cancels a yielded computation from yield tuple" do
       comp = TestFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
-      fiber = PageMachine.run(comp)
-      fiber = PageMachine.cancel(fiber)
-      assert {:cancel, :cancelled} = PageMachine.dispatch(fiber)
+      {:yield, fiber, :first} = PageMachine.run(comp)
+      assert {:cancel, :cancelled} = PageMachine.cancel(fiber)
     end
   end
 
   describe "error handling" do
-    test "dispatches thrown errors" do
+    test "returns {:error, reason} for thrown errors" do
       comp = BrokenFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
-      fiber = PageMachine.run(comp)
-      fiber = PageMachine.run(fiber, :go)
-      assert {:error, :boom} = PageMachine.dispatch(fiber)
+      {:yield, fiber, :start} = PageMachine.run(comp)
+      assert {:error, :boom} = PageMachine.run(fiber, :go)
     end
   end
 end
