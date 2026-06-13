@@ -1,14 +1,14 @@
-defmodule Skuld.AsyncCoroutine.PageMachineTest do
+defmodule Skuld.AsyncCoroutine.AsyncPageMachineTest do
   use ExUnit.Case, async: true
 
   alias Skuld.AsyncCoroutine
-  alias Skuld.AsyncCoroutine.PageMachine
+  alias Skuld.AsyncCoroutine.AsyncPageMachine
   alias Skuld.Comp.Cancelled
   alias Skuld.Comp.ExternalSuspend
   alias Skuld.Comp.Throw
 
   defmodule TestLive do
-    use PageMachine,
+    use AsyncPageMachine,
       tag: :test_flow,
       on_yield: &__MODULE__.handle_yield/2,
       on_complete: &__MODULE__.handle_complete/2,
@@ -72,7 +72,7 @@ defmodule Skuld.AsyncCoroutine.PageMachineTest do
 
   describe "optional callbacks" do
     defmodule MinimalLive do
-      use PageMachine,
+      use AsyncPageMachine,
         tag: :minimal,
         on_yield: fn value, socket -> {:yielded, value, socket} end
     end

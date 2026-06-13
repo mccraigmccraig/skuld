@@ -8,10 +8,10 @@ All notable changes to `skuld_concurrency` will be documented in this file.
 
 ### Added
 
-- `Skuld.AsyncCoroutine.PageMachine` — `use` macro that generates `handle_info/2`
+- `Skuld.AsyncCoroutine.AsyncPageMachine` — `use` macro that generates `handle_info/2`
   clauses from callback options, eliminating LiveView boilerplate. Includes
   `run/2-3` and `cancel/1` delegation so consumers only need one module.
-- `Skuld.AsyncCoroutine.PageMachine` — test suite covering all callback
+- `Skuld.AsyncCoroutine.AsyncPageMachine` — test suite covering all callback
   combinations and edge cases.
 
 ### Changed

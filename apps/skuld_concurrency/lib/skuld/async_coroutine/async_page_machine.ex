@@ -1,4 +1,4 @@
-defmodule Skuld.AsyncCoroutine.PageMachine do
+defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
   @moduledoc """
   Generates `handle_info/2` clauses that dispatch AsyncCoroutine messages
   into callback functions, eliminating LiveView boilerplate.
@@ -8,7 +8,7 @@ defmodule Skuld.AsyncCoroutine.PageMachine do
 
   ## Usage
 
-      use Skuld.AsyncCoroutine.PageMachine,
+      use Skuld.AsyncCoroutine.AsyncPageMachine,
         tag: :checkout,
         on_yield: &handle_yield/2,
         on_complete: &handle_complete/2
