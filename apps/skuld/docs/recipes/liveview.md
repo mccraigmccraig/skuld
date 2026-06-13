@@ -58,7 +58,7 @@ defmodule MyApp.CheckoutFlow do
 
   alias Skuld.Effects.Yield
 
-  defcomp run(cart) do
+  defcomp flow(cart) do
     # Step 1: collect shipping
     {:ok, %{address: address, express: express?}} <- Yield.yield(:shipping)
 
@@ -99,7 +99,7 @@ defmodule MyApp.CheckoutLive do
   @impl true
   def mount(_params, _session, socket) do
     flow =
-      MyApp.CheckoutFlow.run(socket.assigns.cart)
+      MyApp.CheckoutFlow.flow(socket.assigns.cart)
       |> Port.with_handler(%{MyApp.Orders => MyApp.Orders.Ecto})
 
     {:ok, runner} = PageMachine.run(flow, tag: :checkout)
@@ -161,7 +161,7 @@ defmodule MyApp.CheckoutFlowTest do
   setup do
     # Install handlers
     comp =
-      MyApp.CheckoutFlow.run(%Cart{items: [...]})
+      MyApp.CheckoutFlow.flow(%Cart{items: [...]})
       |> Yield.with_handler()
       |> Throw.with_handler()
 
@@ -255,7 +255,7 @@ end
 Persist flow state for resumption after disconnects:
 
 ```elixir
-flow = MyApp.CheckoutFlow.run(cart)
+flow = MyApp.CheckoutFlow.flow(cart)
 |> EffectLogger.with_logging()
 |> Reader.with_handler(%{})
 
