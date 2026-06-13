@@ -39,18 +39,25 @@ Wrap it in a thin LiveView module that delegates events.
 
 ## Example: checkout flow
 
-A multi-step checkout: collect shipping address, collect payment method,
-submit the order. Each step is a `Yield`; branching is plain `if`.
+A checkout with two external effects and two user interaction steps.
+Inventory reservation and order placement are typed effectful calls;
+shipping collection and payment collection are user yields. Branching
+is plain `if`.
 
-First, the pure state machine and its boundary contract — no LiveView
-dependency:
+First, the boundary contracts and the pure state machine:
 
 ```elixir
 defmodule MyApp.Orders do
   use Skuld.Effects.Port.EffectfulFacade
 
-  defcallback place(cart :: Cart.t(), address :: map(), payment :: map()) ::
+  defcallback place(cart :: Cart.t(), shipping :: map(), payment :: map()) ::
               {:ok, Order.t()} | {:error, term()}
+end
+
+defmodule MyApp.Inventory do
+  use Skuld.Effects.Port.EffectfulFacade
+
+  defcallback reserve(cart :: Cart.t()) :: {:ok, term()} | {:error, term()}
 end
 
 defmodule MyApp.CheckoutFlow do
@@ -59,24 +66,20 @@ defmodule MyApp.CheckoutFlow do
   alias Skuld.Effects.Yield
 
   defcomp flow(cart) do
-    # Step 1: collect shipping
-    {:ok, %{address: address, express: express?}} <- Yield.yield(:shipping)
+    # Effect: reserve inventory (external API, can fail)
+    {:ok, _} <- MyApp.Inventory.reserve(cart)
 
-    # Step 2: collect payment
+    # User interaction: collect shipping
+    {:ok, shipping} <- Yield.yield(:shipping)
+
+    # User interaction: collect payment
     {:ok, payment} <- Yield.yield(:payment)
 
-    # Step 3: optionally confirm express shipping
-    {:ok, _} <-
-      if express? do
-        Yield.yield(:confirm_express)
-      else
-        {:ok, :skip}
-      end
-
-    # Step 4: submit — typed effectful call, no raw Port.request
-    {:ok, order} <- MyApp.Orders.place(cart, address, payment)
+    # Effect: place order (external API, can fail)
+    {:ok, order} <- MyApp.Orders.place(cart, shipping, payment)
     {:ok, order}
   else
+    {:error, :sold_out} -> {:error, :sold_out}
     {:error, reason} -> {:error, reason}
     :cancelled -> {:error, :cancelled}
   end
@@ -94,16 +97,20 @@ defmodule MyApp.CheckoutLive do
     tag: :checkout,
     on_yield: &handle_yield/2,
     on_complete: &handle_complete/2,
-    on_error: &handle_error/2
+    on_error: &handle_error/2,
+    on_cancel: &handle_cancel/2
 
   @impl true
   def mount(_params, _session, socket) do
     flow =
       MyApp.CheckoutFlow.flow(socket.assigns.cart)
-      |> Port.with_handler(%{MyApp.Orders => MyApp.Orders.Ecto})
+      |> Port.with_handler(%{
+        MyApp.Inventory => MyApp.Inventory.Service,
+        MyApp.Orders => MyApp.Orders.Ecto
+      })
 
     {:ok, runner} = PageMachine.run(flow, tag: :checkout)
-    {:ok, assign(socket, runner: runner, step: nil)}
+    {:ok, assign(socket, runner: runner, step: :loading)}
   end
 
   defp handle_yield(step, socket) do
@@ -114,15 +121,20 @@ defmodule MyApp.CheckoutLive do
     {:noreply, assign(socket, order: order, step: :done)}
   end
 
-  defp handle_error(reason, socket) do
-    {:noreply, put_flash(socket, :error, "Checkout failed")}
+  defp handle_error(:sold_out, socket) do
+    {:noreply, put_flash(socket, :error, "Sorry, this item is no longer available")}
   end
 
-  # User events resume the state machine
-  @impl true
-  def handle_event("submit_shipping", params, socket) do
-    value = {:ok, %{address: params["address"], express: params["express"] == "true"}}
-    PageMachine.run(socket.assigns.runner, value)
+  defp handle_error(reason, socket) do
+    {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
+  end
+
+  defp handle_cancel(reason, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/cart")}
+  end
+
+  def handle_event("submit_shipping", %{"address" => addr}, socket) do
+    PageMachine.run(socket.assigns.runner, {:ok, %{address: addr}})
     {:noreply, socket}
   end
 
@@ -134,11 +146,10 @@ defmodule MyApp.CheckoutLive do
   @impl true
   def render(assigns) do
     case assigns.step do
+      :loading -> ~H|<.spinner />|
       :shipping -> ~H|<.shipping_form myself={@myself} />|
       :payment -> ~H|<.payment_form myself={@myself} />|
-      :confirm_express -> ~H|<.confirm_express myself={@myself} />|
       :done -> ~H|<.order_summary order={@order} />|
-      _ -> ~H|<.loading />|
     end
   end
 end
@@ -155,13 +166,17 @@ defmodule MyApp.CheckoutFlowTest do
 
   alias Skuld.Comp.Env
   alias Skuld.Coroutine
+  alias Skuld.Effects.Port
   alias Skuld.Effects.Throw
   alias Skuld.Effects.Yield
 
   setup do
-    # Install handlers
     comp =
       MyApp.CheckoutFlow.flow(%Cart{items: [...]})
+      |> Port.with_handler(%{
+        MyApp.Inventory => fn _, :reserve, [_] -> {:ok, :reserved} end,
+        MyApp.Orders => fn _, :place, _, _ -> {:ok, %Order{}} end
+      })
       |> Yield.with_handler()
       |> Throw.with_handler()
 
@@ -169,44 +184,28 @@ defmodule MyApp.CheckoutFlowTest do
   end
 
   test "normal checkout flow", %{comp: comp} do
-    # Start — pauses at first yield
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
     assert %Coroutine.ExternalSuspended{value: :shipping} = fiber
 
-    # Submit shipping with express
-    fiber = Coroutine.run(fiber, {:ok, %{address: "123 Main", express: true}})
+    fiber = Coroutine.run(fiber, {:ok, %{address: "123 Main"}})
     assert %Coroutine.ExternalSuspended{value: :payment} = fiber
 
-    # Submit payment
-    fiber = Coroutine.run(fiber, {:ok, %{card: "4242"}})
-    assert %Coroutine.ExternalSuspended{value: :confirm_express} = fiber
-
-    # Express confirmation was skipped for non-express
-    fiber = Coroutine.run(fiber, {:ok, :confirmed})
-    assert %Coroutine.Completed{result: {:ok, %Order{}}} = fiber
-  end
-
-  test "standard shipping skips express confirmation", %{comp: comp} do
-    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    assert %Coroutine.ExternalSuspended{value: :shipping} = fiber
-
-    # Submit shipping without express
-    fiber = Coroutine.run(fiber, {:ok, %{address: "123 Main", express: false}})
-    assert %Coroutine.ExternalSuspended{value: :payment} = fiber
-
-    # Submit payment — should complete (no confirm_express step)
     fiber = Coroutine.run(fiber, {:ok, %{card: "4242"}})
     assert %Coroutine.Completed{result: {:ok, %Order{}}} = fiber
   end
 
-  test "all paths are deterministic and property-testable" do
-    # The same input always produces the same path
-    for _ <- 1..100 do
-      fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-      fiber = Coroutine.run(fiber, {:ok, %{address: "X", express: false}})
-      fiber = Coroutine.run(fiber, {:ok, %{card: "4242"}})
-      assert %Coroutine.Completed{} = fiber
-    end
+  test "inventory sold out returns error", %{comp: comp} do
+    comp =
+      MyApp.CheckoutFlow.flow(%Cart{items: [...]})
+      |> Port.with_handler(%{
+        MyApp.Inventory => fn _, :reserve, [_] -> {:error, :sold_out} end
+      })
+      |> Yield.with_handler()
+      |> Throw.with_handler()
+
+    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+    # Inventory call fails immediately — never reaches shipping
+    assert %Coroutine.Completed{result: {:error, :sold_out}} = fiber
   end
 
   test "cancellation at any step propagates", %{comp: comp} do
