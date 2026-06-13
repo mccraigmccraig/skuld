@@ -1,8 +1,20 @@
 # Changelog
 
-<!-- last-updated-against: a1b26952cfb3d645a83c5d3d61e3c6e1c8b78864 -->
+<!-- last-updated-against: c7970ab5813e56bc3b3d5f5c9f640316101688cc -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [0.36.0] — 2026-06-13
+
+### Added
+
+- `Skuld.Coroutine.PageMachine` — synchronous callback-based page-machine
+  for LiveView integration. Callbacks are provided once at mount, subsequent
+  resumes are one-liners. Run in-process with no separate BEAM process.
+- `AsyncPageMachine.run/2` and `AsyncPageMachine.run_sync/2` now take
+  `tag` as a required positional argument instead of a keyword option.
+- `Skuld.AsyncCoroutine.AsyncPageMachine` renamed from `PageMachine`.
+
 
 ## [0.35.0] — 2026-06-13
 
