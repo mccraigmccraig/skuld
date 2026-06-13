@@ -40,17 +40,23 @@ defmodule Skuld.AsyncCoroutine.PageMachine do
   Returns `{:ok, runner}` where the runner can be used with `run/3`
   to resume the flow with user input.
   """
-  defdelegate run(computation, opts), to: Skuld.AsyncCoroutine
+  def run(computation, opts) when is_function(computation, 2) do
+    Skuld.AsyncCoroutine.run(computation, opts)
+  end
 
   @doc """
   Resume a yielded page machine with a value. Delegates to `AsyncCoroutine.run/3`.
   """
-  defdelegate run(runner, value, opts \\ []), to: Skuld.AsyncCoroutine
+  def run(%Skuld.AsyncCoroutine{} = runner, value, opts \\ []) do
+    Skuld.AsyncCoroutine.run(runner, value, opts)
+  end
 
   @doc """
   Cancel a running page machine. Delegates to `AsyncCoroutine.cancel/1`.
   """
-  defdelegate cancel(runner), to: Skuld.AsyncCoroutine
+  def cancel(%Skuld.AsyncCoroutine{} = runner) do
+    Skuld.AsyncCoroutine.cancel(runner)
+  end
 
   defmacro __using__(opts) do
     tag = Keyword.fetch!(opts, :tag)
