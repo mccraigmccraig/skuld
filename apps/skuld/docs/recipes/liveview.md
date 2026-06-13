@@ -273,6 +273,79 @@ flow = MyApp.CheckoutFlow.flow(cart)
 | `PageMachine.run/3`    | Resume with user input |
 | `PageMachine.cancel/1` | Cancel flow            |
 
+## Comparison: traditional FSM approach
+
+For contrast, here's the same checkout flow using [Crank](https://github.com/code-of-kai/crank),
+a Moore-style pure state machine library. Effects are declared via `wants:`
+and executed by an external loop; failures are explicit state transitions.
+
+```elixir
+defmodule MyApp.CheckoutCrank do
+  @states ~w(idle reserving shipping payment placing done failed)a
+  use Crank, states: @states
+
+  # idle → reserving: declare the effect, advance the state
+  def turn({:start, cart}, :idle, _memory) do
+    {:next, :reserving, %{cart: cart},
+     wants: {:reserve_inventory, cart}}
+  end
+
+  # Effect result arrives as an event — match both outcomes
+  def turn({:reserve_inventory, {:ok, _}}, :reserving, memory) do
+    {:next, :shipping, memory}
+  end
+
+  def turn({:reserve_inventory, {:error, :sold_out}}, :reserving, memory) do
+    {:next, :failed, memory, reading: :sold_out}
+  end
+
+  # User interactions — external events (the caller feeds them in)
+  def turn({:submit_shipping, address}, :shipping, memory) do
+    {:next, :payment, Map.put(memory, :shipping, address)}
+  end
+
+  def turn({:submit_payment, method}, :payment, memory) do
+    {:next, :placing, Map.put(memory, :payment, method),
+     wants: {:place_order, memory.cart, memory.shipping, method}}
+  end
+
+  # Order placement — another effect with success/failure
+  def turn({:place_order, {:ok, order}}, :placing, memory) do
+    {:next, :done, %{memory | order: order},
+     reading: {:ok, order}}
+  end
+
+  def turn({:place_order, {:error, reason}}, :placing, memory) do
+    {:next, :failed, memory,
+     reading: {:error, reason}}
+  end
+end
+```
+
+The key differences from PageMachine:
+
+- **States are explicit atoms** — `idle`, `reserving`, `shipping`, etc.
+  Each transition declares its source state. A typo in a state name is
+  caught at compile time (`using unknown state`).
+- **Effects are external** — `wants: {:reserve_inventory, cart}` is a
+  declaration, not an execution. The caller must run an effect loop:
+  check `wants`, execute the effect, feed the result back as an event.
+  PageMachine inlines effects as `<-` binds.
+- **Failures are states** — `{:error, :sold_out}` goes to `:failed`.
+  Each new failure mode requires a new state or at least a new
+  transition clause carrying context via `reading:`. PageMachine uses
+  the `else` clause — all failures flow through the same path.
+- **User interactions are events** — the LiveView calls `Crank.turn`
+  with `{:submit_shipping, address}`. No difference in mechanism from
+  effect results — both are events fed into the machine.
+
+**Which approach is better?** Crank gives you compile-time state validation
+and a visibly enumerated state space — ideal when you want a formal state
+diagram. PageMachine gives you linear flow with inline effects and a
+single error path — ideal when the flow is complex and branching is
+natural. Both test fast without processes. Pick the one that reads most
+naturally for the problem at hand.
+
 <!-- nav:footer:start -->
 
 ---
