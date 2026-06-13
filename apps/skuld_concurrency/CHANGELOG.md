@@ -1,8 +1,19 @@
 # Changelog
 
-<!-- last-updated-against: 766af198cc5edaf777292521039079c99d0f6826 -->
+<!-- last-updated-against: a1b26952cfb3d645a83c5d3d61e3c6e1c8b78864 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [0.35.0] — 2026-06-13
+
+### Added
+
+- `Skuld.Coroutine.PageMachine` — synchronous in-process page-machine
+  wrapping `Skuld.Coroutine`. Returns raw sum types from `run/1-2` and
+  `cancel/1-2`, with a `dispatch/1` helper for converting to tagged tuples
+  (`{:yield, :complete, :error, :cancel}`). The in-process counterpart to
+  `AsyncPageMachine`.
+
 
 ## [0.34.0] — 2026-06-13
 
