@@ -4,14 +4,10 @@
 [< Durable Computation](durable-computation.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:header:end -->
 
-Eliminate N+1 queries with `deffetch` operations and `FiberPool`.
-
-Each `deffetch` call suspends the current fiber, signalling the scheduler
-to hold the request. `FiberPool` collects suspended fetch calls across
-*all* concurrent fibers and dispatches them in batches to your executor.
-Within a `query do` block, dependency analysis adds automatic concurrency
-for independent fetches. Together they eliminate N+1 queries without
-restructuring code.
+Eliminate N+1 queries with `deffetch` operations and `FiberPool`,
+bringing [Haxl](https://github.com/facebook/Haxl)-style automatic
+batching to Elixir. Write simple sequential code that describes what
+data you need; the system handles batching and concurrency transparently.
 
 ## When you need this
 
