@@ -92,12 +92,9 @@ level of nesting (comment reactions? threads?) and it gets worse.
 
 ## Skuld's approach
 
-Declare the fetches as `deffetch` operations. Each one generates a function
-that returns a computation. When `defquery` wraps it in a fiber and runs
-it, that computation emits an `InternalSuspend` carrying the operation
-data — a description of the fetch, not the fetch itself. The FiberPool
-scheduler collects these across all concurrent fibers and dispatches
-them in batches to your executor:
+Declare the fetches as `deffetch` operations. Build a summary for one
+user with a `defquery` block — no batching code, no `Enum.group_by`,
+no ID extraction:
 
 ```elixir
 defmodule BlogQueries do
@@ -107,13 +104,7 @@ defmodule BlogQueries do
   deffetch fetch_posts(user_id :: String.t()) :: [Post.t()]
   deffetch fetch_comment_count(post_id :: String.t()) :: non_neg_integer()
 end
-```
 
-Build a summary for one user. The `query` block automatically batches
-calls across concurrent transforms. `Query.map` spawns each comment-count
-fetch as a fiber so they batch together:
-
-```elixir
 defquery build_user_summary(user_id) do
   user <- BlogQueries.fetch_user(user_id)
   posts <- BlogQueries.fetch_posts(user_id)
@@ -130,9 +121,14 @@ defquery build_user_summary(user_id) do
 end
 ```
 
-Notice there's no batching code — no `Enum.group_by`, no manual ID
-extraction, no tree reassembly. You write the domain logic for *one*
-user, and the system handles the rest.
+What's happening under the hood: each `deffetch` generates a function
+that returns a computation. `defquery` analyses variable dependencies,
+wraps independent bindings in fibers via `FiberPool.fiber_await_all`,
+and each fiber's computation emits an `InternalSuspend` carrying the
+operation data. The FiberPool scheduler collects these across all
+concurrent fibers and dispatches them in batches to your executor.
+
+You write the domain logic for *one* user. The system handles the rest.
 
 ## Streaming with concurrency
 
