@@ -260,7 +260,9 @@ flow = MyApp.CheckoutFlow.run(cart)
 |> Reader.with_handler(%{})
 
 {:ok, runner} = PageMachine.run(flow, tag: :checkout)
-# On yield: log is in ExternalSuspend.data (EffectLogger attaches it)
+# On yield: ExternalSuspend.data carries decorations from scoped
+# effects — EffectLogger attaches its log, State can attach current
+# value via :suspend, etc.
 # On reconnect: cold-resume from serialised log
 ```
 
