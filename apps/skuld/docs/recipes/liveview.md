@@ -349,8 +349,9 @@ naturally for the problem at hand.
 ## Sync LiveView with Coroutine.PageMachine
 
 For flows where effects are fast (or absent), `Coroutine.PageMachine`
-runs in-process with no separate BEAM process. Callbacks are provided
-once at mount; `handle_event` is a one-liner:
+runs in-process with no separate BEAM process. The callback functions
+are identical to the `AsyncPageMachine` example above — the only
+difference is how the page machine is started:
 
 ```elixir
 alias Skuld.Coroutine.PageMachine
@@ -370,14 +371,31 @@ defmodule MyApp.CheckoutLive do
       |> Throw.with_handler()
 
     PageMachine.run(comp, socket,
-      on_yield: fn step, socket -> {:noreply, assign(socket, step: step)} end,
-      on_complete: fn {:ok, order}, socket -> {:noreply, assign(socket, order: order, step: :done)} end,
-      on_error: fn
-        :sold_out, socket -> {:noreply, put_flash(socket, :error, "No longer available")}
-        reason, socket -> {:noreply, put_flash(socket, :error, inspect(reason))}
-      end,
-      on_cancel: fn _reason, socket -> {:noreply, push_navigate(socket, to: ~p"/cart")} end
+      on_yield: &handle_yield/2,
+      on_complete: &handle_complete/2,
+      on_error: &handle_error/2,
+      on_cancel: &handle_cancel/2
     )
+  end
+
+  defp handle_yield(step, socket) do
+    {:noreply, assign(socket, step: step)}
+  end
+
+  defp handle_complete({:ok, order}, socket) do
+    {:noreply, assign(socket, order: order, step: :done)}
+  end
+
+  defp handle_error(:sold_out, socket) do
+    {:noreply, put_flash(socket, :error, "Sorry, this item is no longer available")}
+  end
+
+  defp handle_error(reason, socket) do
+    {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
+  end
+
+  defp handle_cancel(reason, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/cart")}
   end
 
   @impl true
@@ -398,11 +416,12 @@ defmodule MyApp.CheckoutLive do
 end
 ```
 
-No process, no `handle_info`, no `case` in `handle_event`. Callbacks defined
-once, dispatched automatically. The fiber is stored in `socket.assigns.pm`.
+The `handle_*` functions are shared between both approaches. Switching
+from `AsyncPageMachine` to `PageMachine` is just a mechanical change to
+`mount` — the callbacks don't change.
 
-For I/O-bound effects use `AsyncPageMachine` to keep the LiveView responsive.
-For fast effects this is the simplest possible integration.
+For I/O-bound effects use `AsyncPageMachine` to keep the LiveView
+responsive. For fast effects this is the simplest possible integration.
 
 <!-- nav:footer:start -->
 
