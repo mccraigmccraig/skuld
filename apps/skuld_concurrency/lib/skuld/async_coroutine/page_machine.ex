@@ -31,6 +31,17 @@ defmodule Skuld.AsyncCoroutine.PageMachine do
   falls through to `on_complete`.
   """
 
+  @doc """
+  Start a page machine in a separate process. Delegates to `AsyncCoroutine.run/2`.
+
+  The computation will have `Throw.with_handler/1` and `Yield.with_handler/1`
+  added automatically. Add other handlers before calling `run`.
+
+  Returns `{:ok, runner}` where the runner can be used with `AsyncCoroutine.run/3`
+  to resume the flow with user input.
+  """
+  defdelegate run(computation, opts), to: Skuld.AsyncCoroutine
+
   defmacro __using__(opts) do
     tag = Keyword.fetch!(opts, :tag)
     on_yield = Keyword.fetch!(opts, :on_yield)

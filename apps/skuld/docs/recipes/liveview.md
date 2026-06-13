@@ -98,15 +98,13 @@ defmodule MyApp.CheckoutLive do
     on_complete: &handle_complete/2,
     on_error: &handle_error/2
 
-  alias Skuld.AsyncCoroutine
-
   @impl true
   def mount(_params, _session, socket) do
     flow =
       MyApp.CheckoutFlow.run(socket.assigns.cart)
       |> Port.with_handler(%{MyApp.Orders => MyApp.Orders.Ecto})
 
-    {:ok, runner} = AsyncCoroutine.run(flow, tag: :checkout)
+    {:ok, runner} = PageMachine.run(flow, tag: :checkout)
     {:ok, assign(socket, runner: runner, step: nil)}
   end
 
