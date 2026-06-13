@@ -12,11 +12,11 @@ non-effectful code (LiveView, GenServer, CLI) into the effect system.
 
 ```elixir
 # Async — result arrives via message
-{:ok, runner} = AsyncCoroutine.run(computation, tag: :my_task)
+{:ok, runner} = AsyncCoroutine.run(computation, :my_task)
 
 # Sync — block until first response (yield or completion)
 {:ok, runner, %ExternalSuspend{value: :ready}} =
-  AsyncCoroutine.run_sync(computation, tag: :my_task)
+  AsyncCoroutine.run_sync(computation, :my_task)
 ```
 
 `Throw.with_handler` and `Yield.with_handler` are added automatically.
@@ -66,7 +66,7 @@ wizard = comp do
   {:ok, %{name: name, email: email}}
 end |> Reader.with_handler(%{...})
 
-{:ok, runner} = AsyncCoroutine.run(wizard, tag: :wizard)
+{:ok, runner} = AsyncCoroutine.run(wizard, :wizard)
 
 # In handle_info:
 def handle_info({AsyncCoroutine, :wizard, %ExternalSuspend{value: :get_name}}, socket) do

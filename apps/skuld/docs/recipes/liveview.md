@@ -109,7 +109,7 @@ defmodule MyApp.CheckoutLive do
         MyApp.Orders => MyApp.Orders.Ecto
       })
 
-    {:ok, runner} = PageMachine.run(flow, tag: :checkout)
+    {:ok, runner} = PageMachine.run(flow, :checkout)
     {:ok, assign(socket, runner: runner, step: :loading)}
   end
 
@@ -258,7 +258,7 @@ flow = MyApp.CheckoutFlow.flow(cart)
 |> EffectLogger.with_logging()
 |> Reader.with_handler(%{})
 
-{:ok, runner} = PageMachine.run(flow, tag: :checkout)
+{:ok, runner} = PageMachine.run(flow, :checkout)
 # On yield: ExternalSuspend.data carries decorations from scoped
 # effects — EffectLogger attaches its log, State can attach current
 # value via :suspend, etc.

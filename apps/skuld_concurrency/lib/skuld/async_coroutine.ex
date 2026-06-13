@@ -32,11 +32,11 @@ defmodule Skuld.AsyncCoroutine do
         |> EctoPersist.with_handler(Repo)
 
       # Start async - will add Yield and Throw handlers
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :create_todo)
+      {:ok, runner} = AsyncCoroutine.run(computation, :create_todo)
 
       # Or start sync for fast-yielding computations
       {:ok, runner, %ExternalSuspend{value: :ready}} =
-        AsyncCoroutine.run_sync(computation, tag: :create_todo)
+        AsyncCoroutine.run_sync(computation, :create_todo)
 
       # In handle_info - single clause handles all messages for a tag:
       def handle_info({AsyncCoroutine, :create_todo, result}, socket) do
@@ -66,7 +66,7 @@ defmodule Skuld.AsyncCoroutine do
         end
         |> ...handlers...
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :create_user)
+      {:ok, runner} = AsyncCoroutine.run(computation, :create_user)
 
       # Handle yields
       def handle_info({AsyncCoroutine, :create_user, %ExternalSuspend{value: :get_name}}, socket) do
@@ -110,19 +110,26 @@ defmodule Skuld.AsyncCoroutine do
   The computation will have `Throw.with_handler/1` and `Yield.with_handler/1`
   added automatically (outermost). Add your other handlers before calling run.
 
-  ## Options
+  ## Arguments
 
-  - `:tag` - Required. Tag for messages, e.g. `:create_todo`
-  - `:caller` - Process to send messages to (default: `self()`)
-  - `:link` - Whether to link the runner process (default: `true`)
+  - `computation` — the effectful computation to run
+  - `tag` — identifier for messages, e.g. `:create_todo`
+  - `opts`:
+    - `:caller` — process to send messages to (default: `self()`)
+    - `:link` — whether to link the runner process (default: `true`)
 
   ## Returns
 
-  `{:ok, runner}` where runner is used with `run/2` and `cancel/1`.
+  `{:ok, runner}` where runner is used with `run/3` and `cancel/1`.
   """
-  @spec run(Skuld.Comp.Types.computation(), keyword()) :: {:ok, t()}
-  def run(computation, opts) when is_function(computation, 2) do
-    tag = Keyword.fetch!(opts, :tag)
+  @spec run(Skuld.Comp.Types.computation(), term()) :: {:ok, t()}
+  def run(computation, tag) when is_function(computation, 2), do: run(computation, tag, [])
+
+  @spec run(t(), term(), keyword()) :: :ok
+  def run(%__MODULE__{} = runner, value), do: run(runner, value, [])
+
+  @spec run(Skuld.Comp.Types.computation(), term(), keyword()) :: {:ok, t()}
+  def run(computation, tag, opts) when is_function(computation, 2) do
     caller = Keyword.get(opts, :caller, self())
     link? = Keyword.get(opts, :link, true)
     ref = make_ref()
@@ -139,6 +146,12 @@ defmodule Skuld.AsyncCoroutine do
     {:ok, %__MODULE__{tag: tag, ref: ref, pid: pid, monitor_ref: monitor_ref, caller: caller}}
   end
 
+  def run(%__MODULE__{ref: ref, pid: pid}, value, opts) do
+    reply_to = Keyword.get(opts, :reply_to)
+    send(pid, {:async_resume, ref, value, reply_to})
+    :ok
+  end
+
   @doc """
   Run a computation and wait synchronously for the first response.
 
@@ -146,11 +159,13 @@ defmodule Skuld.AsyncCoroutine do
   (e.g., a command processor that immediately yields waiting for commands).
   Avoids dealing with async messages for the initial handshake.
 
-  ## Options
+  ## Arguments
 
-  Same as `run/2`, plus:
-
-  - `:timeout` - Maximum time to wait in ms (default: 5000)
+  - `computation` — the effectful computation to run
+  - `tag` — identifier for messages
+  - `opts`:
+    - `:timeout` — maximum time to wait in ms (default: 5000)
+    - `:caller`, `:link` — same as `run/3`
 
   ## Returns
 
@@ -167,42 +182,32 @@ defmodule Skuld.AsyncCoroutine do
       {:ok, runner, %ExternalSuspend{value: :ready}} =
         command_processor
         |> Reader.with_handler(context)
-        |> AsyncCoroutine.run_sync(tag: :processor)
+        |> AsyncCoroutine.run_sync(:processor)
 
       # Now resume synchronously for quick commands
       %ExternalSuspend{value: :ready} = AsyncCoroutine.run_sync(runner, %QuickCommand{})
   """
-  @spec run_sync(Skuld.Comp.Types.computation(), keyword()) ::
+  @spec run_sync(Skuld.Comp.Types.computation(), term()) ::
           {:ok, t(), term()}
           | {:error, :timeout}
-  def run_sync(computation, opts) when is_function(computation, 2) do
-    timeout = Keyword.get(opts, :timeout, 5000)
-    tag = Keyword.fetch!(opts, :tag)
+  def run_sync(computation, tag) when is_function(computation, 2),
+    do: run_sync(computation, tag, [])
 
-    {:ok, runner} = run(computation, opts)
+  def run_sync(%__MODULE__{} = runner, value), do: run_sync(runner, value, [])
+
+  @spec run_sync(Skuld.Comp.Types.computation(), term(), keyword()) ::
+          {:ok, t(), term()}
+          | {:error, :timeout}
+  def run_sync(computation, tag, opts) when is_function(computation, 2) do
+    timeout = Keyword.get(opts, :timeout, 5000)
+
+    {:ok, runner} = run(computation, tag, opts)
 
     receive do
       {__MODULE__, ^tag, result} -> {:ok, runner, result}
     after
       timeout -> {:error, :timeout}
     end
-  end
-
-  @doc """
-  Resume a yielded computation with a value (async).
-
-  Call this after receiving a `{AsyncCoroutine, tag, %ExternalSuspend{}}` message.
-  The next response will arrive via message to the caller (or `:reply_to` if specified).
-
-  ## Options
-
-  - `:reply_to` - Process to send the response to (default: original caller from run)
-  """
-  @spec run(t(), term(), keyword()) :: :ok
-  def run(%__MODULE__{ref: ref, pid: pid}, value, opts \\ []) do
-    reply_to = Keyword.get(opts, :reply_to)
-    send(pid, {:async_resume, ref, value, reply_to})
-    :ok
   end
 
   @doc """
@@ -227,7 +232,7 @@ defmodule Skuld.AsyncCoroutine do
 
   ## Example
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :cmd)
+      {:ok, runner} = AsyncCoroutine.run(computation, :cmd)
 
       # First yield arrives via message
       receive do
@@ -248,7 +253,7 @@ defmodule Skuld.AsyncCoroutine do
           | Cancelled.t()
           | term()
           | {:error, :timeout}
-  def run_sync(%__MODULE__{ref: ref, pid: pid, tag: tag}, value, opts \\ []) do
+  def run_sync(%__MODULE__{ref: ref, pid: pid, tag: tag}, value, opts) do
     timeout = Keyword.get(opts, :timeout, 5000)
     send(pid, {:async_resume, ref, value, self()})
 
@@ -296,7 +301,7 @@ defmodule Skuld.AsyncCoroutine do
   ## Example
 
       {:ok, runner, %ExternalSuspend{value: :ready}} =
-        AsyncCoroutine.run_sync(computation, tag: :worker)
+        AsyncCoroutine.run_sync(computation, :worker)
 
       # Cancel and wait for cleanup to finish
       %Cancelled{reason: :cancelled} = AsyncCoroutine.cancel_sync(runner)

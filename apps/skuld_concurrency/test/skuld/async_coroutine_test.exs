@@ -18,7 +18,7 @@ defmodule Skuld.AsyncCoroutineTest do
           {:ok, 42}
         end
 
-      {:ok, _runner} = AsyncCoroutine.run(computation, tag: :test)
+      {:ok, _runner} = AsyncCoroutine.run(computation, :test)
 
       assert_receive {AsyncCoroutine, :test, {:ok, 42}}
     end
@@ -33,7 +33,7 @@ defmodule Skuld.AsyncCoroutineTest do
         |> Reader.with_handler(10)
         |> State.with_handler(32)
 
-      {:ok, _runner} = AsyncCoroutine.run(computation, tag: :with_effects)
+      {:ok, _runner} = AsyncCoroutine.run(computation, :with_effects)
 
       assert_receive {AsyncCoroutine, :with_effects, 42}
     end
@@ -45,7 +45,7 @@ defmodule Skuld.AsyncCoroutineTest do
           :never_reached
         end
 
-      {:ok, _runner} = AsyncCoroutine.run(computation, tag: :throwing)
+      {:ok, _runner} = AsyncCoroutine.run(computation, :throwing)
 
       assert_receive {AsyncCoroutine, :throwing, %ThrowStruct{error: :something_went_wrong}}
     end
@@ -58,7 +58,7 @@ defmodule Skuld.AsyncCoroutineTest do
           x + y
         end
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :yielding)
+      {:ok, runner} = AsyncCoroutine.run(computation, :yielding)
 
       # First yield (data is nil since no scoped effects with suspend decoration)
       assert_receive {AsyncCoroutine, :yielding, %ExternalSuspend{value: :first}}
@@ -85,7 +85,7 @@ defmodule Skuld.AsyncCoroutineTest do
 
       computation = comp(do: :hello)
 
-      {:ok, _runner} = AsyncCoroutine.run(computation, tag: :custom_caller, caller: middleman)
+      {:ok, _runner} = AsyncCoroutine.run(computation, :custom_caller, caller: middleman)
 
       assert_receive {:forwarded, {AsyncCoroutine, :custom_caller, :hello}}
     end
@@ -100,7 +100,7 @@ defmodule Skuld.AsyncCoroutineTest do
         end
 
       {:ok, runner, %ExternalSuspend{value: :ready}} =
-        AsyncCoroutine.run_sync(computation, tag: :sync_start)
+        AsyncCoroutine.run_sync(computation, :sync_start)
 
       # Can continue with resume_sync
       assert 42 = AsyncCoroutine.run_sync(runner, 21)
@@ -110,7 +110,7 @@ defmodule Skuld.AsyncCoroutineTest do
       computation = comp(do: {:ok, 42})
 
       {:ok, _runner, {:ok, 42}} =
-        AsyncCoroutine.run_sync(computation, tag: :immediate_result)
+        AsyncCoroutine.run_sync(computation, :immediate_result)
     end
 
     test "returns throw when computation throws immediately" do
@@ -121,7 +121,7 @@ defmodule Skuld.AsyncCoroutineTest do
         end
 
       {:ok, _runner, %ThrowStruct{error: :immediate_error}} =
-        AsyncCoroutine.run_sync(computation, tag: :immediate_throw)
+        AsyncCoroutine.run_sync(computation, :immediate_throw)
     end
 
     test "works with effects" do
@@ -134,7 +134,7 @@ defmodule Skuld.AsyncCoroutineTest do
         |> Reader.with_handler(21)
 
       {:ok, runner, %ExternalSuspend{value: :get_multiplier}} =
-        AsyncCoroutine.run_sync(computation, tag: :with_effects)
+        AsyncCoroutine.run_sync(computation, :with_effects)
 
       assert 42 = AsyncCoroutine.run_sync(runner, 2)
     end
@@ -148,7 +148,7 @@ defmodule Skuld.AsyncCoroutineTest do
 
       # Should succeed quickly with reasonable timeout
       {:ok, runner, %ExternalSuspend{value: :first}} =
-        AsyncCoroutine.run_sync(computation, tag: :custom_timeout, timeout: 1000)
+        AsyncCoroutine.run_sync(computation, :custom_timeout, timeout: 1000)
 
       assert :done = AsyncCoroutine.run_sync(runner, :done)
     end
@@ -166,7 +166,7 @@ defmodule Skuld.AsyncCoroutineTest do
 
       # Start sync - get first :ready yield
       {:ok, runner, %ExternalSuspend{value: :ready}} =
-        AsyncCoroutine.run_sync(processor, tag: :processor)
+        AsyncCoroutine.run_sync(processor, :processor)
 
       # Send first command, get back ready with result
       %ExternalSuspend{value: {:ready, {:processed, :cmd_a}}} =
@@ -187,7 +187,7 @@ defmodule Skuld.AsyncCoroutineTest do
           x + y
         end
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :sync_yield)
+      {:ok, runner} = AsyncCoroutine.run(computation, :sync_yield)
 
       # First yield comes via message
       assert_receive {AsyncCoroutine, :sync_yield, %ExternalSuspend{value: :first}}
@@ -206,7 +206,7 @@ defmodule Skuld.AsyncCoroutineTest do
           {:ok, x * 2}
         end
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :sync_result)
+      {:ok, runner} = AsyncCoroutine.run(computation, :sync_result)
 
       assert_receive {AsyncCoroutine, :sync_result, %ExternalSuspend{value: :get_value}}
       assert {:ok, 42} = AsyncCoroutine.run_sync(runner, 21)
@@ -220,7 +220,7 @@ defmodule Skuld.AsyncCoroutineTest do
           x
         end
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :sync_throw)
+      {:ok, runner} = AsyncCoroutine.run(computation, :sync_throw)
 
       assert_receive {AsyncCoroutine, :sync_throw, %ExternalSuspend{value: :get_value}}
       assert %ThrowStruct{error: :negative} = AsyncCoroutine.run_sync(runner, -5)
@@ -234,7 +234,7 @@ defmodule Skuld.AsyncCoroutineTest do
           :done
         end
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :custom_timeout)
+      {:ok, runner} = AsyncCoroutine.run(computation, :custom_timeout)
 
       assert_receive {AsyncCoroutine, :custom_timeout, %ExternalSuspend{value: :ready}}
 
@@ -251,7 +251,7 @@ defmodule Skuld.AsyncCoroutineTest do
           a + b + c
         end
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :mixed)
+      {:ok, runner} = AsyncCoroutine.run(computation, :mixed)
 
       # First yield via message
       assert_receive {AsyncCoroutine, :mixed, %ExternalSuspend{value: :a}}
@@ -276,7 +276,7 @@ defmodule Skuld.AsyncCoroutineTest do
           :completed
         end
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :cancellable)
+      {:ok, runner} = AsyncCoroutine.run(computation, :cancellable)
 
       assert_receive {AsyncCoroutine, :cancellable, %ExternalSuspend{value: :waiting}}
 
@@ -306,7 +306,7 @@ defmodule Skuld.AsyncCoroutineTest do
         end)
         |> Yield.with_handler()
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :cleanup_test)
+      {:ok, runner} = AsyncCoroutine.run(computation, :cleanup_test)
 
       assert_receive {AsyncCoroutine, :cleanup_test, %ExternalSuspend{value: :waiting}}
 
@@ -335,7 +335,7 @@ defmodule Skuld.AsyncCoroutineTest do
         end
 
       {:ok, runner, %ExternalSuspend{value: :waiting}} =
-        AsyncCoroutine.run_sync(computation, tag: :cancel_sync_test)
+        AsyncCoroutine.run_sync(computation, :cancel_sync_test)
 
       # Cancel synchronously
       assert %Cancelled{reason: :cancelled} = AsyncCoroutine.cancel_sync(runner)
@@ -362,7 +362,7 @@ defmodule Skuld.AsyncCoroutineTest do
         |> Yield.with_handler()
 
       {:ok, runner, %ExternalSuspend{value: :waiting}} =
-        AsyncCoroutine.run_sync(computation, tag: :cleanup_sync)
+        AsyncCoroutine.run_sync(computation, :cleanup_sync)
 
       # Verify we entered the scope
       assert Agent.get(agent, & &1) == [:entered]
@@ -386,7 +386,7 @@ defmodule Skuld.AsyncCoroutineTest do
 
       # Start with self() as caller
       {:ok, runner, %ExternalSuspend{value: :waiting}} =
-        AsyncCoroutine.run_sync(computation, tag: :cross_process)
+        AsyncCoroutine.run_sync(computation, :cross_process)
 
       # Cancel from a different process
       test_pid = self()
@@ -411,7 +411,7 @@ defmodule Skuld.AsyncCoroutineTest do
         end
 
       {:ok, runner, %ExternalSuspend{value: :waiting}} =
-        AsyncCoroutine.run_sync(computation, tag: :timeout_test)
+        AsyncCoroutine.run_sync(computation, :timeout_test)
 
       # This should complete quickly, well within timeout
       assert %Cancelled{reason: :cancelled} =
@@ -423,7 +423,7 @@ defmodule Skuld.AsyncCoroutineTest do
     test "runner process exits after sending result" do
       computation = comp(do: :done)
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :lifecycle)
+      {:ok, runner} = AsyncCoroutine.run(computation, :lifecycle)
 
       assert_receive {AsyncCoroutine, :lifecycle, :done}
 
@@ -437,7 +437,7 @@ defmodule Skuld.AsyncCoroutineTest do
       # Skuld converts exceptions to Throws, so they come back as messages
       computation = fn _env, _k -> raise "something went wrong" end
 
-      {:ok, _runner} = AsyncCoroutine.run(computation, tag: :raising)
+      {:ok, _runner} = AsyncCoroutine.run(computation, :raising)
 
       # Should receive a throw message with the exception info
       assert_receive {AsyncCoroutine, :raising,
@@ -452,7 +452,7 @@ defmodule Skuld.AsyncCoroutineTest do
     test "runner exits normally after sending throw message" do
       computation = fn _env, _k -> raise "boom" end
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :exits_normally)
+      {:ok, runner} = AsyncCoroutine.run(computation, :exits_normally)
 
       assert_receive {AsyncCoroutine, :exits_normally, %ThrowStruct{}}
 
@@ -480,7 +480,7 @@ defmodule Skuld.AsyncCoroutineTest do
         )
 
       {:ok, runner, %ExternalSuspend{value: :first, data: data}} =
-        AsyncCoroutine.run_sync(computation, tag: :transform_initial)
+        AsyncCoroutine.run_sync(computation, :transform_initial)
 
       # Initial suspend should have the data from transform_suspend
       assert data[:counter] == 1
@@ -518,7 +518,7 @@ defmodule Skuld.AsyncCoroutineTest do
         end)
 
       {:ok, runner, %ExternalSuspend{value: :first, data: data1}} =
-        AsyncCoroutine.run_sync(computation, tag: :transform_subsequent)
+        AsyncCoroutine.run_sync(computation, :transform_subsequent)
 
       # First yield - counter should be 1
       assert data1[:yield_count] == 1
@@ -551,7 +551,7 @@ defmodule Skuld.AsyncCoroutineTest do
           %{name: name, email: email}
         end
 
-      {:ok, runner} = AsyncCoroutine.run(wizard, tag: :wizard)
+      {:ok, runner} = AsyncCoroutine.run(wizard, :wizard)
 
       # Step 1
       assert_receive {AsyncCoroutine, :wizard,
@@ -578,7 +578,7 @@ defmodule Skuld.AsyncCoroutineTest do
         end
         |> Reader.with_handler(21)
 
-      {:ok, runner} = AsyncCoroutine.run(computation, tag: :mixed)
+      {:ok, runner} = AsyncCoroutine.run(computation, :mixed)
 
       assert_receive {AsyncCoroutine, :mixed, %ExternalSuspend{value: :get_multiplier}}
       AsyncCoroutine.run(runner, 2)

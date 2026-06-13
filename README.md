@@ -174,7 +174,7 @@ Run it from a LiveView with `AsyncCoroutine`:
 
 ```elixir
 # mount
-{:ok, runner} = AsyncCoroutine.run(LoanApp.apply(), tag: :loan)
+{:ok, runner} = AsyncCoroutine.run(LoanApp.apply(), :loan)
 
 # handle_info — the state machine pauses at each yield
 def handle_info({AsyncCoroutine, :loan, %ExternalSuspend{value: :personal_info}}, socket) do

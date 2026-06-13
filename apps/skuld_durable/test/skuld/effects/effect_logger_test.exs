@@ -946,7 +946,7 @@ defmodule Skuld.Effects.EffectLoggerTest do
         |> State.with_handler(0)
 
       {:ok, runner, %Comp.ExternalSuspend{value: :first, data: data1}} =
-        AsyncCoroutine.run_sync(computation, tag: :effectlogger_transform)
+        AsyncCoroutine.run_sync(computation, :effectlogger_transform)
 
       assert is_map(data1)
       assert Map.has_key?(data1, EffectLogger)

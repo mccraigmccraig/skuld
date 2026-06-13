@@ -15,7 +15,7 @@ defmodule Skuld.AsyncCoroutine.PageMachine do
 
   ## Options
 
-    * `:tag` (required) — the async coroutine tag
+    * `:tag` (required) — the async coroutine tag atom
     * `:on_yield` (required) — `(value, socket) -> term()`
       Called when the computation yields via `ExternalSuspend`
     * `:on_complete` — `(result, socket) -> term()`
@@ -32,7 +32,7 @@ defmodule Skuld.AsyncCoroutine.PageMachine do
   """
 
   @doc """
-  Start a page machine in a separate process. Delegates to `AsyncCoroutine.run/2`.
+  Start a page machine in a separate process. Delegates to `AsyncCoroutine.run/3`.
 
   The computation will have `Throw.with_handler/1` and `Yield.with_handler/1`
   added automatically. Add other handlers before calling `run`.
@@ -40,14 +40,19 @@ defmodule Skuld.AsyncCoroutine.PageMachine do
   Returns `{:ok, runner}` where the runner can be used with `run/3`
   to resume the flow with user input.
   """
-  def run(computation, opts) when is_function(computation, 2) do
-    Skuld.AsyncCoroutine.run(computation, opts)
+  def run(computation, tag) when is_function(computation, 2),
+    do: Skuld.AsyncCoroutine.run(computation, tag)
+
+  def run(%Skuld.AsyncCoroutine{} = runner, value), do: run(runner, value, [])
+
+  def run(computation, tag, opts) when is_function(computation, 2) do
+    Skuld.AsyncCoroutine.run(computation, tag, opts)
   end
 
   @doc """
   Resume a yielded page machine with a value. Delegates to `AsyncCoroutine.run/3`.
   """
-  def run(%Skuld.AsyncCoroutine{} = runner, value, opts \\ []) do
+  def run(%Skuld.AsyncCoroutine{} = runner, value, opts) do
     Skuld.AsyncCoroutine.run(runner, value, opts)
   end
 
