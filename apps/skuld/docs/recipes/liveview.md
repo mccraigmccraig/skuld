@@ -4,7 +4,7 @@
 [< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Durable Computation >](durable-computation.md)
 <!-- nav:header:end -->
 
-`AsyncCoroutine` bridges effectful computations into Phoenix LiveView,
+`PageMachine` bridges effectful computations into Phoenix LiveView,
 enabling pausable page flows that can be tested without a LiveView process.
 
 ## Why extract page state machines
@@ -26,15 +26,15 @@ If you extract the state machine into a pure module — one that receives
 events and returns new state, with no LiveView dependency — you can test
 the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
 
-Use `AsyncCoroutine` + `Yield` to structure the state machine as an
-effectful computation. Test it deterministically. Wrap it in a thin
-LiveView module that delegates events.
+Use `PageMachine` + `Yield` to structure the state machine as an
+effectful computation. Test it deterministically with `Coroutine`.
+Wrap it in a thin LiveView module that delegates events.
 
 ## Pattern
 
 1. Write the page flow as an effectful computation using `Yield`
 2. Test it with `Coroutine` — deterministic, no processes
-3. Wrap it in a thin LiveView module via `AsyncCoroutine.run/2`
+3. Wrap it in a thin LiveView module via `PageMachine`
 4. LiveView sends user events as resume values; yields update the UI
 
 ## Example: checkout flow
@@ -42,10 +42,8 @@ LiveView module that delegates events.
 A multi-step checkout: collect shipping address, collect payment method,
 submit the order. Each step is a `Yield`; branching is plain `if`.
 
-First, the pure state machine — no LiveView dependency:
-
-```elixir
-First, a typed effectful API for orders — a single-module `EffectfulFacade` contract:
+First, the pure state machine and its boundary contract — no LiveView
+dependency:
 
 ```elixir
 defmodule MyApp.Orders do
@@ -261,7 +259,7 @@ flow = MyApp.CheckoutFlow.run(cart)
 |> EffectLogger.with_logging()
 |> Reader.with_handler(%{})
 
-{:ok, runner} = AsyncCoroutine.run(flow, tag: :checkout)
+{:ok, runner} = PageMachine.run(flow, tag: :checkout)
 # On yield: log = AsyncCoroutine.get_log(runner)
 # On reconnect: cold-resume from serialised log
 ```
@@ -270,11 +268,10 @@ flow = MyApp.CheckoutFlow.run(cart)
 
 | Operation | Purpose |
 |---|---|
-| `AsyncCoroutine.run/2` | Start flow (async) |
-| `AsyncCoroutine.run_sync/2` | Start + block for first yield |
+| `PageMachine.run/2` | Start flow (async) |
+| `PageMachine.run_sync/2` | Start + block for first yield |
 | `AsyncCoroutine.run/3` | Resume with user input |
 | `AsyncCoroutine.cancel/1` | Cancel flow |
-| `AsyncCoroutine.cancel_sync/2` | Cancel + wait for cleanup |
 
 <!-- nav:footer:start -->
 
