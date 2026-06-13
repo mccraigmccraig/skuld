@@ -155,7 +155,8 @@ defmodule MyApp.CheckoutFlowTest do
 
   alias Skuld.Comp.Env
   alias Skuld.Coroutine
-  alias Skuld.Effects.{Yield, Throw, Port}
+  alias Skuld.Effects.Throw
+  alias Skuld.Effects.Yield
 
   setup do
     # Install handlers
@@ -259,7 +260,7 @@ flow = MyApp.CheckoutFlow.run(cart)
 |> Reader.with_handler(%{})
 
 {:ok, runner} = PageMachine.run(flow, tag: :checkout)
-# On yield: log = AsyncCoroutine.get_log(runner)
+# On yield: log is in ExternalSuspend.data (EffectLogger attaches it)
 # On reconnect: cold-resume from serialised log
 ```
 
