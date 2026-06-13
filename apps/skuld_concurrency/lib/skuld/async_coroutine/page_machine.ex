@@ -37,10 +37,20 @@ defmodule Skuld.AsyncCoroutine.PageMachine do
   The computation will have `Throw.with_handler/1` and `Yield.with_handler/1`
   added automatically. Add other handlers before calling `run`.
 
-  Returns `{:ok, runner}` where the runner can be used with `AsyncCoroutine.run/3`
+  Returns `{:ok, runner}` where the runner can be used with `run/3`
   to resume the flow with user input.
   """
   defdelegate run(computation, opts), to: Skuld.AsyncCoroutine
+
+  @doc """
+  Resume a yielded page machine with a value. Delegates to `AsyncCoroutine.run/3`.
+  """
+  defdelegate run(runner, value, opts \\ []), to: Skuld.AsyncCoroutine
+
+  @doc """
+  Cancel a running page machine. Delegates to `AsyncCoroutine.cancel/1`.
+  """
+  defdelegate cancel(runner), to: Skuld.AsyncCoroutine
 
   defmacro __using__(opts) do
     tag = Keyword.fetch!(opts, :tag)

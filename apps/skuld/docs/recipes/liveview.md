@@ -121,14 +121,13 @@ defmodule MyApp.CheckoutLive do
   # User events resume the state machine
   @impl true
   def handle_event("submit_shipping", params, socket) do
-    # Build resume value, resume the flow
     value = {:ok, %{address: params["address"], express: params["express"] == "true"}}
-    AsyncCoroutine.run(socket.assigns.runner, value)
+    PageMachine.run(socket.assigns.runner, value)
     {:noreply, socket}
   end
 
   def handle_event("submit_payment", %{"payment" => payment}, socket) do
-    AsyncCoroutine.run(socket.assigns.runner, {:ok, payment})
+    PageMachine.run(socket.assigns.runner, {:ok, payment})
     {:noreply, socket}
   end
 
@@ -244,7 +243,7 @@ Cancel on mount to prevent duplicate runners:
 ```elixir
 def mount(_params, _session, socket) do
   if connected?(socket) do
-    socket.assigns[:runner] && AsyncCoroutine.cancel(socket.assigns.runner)
+    socket.assigns[:runner] && PageMachine.cancel(socket.assigns.runner)
   end
   ...
 end
@@ -269,9 +268,8 @@ flow = MyApp.CheckoutFlow.run(cart)
 | Operation | Purpose |
 |---|---|
 | `PageMachine.run/2` | Start flow (async) |
-| `PageMachine.run_sync/2` | Start + block for first yield |
-| `AsyncCoroutine.run/3` | Resume with user input |
-| `AsyncCoroutine.cancel/1` | Cancel flow |
+| `PageMachine.run/3` | Resume with user input |
+| `PageMachine.cancel/1` | Cancel flow |
 
 <!-- nav:footer:start -->
 
