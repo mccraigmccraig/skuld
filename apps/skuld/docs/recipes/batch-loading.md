@@ -262,6 +262,20 @@ round-trip to your executor.
 Batching, concurrency, and data fetching are three separate concerns.
 Skuld gives you the first two for free so you only write the third.
 
+---
+
+Unlike the `comp` macro, which is a straightforward mechanical rewrite
+of `<-` into `Comp.bind` chains, the `query` block transformation is
+genuinely non-trivial: dependency graph construction, Kahn's algorithm
+for topological sort, fiber grouping, and batch dispatch orchestration.
+Each of these pieces is individually simple — a module that parses,
+a module that sorts, a module that schedules — but assembled together
+they create something that would be a cross-cutting tangle in a
+conventional architecture. This is the hallmark of the algebraic
+effects approach: complex capabilities built from simple, separable
+parts, each of which can be reasoned about, tested, and evolved
+independently.
+
 <!-- nav:footer:start -->
 
 ---
