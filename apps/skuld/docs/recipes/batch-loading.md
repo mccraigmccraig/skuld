@@ -15,10 +15,15 @@ restructuring code.
 
 ## When you need this
 
-If your data lives in a single SQL database, Ecto joins and preloads
-handle N+1 well — the query planner does the heavy lifting. This recipe
-is for when your data lives *behind remote APIs*: REST services, gRPC
-endpoints, GraphQL resolvers, S3 listings — anything without a join engine.
+If your data lives in a single SQL database, Ecto handles N+1 for you —
+its preload mechanism can use joins or batched IN queries internally,
+the query planner optimises the execution, and you write simple code
+unconcerned with the batching strategy. This recipe is for everything
+else: REST services, gRPC endpoints, GraphQL resolvers, S3 listings,
+Redis lookups — any data source that supports bulk-ID queries against
+a single collection but has no built-in query engine. Skuld.Query
+brings the same "write simple code, let the system handle batching"
+experience to those sources.
 
 ## The N+1 problem with remote APIs
 
