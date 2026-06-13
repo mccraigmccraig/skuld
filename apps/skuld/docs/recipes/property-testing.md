@@ -1,7 +1,7 @@
 # Property-Based Testing
 
 <!-- nav:header:start -->
-[< Hexagonal Architecture](hexagonal-architecture.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Hexagonal Architecture](hexagonal-architecture.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Handler Stacks >](handler-stacks.md)
 <!-- nav:header:end -->
 
 Effect handlers make deterministic testing the default. Swap production
@@ -91,5 +91,5 @@ writes from earlier in the computation — no setup needed.
 
 ---
 
-[< Hexagonal Architecture](hexagonal-architecture.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Hexagonal Architecture](hexagonal-architecture.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Handler Stacks >](handler-stacks.md)
 <!-- nav:footer:end -->

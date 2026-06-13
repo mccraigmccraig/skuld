@@ -1,7 +1,7 @@
 # Batch Loading
 
 <!-- nav:header:start -->
-[< Query System](../../../../docs/effects/query.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Durable Computation](durable-computation.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:header:end -->
 
 Eliminate N+1 queries with `deffetch` operations and `FiberPool`.
@@ -83,16 +83,19 @@ end)
 This works — 3 HTTP calls instead of 61. But the orchestration code is
 brittle: three `Enum.group_by` calls, manual ID extraction at each level,
 and the reassembly logic is coupled to the batching strategy. Add another
-level of nesting (comment reactions? sub-comments?) and it gets worse.
+level of nesting (comment reactions? threads?) and it gets worse.
 
 ## Skuld's approach
 
-Declare the fetches as `deffetch` operations. Each one describes a single
-logical fetch — the batching is automatic:
+Declare the fetches as `deffetch` operations. Each one generates a function
+that returns a suspended computation (`InternalSuspend`) carrying the
+operation data — a description of the fetch, not the fetch itself. The
+FiberPool scheduler collects these across all concurrent fibers and
+dispatches them in batches to your executor:
 
 ```elixir
 defmodule BlogQueries do
-  use Skuld.Query
+  use Skuld.QueryContract
 
   deffetch fetch_user(id :: String.t()) :: User.t() | nil
   deffetch fetch_posts(user_id :: String.t()) :: [Post.t()]
@@ -239,5 +242,5 @@ Skuld gives you the first two for free so you only write the third.
 
 ---
 
-[< Query System](../../../../docs/effects/query.md) | [Index](../../../../README.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Durable Computation](durable-computation.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [How It Works >](../internals.md)
 <!-- nav:footer:end -->

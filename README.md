@@ -77,14 +77,22 @@ internals →](https://hexdocs.pm/skuld/internals.html)
 ### Composability
 
 Effects compose with zero ceremony. This query function reads like
-straightforward sequential code, but when it runs, concurrency
-happens at two levels: within the `defquery` block (`fetch_user`
-and `fetch_orders` run together via dependency analysis), and
-across all streamed invocations — `Brook.map` runs 4 transforms
-concurrently, and `FiberPool` batches their `deffetch` calls into
-single round-trips:
+straightforward sequential code — `fetch_user` and `fetch_orders` are
+`deffetch` operations that signal the scheduler to batch them. The
+`defquery` macro analyses dependencies and dispatches independent
+calls concurrently:
 
 ```elixir
+# deffetch operations — each call returns a suspended computation
+# that the FiberPool scheduler collects and dispatches in batches
+defmodule AccountQueries do
+  use Skuld.QueryContract
+
+  deffetch fetch_user(id :: String.t()) :: User.t()
+  deffetch fetch_orders(user_id :: String.t(), month :: String.t()) :: [Order.t()]
+  deffetch fetch_order_details(order_id :: String.t()) :: OrderDetails.t()
+end
+
 defquery build_account_summary(user_id, month) do
   user <- AccountQueries.fetch_user(user_id)
   orders <- AccountQueries.fetch_orders(user_id, month)
@@ -107,7 +115,7 @@ end
 
 `build_account_summary` knows nothing about batch sizes, concurrency limits,
 database round-trips, or the other account summaries which also need to be
-built - it's pure domain logic. Everything else is handler
+built — it's pure domain logic. Everything else is handler
 wiring — swappable, testable, composable.
 
 [Full batch loading recipe →](https://hexdocs.pm/skuld/recipes/batch-loading.html)

@@ -1,7 +1,7 @@
 # Hexagonal Architecture
 
 <!-- nav:header:start -->
-[< Adapter](../../../../docs/effects/adapter.md) | [Index](../../../../README.md) | [Property-Based Testing >](property-testing.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Command & Transaction](../effects/command-transaction.md) | [Index](../../README.md) | [Property-Based Testing >](property-testing.md)
 <!-- nav:header:end -->
 
 Hexagonal architecture (ports and adapters) separates domain logic from
@@ -212,5 +212,5 @@ adapted gradually through `Skuld.Adapter`.
 
 ---
 
-[< Adapter](../../../../docs/effects/adapter.md) | [Index](../../../../README.md) | [Property-Based Testing >](property-testing.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Command & Transaction](../effects/command-transaction.md) | [Index](../../README.md) | [Property-Based Testing >](property-testing.md)
 <!-- nav:footer:end -->
