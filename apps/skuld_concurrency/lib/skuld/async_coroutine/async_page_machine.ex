@@ -65,12 +65,14 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
 
   @doc """
   Generate a `handle_event/3` clause that pipes a Phoenix event into the
-  AsyncPageMachine as a Yield resume value. Multiple `pipe_event` calls
+  AsyncPageMachine as a Yield resume value. Multiple `def_pipe_event` calls
   produce multiple `handle_event/3` clauses — one per event name.
+
+  Auto-imported when using `use AsyncPageMachine`.
 
   ## Without pattern matching
 
-      pipe_event "submit_payment", :runner
+      def_pipe_event "submit_payment", :runner
 
   Generates:
 
@@ -81,7 +83,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
 
   ## With pattern matching and transformation
 
-      pipe_event "submit_shipping", :runner, %{"address" => addr} do
+      def_pipe_event "submit_shipping", :runner, %{"address" => addr} do
         {:ok, %{address: addr}}
       end
 
@@ -92,7 +94,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
         {:noreply, socket}
       end
   """
-  defmacro pipe_event(event, assign_key) do
+  defmacro def_pipe_event(event, assign_key) do
     quote do
       def handle_event(unquote(event), params, socket) do
         Skuld.AsyncCoroutine.AsyncPageMachine.run(
@@ -109,7 +111,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
   Generate a `handle_event/3` clause with params pattern matching and a
   value-transformation block.
   """
-  defmacro pipe_event(event, assign_key, pattern, do: block) do
+  defmacro def_pipe_event(event, assign_key, pattern, do: block) do
     quote do
       def handle_event(unquote(event), unquote(pattern), socket) do
         value = unquote(block)
@@ -168,6 +170,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
       |> Enum.filter(& &1)
 
     quote do
+      import Skuld.AsyncCoroutine.AsyncPageMachine, only: [def_pipe_event: 2, def_pipe_event: 4]
       (unquote_splicing(clauses))
     end
   end

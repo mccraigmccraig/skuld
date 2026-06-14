@@ -123,10 +123,10 @@ defmodule Skuld.Coroutine.PageMachineTest do
     end
   end
 
-  describe "pipe_event/2" do
+  describe "def_pipe_event/2" do
     defmodule PipeEventTest do
-      import Skuld.Coroutine.PageMachine, only: [pipe_event: 2, pipe_event: 4]
-      pipe_event("test_event", :runner)
+      import Skuld.Coroutine.PageMachine, only: [def_pipe_event: 2, def_pipe_event: 4]
+      def_pipe_event("test_event", :runner)
     end
 
     test "generates handle_event/3 function" do
@@ -151,11 +151,11 @@ defmodule Skuld.Coroutine.PageMachineTest do
     end
   end
 
-  describe "pipe_event/2 with pattern+block" do
+  describe "def_pipe_event/2 with pattern+block" do
     defmodule PipeEventPatternTest do
-      import Skuld.Coroutine.PageMachine, only: [pipe_event: 4]
+      import Skuld.Coroutine.PageMachine, only: [def_pipe_event: 4]
 
-      pipe_event "submit", :runner, %{"value" => v} do
+      def_pipe_event "submit", :runner, %{"value" => v} do
         {:ok, v}
       end
     end
