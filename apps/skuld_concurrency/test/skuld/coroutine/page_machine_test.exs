@@ -2,7 +2,8 @@ defmodule Skuld.Coroutine.PageMachineTest do
   use ExUnit.Case, async: false
 
   alias Skuld.Coroutine.PageMachine
-  alias Skuld.Effects.{Throw, Yield}
+  alias Skuld.Effects.Throw
+  alias Skuld.Effects.Yield
 
   defmodule TestFlow do
     use Skuld.Syntax
@@ -119,6 +120,61 @@ defmodule Skuld.Coroutine.PageMachineTest do
         PageMachine.run(comp(), fake_socket(), :test, on_yield: fn _, s -> {:noreply, s} end)
 
       assert {:noreply, _} = PageMachine.cancel(socket.assigns.test, socket)
+    end
+  end
+
+  describe "pipe_event/2" do
+    defmodule PipeEventTest do
+      import Skuld.Coroutine.PageMachine, only: [pipe_event: 2, pipe_event: 4]
+      pipe_event("test_event", :runner)
+    end
+
+    test "generates handle_event/3 function" do
+      assert function_exported?(PipeEventTest, :handle_event, 3)
+    end
+
+    test "generated handle_event wraps params in {:ok, params} and calls PageMachine.run" do
+      {:noreply, socket} =
+        PageMachine.run(comp(), fake_socket(), :runner,
+          on_yield: fn _, s -> {:noreply, s} end,
+          on_complete: fn _, s -> {:noreply, s} end
+        )
+
+      {:noreply, socket} = PipeEventTest.handle_event("test_event", 42, socket)
+      assert %PageMachine{} = socket.assigns.runner
+    end
+
+    test "generated handle_event raises KeyError when assign_key is missing" do
+      assert_raise KeyError, fn ->
+        PipeEventTest.handle_event("test_event", 42, fake_socket())
+      end
+    end
+  end
+
+  describe "pipe_event/2 with pattern+block" do
+    defmodule PipeEventPatternTest do
+      import Skuld.Coroutine.PageMachine, only: [pipe_event: 4]
+
+      pipe_event "submit", :runner, %{"value" => v} do
+        {:ok, v}
+      end
+    end
+
+    test "generates handle_event/3 that pattern-matches params and transforms via block" do
+      {:noreply, socket} =
+        PageMachine.run(comp(), fake_socket(), :runner,
+          on_yield: fn _, s -> {:noreply, s} end,
+          on_complete: fn _, s -> {:noreply, s} end
+        )
+
+      {:noreply, _} =
+        PipeEventPatternTest.handle_event("submit", %{"value" => 99}, socket)
+    end
+
+    test "clause does not match when params pattern differs" do
+      assert_raise FunctionClauseError, fn ->
+        PipeEventPatternTest.handle_event("submit", %{"other" => 1}, fake_socket())
+      end
     end
   end
 end

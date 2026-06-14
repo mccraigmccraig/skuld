@@ -1,8 +1,16 @@
 # Changelog
 
-<!-- last-updated-against: 88b1d95ea0a34c97c0f39954be90511c060a4f0f -->
+<!-- last-updated-against: 566c45ce5d97b21bc6a0bddf25b4e1334120175f -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [Unreleased]
+
+### Added
+
+- `Coroutine.PageMachine.pipe_event/2` and `pipe_event/4` macros generate
+  `handle_event/3` clauses that pipe Phoenix events into the PageMachine as
+  Yield resume values. Eliminates `handle_event` boilerplate in LiveView modules.
 
 ## [0.37.0] — 2026-06-13
 

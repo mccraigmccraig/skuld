@@ -82,6 +82,63 @@ defmodule Skuld.Coroutine.PageMachine do
   end
 
   @doc """
+  Generate a `handle_event/3` clause that pipes a Phoenix event into the
+  PageMachine as a Yield resume value. Multiple `pipe_event` calls produce
+  multiple `handle_event/3` clauses — one per event name.
+
+  ## Without pattern matching
+
+      pipe_event "submit_payment", :runner
+
+  Generates:
+
+      def handle_event("submit_payment", params, socket) do
+        PageMachine.run(socket.assigns[:runner], {:ok, params}, socket)
+      end
+
+  ## With pattern matching and transformation
+
+      pipe_event "submit_shipping", :runner, %{"address" => addr} do
+        {:ok, %{address: addr}}
+      end
+
+  Generates:
+
+      def handle_event("submit_shipping", %{"address" => addr}, socket) do
+        PageMachine.run(socket.assigns[:runner], {:ok, %{address: addr}}, socket)
+      end
+  """
+  defmacro pipe_event(event, assign_key) do
+    quote do
+      def handle_event(unquote(event), params, socket) do
+        Skuld.Coroutine.PageMachine.run(
+          Map.fetch!(socket.assigns, unquote(assign_key)),
+          {:ok, params},
+          socket
+        )
+      end
+    end
+  end
+
+  @doc """
+  Generate a `handle_event/3` clause with params pattern matching and a
+  value-transformation block.
+  """
+  defmacro pipe_event(event, assign_key, pattern, do: block) do
+    quote do
+      def handle_event(unquote(event), unquote(pattern), socket) do
+        value = unquote(block)
+
+        Skuld.Coroutine.PageMachine.run(
+          Map.fetch!(socket.assigns, unquote(assign_key)),
+          value,
+          socket
+        )
+      end
+    end
+  end
+
+  @doc """
   Cancel a page machine. Dispatches through `on_cancel` if available.
 
   Returns `{:noreply, socket}`.
