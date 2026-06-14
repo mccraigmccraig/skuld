@@ -1,8 +1,16 @@
 # Changelog
 
-<!-- last-updated-against: 85785607fee314c6c0eb9c27a4a91d1cc6899327 -->
+<!-- last-updated-against: 4e98f6c4fcb28ab0fe41207ce173ed7006cb1406 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [0.39.0] — 2026-06-14
+
+### Changed
+
+- `def_pipe_event/2` default value changed from `{:ok, params}` to
+  `{event, params}`. The event name provides context on the computation
+  side — matching Phoenix's own `handle_event/3` contract.
 
 ## [0.38.0] — 2026-06-14
 
