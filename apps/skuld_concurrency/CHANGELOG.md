@@ -1,8 +1,16 @@
 # Changelog
 
-<!-- last-updated-against: 4e98f6c4fcb28ab0fe41207ce173ed7006cb1406 -->
+<!-- last-updated-against: e0a13711f87dd2b71645c88c74c41b151f83a697 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [0.40.0] — 2026-06-14
+
+### Added
+
+- `def_pipe_event` now accepts an optional `:before` callback —
+  `(socket -> socket)` — called before the event is piped to the
+  PageMachine. Useful for setting a loading spinner on async page machines.
 
 ## [0.39.0] — 2026-06-14
 
