@@ -4,8 +4,9 @@
 [< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Durable Computation >](durable-computation.md)
 <!-- nav:header:end -->
 
-`AsyncPageMachine` bridges effectful computations into Phoenix LiveView,
-enabling pausable page flows that can be tested without a LiveView process.
+`PageMachine` and `AsyncPageMachine` let you extract the state machine at
+the heart of every LiveView page into a computation — where it can be tested
+in isolation from all of the LiveView machinery.
 
 ## Why extract page state machines
 
@@ -26,15 +27,11 @@ If you extract the state machine into a pure module — one that receives
 events and returns new state, with no LiveView dependency — you can test
 the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
 
-Use `AsyncPageMachine` + `Yield` to structure the state machine as an
-effectful computation. Test it deterministically with `Coroutine`.
-Wrap it in a thin LiveView module that delegates events.
-
 ## Pattern
 
 1. Write the page flow as an effectful computation using `Yield`
 2. Test it with `Coroutine` — deterministic, no processes
-3. Wrap it in a thin LiveView module via `AsyncPageMachine`
+3. Wrap it in a thin LiveView module via a `PageMachine` or `AsyncPageMachine`
 4. LiveView sends user events as resume values; yields update the UI
 
 ## Example: checkout flow
@@ -44,7 +41,7 @@ Inventory reservation and order placement are typed effectful calls;
 shipping collection and payment collection are user yields. Branching
 is plain `if`.
 
-First, the boundary contracts and the pure state machine:
+First, the boundary contracts and the pure state machine computation:
 
 ```elixir
 defmodule MyApp.Orders do
@@ -218,8 +215,8 @@ defmodule MyApp.CheckoutFlowTest do
 end
 ```
 
-These tests run in microseconds. No browser, no LiveView process, no
-socket — just pure state transitions.
+These tests run in microseconds. There's no need for a LiveView process,
+— just pure state transitions.
 
 ## Why this works
 
@@ -267,8 +264,8 @@ flow = MyApp.CheckoutFlow.flow(cart)
 
 ## Operation reference
 
-| Operation              | Purpose                |
-|------------------------|------------------------|
+| Operation                   | Purpose                |
+|-----------------------------|------------------------|
 | `AsyncPageMachine.run/2`    | Start flow (async)     |
 | `AsyncPageMachine.run/3`    | Resume with user input |
 | `AsyncPageMachine.cancel/1` | Cancel flow            |
