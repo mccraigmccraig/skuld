@@ -240,6 +240,33 @@ This means:
 - **The LiveView module is thin**: it only bridges events and renders
   based on the current step.
 
+## Comparison to Elm / Redux / MVU
+
+This architecture is Elixir's answer to the Model-View-Update pattern that
+Elm enforces and Redux patterns towards. The mapping is direct:
+
+| Concept     | Elm/Redux          | PageMachine              |
+|-------------|--------------------|--------------------------|
+| Model       | Central store      | Scoped effects + fiber   |
+| Update      | Reducer function   | Computation (`defcomp`)  |
+| View        | Pure render        | `render(assigns)`        |
+| Message     | Action/dispatch    | `Yield.yield(tag)`       |
+
+In standard LiveView, business logic, effect calls, and socket manipulation
+mingle in `handle_event` / `handle_info` callbacks — the equivalent of putting
+reducer logic, API calls, and DOM updates in a single function. PageMachine
+separates them: the computation is the update function `(state, event) -> state`,
+the LiveView is the view bridge. The computation knows nothing about sockets,
+assigns, or DOM. It reads top-to-bottom as a narrative — reserve inventory,
+collect shipping, collect payment, place order — without the ceremony of
+actions, reducers, and stores.
+
+The key difference from Redux: effects are *inline*, not middleware.
+`MyApp.Inventory.reserve(cart)` is a typed function call, not a dispatched
+action that a saga or thunk intercepts. This keeps the flow linear and the
+types visible — you can read the computation top-to-bottom and see exactly
+what it does.
+
 ## Cancellation and cleanup
 
 Cancel on mount to prevent duplicate runners:
