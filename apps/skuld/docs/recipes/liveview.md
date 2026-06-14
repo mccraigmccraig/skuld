@@ -1,7 +1,7 @@
 # LiveView Integration
 
 <!-- nav:header:start -->
-[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Durable Computation >](durable-computation.md)
 <!-- nav:header:end -->
 
 `PageMachine` and `AsyncPageMachine` let you extract the state machine at
@@ -68,10 +68,10 @@ defmodule MyApp.CheckoutFlow do
     {:ok, _} <- MyApp.Inventory.reserve(cart)
 
     # User interaction: collect shipping
-    {:ok, shipping} <- Yield.yield(:shipping)
+    {"submit_shipping", shipping} <- Yield.yield(:shipping)
 
     # User interaction: collect payment
-    {:ok, payment} <- Yield.yield(:payment)
+    {"submit_payment", payment} <- Yield.yield(:payment)
 
     # Effect: place order (external API, can fail)
     {:ok, order} <- MyApp.Orders.place(cart, shipping, payment)
@@ -132,13 +132,8 @@ defmodule MyApp.CheckoutLive do
     {:noreply, push_navigate(socket, to: ~p"/cart")}
   end
 
-  def_pipe_event "submit_shipping", :runner, %{"address" => addr} do
-    {:ok, %{address: addr}}
-  end
-
-  def_pipe_event "submit_payment", :runner, %{"payment" => payment} do
-    {:ok, payment}
-  end
+  def_pipe_event "submit_shipping", :runner
+  def_pipe_event "submit_payment", :runner
 
   @impl true
   def render(assigns) do
@@ -184,10 +179,10 @@ defmodule MyApp.CheckoutFlowTest do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
     assert %Coroutine.ExternalSuspended{value: :shipping} = fiber
 
-    fiber = Coroutine.run(fiber, {:ok, %{address: "123 Main"}})
+    fiber = Coroutine.run(fiber, {"submit_shipping", %{address: "123 Main"}})
     assert %Coroutine.ExternalSuspended{value: :payment} = fiber
 
-    fiber = Coroutine.run(fiber, {:ok, %{card: "4242"}})
+    fiber = Coroutine.run(fiber, {"submit_payment", %{card: "4242"}})
     assert %Coroutine.Completed{result: {:ok, %Order{}}} = fiber
   end
 
@@ -395,13 +390,8 @@ defmodule MyApp.CheckoutLive do
     {:noreply, push_navigate(socket, to: ~p"/cart")}
   end
 
-  def_pipe_event "submit_shipping", :checkout, %{"address" => a} do
-    {:ok, %{address: a}}
-  end
-
-  def_pipe_event "submit_payment", :checkout, %{"payment" => p} do
-    {:ok, p}
-  end
+  def_pipe_event "submit_shipping", :checkout
+  def_pipe_event "submit_payment", :checkout
 
   @impl true
   def render(assigns) do
@@ -425,5 +415,5 @@ responsive. For fast effects this is the simplest possible integration.
 
 ---
 
-[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Durable Computation >](durable-computation.md)
 <!-- nav:footer:end -->
