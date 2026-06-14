@@ -111,14 +111,14 @@ defmodule Skuld.Coroutine.PageMachineTest do
           end
         )
 
-      {:noreply, _} = PageMachine.cancel(socket.assigns.test)
+      {:noreply, _} = PageMachine.cancel(socket.assigns.test, socket)
     end
 
     test "no on_cancel is graceful" do
       {:noreply, socket} =
         PageMachine.run(comp(), fake_socket(), :test, on_yield: fn _, s -> {:noreply, s} end)
 
-      assert {:noreply, _} = PageMachine.cancel(socket.assigns.test)
+      assert {:noreply, _} = PageMachine.cancel(socket.assigns.test, socket)
     end
   end
 end

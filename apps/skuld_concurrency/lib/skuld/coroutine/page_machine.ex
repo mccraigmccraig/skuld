@@ -86,9 +86,9 @@ defmodule Skuld.Coroutine.PageMachine do
 
   Returns `{:noreply, socket}`.
   """
-  def cancel(%__MODULE__{} = pm, reason \\ :cancelled) do
+  def cancel(%__MODULE__{} = pm, socket, reason \\ :cancelled) do
     fiber = pm.fiber |> Coroutine.cancel(reason)
-    dispatch(%{pm | fiber: fiber}, {:cancel, reason})
+    dispatch(%{pm | fiber: fiber}, socket)
   end
 
   defp dispatch(%__MODULE__{fiber: %Coroutine.ExternalSuspended{value: v}} = pm, socket) do
@@ -97,7 +97,8 @@ defmodule Skuld.Coroutine.PageMachine do
   end
 
   defp dispatch(%__MODULE__{fiber: %Coroutine.Completed{result: r}} = pm, socket) do
-    if pm.on_complete, do: pm.on_complete.(r, socket), else: {:noreply, socket}
+    result = if pm.on_complete, do: pm.on_complete.(r, socket), else: {:noreply, socket}
+    store(pm, result)
   end
 
   defp dispatch(
@@ -105,15 +106,18 @@ defmodule Skuld.Coroutine.PageMachine do
            pm,
          socket
        ) do
-    if pm.on_error, do: pm.on_error.(e, socket), else: {:noreply, socket}
+    result = if pm.on_error, do: pm.on_error.(e, socket), else: {:noreply, socket}
+    store(pm, result)
   end
 
   defp dispatch(%__MODULE__{fiber: %Coroutine.Errored{error: error}} = pm, socket) do
-    if pm.on_error, do: pm.on_error.(error, socket), else: {:noreply, socket}
+    result = if pm.on_error, do: pm.on_error.(error, socket), else: {:noreply, socket}
+    store(pm, result)
   end
 
   defp dispatch(%__MODULE__{fiber: %Coroutine.Cancelled{reason: reason}} = pm, socket) do
-    if pm.on_cancel, do: pm.on_cancel.(reason, socket), else: {:noreply, socket}
+    result = if pm.on_cancel, do: pm.on_cancel.(reason, socket), else: {:noreply, socket}
+    store(pm, result)
   end
 
   defp store(pm, {:noreply, socket}) do
