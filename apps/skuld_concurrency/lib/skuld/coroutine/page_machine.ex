@@ -87,7 +87,8 @@ defmodule Skuld.Coroutine.PageMachine do
   """
   defmacro __using__(_opts) do
     quote do
-      import Skuld.Coroutine.PageMachine, only: [def_pipe_event: 2, def_pipe_event: 4]
+      import Skuld.Coroutine.PageMachine,
+        only: [def_pipe_event: 2, def_pipe_event: 3, def_pipe_event: 4]
     end
   end
 
@@ -96,31 +97,57 @@ defmodule Skuld.Coroutine.PageMachine do
   PageMachine as a Yield resume value. Multiple `def_pipe_event` calls produce
   multiple `handle_event/3` clauses — one per event name.
 
+  ## Options
+
+  - `:before` — an optional `(socket -> socket)` callback called before the
+    event is piped to the PageMachine. Useful for setting a loading spinner.
+
   ## Without pattern matching
 
       def_pipe_event "submit_payment", :runner
+      def_pipe_event "submit_payment", :runner, before: &start_spinner/1
 
   Generates:
 
       def handle_event("submit_payment", params, socket) do
+        socket = start_spinner(socket)
         PageMachine.run(socket.assigns[:runner], {"submit_payment", params}, socket)
       end
 
   ## With pattern matching and transformation
 
-      def_pipe_event "submit_shipping", :runner, %{"address" => addr} do
+      def_pipe_event "submit_shipping", :runner, %{"address" => addr}, before: &start_spinner/1 do
         {:ok, %{address: addr}}
       end
 
   Generates:
 
       def handle_event("submit_shipping", %{"address" => addr}, socket) do
+        socket = start_spinner(socket)
         PageMachine.run(socket.assigns[:runner], {:ok, %{address: addr}}, socket)
       end
   """
   defmacro def_pipe_event(event, assign_key) do
+    pipe_before = nil
+
     quote do
       def handle_event(unquote(event), params, socket) do
+        unquote(build_before(pipe_before))
+
+        Skuld.Coroutine.PageMachine.run(
+          Map.fetch!(socket.assigns, unquote(assign_key)),
+          {unquote(event), params},
+          socket
+        )
+      end
+    end
+  end
+
+  defmacro def_pipe_event(event, assign_key, before: before) do
+    quote do
+      def handle_event(unquote(event), params, socket) do
+        unquote(build_before(before))
+
         Skuld.Coroutine.PageMachine.run(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           {unquote(event), params},
@@ -131,12 +158,15 @@ defmodule Skuld.Coroutine.PageMachine do
   end
 
   @doc """
-  Generate a `handle_event/3` clause with params pattern matching and a
-  value-transformation block.
+  Generate a `handle_event/3` clause with params pattern matching, a
+  value-transformation block, and optional `:before` callback.
   """
   defmacro def_pipe_event(event, assign_key, pattern, do: block) do
+    pipe_before = nil
+
     quote do
       def handle_event(unquote(event), unquote(pattern), socket) do
+        unquote(build_before(pipe_before))
         value = unquote(block)
 
         Skuld.Coroutine.PageMachine.run(
@@ -147,6 +177,24 @@ defmodule Skuld.Coroutine.PageMachine do
       end
     end
   end
+
+  defmacro def_pipe_event(event, assign_key, pattern, do: block, before: before) do
+    quote do
+      def handle_event(unquote(event), unquote(pattern), socket) do
+        unquote(build_before(before))
+        value = unquote(block)
+
+        Skuld.Coroutine.PageMachine.run(
+          Map.fetch!(socket.assigns, unquote(assign_key)),
+          value,
+          socket
+        )
+      end
+    end
+  end
+
+  defp build_before(nil), do: nil
+  defp build_before(callback), do: quote(do: socket = unquote(callback).(socket))
 
   @doc """
   Cancel a page machine. Dispatches through `on_cancel` if available.

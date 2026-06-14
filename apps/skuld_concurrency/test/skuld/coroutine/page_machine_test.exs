@@ -125,7 +125,7 @@ defmodule Skuld.Coroutine.PageMachineTest do
 
   describe "def_pipe_event/2" do
     defmodule PipeEventTest do
-      import Skuld.Coroutine.PageMachine, only: [def_pipe_event: 2, def_pipe_event: 4]
+      import Skuld.Coroutine.PageMachine, only: [def_pipe_event: 2]
       def_pipe_event("test_event", :runner)
     end
 
@@ -148,6 +148,27 @@ defmodule Skuld.Coroutine.PageMachineTest do
       assert_raise KeyError, fn ->
         PipeEventTest.handle_event("test_event", 42, fake_socket())
       end
+    end
+  end
+
+  describe "def_pipe_event/2 with :before" do
+    defmodule PipeEventBeforeTest do
+      import Skuld.Coroutine.PageMachine, only: [def_pipe_event: 3]
+
+      def_pipe_event("test_event", :runner, before: &__MODULE__.spinner/1)
+
+      def spinner(socket), do: put_in(socket.assigns[:loading], true)
+    end
+
+    test "calls :before callback before piping to PageMachine" do
+      {:noreply, socket} =
+        PageMachine.run(comp(), fake_socket(), :runner,
+          on_yield: fn _, s -> {:noreply, s} end,
+          on_complete: fn _, s -> {:noreply, s} end
+        )
+
+      {:noreply, socket} = PipeEventBeforeTest.handle_event("test_event", 42, socket)
+      assert socket.assigns.loading == true
     end
   end
 
