@@ -113,39 +113,51 @@ defmodule MyApp.CheckoutLive do
   end
 
   defp handle_yield(step, socket) do
+    socket = clear_spinner(socket)
     {:noreply, assign(socket, step: step)}
   end
 
   defp handle_complete({:ok, order}, socket) do
+    socket = clear_spinner(socket)
     {:noreply, assign(socket, order: order, step: :done)}
   end
 
   defp handle_error(:sold_out, socket) do
+    socket = clear_spinner(socket)
     {:noreply, put_flash(socket, :error, "Sorry, this item is no longer available")}
   end
 
   defp handle_error(reason, socket) do
+    socket = clear_spinner(socket)
     {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
   end
 
   defp handle_cancel(reason, socket) do
+    socket = clear_spinner(socket)
     {:noreply, push_navigate(socket, to: ~p"/cart")}
   end
 
-  def_pipe_event "submit_shipping", :runner
-  def_pipe_event "submit_payment", :runner
+  defp start_spinner(socket), do: assign(socket, :loading, true)
+  defp clear_spinner(socket), do: assign(socket, :loading, false)
+
+  def_pipe_event "submit_shipping", :runner, before: &start_spinner/1
+  def_pipe_event "submit_payment", :runner, before: &start_spinner/1
 
   @impl true
   def render(assigns) do
     case assigns.step do
       :loading -> ~H|<.spinner />|
-      :shipping -> ~H|<.shipping_form myself={@myself} />|
-      :payment -> ~H|<.payment_form myself={@myself} />|
+      :shipping -> ~H|<.shipping_form loading={@loading} myself={@myself} />|
+      :payment -> ~H|<.payment_form loading={@loading} myself={@myself} />|
       :done -> ~H|<.order_summary order={@order} />|
     end
   end
 end
 ```
+
+The `handle_*` functions are shared between both approaches. Switching
+from `AsyncPageMachine` to `PageMachine` is just a mechanical change to
+`mount` — the callbacks don't change.
 
 ## Testing without LiveViewTest
 
@@ -371,42 +383,46 @@ defmodule MyApp.CheckoutLive do
   end
 
   defp handle_yield(step, socket) do
+    socket = clear_spinner(socket)
     {:noreply, assign(socket, step: step)}
   end
 
   defp handle_complete({:ok, order}, socket) do
+    socket = clear_spinner(socket)
     {:noreply, assign(socket, order: order, step: :done)}
   end
 
   defp handle_error(:sold_out, socket) do
+    socket = clear_spinner(socket)
     {:noreply, put_flash(socket, :error, "Sorry, this item is no longer available")}
   end
 
   defp handle_error(reason, socket) do
+    socket = clear_spinner(socket)
     {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
   end
 
   defp handle_cancel(reason, socket) do
+    socket = clear_spinner(socket)
     {:noreply, push_navigate(socket, to: ~p"/cart")}
   end
 
-  def_pipe_event "submit_shipping", :checkout
-  def_pipe_event "submit_payment", :checkout
+  defp start_spinner(socket), do: assign(socket, :loading, true)
+  defp clear_spinner(socket), do: assign(socket, :loading, false)
+
+  def_pipe_event "submit_shipping", :checkout, before: &start_spinner/1
+  def_pipe_event "submit_payment", :checkout, before: &start_spinner/1
 
   @impl true
   def render(assigns) do
     case assigns.step do
-      :shipping -> ~H|<.shipping_form myself={@myself} />|
-      :payment -> ~H|<.payment_form myself={@myself} />|
+      :shipping -> ~H|<.shipping_form loading={@loading} myself={@myself} />|
+      :payment -> ~H|<.payment_form loading={@loading} myself={@myself} />|
       :done -> ~H|<.order_summary order={@order} />|
     end
   end
 end
 ```
-
-The `handle_*` functions are shared between both approaches. Switching
-from `AsyncPageMachine` to `PageMachine` is just a mechanical change to
-`mount` — the callbacks don't change.
 
 For I/O-bound effects use `AsyncPageMachine` to keep the LiveView
 responsive. For fast effects this is the simplest possible integration.
