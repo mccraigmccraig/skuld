@@ -38,7 +38,7 @@ defmodule Skuld.Coroutine.PageMachineTest do
   describe "run/3" do
     test "yields through on_yield" do
       result =
-        PageMachine.run(comp(), fake_socket(),
+        PageMachine.run(comp(), fake_socket(), :test,
           on_yield: fn value, socket ->
             assert value in [:first, :second]
             {:noreply, socket}
@@ -46,12 +46,12 @@ defmodule Skuld.Coroutine.PageMachineTest do
           on_complete: fn _, s -> {:noreply, s} end
         )
 
-      assert {:noreply, %{assigns: %{pm: %PageMachine{}}}} = result
+      assert {:noreply, %{assigns: %{test: %PageMachine{}}}} = result
     end
 
     test "completes through on_complete" do
       result =
-        PageMachine.run(ImmediateFlow.flow(), fake_socket(),
+        PageMachine.run(ImmediateFlow.flow(), fake_socket(), :test,
           on_yield: fn _, s -> {:noreply, s} end,
           on_complete: fn result, socket ->
             assert result == 42
@@ -66,7 +66,7 @@ defmodule Skuld.Coroutine.PageMachineTest do
       comp = BrokenFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
 
       {:noreply, socket} =
-        PageMachine.run(comp, fake_socket(),
+        PageMachine.run(comp, fake_socket(), :test,
           on_yield: fn _, s -> {:noreply, s} end,
           on_error: fn error, socket ->
             assert error == :boom
@@ -74,12 +74,12 @@ defmodule Skuld.Coroutine.PageMachineTest do
           end
         )
 
-      {:noreply, _} = PageMachine.run(socket.assigns.pm, :go, socket)
+      {:noreply, _} = PageMachine.run(socket.assigns.test, :go, socket)
     end
 
     test "missing on_yield raises" do
       assert_raise KeyError, fn ->
-        PageMachine.run(comp(), fake_socket(), on_error: fn _, s -> {:noreply, s} end)
+        PageMachine.run(comp(), fake_socket(), :test, on_error: fn _, s -> {:noreply, s} end)
       end
     end
   end
@@ -87,7 +87,7 @@ defmodule Skuld.Coroutine.PageMachineTest do
   describe "run/3 resume" do
     test "resumes through full flow" do
       {:noreply, socket} =
-        PageMachine.run(comp(), fake_socket(),
+        PageMachine.run(comp(), fake_socket(), :test,
           on_yield: fn _, s -> {:noreply, s} end,
           on_complete: fn result, socket ->
             assert {:ok, {:hello, 10, 20}} == result
@@ -95,15 +95,15 @@ defmodule Skuld.Coroutine.PageMachineTest do
           end
         )
 
-      {:noreply, socket} = PageMachine.run(socket.assigns.pm, 10, socket)
-      {:noreply, _} = PageMachine.run(socket.assigns.pm, 20, socket)
+      {:noreply, socket} = PageMachine.run(socket.assigns.test, 10, socket)
+      {:noreply, _} = PageMachine.run(socket.assigns.test, 20, socket)
     end
   end
 
   describe "cancel/1" do
     test "dispatches through on_cancel" do
       {:noreply, socket} =
-        PageMachine.run(comp(), fake_socket(),
+        PageMachine.run(comp(), fake_socket(), :test,
           on_yield: fn _, s -> {:noreply, s} end,
           on_cancel: fn reason, socket ->
             assert reason == :cancelled
@@ -111,14 +111,14 @@ defmodule Skuld.Coroutine.PageMachineTest do
           end
         )
 
-      {:noreply, _} = PageMachine.cancel(socket.assigns.pm)
+      {:noreply, _} = PageMachine.cancel(socket.assigns.test)
     end
 
     test "no on_cancel is graceful" do
       {:noreply, socket} =
-        PageMachine.run(comp(), fake_socket(), on_yield: fn _, s -> {:noreply, s} end)
+        PageMachine.run(comp(), fake_socket(), :test, on_yield: fn _, s -> {:noreply, s} end)
 
-      assert {:noreply, _} = PageMachine.cancel(socket.assigns.pm)
+      assert {:noreply, _} = PageMachine.cancel(socket.assigns.test)
     end
   end
 end

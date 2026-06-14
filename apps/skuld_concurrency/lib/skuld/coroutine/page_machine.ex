@@ -11,7 +11,7 @@ defmodule Skuld.Coroutine.PageMachine do
       alias Skuld.Coroutine.PageMachine
 
       # mount — one-time setup
-      PageMachine.run(MyApp.CheckoutFlow.flow(cart), socket,
+      PageMachine.run(MyApp.CheckoutFlow.flow(cart), socket, :checkout,
         on_yield: fn step, socket -> {:noreply, assign(socket, step: step)} end,
         on_complete: fn {:ok, order}, socket -> {:noreply, assign(socket, order: order, step: :done)} end,
         on_error: fn reason, socket -> {:noreply, put_flash(socket, :error, inspect(reason))} end,
@@ -20,7 +20,7 @@ defmodule Skuld.Coroutine.PageMachine do
 
       # handle_event — one-liner
       def handle_event("submit", %{"value" => v}, socket),
-        do: PageMachine.run(socket.assigns.pm, {:ok, v}, socket)
+        do: PageMachine.run(socket.assigns.checkout, {:ok, v}, socket)
 
   For cross-process use, see `Skuld.AsyncCoroutine.AsyncPageMachine`.
   """
@@ -28,14 +28,15 @@ defmodule Skuld.Coroutine.PageMachine do
   alias Skuld.Comp.Env
   alias Skuld.Coroutine
 
-  defstruct [:fiber, :on_yield, :on_complete, :on_error, :on_cancel]
+  defstruct [:fiber, :assign_key, :on_yield, :on_complete, :on_error, :on_cancel]
 
   @typedoc """
   A page machine carrying the current fiber and callback functions.
-  Stored in `socket.assigns.pm` between calls.
+  Stored in `socket.assigns[key]` between calls.
   """
   @type t :: %__MODULE__{
           fiber: Coroutine.ExternalSuspended.t(),
+          assign_key: atom(),
           on_yield: (term(), map() -> term()),
           on_complete: (term(), map() -> term()) | nil,
           on_error: (term(), map() -> term()) | nil,
@@ -46,19 +47,21 @@ defmodule Skuld.Coroutine.PageMachine do
   Start a page machine with callbacks. Runs the first step of the
   computation and dispatches the result through the appropriate callback.
 
+  The page machine struct is stored in `socket.assigns[key]`.
+
   Callbacks:
   - `:on_yield` (required) — `(value, socket) -> {:noreply, socket}`
   - `:on_complete` — `(result, socket) -> {:noreply, socket}`
   - `:on_error` — `(error, socket) -> {:noreply, socket}`
   - `:on_cancel` — `(reason, socket) -> {:noreply, socket}`
 
-  Returns `{:noreply, socket}`. Stores the page machine in
-  `socket.assigns.pm` for subsequent `run/3` calls.
+  Returns `{:noreply, socket}`.
   """
-  def run(computation, socket, callbacks)
-      when is_function(computation, 2) and is_list(callbacks) do
+  def run(computation, socket, key, callbacks)
+      when is_function(computation, 2) and is_atom(key) and is_list(callbacks) do
     pm = %__MODULE__{
       fiber: computation |> Coroutine.new(Env.new()) |> Coroutine.run(),
+      assign_key: key,
       on_yield: Keyword.fetch!(callbacks, :on_yield),
       on_complete: Keyword.get(callbacks, :on_complete),
       on_error: Keyword.get(callbacks, :on_error),
@@ -114,6 +117,6 @@ defmodule Skuld.Coroutine.PageMachine do
   end
 
   defp store(pm, {:noreply, socket}) do
-    {:noreply, %{socket | assigns: Map.put(socket.assigns, :pm, pm)}}
+    {:noreply, %{socket | assigns: Map.put(socket.assigns, pm.assign_key, pm)}}
   end
 end

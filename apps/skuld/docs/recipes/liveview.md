@@ -367,7 +367,7 @@ defmodule MyApp.CheckoutLive do
       |> Yield.with_handler()
       |> Throw.with_handler()
 
-    PageMachine.run(comp, socket,
+    PageMachine.run(comp, socket, :checkout,
       on_yield: &handle_yield/2,
       on_complete: &handle_complete/2,
       on_error: &handle_error/2,
@@ -397,10 +397,10 @@ defmodule MyApp.CheckoutLive do
 
   @impl true
   def handle_event("submit_shipping", %{"address" => a}, socket),
-    do: PageMachine.run(socket.assigns.pm, {:ok, %{address: a}}, socket)
+    do: PageMachine.run(socket.assigns.checkout, {:ok, %{address: a}}, socket)
 
   def handle_event("submit_payment", %{"payment" => p}, socket),
-    do: PageMachine.run(socket.assigns.pm, {:ok, p}, socket)
+    do: PageMachine.run(socket.assigns.checkout, {:ok, p}, socket)
 
   @impl true
   def render(assigns) do
