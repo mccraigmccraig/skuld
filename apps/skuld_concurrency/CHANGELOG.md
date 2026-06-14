@@ -1,10 +1,10 @@
 # Changelog
 
-<!-- last-updated-against: 9a654a51bd3230f67235afba88e4d3d852e368e9 -->
+<!-- last-updated-against: 85785607fee314c6c0eb9c27a4a91d1cc6899327 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
 
-## [Unreleased]
+## [0.38.0] — 2026-06-14
 
 ### Added
 
