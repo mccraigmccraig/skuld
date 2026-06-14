@@ -1,8 +1,20 @@
 # Changelog
 
-<!-- last-updated-against: c7970ab5813e56bc3b3d5f5c9f640316101688cc -->
+<!-- last-updated-against: 88b1d95ea0a34c97c0f39954be90511c060a4f0f -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [0.37.0] — 2026-06-13
+
+### Changed
+
+- `Coroutine.PageMachine.run/4` takes an explicit assign key as a required
+  positional parameter instead of storing in an implicit `:pm` key.
+- `Coroutine.PageMachine.cancel/2` now accepts a socket parameter (matching
+  `run/3`).
+- Page machine struct is now stored in assigns on every dispatch outcome,
+  not just yield.
+
 
 ## [0.36.0] — 2026-06-13
 
