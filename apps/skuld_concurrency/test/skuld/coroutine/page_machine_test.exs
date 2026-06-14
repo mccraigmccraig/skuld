@@ -133,7 +133,7 @@ defmodule Skuld.Coroutine.PageMachineTest do
       assert function_exported?(PipeEventTest, :handle_event, 3)
     end
 
-    test "generated handle_event wraps params in {:ok, params} and calls PageMachine.run" do
+    test "generated handle_event wraps params in {event, params} and calls PageMachine.run" do
       {:noreply, socket} =
         PageMachine.run(comp(), fake_socket(), :runner,
           on_yield: fn _, s -> {:noreply, s} end,

@@ -103,7 +103,7 @@ defmodule Skuld.Coroutine.PageMachine do
   Generates:
 
       def handle_event("submit_payment", params, socket) do
-        PageMachine.run(socket.assigns[:runner], {:ok, params}, socket)
+        PageMachine.run(socket.assigns[:runner], {"submit_payment", params}, socket)
       end
 
   ## With pattern matching and transformation
@@ -123,7 +123,7 @@ defmodule Skuld.Coroutine.PageMachine do
       def handle_event(unquote(event), params, socket) do
         Skuld.Coroutine.PageMachine.run(
           Map.fetch!(socket.assigns, unquote(assign_key)),
-          {:ok, params},
+          {unquote(event), params},
           socket
         )
       end

@@ -77,7 +77,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
   Generates:
 
       def handle_event("submit_payment", params, socket) do
-        AsyncPageMachine.run(socket.assigns[:runner], {:ok, params})
+        AsyncPageMachine.run(socket.assigns[:runner], {"submit_payment", params})
         {:noreply, socket}
       end
 
@@ -99,7 +99,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
       def handle_event(unquote(event), params, socket) do
         Skuld.AsyncCoroutine.AsyncPageMachine.run(
           Map.fetch!(socket.assigns, unquote(assign_key)),
-          {:ok, params}
+          {unquote(event), params}
         )
 
         {:noreply, socket}
