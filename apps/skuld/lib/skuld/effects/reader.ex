@@ -4,6 +4,13 @@ defmodule Skuld.Effects.Reader do
 
   Supports both simple single-context usage and multiple independent contexts via tags.
 
+  ## Tag Convention
+
+  Tags should be module atoms — either the effect module itself (`Reader`)
+  for singleton context, or a derived atom (`MyApp.Config`, `Reader.DB`)
+  for namespaced contexts. Module atoms are globally unique by construction,
+  eliminating accidental collisions between independent pieces of context.
+
   ## Simple Usage (default tag)
 
       use Skuld.Syntax

@@ -8,6 +8,14 @@ defmodule Skuld.Effects.AtomicState do
 
   Supports both simple single-state usage and multiple independent states via tags.
 
+  ## Tag Convention
+
+  Tags should be module atoms — either the effect module itself
+  (`AtomicState`) for singleton state, or a derived atom
+  (`MyApp.Counter`, `AtomicState.Cache`) for namespaced state.
+  Module atoms are globally unique by construction, eliminating
+  accidental collisions between independent pieces of state.
+
   ## Handlers
 
   - `AtomicState.Agent` - Agent-backed handler for production (true atomic ops)

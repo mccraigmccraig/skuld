@@ -4,6 +4,13 @@ defmodule Skuld.Effects.State do
 
   Supports both simple single-state usage and multiple independent states via tags.
 
+  ## Tag Convention
+
+  Tags should be module atoms — either the effect module itself (`State`)
+  for singleton state, or a derived atom (`MyApp.Counter`, `State.Counter`)
+  for namespaced state. Module atoms are globally unique by construction,
+  eliminating accidental collisions between independent pieces of state.
+
   ## Simple Usage (default tag)
 
       use Skuld.Syntax

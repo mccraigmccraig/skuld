@@ -4,6 +4,13 @@ defmodule Skuld.Effects.Writer do
 
   Supports both simple single-log usage and multiple independent logs via tags.
 
+  ## Tag Convention
+
+  Tags should be module atoms — either the effect module itself (`Writer`)
+  for singleton logs, or a derived atom (`MyApp.Audit`, `Writer.Metrics`)
+  for namespaced logs. Module atoms are globally unique by construction,
+  eliminating accidental collisions between independent logs.
+
   ## Simple Usage (default tag)
 
       use Skuld.Syntax
