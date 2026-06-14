@@ -63,6 +63,67 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
     Skuld.AsyncCoroutine.cancel(runner)
   end
 
+  @doc """
+  Generate a `handle_event/3` clause that pipes a Phoenix event into the
+  AsyncPageMachine as a Yield resume value. Multiple `pipe_event` calls
+  produce multiple `handle_event/3` clauses — one per event name.
+
+  ## Without pattern matching
+
+      pipe_event "submit_payment", :runner
+
+  Generates:
+
+      def handle_event("submit_payment", params, socket) do
+        AsyncPageMachine.run(socket.assigns[:runner], {:ok, params})
+        {:noreply, socket}
+      end
+
+  ## With pattern matching and transformation
+
+      pipe_event "submit_shipping", :runner, %{"address" => addr} do
+        {:ok, %{address: addr}}
+      end
+
+  Generates:
+
+      def handle_event("submit_shipping", %{"address" => addr}, socket) do
+        AsyncPageMachine.run(socket.assigns[:runner], {:ok, %{address: addr}})
+        {:noreply, socket}
+      end
+  """
+  defmacro pipe_event(event, assign_key) do
+    quote do
+      def handle_event(unquote(event), params, socket) do
+        Skuld.AsyncCoroutine.AsyncPageMachine.run(
+          Map.fetch!(socket.assigns, unquote(assign_key)),
+          {:ok, params}
+        )
+
+        {:noreply, socket}
+      end
+    end
+  end
+
+  @doc """
+  Generate a `handle_event/3` clause with params pattern matching and a
+  value-transformation block.
+  """
+  defmacro pipe_event(event, assign_key, pattern, do: block) do
+    quote do
+      def handle_event(unquote(event), unquote(pattern), socket) do
+        value = unquote(block)
+
+        Skuld.AsyncCoroutine.AsyncPageMachine.run(
+          Map.fetch!(socket.assigns, unquote(assign_key)),
+          value
+        )
+
+        {:noreply, socket}
+      end
+    end
+  end
+
   defmacro __using__(opts) do
     tag = Keyword.fetch!(opts, :tag)
     on_yield = Keyword.fetch!(opts, :on_yield)

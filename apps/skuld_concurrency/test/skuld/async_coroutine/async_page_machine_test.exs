@@ -91,4 +91,41 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachineTest do
       end
     end
   end
+
+  describe "pipe_event/2" do
+    defmodule PipeEventAsyncTest do
+      import AsyncPageMachine, only: [pipe_event: 2]
+      pipe_event "test_event", :runner
+    end
+
+    test "generates handle_event/3 function" do
+      assert function_exported?(PipeEventAsyncTest, :handle_event, 3)
+    end
+
+    test "generated handle_event raises KeyError when assign_key is missing" do
+      assert_raise KeyError, fn ->
+        PipeEventAsyncTest.handle_event("test_event", 42, %{assigns: %{}})
+      end
+    end
+  end
+
+  describe "pipe_event/2 with pattern+block" do
+    defmodule PipeEventAsyncPatternTest do
+      import AsyncPageMachine, only: [pipe_event: 4]
+
+      pipe_event "submit", :runner, %{"value" => v} do
+        {:ok, v}
+      end
+    end
+
+    test "generates handle_event/3 that pattern-matches params" do
+      assert function_exported?(PipeEventAsyncPatternTest, :handle_event, 3)
+    end
+
+    test "clause does not match when params pattern differs" do
+      assert_raise FunctionClauseError, fn ->
+        PipeEventAsyncPatternTest.handle_event("submit", %{"other" => 1}, %{assigns: %{}})
+      end
+    end
+  end
 end
