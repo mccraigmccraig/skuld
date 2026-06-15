@@ -1,7 +1,7 @@
 # LiveView Integration
 
 <!-- nav:header:start -->
-[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Durable Computation >](durable-computation.md)
 <!-- nav:header:end -->
 
 `AsyncPageMachine` lets you extract the state machine at
@@ -396,5 +396,5 @@ naturally for the problem at hand.
 
 ---
 
-[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Durable Computation >](durable-computation.md)
 <!-- nav:footer:end -->
