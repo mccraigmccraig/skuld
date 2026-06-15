@@ -4,9 +4,25 @@
 [< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Durable Computation >](durable-computation.md)
 <!-- nav:header:end -->
 
-`AsyncPageMachine` lets you extract the state machine at
-the heart of every LiveView page into a computation — where it can be tested
-in isolation from all of the LiveView machinery.
+LiveView pages are state machines — model, view, and update all living in
+the same module. But these concerns are tangled: business logic, effect calls,
+and socket manipulation mingle in `handle_event` and `handle_info` callbacks.
+It's the equivalent of putting reducer logic, API calls, and DOM updates in a
+single function.
+
+`AsyncPageMachine` separates these concerns, Elixir-style. Like Elm, Redux,
+or re-frame, it enforces a Model-View-Update architecture. But instead of pure
+reducers that must return immediately, AsyncPageMachine uses coroutines: each
+state machine is a sequential computation that can *suspend* mid-execution,
+surface updates to the view, and resume where it left off.
+
+An AsyncPageMachine runs one or more concurrent **spindles** — named coroutine
+fibers, each an independent state machine with its own event stream and its
+own yields to the LiveView. A single-spindle page is just a page machine with
+one spindle. A multi-spindle page runs a product browser *and* a checkout form,
+a chat panel *and* a document editor — each region its own computation, its
+own testable module. The LiveView routes events to the right spindle and
+forwards yields from each to the right UI region.
 
 ## Why extract page state machines
 
@@ -30,213 +46,276 @@ the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
 
 ## Pattern
 
-1. Write the page flow as an effectful computation using `Yield`
-2. Test it with `Coroutine` — deterministic, no processes
-3. Wrap it in a thin LiveView module via `AsyncPageMachine`
-4. Use `def_pipe_event` to forward LiveView events as Yield resume values
-5. LiveView sends user events; yields update the UI
+1. Write each page region as an effectful computation using `Yield`
+2. Test each in isolation with `Coroutine` — deterministic, no processes
+3. Wrap the page in a thin LiveView module via `AsyncPageMachine` with `/3` callbacks
+4. Use `def_pipe_event` to forward LiveView events to the correct spindle
+5. Computations fork sub-computations as needed; yields update the UI
 
-## Example: checkout flow
+## When to use concurrent spindles
 
-A checkout with two external effects and two user interaction steps.
-Inventory reservation and order placement are typed effectful calls;
-shipping collection and payment collection are user yields. Branching
-is plain `if`.
+A page with a product browser and a checkout form side by side. The product
+browser has its own lifecycle (search, filter, paginate, select product)
+independent of the checkout flow (collect shipping, collect payment, place
+order). Running them as separate spindles keeps each flow linear and testable
+in isolation.
 
-First, the boundary contracts and the pure state machine computation:
+## Example: product browser + checkout
+
+Two spindles running in the same page machine:
+
+| Spindle | Role | Event source |
+|---------|------|-------------|
+| `:products` | Forever loop: search products, select one to buy | `"search"`, `"filter"`, `"page"` events |
+| `:checkout` | Forked on buy: collect shipping, payment, place order | `"submit_shipping"`, `"submit_payment"` events |
+
+### Boundary contracts
 
 ```elixir
+defmodule MyApp.ProductCatalog do
+  use Skuld.Effects.Port.EffectfulFacade
+
+  defcallback search(filters :: map(), page :: integer()) ::
+              {:ok, [Product.t()], total :: integer()} | {:error, term()}
+end
+
 defmodule MyApp.Orders do
   use Skuld.Effects.Port.EffectfulFacade
 
-  defcallback place(cart :: Cart.t(), shipping :: map(), payment :: map()) ::
+  defcallback place(cart :: map(), shipping :: map(), payment :: map()) ::
               {:ok, Order.t()} | {:error, term()}
 end
 
 defmodule MyApp.Inventory do
   use Skuld.Effects.Port.EffectfulFacade
 
-  defcallback reserve(cart :: Cart.t()) :: {:ok, term()} | {:error, term()}
+  defcallback reserve(cart :: map()) :: {:ok, term()} | {:error, term()}
 end
+```
 
-defmodule MyApp.CheckoutFlow do
+### Spindle computations
+
+The product browser spindle runs forever — each search yields results, then
+loops for the next event. When the user clicks "buy," it forks a checkout
+spindle and continues its own loop:
+
+```elixir
+defmodule MyApp.ProductBrowserSpindle do
   use Skuld.Syntax
 
   alias Skuld.Effects.Yield
 
-  defcomp flow(cart) do
-    # Effect: reserve inventory (external API, can fail)
-    {:ok, _} <- MyApp.Inventory.reserve(cart)
-
-    # User interaction: collect shipping
-    {"submit_shipping", shipping} <- Yield.yield(:shipping)
-
-    # User interaction: collect payment
-    {"submit_payment", payment} <- Yield.yield(:payment)
-
-    # Effect: place order (external API, can fail)
-    {:ok, order} <- MyApp.Orders.place(cart, shipping, payment)
-    {:ok, order}
-  else
-    {:error, :sold_out} -> {:error, :sold_out}
-    {:error, reason} -> {:error, reason}
-    :cancelled -> {:error, :cancelled}
-  end
-end
-```
-
-The flow reads like regular sequential code — there's no explicit state
-enumeration, transition table, or event loop. This is possible
-because Skuld's coroutines are a natural fit for implementing state
-machines: each `Yield.yield` suspends at a well-defined point, and each
-resume value picks up where it left off. The computation *is* the state
-machine, and the program counter *is* the current state. ([Coroutines
-are a classic technique for implementing state
-machines.](https://en.wikipedia.org/wiki/Coroutine#Common_uses))
-
-The LiveView module — a thin shell. `handle_info` is generated by
-`use AsyncPageMachine`; `def_pipe_event` is auto-imported and generates
-`handle_event/3` clauses. The module only needs `mount`, `def_pipe_event`
-calls, and `render`:
-
-```elixir
-defmodule MyApp.CheckoutLive do
-  use MyAppWeb, :live_view
-  use Skuld.PageMachine.AsyncPageMachine,
-    tag: :checkout,
-    on_yield: &handle_yield/2,
-    on_complete: &handle_complete/2,
-    on_error: &handle_error/2,
-    on_cancel: &handle_cancel/2
-
-  @impl true
-  def mount(_params, _session, socket) do
-    flow =
-      MyApp.CheckoutFlow.flow(socket.assigns.cart)
-      |> Port.with_handler(%{
-        MyApp.Inventory => MyApp.Inventory.Service,
-        MyApp.Orders => MyApp.Orders.Ecto
-      })
-
-    {:ok, runner} = AsyncSyncPageMachine.run(flow, :checkout)
-    {:ok, assign(socket, runner: runner, step: :loading)}
+  defcomp run(initial_filters) do
+    search_loop(initial_filters, 1)
   end
 
-  defp handle_yield(step, socket) do
-    socket = clear_spinner(socket)
-    {:noreply, assign(socket, step: step)}
-  end
+  defcomp search_loop(filters, page) do
+    {:ok, products, total} <- MyApp.ProductCatalog.search(filters, page)
+    event <- Yield.yield(:browsing)
 
-  defp handle_complete({:ok, order}, socket) do
-    socket = clear_spinner(socket)
-    {:noreply, assign(socket, order: order, step: :done)}
-  end
+    case event do
+      {:buy, product} ->
+        _handle <- FiberPool.fiber(MyApp.CheckoutSpindle.run(product))
+        Yield.yield({:buy, product})
+        search_loop(filters, page)
 
-  defp handle_error(:sold_out, socket) do
-    socket = clear_spinner(socket)
-    {:noreply, put_flash(socket, :error, "Sorry, this item is no longer available")}
-  end
-
-  defp handle_error(reason, socket) do
-    socket = clear_spinner(socket)
-    {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
-  end
-
-  defp handle_cancel(reason, socket) do
-    socket = clear_spinner(socket)
-    {:noreply, push_navigate(socket, to: ~p"/cart")}
-  end
-
-  defp start_spinner(socket), do: assign(socket, :loading, true)
-  defp clear_spinner(socket), do: assign(socket, :loading, false)
-
-  def_pipe_event "submit_shipping", :runner, before: &start_spinner/1
-  def_pipe_event "submit_payment", :runner, before: &start_spinner/1
-
-  @impl true
-  def render(assigns) do
-    case assigns.step do
-      :loading -> ~H|<.spinner />|
-      :shipping -> ~H|<.shipping_form loading={@loading} myself={@myself} />|
-      :payment -> ~H|<.payment_form loading={@loading} myself={@myself} />|
-      :done -> ~H|<.order_summary order={@order} />|
+      new_filters ->
+        search_loop(new_filters, 1)
     end
   end
 end
 ```
 
-## Testing without LiveViewTest
-
-The state machine module has no LiveView dependency. Test it directly
-with `Coroutine` — deterministic, no processes, no stubs:
+The checkout spindle is forked dynamically when the user selects a product.
+It receives the product, reserves inventory, collects shipping and payment,
+and places the order:
 
 ```elixir
-defmodule MyApp.CheckoutFlowTest do
-  use ExUnit.Case, async: true
+defmodule MyApp.CheckoutSpindle do
+  use Skuld.Syntax
 
-  alias Skuld.Comp.Env
-  alias Skuld.Coroutine
-  alias Skuld.Effects.Port
-  alias Skuld.Effects.Throw
   alias Skuld.Effects.Yield
 
-  setup do
-    comp =
-      MyApp.CheckoutFlow.flow(%Cart{items: [...]})
-      |> Port.with_handler(%{
-        MyApp.Inventory => fn _, :reserve, [_] -> {:ok, :reserved} end,
-        MyApp.Orders => fn _, :place, _, _ -> {:ok, %Order{}} end
-      })
-      |> Yield.with_handler()
-      |> Throw.with_handler()
-
-    {:ok, comp: comp}
-  end
-
-  test "normal checkout flow", %{comp: comp} do
-    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    assert %Coroutine.ExternalSuspended{value: :shipping} = fiber
-
-    fiber = Coroutine.run(fiber, {"submit_shipping", %{address: "123 Main"}})
-    assert %Coroutine.ExternalSuspended{value: :payment} = fiber
-
-    fiber = Coroutine.run(fiber, {"submit_payment", %{card: "4242"}})
-    assert %Coroutine.Completed{result: {:ok, %Order{}}} = fiber
-  end
-
-  test "inventory sold out returns error", %{comp: comp} do
-    comp =
-      MyApp.CheckoutFlow.flow(%Cart{items: [...]})
-      |> Port.with_handler(%{
-        MyApp.Inventory => fn _, :reserve, [_] -> {:error, :sold_out} end
-      })
-      |> Yield.with_handler()
-      |> Throw.with_handler()
-
-    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    # Inventory call fails immediately — never reaches shipping
-    assert %Coroutine.Completed{result: {:error, :sold_out}} = fiber
-  end
-
-  test "cancellation at any step propagates", %{comp: comp} do
-    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    assert %Coroutine.ExternalSuspended{value: :shipping} = fiber
-
-    # Cancel instead of submitting
-    %Coroutine.Cancelled{} = Coroutine.cancel(fiber, :cancelled)
+  defcomp run(product) do
+    {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
+    {"submit_shipping", shipping} <- Yield.yield(:shipping)
+    {"submit_payment", payment} <- Yield.yield(:payment)
+    {:ok, order} <- MyApp.Orders.place(%{product: product}, shipping, payment)
+    {:ok, order}
+  else
+    {:error, :sold_out} -> {:error, :sold_out}
+    {:error, reason} -> {:error, reason}
   end
 end
 ```
 
-These tests run in microseconds. There's no need for a LiveView process,
-— just pure state transitions.
+Each computation reads like regular sequential code — there's no explicit
+state enumeration, transition table, or event loop. This is possible
+because Skuld's coroutines are a natural fit for implementing state
+machines: each `Yield.yield` suspends at a well-defined point, and each
+resume value picks up where it left off. The computation *is* the state
+machine, and the program counter *is* the current state.
+([Coroutines are a classic technique for implementing state
+machines.](https://en.wikipedia.org/wiki/Coroutine#Common_uses))
+
+### LiveView module
+
+The product browser is the primary spindle — started at mount. The checkout
+spindle is forked on demand. The `/3` callbacks route each yield to the
+right UI region:
+
+```elixir
+defmodule MyApp.StoreLive do
+  use MyAppWeb, :live_view
+  use Skuld.PageMachine.AsyncPageMachine,
+    tag: :products,
+    on_yield: &handle_yield/3,
+    on_complete: &handle_complete/3,
+    on_error: &handle_error/3
+
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok, runner} =
+      AsyncPageMachine.run(
+        MyApp.ProductBrowserSpindle.run(%{}),
+        :products
+      )
+
+    {:ok,
+     assign(socket,
+       runner: runner,
+       products: [],
+       total: 0,
+       page: 1
+     )}
+  end
+
+  # Multi-spindle callbacks — dispatch by spindle key
+  defp handle_yield(:products, {:results, products, total, page}, socket) do
+    {:noreply, assign(socket, products: products, total: total, page: page)}
+  end
+
+  defp handle_yield(:products, {:buy, product}, socket) do
+    {:noreply, assign(socket, step: :shipping)}
+  end
+
+  defp handle_yield(:checkout, step, socket) do
+    socket = clear_spinner(socket)
+    {:noreply, assign(socket, step: step)}
+  end
+
+  defp handle_complete(:checkout, {:ok, order}, socket) do
+    socket = clear_spinner(socket)
+    {:noreply, assign(socket, order: order, step: :done)}
+  end
+
+  defp handle_complete(:products, {:error, reason}, socket) do
+    {:noreply, put_flash(socket, :error, "Product search failed: #{inspect(reason)}")}
+  end
+
+  defp handle_error(:checkout, :sold_out, socket) do
+    socket = clear_spinner(socket)
+    {:noreply, put_flash(socket, :error, "Sorry, this item is no longer available")}
+  end
+
+  defp handle_error(:checkout, reason, socket) do
+    socket = clear_spinner(socket)
+    {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
+  end
+
+  defp start_spinner(socket), do: assign(socket, :loading, true)
+  defp clear_spinner(socket), do: assign(socket, :loading, false)
+
+  # Product browser events — default to :products (the PMC tag)
+  def_pipe_event "search", :runner, before: &start_spinner/1
+  def_pipe_event "filter", :runner, before: &start_spinner/1
+  def_pipe_event "page", :runner, before: &start_spinner/1
+  def_pipe_event "buy", :runner
+
+  # Checkout events — routed to :checkout spindle
+  def_pipe_event "submit_shipping", :runner, into: :checkout, before: &start_spinner/1
+  def_pipe_event "submit_payment", :runner, into: :checkout, before: &start_spinner/1
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <div class="store-layout">
+      <div class="product-browser">
+        <.search_form myself={@myself} loading={@loading} />
+        <.product_list products={@products} page={@page} total={@total} myself={@myself} />
+      </div>
+      <div class="checkout-panel">
+        <%= case assigns[:step] do %>
+          <% :shipping -> %>
+            <.shipping_form loading={@loading} myself={@myself} />
+          <% :payment -> %>
+            <.payment_form loading={@loading} myself={@myself} />
+          <% :done -> %>
+            <.order_summary order={@order} />
+          <% _ -> %>
+            <p>Select a product to start checkout</p>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+end
+```
+
+## Testing in isolation
+
+Each spindle is tested independently with `Coroutine` — deterministic, no
+processes, no stubs:
+
+```elixir
+defmodule MyApp.ProductBrowserSpindleTest do
+  use ExUnit.Case, async: true
+
+  alias Skuld.Comp.Env
+  alias Skuld.Coroutine
+  alias Skuld.Effects.Yield
+
+  setup do
+    comp =
+      MyApp.ProductBrowserSpindle.run(%{category: "electronics"})
+      |> Port.with_handler(%{
+        MyApp.ProductCatalog => fn _, :search, [%{category: "electronics"}, 1] ->
+          {:ok, [%Product{name: "Phone"}], 1}
+        end
+      })
+      |> Yield.with_handler()
+
+    {:ok, comp: comp}
+  end
+
+  test "first search yields browsing state", %{comp: comp} do
+    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+    assert %Coroutine.ExternalSuspended{value: :browsing} = fiber
+  end
+
+  test "buy event triggers checkout fork and yields product", %{comp: comp} do
+    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+    fiber = Coroutine.run(fiber, {:buy, %Product{name: "Phone"}})
+    assert %Coroutine.ExternalSuspended{value: {:buy, %Product{name: "Phone"}}} = fiber
+  end
+
+  test "filter change triggers new search", %{comp: comp} do
+    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+    fiber = Coroutine.run(fiber, %{category: "books"})
+    assert %Coroutine.ExternalSuspended{value: :browsing} = fiber
+  end
+end
+```
+
+These tests run in microseconds. There's no need for a LiveView process —
+just pure state transitions.
 
 ## Why this works
 
-The state machine knows nothing about LiveView. It doesn't import
+Each spindle knows nothing about LiveView. It doesn't import
 `Phoenix.LiveView`. It doesn't touch sockets, assigns, or DOM. It's a
 pure function: `(state, event) -> new_state`. `Yield` marks the points
-where the machine pauses for external input; `if` branches the flow.
+where the machine pauses for external input; `if` and `case` branch the flow.
 
 This means:
 
@@ -263,23 +342,52 @@ In Elm and Redux, the reducer is a pure `(state, event) -> state` function —
 it must return the new state immediately. PageMachine lifts this constraint
 with coroutines: the update function can *suspend* mid-execution, surface state
 to the view via `Yield.yield`, and resume where it left off when the next
-event arrives. This is what lets the computation read top-to-bottom as a
-narrative — reserve inventory, collect shipping, collect payment, place order —
-without manually threading state through each step.
+event arrives.
+
+With spindles, multiple update functions run concurrently — each spindle is
+an independent coroutine that yields independently. A product search doesn't
+block checkout form submission. The UI regions update independently because
+each yield carries the spindle key.
 
 In re-frame terms, `Yield.yield(tag)` is analogous to returning a `:db`
 effect: it updates the store (assigns), making new state visible to the
-view's data subscriptions. The difference is that a re-frame handler returns
-effects and exits, while a coroutine yields effects and waits for the next
-event.
+view's data subscriptions. The `/3` callback signature maps naturally to
+re-frame's event handler receiving the event name as the first argument.
 
 In standard LiveView, business logic, effect calls, and socket manipulation
 mingle in `handle_event` / `handle_info` callbacks — the equivalent of putting
 reducer logic, API calls, and DOM updates in a single function. PageMachine
 separates them: the computation is the update function, the LiveView is the
-view bridge. Effects are inline (`MyApp.Inventory.reserve(cart)` is a typed
-function call, not a dispatched action intercepted by middleware), keeping
-the types visible and the flow linear.
+view bridge. Effects are inline (`MyApp.ProductCatalog.search(filters, page)`
+is a typed function call, not a dispatched action intercepted by middleware),
+keeping the types visible and the flow linear.
+
+## How the spindles collaborate
+
+Each spindle is an independent coroutine. The product spindle loops: search,
+yield results, wait for events (filters or buy). The checkout spindle runs
+once per purchase: collect inputs, place order, exit. Both run concurrently
+in the same FiberPool.Server process — cooperatively scheduled, no locking.
+
+When the user clicks "buy," the product spindle receives the event via
+`Yield.yield`, forks a checkout spindle with `FiberPool.fiber`, yields a
+UI update, and continues its search loop. The checkout spindle runs its
+linear flow independently. If the user searches for more products
+while the checkout form is still open, those events go to the product
+spindle — the checkout spindle is unaffected.
+
+## Dynamic forking
+
+Spindles can fork other spindles from within their own computation using
+`FiberPool.fiber/1`. The product spindle forks a checkout spindle when the
+user clicks "buy" — the new spindle starts its linear flow while the
+product spindle continues its search loop. Both run cooperatively in the
+same server process.
+
+This pattern keeps the LiveView layer simple: events pipe in via
+`def_pipe_event`, computations spawn sub-computations as needed, and yields
+bubble up to the UI. No back-and-forth between the LiveView and the server
+for orchestration. The computation owns its lifecycle.
 
 ## Cancellation and cleanup
 
@@ -294,103 +402,30 @@ def mount(_params, _session, socket) do
 end
 ```
 
-## With EffectLogger
-
-Persist flow state for resumption after disconnects:
-
-```elixir
-flow = MyApp.CheckoutFlow.flow(cart)
-|> EffectLogger.with_logging()
-|> Reader.with_handler(%{})
-
-{:ok, runner} = AsyncSyncPageMachine.run(flow, :checkout)
-# On yield: ExternalSuspend.data carries decorations from scoped
-# effects — EffectLogger attaches its log, State can attach current
-# value via :suspend, etc.
-# On reconnect: cold-resume from serialised log
-```
+Cancellation cascades to all spindles — `AsyncPageMachine.cancel/1` exits
+the FiberPool.Server process, which cancels all registered fibers.
 
 ## Operation reference
 
-| Operation                        | Purpose                       |
-|----------------------------------|-------------------------------|
-| `AsyncSyncPageMachine.run/2`         | Start flow (async)            |
-| `AsyncSyncPageMachine.run/3`         | Resume with user input        |
-| `AsyncPageMachine.def_pipe_event/2,4`| Generate `handle_event/3`     |
-| `AsyncPageMachine.cancel/1`      | Cancel flow                   |
+| Operation                              | Purpose                          |
+|----------------------------------------|----------------------------------|
+| `AsyncPageMachine.run/2`               | Start page machine               |
+| `AsyncPageMachine.resume/3`            | Resume a spindle with a value    |
+| `AsyncPageMachine.def_pipe_event/2,4`  | Generate `handle_event/3`        |
+| `AsyncPageMachine.cancel/1`            | Cancel page machine and spindles |
+| `FiberPool.fiber/1`                    | Fork a spindle from a computation|
 
-## Comparison: traditional FSM approach
+## Comparison to a monolithic LiveView
 
-For contrast, here's the same checkout flow using [Crank](https://github.com/code-of-kai/crank),
-a Moore-style pure state machine library. Effects are declared via `wants:`
-and executed by an external loop; failures are explicit state transitions.
+Without spindles, the product browser and checkout form would share a single
+`handle_event`. Filter changes, pagination, shipping collection, and payment
+collection would all live in the same callback function, tangled with
+socket-assign manipulation. Adding a third region (say, a recommendations
+carousel) would require more conditional logic in the same flat handler.
 
-```elixir
-defmodule MyApp.CheckoutCrank do
-  @states ~w(idle reserving shipping payment placing done failed)a
-  use Crank, states: @states
-
-  # idle → reserving: declare the effect, advance the state
-  def turn({:start, cart}, :idle, _memory) do
-    {:next, :reserving, %{cart: cart},
-     wants: {:reserve_inventory, cart}}
-  end
-
-  # Effect result arrives as an event — match both outcomes
-  def turn({:reserve_inventory, {:ok, _}}, :reserving, memory) do
-    {:next, :shipping, memory}
-  end
-
-  def turn({:reserve_inventory, {:error, :sold_out}}, :reserving, memory) do
-    {:next, :failed, memory, reading: :sold_out}
-  end
-
-  # User interactions — external events (the caller feeds them in)
-  def turn({:submit_shipping, address}, :shipping, memory) do
-    {:next, :payment, Map.put(memory, :shipping, address)}
-  end
-
-  def turn({:submit_payment, method}, :payment, memory) do
-    {:next, :placing, Map.put(memory, :payment, method),
-     wants: {:place_order, memory.cart, memory.shipping, method}}
-  end
-
-  # Order placement — another effect with success/failure
-  def turn({:place_order, {:ok, order}}, :placing, memory) do
-    {:next, :done, %{memory | order: order},
-     reading: {:ok, order}}
-  end
-
-  def turn({:place_order, {:error, reason}}, :placing, memory) do
-    {:next, :failed, memory,
-     reading: {:error, reason}}
-  end
-end
-```
-
-The key differences from AsyncPageMachine:
-
-- **States are explicit atoms** — `idle`, `reserving`, `shipping`, etc.
-  Each transition declares its source state. A typo in a state name is
-  caught at compile time (`using unknown state`).
-- **Effects are external** — `wants: {:reserve_inventory, cart}` is a
-  declaration, not an execution. The caller must run an effect loop:
-  check `wants`, execute the effect, feed the result back as an event.
-  AsyncPageMachine inlines effects as `<-` binds.
-- **Failures are states** — `{:error, :sold_out}` goes to `:failed`.
-  Each new failure mode requires a new state or at least a new
-  transition clause carrying context via `reading:`. AsyncPageMachine uses
-  the `else` clause — all failures flow through the same path.
-- **User interactions are events** — the LiveView calls `Crank.turn`
-  with `{:submit_shipping, address}`. No difference in mechanism from
-  effect results — both are events fed into the machine.
-
-**Which approach is better?** Crank gives you compile-time state validation
-and a visibly enumerated state space — ideal when you want a formal state
-diagram. AsyncPageMachine gives you linear flow with inline effects and a
-single error path — ideal when the flow is complex and branching is
-natural. Both test fast without processes. Pick the one that reads most
-naturally for the problem at hand.
+With spindles, each region is a self-contained computation. Adding a
+recommendations carousel is a new spindle and a `/3` callback clause. The
+existing spindles don't change.
 
 <!-- nav:footer:start -->
 
