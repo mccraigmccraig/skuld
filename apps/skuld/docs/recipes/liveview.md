@@ -85,8 +85,8 @@ defmodule MyApp.CheckoutFlow do
 end
 ```
 
-The flow reads like regular sequential code — no explicit state
-enumeration, no transition table, no event loop. This is possible
+The flow reads like regular sequential code — there's no explicit state
+enumeration, transition table, or event loop. This is possible
 because Skuld's coroutines are a natural fit for implementing state
 machines: each `Yield.yield` suspends at a well-defined point, and each
 resume value picks up where it left off. The computation *is* the state
