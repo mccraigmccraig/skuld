@@ -102,7 +102,7 @@ calls, and `render`:
 ```elixir
 defmodule MyApp.CheckoutLive do
   use MyAppWeb, :live_view
-  use Skuld.AsyncCoroutine.AsyncPageMachine,
+  use Skuld.PageMachine.AsyncPageMachine,
     tag: :checkout,
     on_yield: &handle_yield/2,
     on_complete: &handle_complete/2,
@@ -118,7 +118,7 @@ defmodule MyApp.CheckoutLive do
         MyApp.Orders => MyApp.Orders.Ecto
       })
 
-    {:ok, runner} = AsyncPageMachine.run(flow, :checkout)
+    {:ok, runner} = AsyncSyncPageMachine.run(flow, :checkout)
     {:ok, assign(socket, runner: runner, step: :loading)}
   end
 
@@ -307,7 +307,7 @@ flow = MyApp.CheckoutFlow.flow(cart)
 |> EffectLogger.with_logging()
 |> Reader.with_handler(%{})
 
-{:ok, runner} = AsyncPageMachine.run(flow, :checkout)
+{:ok, runner} = AsyncSyncPageMachine.run(flow, :checkout)
 # On yield: ExternalSuspend.data carries decorations from scoped
 # effects — EffectLogger attaches its log, State can attach current
 # value via :suspend, etc.
@@ -318,8 +318,8 @@ flow = MyApp.CheckoutFlow.flow(cart)
 
 | Operation                        | Purpose                       |
 |----------------------------------|-------------------------------|
-| `AsyncPageMachine.run/2`         | Start flow (async)            |
-| `AsyncPageMachine.run/3`         | Resume with user input        |
+| `AsyncSyncPageMachine.run/2`         | Start flow (async)            |
+| `AsyncSyncPageMachine.run/3`         | Resume with user input        |
 | `AsyncPageMachine.def_pipe_event/2,4`| Generate `handle_event/3`     |
 | `AsyncPageMachine.cancel/1`      | Cancel flow                   |
 
@@ -396,9 +396,9 @@ single error path — ideal when the flow is complex and branching is
 natural. Both test fast without processes. Pick the one that reads most
 naturally for the problem at hand.
 
-## Sync LiveView with Coroutine.PageMachine
+## Sync LiveView with Coroutine.SyncPageMachine
 
-For flows where effects are fast (or absent), `Coroutine.PageMachine`
+For flows where effects are fast (or absent), `Coroutine.SyncPageMachine`
 runs in-process with no separate BEAM process. The callback functions
 are identical to the `AsyncPageMachine` example above — the only
 difference is how the page machine is started:
@@ -406,7 +406,7 @@ difference is how the page machine is started:
 ```elixir
 defmodule MyApp.CheckoutLive do
   use MyAppWeb, :live_view
-  use Skuld.Coroutine.PageMachine
+  use Skuld.PageMachine.SyncPageMachine
 
   @impl true
   def mount(_params, _session, socket) do
@@ -419,7 +419,7 @@ defmodule MyApp.CheckoutLive do
       |> Yield.with_handler()
       |> Throw.with_handler()
 
-    PageMachine.run(comp, socket, :checkout,
+    SyncPageMachine.run(comp, socket, :checkout,
       on_yield: &handle_yield/2,
       on_complete: &handle_complete/2,
       on_error: &handle_error/2,

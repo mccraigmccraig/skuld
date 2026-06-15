@@ -1,8 +1,8 @@
-defmodule Skuld.AsyncCoroutine.AsyncPageMachineTest do
+defmodule Skuld.PageMachine.AsyncPageMachineTest do
   use ExUnit.Case, async: true
 
   alias Skuld.AsyncCoroutine
-  alias Skuld.AsyncCoroutine.AsyncPageMachine
+  alias Skuld.PageMachine.AsyncPageMachine
   alias Skuld.Comp.Cancelled
   alias Skuld.Comp.ExternalSuspend
   alias Skuld.Comp.Throw

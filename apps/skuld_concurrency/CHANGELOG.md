@@ -24,10 +24,10 @@ All notable changes to `skuld_concurrency` will be documented in this file.
 
 ### Added
 
-- `Coroutine.PageMachine.def_pipe_event/2` and `def_pipe_event/4` macros
+- `PageMachine.SyncPageMachine.def_pipe_event/2` and `def_pipe_event/4` macros
   generate `handle_event/3` clauses that pipe Phoenix events into the
   PageMachine as Yield resume values. Auto-imported via `use PageMachine`.
-- `AsyncCoroutine.AsyncPageMachine.def_pipe_event/2` and `def_pipe_event/4`
+- `PageMachine.AsyncPageMachine.def_pipe_event/2` and `def_pipe_event/4`
   macros provide the same `handle_event/3` generation for async page machines,
   with an identical signature. Auto-imported via `use AsyncPageMachine`.
 
@@ -35,9 +35,9 @@ All notable changes to `skuld_concurrency` will be documented in this file.
 
 ### Changed
 
-- `Coroutine.PageMachine.run/4` takes an explicit assign key as a required
+- `PageMachine.SyncPageMachine.run/4` takes an explicit assign key as a required
   positional parameter instead of storing in an implicit `:pm` key.
-- `Coroutine.PageMachine.cancel/2` now accepts a socket parameter (matching
+- `PageMachine.SyncPageMachine.cancel/2` now accepts a socket parameter (matching
   `run/3`).
 - Page machine struct is now stored in assigns on every dispatch outcome,
   not just yield.
@@ -47,19 +47,19 @@ All notable changes to `skuld_concurrency` will be documented in this file.
 
 ### Added
 
-- `Skuld.Coroutine.PageMachine` — synchronous callback-based page-machine
+- `Skuld.PageMachine.SyncPageMachine` — synchronous callback-based page-machine
   for LiveView integration. Callbacks are provided once at mount, subsequent
   resumes are one-liners. Run in-process with no separate BEAM process.
 - `AsyncPageMachine.run/2` and `AsyncPageMachine.run_sync/2` now take
   `tag` as a required positional argument instead of a keyword option.
-- `Skuld.AsyncCoroutine.AsyncPageMachine` renamed from `PageMachine`.
+- `Skuld.PageMachine.AsyncPageMachine` renamed from `PageMachine`.
 
 
 ## [0.35.0] — 2026-06-13
 
 ### Added
 
-- `Skuld.Coroutine.PageMachine` — synchronous in-process page-machine
+- `Skuld.PageMachine.SyncPageMachine` — synchronous in-process page-machine
   wrapping `Skuld.Coroutine`. Returns raw sum types from `run/1-2` and
   `cancel/1-2`, with a `dispatch/1` helper for converting to tagged tuples
   (`{:yield, :complete, :error, :cancel}`). The in-process counterpart to
@@ -70,7 +70,7 @@ All notable changes to `skuld_concurrency` will be documented in this file.
 
 ### Added
 
-- `Skuld.AsyncCoroutine.AsyncPageMachine` — `use` macro that generates `handle_info/2`
+- `Skuld.PageMachine.AsyncPageMachine` — `use` macro that generates `handle_info/2`
     clauses from callback options, eliminating LiveView boilerplate. Includes
     `run/2-3` and `cancel/1` delegation. Full test suite covering all callback
     combinations and edge cases.

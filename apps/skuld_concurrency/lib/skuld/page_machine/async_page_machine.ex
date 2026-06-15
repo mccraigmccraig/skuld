@@ -1,4 +1,4 @@
-defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
+defmodule Skuld.PageMachine.AsyncPageMachine do
   @moduledoc """
   Generates `handle_info/2` clauses that dispatch AsyncCoroutine messages
   into callback functions, eliminating LiveView boilerplate.
@@ -8,7 +8,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
 
   ## Usage
 
-      use Skuld.AsyncCoroutine.AsyncPageMachine,
+      use Skuld.PageMachine.AsyncPageMachine,
         tag: :checkout,
         on_yield: &handle_yield/2,
         on_complete: &handle_complete/2
@@ -109,7 +109,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
       def handle_event(unquote(event), params, socket) do
         unquote(build_before(pipe_before))
 
-        Skuld.AsyncCoroutine.AsyncPageMachine.run(
+        Skuld.PageMachine.AsyncPageMachine.run(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           {unquote(event), params}
         )
@@ -124,7 +124,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
       def handle_event(unquote(event), params, socket) do
         unquote(build_before(before))
 
-        Skuld.AsyncCoroutine.AsyncPageMachine.run(
+        Skuld.PageMachine.AsyncPageMachine.run(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           {unquote(event), params}
         )
@@ -147,7 +147,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
 
         value = unquote(block)
 
-        Skuld.AsyncCoroutine.AsyncPageMachine.run(
+        Skuld.PageMachine.AsyncPageMachine.run(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           value
         )
@@ -164,7 +164,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
 
         value = unquote(block)
 
-        Skuld.AsyncCoroutine.AsyncPageMachine.run(
+        Skuld.PageMachine.AsyncPageMachine.run(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           value
         )
@@ -221,7 +221,7 @@ defmodule Skuld.AsyncCoroutine.AsyncPageMachine do
       |> Enum.filter(& &1)
 
     quote do
-      import Skuld.AsyncCoroutine.AsyncPageMachine,
+      import Skuld.PageMachine.AsyncPageMachine,
         only: [def_pipe_event: 2, def_pipe_event: 3, def_pipe_event: 4]
 
       (unquote_splicing(clauses))

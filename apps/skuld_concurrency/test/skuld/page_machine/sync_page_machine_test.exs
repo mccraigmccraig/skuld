@@ -1,7 +1,7 @@
-defmodule Skuld.Coroutine.PageMachineTest do
+defmodule Skuld.PageMachine.SyncPageMachineTest do
   use ExUnit.Case, async: false
 
-  alias Skuld.Coroutine.PageMachine
+  alias Skuld.PageMachine.SyncPageMachine
   alias Skuld.Effects.Throw
   alias Skuld.Effects.Yield
 
@@ -39,7 +39,7 @@ defmodule Skuld.Coroutine.PageMachineTest do
   describe "run/3" do
     test "yields through on_yield" do
       result =
-        PageMachine.run(comp(), fake_socket(), :test,
+        SyncPageMachine.run(comp(), fake_socket(), :test,
           on_yield: fn value, socket ->
             assert value in [:first, :second]
             {:noreply, socket}
@@ -47,12 +47,12 @@ defmodule Skuld.Coroutine.PageMachineTest do
           on_complete: fn _, s -> {:noreply, s} end
         )
 
-      assert {:noreply, %{assigns: %{test: %PageMachine{}}}} = result
+      assert {:noreply, %{assigns: %{test: %SyncPageMachine{}}}} = result
     end
 
     test "completes through on_complete" do
       result =
-        PageMachine.run(ImmediateFlow.flow(), fake_socket(), :test,
+        SyncPageMachine.run(ImmediateFlow.flow(), fake_socket(), :test,
           on_yield: fn _, s -> {:noreply, s} end,
           on_complete: fn result, socket ->
             assert result == 42
@@ -67,7 +67,7 @@ defmodule Skuld.Coroutine.PageMachineTest do
       comp = BrokenFlow.flow(:hello) |> Yield.with_handler() |> Throw.with_handler()
 
       {:noreply, socket} =
-        PageMachine.run(comp, fake_socket(), :test,
+        SyncPageMachine.run(comp, fake_socket(), :test,
           on_yield: fn _, s -> {:noreply, s} end,
           on_error: fn error, socket ->
             assert error == :boom
@@ -75,12 +75,12 @@ defmodule Skuld.Coroutine.PageMachineTest do
           end
         )
 
-      {:noreply, _} = PageMachine.run(socket.assigns.test, :go, socket)
+      {:noreply, _} = SyncPageMachine.run(socket.assigns.test, :go, socket)
     end
 
     test "missing on_yield raises" do
       assert_raise KeyError, fn ->
-        PageMachine.run(comp(), fake_socket(), :test, on_error: fn _, s -> {:noreply, s} end)
+        SyncPageMachine.run(comp(), fake_socket(), :test, on_error: fn _, s -> {:noreply, s} end)
       end
     end
   end
@@ -88,7 +88,7 @@ defmodule Skuld.Coroutine.PageMachineTest do
   describe "run/3 resume" do
     test "resumes through full flow" do
       {:noreply, socket} =
-        PageMachine.run(comp(), fake_socket(), :test,
+        SyncPageMachine.run(comp(), fake_socket(), :test,
           on_yield: fn _, s -> {:noreply, s} end,
           on_complete: fn result, socket ->
             assert {:ok, {:hello, 10, 20}} == result
@@ -96,15 +96,15 @@ defmodule Skuld.Coroutine.PageMachineTest do
           end
         )
 
-      {:noreply, socket} = PageMachine.run(socket.assigns.test, 10, socket)
-      {:noreply, _} = PageMachine.run(socket.assigns.test, 20, socket)
+      {:noreply, socket} = SyncPageMachine.run(socket.assigns.test, 10, socket)
+      {:noreply, _} = SyncPageMachine.run(socket.assigns.test, 20, socket)
     end
   end
 
   describe "cancel/1" do
     test "dispatches through on_cancel" do
       {:noreply, socket} =
-        PageMachine.run(comp(), fake_socket(), :test,
+        SyncPageMachine.run(comp(), fake_socket(), :test,
           on_yield: fn _, s -> {:noreply, s} end,
           on_cancel: fn reason, socket ->
             assert reason == :cancelled
@@ -112,20 +112,20 @@ defmodule Skuld.Coroutine.PageMachineTest do
           end
         )
 
-      {:noreply, _} = PageMachine.cancel(socket.assigns.test, socket)
+      {:noreply, _} = SyncPageMachine.cancel(socket.assigns.test, socket)
     end
 
     test "no on_cancel is graceful" do
       {:noreply, socket} =
-        PageMachine.run(comp(), fake_socket(), :test, on_yield: fn _, s -> {:noreply, s} end)
+        SyncPageMachine.run(comp(), fake_socket(), :test, on_yield: fn _, s -> {:noreply, s} end)
 
-      assert {:noreply, _} = PageMachine.cancel(socket.assigns.test, socket)
+      assert {:noreply, _} = SyncPageMachine.cancel(socket.assigns.test, socket)
     end
   end
 
   describe "def_pipe_event/2" do
     defmodule PipeEventTest do
-      import Skuld.Coroutine.PageMachine, only: [def_pipe_event: 2]
+      import Skuld.PageMachine.SyncPageMachine, only: [def_pipe_event: 2]
       def_pipe_event("test_event", :runner)
     end
 
@@ -133,15 +133,15 @@ defmodule Skuld.Coroutine.PageMachineTest do
       assert function_exported?(PipeEventTest, :handle_event, 3)
     end
 
-    test "generated handle_event wraps params in {event, params} and calls PageMachine.run" do
+    test "generated handle_event wraps params in {event, params} and calls SyncPageMachine.run" do
       {:noreply, socket} =
-        PageMachine.run(comp(), fake_socket(), :runner,
+        SyncPageMachine.run(comp(), fake_socket(), :runner,
           on_yield: fn _, s -> {:noreply, s} end,
           on_complete: fn _, s -> {:noreply, s} end
         )
 
       {:noreply, socket} = PipeEventTest.handle_event("test_event", 42, socket)
-      assert %PageMachine{} = socket.assigns.runner
+      assert %SyncPageMachine{} = socket.assigns.runner
     end
 
     test "generated handle_event raises KeyError when assign_key is missing" do
@@ -153,16 +153,16 @@ defmodule Skuld.Coroutine.PageMachineTest do
 
   describe "def_pipe_event/2 with :before" do
     defmodule PipeEventBeforeTest do
-      import Skuld.Coroutine.PageMachine, only: [def_pipe_event: 3]
+      import Skuld.PageMachine.SyncPageMachine, only: [def_pipe_event: 3]
 
       def_pipe_event("test_event", :runner, before: &__MODULE__.spinner/1)
 
       def spinner(socket), do: put_in(socket.assigns[:loading], true)
     end
 
-    test "calls :before callback before piping to PageMachine" do
+    test "calls :before callback before piping to SyncPageMachine" do
       {:noreply, socket} =
-        PageMachine.run(comp(), fake_socket(), :runner,
+        SyncPageMachine.run(comp(), fake_socket(), :runner,
           on_yield: fn _, s -> {:noreply, s} end,
           on_complete: fn _, s -> {:noreply, s} end
         )
@@ -174,7 +174,7 @@ defmodule Skuld.Coroutine.PageMachineTest do
 
   describe "def_pipe_event/2 with pattern+block" do
     defmodule PipeEventPatternTest do
-      import Skuld.Coroutine.PageMachine, only: [def_pipe_event: 4]
+      import Skuld.PageMachine.SyncPageMachine, only: [def_pipe_event: 4]
 
       def_pipe_event "submit", :runner, %{"value" => v} do
         {:ok, v}
@@ -183,7 +183,7 @@ defmodule Skuld.Coroutine.PageMachineTest do
 
     test "generates handle_event/3 that pattern-matches params and transforms via block" do
       {:noreply, socket} =
-        PageMachine.run(comp(), fake_socket(), :runner,
+        SyncPageMachine.run(comp(), fake_socket(), :runner,
           on_yield: fn _, s -> {:noreply, s} end,
           on_complete: fn _, s -> {:noreply, s} end
         )

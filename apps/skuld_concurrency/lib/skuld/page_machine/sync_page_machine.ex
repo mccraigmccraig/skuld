@@ -1,4 +1,4 @@
-defmodule Skuld.Coroutine.PageMachine do
+defmodule Skuld.PageMachine.SyncPageMachine do
   @moduledoc """
   Synchronous page-machine for LiveView integration.
 
@@ -8,10 +8,10 @@ defmodule Skuld.Coroutine.PageMachine do
 
   ## Example
 
-      alias Skuld.Coroutine.PageMachine
+      alias Skuld.PageMachine.SyncPageMachine
 
       # mount — one-time setup
-      PageMachine.run(MyApp.CheckoutFlow.flow(cart), socket, :checkout,
+      SyncPageMachine.run(MyApp.CheckoutFlow.flow(cart), socket, :checkout,
         on_yield: fn step, socket -> {:noreply, assign(socket, step: step)} end,
         on_complete: fn {:ok, order}, socket -> {:noreply, assign(socket, order: order, step: :done)} end,
         on_error: fn reason, socket -> {:noreply, put_flash(socket, :error, inspect(reason))} end,
@@ -20,9 +20,9 @@ defmodule Skuld.Coroutine.PageMachine do
 
       # handle_event — one-liner
       def handle_event("submit", %{"value" => v}, socket),
-        do: PageMachine.run(socket.assigns.checkout, {:ok, v}, socket)
+        do: SyncPageMachine.run(socket.assigns.checkout, {:ok, v}, socket)
 
-  For cross-process use, see `Skuld.AsyncCoroutine.AsyncPageMachine`.
+  For cross-process use, see `Skuld.PageMachine.AsyncPageMachine`.
   """
 
   alias Skuld.Comp.Env
@@ -87,7 +87,7 @@ defmodule Skuld.Coroutine.PageMachine do
   """
   defmacro __using__(_opts) do
     quote do
-      import Skuld.Coroutine.PageMachine,
+      import Skuld.PageMachine.SyncPageMachine,
         only: [def_pipe_event: 2, def_pipe_event: 3, def_pipe_event: 4]
     end
   end
@@ -134,7 +134,7 @@ defmodule Skuld.Coroutine.PageMachine do
       def handle_event(unquote(event), params, socket) do
         unquote(build_before(pipe_before))
 
-        Skuld.Coroutine.PageMachine.run(
+        Skuld.PageMachine.SyncPageMachine.run(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           {unquote(event), params},
           socket
@@ -148,7 +148,7 @@ defmodule Skuld.Coroutine.PageMachine do
       def handle_event(unquote(event), params, socket) do
         unquote(build_before(before))
 
-        Skuld.Coroutine.PageMachine.run(
+        Skuld.PageMachine.SyncPageMachine.run(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           {unquote(event), params},
           socket
@@ -169,7 +169,7 @@ defmodule Skuld.Coroutine.PageMachine do
         unquote(build_before(pipe_before))
         value = unquote(block)
 
-        Skuld.Coroutine.PageMachine.run(
+        Skuld.PageMachine.SyncPageMachine.run(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           value,
           socket
@@ -184,7 +184,7 @@ defmodule Skuld.Coroutine.PageMachine do
         unquote(build_before(before))
         value = unquote(block)
 
-        Skuld.Coroutine.PageMachine.run(
+        Skuld.PageMachine.SyncPageMachine.run(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           value,
           socket
