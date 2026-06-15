@@ -255,23 +255,27 @@ This means:
 This architecture is Elixir's answer to the Model-View-Update pattern that
 Elm enforces and Redux patterns towards:
 
-| Concept     | Elm/Redux/re-frame        | PageMachine                   |
-|-------------|---------------------------|-------------------------------|
-| Model       | Store / app-db            | Scoped effects + fiber        |
-| Update      | Reducer / event handler   | Computation (`defcomp`)       |
-| View        | Pure render               | `render(assigns)`             |
-| Event       | Action / dispatch         | `handle_event` / `def_pipe_event` |
-| State update| `:db` effect              | `Yield.yield(tag)`               |
+| Concept      | Elm/Redux/re-frame      | PageMachine                       |
+|--------------|-------------------------|-----------------------------------|
+| Model        | Store / app-db          | Scoped effects + fiber            |
+| Update       | Reducer / event handler | Computation (`defcomp`)           |
+| View         | Pure render             | `render(assigns)`                 |
+| Event        | Action / dispatch       | `handle_event` / `def_pipe_event` |
+| State update | `:db` effect            | `Yield.yield(tag)`                |
 
-In re-frame, an event handler returns a map of effects — `:db` updates the
-store, making new state visible to view subscriptions. `Yield.yield(tag)`
-works the same way: it surfaces the current step to the LiveView, which
-applies it to `socket.assigns` where `render` reads it. The key difference
-is that a re-frame handler returns effects and exits, while a coroutine
-yields effects and *suspends* — it picks up where it left off when the next
+In Elm and Redux, the reducer is a pure `(state, event) -> state` function —
+it must return the new state immediately. PageMachine lifts this constraint
+with coroutines: the update function can *suspend* mid-execution, surface state
+to the view via `Yield.yield`, and resume where it left off when the next
 event arrives. This is what lets the computation read top-to-bottom as a
 narrative — reserve inventory, collect shipping, collect payment, place order —
 without manually threading state through each step.
+
+In re-frame terms, `Yield.yield(tag)` is analogous to returning a `:db`
+effect: it updates the store (assigns), making new state visible to the
+view's data subscriptions. The difference is that a re-frame handler returns
+effects and exits, while a coroutine yields effects and waits for the next
+event.
 
 In standard LiveView, business logic, effect calls, and socket manipulation
 mingle in `handle_event` / `handle_info` callbacks — the equivalent of putting
