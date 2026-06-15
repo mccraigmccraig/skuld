@@ -8,6 +8,34 @@
 each spindle is an independent state machine with its own fiber, its own
 event stream, and its own yields to the LiveView.
 
+## Why extract page state machines
+
+LiveView tests are slow. Even with DoubleDown replacing the database
+sandbox (often a 250× speedup for tests whose main bottleneck was Ecto sandbox
+DB I/O), the process mechanics dominate — mount, render,
+socket assigns, DOM diffs. The test time floor is set by the LiveView
+process itself.
+
+But a LiveView page *is* a state machine. The Moore model maps directly:
+
+| Moore concept | LiveView                         |
+|---------------|----------------------------------|
+| State         | `socket.assigns`                 |
+| Transition    | `handle_event(event, _, socket)` |
+| Output (UI)   | `render(socket.assigns)`         |
+
+If you extract the state machine into a pure module — one that receives
+events and returns new state, with no LiveView dependency — you can test
+the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
+
+## Pattern
+
+1. Write each page region as an effectful computation using `Yield`
+2. Test each in isolation with `Coroutine` — deterministic, no processes
+3. Wrap the page in a thin LiveView module via `AsyncPageMachine` with `/3` callbacks
+4. Use `def_pipe_event` to forward LiveView events to the correct spindle
+5. Computations fork sub-computations as needed; yields update the UI
+
 ## When to use concurrent spindles
 
 A page with a product browser and a checkout form side by side. The product
@@ -105,11 +133,20 @@ defmodule MyApp.CheckoutSpindle do
 end
 ```
 
+Each computation reads like regular sequential code — there's no explicit
+state enumeration, transition table, or event loop. This is possible
+because Skuld's coroutines are a natural fit for implementing state
+machines: each `Yield.yield` suspends at a well-defined point, and each
+resume value picks up where it left off. The computation *is* the state
+machine, and the program counter *is* the current state.
+([Coroutines are a classic technique for implementing state
+machines.](https://en.wikipedia.org/wiki/Coroutine#Common_uses))
+
 ### LiveView module
 
-The product browser is the primary spindle. The checkout spindle is forked
-when a product is selected — the `handle_yield/3` callback receives
-`{:buy, product}` and forks it:
+The product browser is the primary spindle — started at mount. The checkout
+spindle is forked on demand. The `/3` callbacks route each yield to the
+right UI region:
 
 ```elixir
 defmodule MyApp.StoreLive do
@@ -209,9 +246,10 @@ defmodule MyApp.StoreLive do
 end
 ```
 
-### Testing in isolation
+## Testing in isolation
 
-Each spindle is tested independently with `Coroutine`:
+Each spindle is tested independently with `Coroutine` — deterministic, no
+processes, no stubs:
 
 ```elixir
 defmodule MyApp.ProductBrowserSpindleTest do
@@ -234,19 +272,79 @@ defmodule MyApp.ProductBrowserSpindleTest do
     {:ok, comp: comp}
   end
 
-  test "first search yields products", %{comp: comp} do
+  test "first search yields browsing state", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
     assert %Coroutine.ExternalSuspended{value: :browsing} = fiber
   end
 
-    test "buy event triggers checkout fork and yields product", %{comp: comp} do
+  test "buy event triggers checkout fork and yields product", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
     fiber = Coroutine.run(fiber, {:buy, %Product{name: "Phone"}})
-    # The buy yield surfaces for UI update; checkout spindle runs internally
     assert %Coroutine.ExternalSuspended{value: {:buy, %Product{name: "Phone"}}} = fiber
+  end
+
+  test "filter change triggers new search", %{comp: comp} do
+    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+    fiber = Coroutine.run(fiber, %{category: "books"})
+    assert %Coroutine.ExternalSuspended{value: :browsing} = fiber
   end
 end
 ```
+
+These tests run in microseconds. There's no need for a LiveView process —
+just pure state transitions.
+
+## Why this works
+
+Each spindle knows nothing about LiveView. It doesn't import
+`Phoenix.LiveView`. It doesn't touch sockets, assigns, or DOM. It's a
+pure function: `(state, event) -> new_state`. `Yield` marks the points
+where the machine pauses for external input; `if` and `case` branch the flow.
+
+This means:
+
+- **Tests are fast**: no LiveView process, no DOM rendering.
+- **Tests are deterministic**: same input → same path, every time.
+- **Tests are property-testable**: generate inputs, assert paths.
+- **The LiveView module is thin**: it only bridges events and renders
+  based on the current step.
+
+## Comparison to Elm / Redux / MVU
+
+This architecture is Elixir's answer to the Model-View-Update pattern that
+Elm enforces and Redux patterns towards:
+
+| Concept      | Elm/Redux/re-frame      | PageMachine                       |
+|--------------|-------------------------|-----------------------------------|
+| Model        | Store / app-db          | Scoped effects + fiber            |
+| Update       | Reducer / event handler | Computation (`defcomp`)           |
+| View         | Pure render             | `render(assigns)`                 |
+| Event        | Action / dispatch       | `handle_event` / `def_pipe_event` |
+| State update | `:db` effect            | `Yield.yield(tag)`                |
+
+In Elm and Redux, the reducer is a pure `(state, event) -> state` function —
+it must return the new state immediately. PageMachine lifts this constraint
+with coroutines: the update function can *suspend* mid-execution, surface state
+to the view via `Yield.yield`, and resume where it left off when the next
+event arrives.
+
+With spindles, multiple update functions run concurrently — each spindle is
+an independent coroutine that yields independently. A product search doesn't
+block checkout form submission. The UI regions update independently because
+each yield carries the spindle key.
+
+In re-frame terms, `Yield.yield(tag)` is analogous to returning a `:db`
+effect: it updates the store (assigns), making new state visible to the
+view's data subscriptions. The `/3` callback signature maps naturally to
+re-frame's event handler receiving the event name as the first argument.
+
+In standard LiveView, business logic, effect calls, and socket manipulation
+mingle in `handle_event` / `handle_info` callbacks — the equivalent of putting
+reducer logic, API calls, and DOM updates in a single function. PageMachine
+separates them: the computation is the update function, the LiveView is the
+view bridge. Effects are inline (`MyApp.ProductCatalog.search(filters, page)`
+is a typed function call, not a dispatched action intercepted by middleware),
+keeping the types visible and the flow linear.
 
 ## How the spindles collaborate
 
@@ -255,7 +353,7 @@ yield results, wait for events (filters or buy). The checkout spindle runs
 once per purchase: collect inputs, place order, exit. Both run concurrently
 in the same FiberPool.Server process — cooperatively scheduled, no locking.
 
-When the user clicks "buy, " the product spindle receives the event via
+When the user clicks "buy," the product spindle receives the event via
 `Yield.yield`, forks a checkout spindle with `FiberPool.fiber`, yields a
 UI update, and continues its search loop. The checkout spindle runs its
 linear flow independently. If the user searches for more products
@@ -274,6 +372,32 @@ This pattern keeps the LiveView layer simple: events pipe in via
 `def_pipe_event`, computations spawn sub-computations as needed, and yields
 bubble up to the UI. No back-and-forth between the LiveView and the server
 for orchestration. The computation owns its lifecycle.
+
+## Cancellation and cleanup
+
+Cancel on mount to prevent duplicate runners:
+
+```elixir
+def mount(_params, _session, socket) do
+  if connected?(socket) do
+    socket.assigns[:runner] && AsyncPageMachine.cancel(socket.assigns.runner)
+  end
+  ...
+end
+```
+
+Cancellation cascades to all spindles — `AsyncPageMachine.cancel/1` exits
+the FiberPool.Server process, which cancels all registered fibers.
+
+## Operation reference
+
+| Operation                              | Purpose                          |
+|----------------------------------------|----------------------------------|
+| `AsyncPageMachine.run/2`               | Start page machine               |
+| `AsyncPageMachine.resume/3`            | Resume a spindle with a value    |
+| `AsyncPageMachine.def_pipe_event/2,4`  | Generate `handle_event/3`        |
+| `AsyncPageMachine.cancel/1`            | Cancel page machine and spindles |
+| `FiberPool.fiber/1`                    | Fork a spindle from a computation|
 
 ## Comparison to a monolithic LiveView
 
