@@ -11,18 +11,19 @@ event stream, and its own yields to the LiveView.
 ## When to use concurrent spindles
 
 A page with a product browser and a checkout form side by side. The product
-browser has its own lifecycle (search, filter, paginate) independent of the
-checkout flow (collect shipping, collect payment, place order). Running them
-as separate spindles keeps each flow linear and testable in isolation.
+browser has its own lifecycle (search, filter, paginate, select product)
+independent of the checkout flow (collect shipping, collect payment, place
+order). Running them as separate spindles keeps each flow linear and testable
+in isolation.
 
 ## Example: product browser + checkout
 
 Two spindles running in the same page machine:
 
-| Spindle     | Role                                                              | Event source                                   |
-|-------------|-------------------------------------------------------------------|------------------------------------------------|
-| `:products` | Forever loop: accept filter params, query products, yield results | `"search"`, `"filter"`, `"page"` events        |
-| `:checkout` | Linear flow: collect shipping, collect payment, place order       | `"submit_shipping"`, `"submit_payment"` events |
+| Spindle | Role | Event source |
+|---------|------|-------------|
+| `:products` | Forever loop: search products, select one to buy | `"search"`, `"filter"`, `"page"` events |
+| `:checkout` | Forked on buy: collect shipping, payment, place order | `"submit_shipping"`, `"submit_payment"` events |
 
 ### Boundary contracts
 
@@ -37,21 +38,22 @@ end
 defmodule MyApp.Orders do
   use Skuld.Effects.Port.EffectfulFacade
 
-  defcallback place(cart :: Cart.t(), shipping :: map(), payment :: map()) ::
+  defcallback place(cart :: map(), shipping :: map(), payment :: map()) ::
               {:ok, Order.t()} | {:error, term()}
 end
 
 defmodule MyApp.Inventory do
   use Skuld.Effects.Port.EffectfulFacade
 
-  defcallback reserve(cart :: Cart.t()) :: {:ok, term()} | {:error, term()}
+  defcallback reserve(cart :: map()) :: {:ok, term()} | {:error, term()}
 end
 ```
 
 ### Spindle computations
 
 The product browser spindle runs forever — each search yields results, then
-loops back for the next filter change:
+loops for the next event. When the user clicks "buy," it yields the selected
+product and loops back:
 
 ```elixir
 defmodule MyApp.ProductBrowserSpindle do
@@ -65,13 +67,23 @@ defmodule MyApp.ProductBrowserSpindle do
 
   defcomp search_loop(filters, page) do
     {:ok, products, total} <- MyApp.ProductCatalog.search(filters, page)
-    new_filters <- Yield.yield({:results, products, total, page})
-    search_loop(new_filters, 1)
+    event <- Yield.yield(:browsing)
+
+    case event do
+      {:buy, product} ->
+        Yield.yield({:buy, product})
+        search_loop(filters, page)
+
+      new_filters ->
+        search_loop(new_filters, 1)
+    end
   end
 end
 ```
 
-The checkout spindle is the same linear flow from the previous example:
+The checkout spindle is forked dynamically when the user selects a product.
+It receives the product, reserves inventory, collects shipping and payment,
+and places the order:
 
 ```elixir
 defmodule MyApp.CheckoutSpindle do
@@ -79,11 +91,11 @@ defmodule MyApp.CheckoutSpindle do
 
   alias Skuld.Effects.Yield
 
-  defcomp run(cart) do
-    {:ok, _} <- MyApp.Inventory.reserve(cart)
+  defcomp run(product) do
+    {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
     {"submit_shipping", shipping} <- Yield.yield(:shipping)
     {"submit_payment", payment} <- Yield.yield(:payment)
-    {:ok, order} <- MyApp.Orders.place(cart, shipping, payment)
+    {:ok, order} <- MyApp.Orders.place(%{product: product}, shipping, payment)
     {:ok, order}
   else
     {:error, :sold_out} -> {:error, :sold_out}
@@ -94,8 +106,9 @@ end
 
 ### LiveView module
 
-Note the `/3` callbacks — each handler receives the spindle key as its
-first argument, allowing a single callback to dispatch by spindle:
+The product browser is the primary spindle. The checkout spindle is forked
+when a product is selected — the `handle_yield/3` callback receives
+`{:buy, product}` and forks it:
 
 ```elixir
 defmodule MyApp.StoreLive do
@@ -114,16 +127,9 @@ defmodule MyApp.StoreLive do
         :products
       )
 
-    # Fork the checkout spindle
-    FiberPool.Server.start_link(
-      [{:checkout, MyApp.CheckoutSpindle.run(socket.assigns.cart)}],
-      runner
-    )
-
     {:ok,
      assign(socket,
        runner: runner,
-       step: :loading,
        products: [],
        total: 0,
        page: 1
@@ -133,6 +139,16 @@ defmodule MyApp.StoreLive do
   # Multi-spindle callbacks — dispatch by spindle key
   defp handle_yield(:products, {:results, products, total, page}, socket) do
     {:noreply, assign(socket, products: products, total: total, page: page)}
+  end
+
+  defp handle_yield(:products, {:buy, product}, socket) do
+    # Fork a checkout spindle with the selected product
+    FiberPool.Server.resume(socket.assigns.runner, :checkout,
+      MyApp.CheckoutSpindle.run(product),
+      fork: true
+    )
+
+    {:noreply, assign(socket, step: :shipping)}
   end
 
   defp handle_yield(:checkout, step, socket) do
@@ -180,7 +196,7 @@ defmodule MyApp.StoreLive do
         <.product_list products={@products} page={@page} total={@total} myself={@myself} />
       </div>
       <div class="checkout-panel">
-        <%= case @step do %>
+        <%= case assigns[:step] do %>
           <% :shipping -> %>
             <.shipping_form loading={@loading} myself={@myself} />
           <% :payment -> %>
@@ -188,7 +204,7 @@ defmodule MyApp.StoreLive do
           <% :done -> %>
             <.order_summary order={@order} />
           <% _ -> %>
-            <.spinner />
+            <p>Select a product to start checkout</p>
         <% end %>
       </div>
     </div>
@@ -196,6 +212,10 @@ defmodule MyApp.StoreLive do
   end
 end
 ```
+
+Note: `FiberPool.Server.resume/4` with `fork: true` adds a new spindle to
+the running server without replacing an existing one. The server routes
+subsequent `:checkout` events to the forked spindle.
 
 ### Testing in isolation
 
@@ -224,32 +244,49 @@ defmodule MyApp.ProductBrowserSpindleTest do
 
   test "first search yields products", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    assert %Coroutine.ExternalSuspended{
-             value: {:results, [%Product{name: "Phone"}], 1, 1}
-           } = fiber
+    assert %Coroutine.ExternalSuspended{value: :browsing} = fiber
   end
 
-  test "filter change triggers new search", %{comp: comp} do
+  test "buy event yields the selected product", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    # Send new filter params — triggers loop with new search
-    # (would need a new Port handler for the new filter)
-    _fiber = Coroutine.run(fiber, %{category: "books"})
+    fiber = Coroutine.run(fiber, {:buy, %Product{name: "Phone"}})
+    assert %Coroutine.ExternalSuspended{value: {:buy, %Product{name: "Phone"}}} = fiber
+  end
+
+  test "filter change triggers new search, buy after search yields product" do
+    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+    fiber = Coroutine.run(fiber, {:buy, %Product{name: "Phone"}})
+    assert %Coroutine.ExternalSuspended{value: {:buy, %Product{name: "Phone"}}} = fiber
   end
 end
 ```
 
 ## How the spindles collaborate
 
-Each spindle is an independent coroutine. The product spindle loops forever:
-yield results, wait for new filters, query again. The checkout spindle runs
-once: collect inputs, place order, exit. Both run concurrently in the same
-FiberPool.Server process — cooperatively scheduled, no locking. The `/3`
-callbacks route each yield to the right UI region.
+Each spindle is an independent coroutine. The product spindle loops: search,
+yield results, wait for events (filters or buy). The checkout spindle runs
+once per purchase: collect inputs, place order, exit. Both run concurrently
+in the same FiberPool.Server process — cooperatively scheduled, no locking.
 
-The product browser spindle never blocks the checkout spindle. When the
-user types a search, the product spindle suspends while the query runs
-(inside `Port.call`), and the FiberPool scheduler runs the checkout
-spindle's continuation instead. Both progress independently.
+When the user clicks "buy," the product spindle yields `{:buy, product}`.
+The LiveView's `handle_yield/3` callback catches it and forks a checkout
+spindle. The checkout spindle runs its linear flow independently. If the
+user searches for more products while the checkout form is still open,
+those events go to the product spindle — the checkout spindle is
+unaffected.
+
+## Dynamic forking vs static registration
+
+Spindles can be registered in two ways:
+
+1. **Static**: Pass all spindle computations to `AsyncPageMachine.run/2` at
+   mount time. All spindles start together.
+2. **Dynamic**: Fork spindles on demand via `FiberPool.Server.resume/4` with
+   `fork: true`. Useful when spindles are triggered by user actions — a
+   "buy" click, a "view details" tap, a "start upload" drag-and-drop.
+
+Dynamic forking keeps the initial page load light and avoids starting
+computations the user may never trigger.
 
 ## Comparison to a monolithic LiveView
 
