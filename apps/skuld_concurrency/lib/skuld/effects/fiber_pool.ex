@@ -484,6 +484,14 @@ defmodule Skuld.Effects.FiberPool do
   ## Handler Implementation
   #############################################################################
 
+  @doc """
+  Returns the 3-arity handler function for FiberPool effects.
+  Use this when you need to install the FiberPool handler without the
+  drain_pending wrapper that `with_handler/1` adds.
+  """
+  @spec handler() :: (term(), Comp.Types.env(), Comp.Types.k() -> {term(), Comp.Types.env()})
+  def handler, do: &handle/3
+
   defp handle(%FiberOp{comp: comp, opts: _opts}, env, k) do
     # Generate a unique fiber ID and pool ID via Fresh
     {id, id_env} = Comp.call(FreshInt.fresh_integer(), env, &Comp.identity_k/2)
