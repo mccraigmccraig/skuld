@@ -8,6 +8,15 @@
 each spindle is an independent state machine with its own fiber, its own
 event stream, and its own yields to the LiveView.
 
+A page with a single computation — one form flow, one wizard, one data
+table — is covered by the [single-spindle pattern](liveview.md). The
+LiveView module is a thin shell: `mount`, `def_pipe_event`, `render`.
+When a page grows multiple independent regions — a product browser *and* a
+checkout form, a chat panel *and* a document editor — you need concurrent
+spindles. Each region becomes its own computation, its own coroutine, its
+own testable module. The LiveView routes events to the right spindle and
+forwards yields from each to the right UI region.
+
 ## Why extract page state machines
 
 LiveView tests are slow. Even with DoubleDown replacing the database
