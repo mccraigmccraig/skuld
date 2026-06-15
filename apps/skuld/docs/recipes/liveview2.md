@@ -209,10 +209,6 @@ defmodule MyApp.StoreLive do
 end
 ```
 
-Note: `FiberPool.Server.resume/4` with `fork: true` adds a new spindle to
-the running server without replacing an existing one. The server routes
-subsequent `:checkout` events to the forked spindle.
-
 ### Testing in isolation
 
 Each spindle is tested independently with `Coroutine`:
