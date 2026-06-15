@@ -19,10 +19,10 @@ as separate spindles keeps each flow linear and testable in isolation.
 
 Two spindles running in the same page machine:
 
-| Spindle | Role | Event source |
-|---------|------|-------------|
-| `:products` | Forever loop: accept filter params, query products, yield results | `"search"`, `"filter"`, `"page"` events |
-| `:checkout` | Linear flow: collect shipping, collect payment, place order | `"submit_shipping"`, `"submit_payment"` events |
+| Spindle     | Role                                                              | Event source                                   |
+|-------------|-------------------------------------------------------------------|------------------------------------------------|
+| `:products` | Forever loop: accept filter params, query products, yield results | `"search"`, `"filter"`, `"page"` events        |
+| `:checkout` | Linear flow: collect shipping, collect payment, place order       | `"submit_shipping"`, `"submit_payment"` events |
 
 ### Boundary contracts
 
@@ -101,7 +101,7 @@ first argument, allowing a single callback to dispatch by spindle:
 defmodule MyApp.StoreLive do
   use MyAppWeb, :live_view
   use Skuld.PageMachine.AsyncPageMachine,
-    tag: :checkout,
+    tag: :products,
     on_yield: &handle_yield/3,
     on_complete: &handle_complete/3,
     on_error: &handle_error/3
@@ -110,13 +110,13 @@ defmodule MyApp.StoreLive do
   def mount(_params, _session, socket) do
     {:ok, runner} =
       AsyncPageMachine.run(
-        MyApp.CheckoutSpindle.run(socket.assigns.cart),
-        :checkout
+        MyApp.ProductBrowserSpindle.run(%{}),
+        :products
       )
 
-    # Fork the product browser spindle
+    # Fork the checkout spindle
     FiberPool.Server.start_link(
-      [{:products, MyApp.ProductBrowserSpindle.run(%{})}],
+      [{:checkout, MyApp.CheckoutSpindle.run(socket.assigns.cart)}],
       runner
     )
 
@@ -162,14 +162,14 @@ defmodule MyApp.StoreLive do
   defp start_spinner(socket), do: assign(socket, :loading, true)
   defp clear_spinner(socket), do: assign(socket, :loading, false)
 
-  # Product browser events — routed to :products spindle
-  def_pipe_event "search", :runner, into: :products, before: &start_spinner/1
-  def_pipe_event "filter", :runner, into: :products, before: &start_spinner/1
-  def_pipe_event "page", :runner, into: :products, before: &start_spinner/1
+  # Product browser events — default to :products (the PMC tag)
+  def_pipe_event "search", :runner, before: &start_spinner/1
+  def_pipe_event "filter", :runner, before: &start_spinner/1
+  def_pipe_event "page", :runner, before: &start_spinner/1
 
-  # Checkout events — default to :checkout (the PMC tag)
-  def_pipe_event "submit_shipping", :runner, before: &start_spinner/1
-  def_pipe_event "submit_payment", :runner, before: &start_spinner/1
+  # Checkout events — routed to :checkout spindle
+  def_pipe_event "submit_shipping", :runner, into: :checkout, before: &start_spinner/1
+  def_pipe_event "submit_payment", :runner, into: :checkout, before: &start_spinner/1
 
   @impl true
   def render(assigns) do
