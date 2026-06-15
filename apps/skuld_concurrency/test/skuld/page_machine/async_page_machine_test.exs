@@ -1,8 +1,8 @@
 defmodule Skuld.PageMachine.AsyncPageMachineTest do
   use ExUnit.Case, async: true
 
-  alias Skuld.AsyncCoroutine
   alias Skuld.PageMachine.AsyncPageMachine
+  alias Skuld.FiberPool.Server, as: FiberServer
   alias Skuld.Comp.Cancelled
   alias Skuld.Comp.ExternalSuspend
   alias Skuld.Comp.Throw
@@ -26,7 +26,7 @@ defmodule Skuld.PageMachine.AsyncPageMachineTest do
   test "dispatches ExternalSuspend to on_yield" do
     assert {:yield, :shipping, %{step: nil}} ==
              TestLive.handle_info(
-               {AsyncCoroutine, :test_flow, %ExternalSuspend{value: :shipping}},
+               {FiberServer, :test_flow, %ExternalSuspend{value: :shipping}},
                %{step: nil}
              )
   end
@@ -34,7 +34,7 @@ defmodule Skuld.PageMachine.AsyncPageMachineTest do
   test "dispatches {:error, reason} to on_error" do
     assert {:error, :not_found, %{}} ==
              TestLive.handle_info(
-               {AsyncCoroutine, :test_flow, {:error, :not_found}},
+               {FiberServer, :test_flow, {:error, :not_found}},
                %{}
              )
   end
@@ -42,7 +42,7 @@ defmodule Skuld.PageMachine.AsyncPageMachineTest do
   test "dispatches Cancelled to on_cancel" do
     assert {:cancel, :user_navigated, %{}} ==
              TestLive.handle_info(
-               {AsyncCoroutine, :test_flow, %Cancelled{reason: :user_navigated}},
+               {FiberServer, :test_flow, %Cancelled{reason: :user_navigated}},
                %{}
              )
   end
@@ -50,7 +50,7 @@ defmodule Skuld.PageMachine.AsyncPageMachineTest do
   test "dispatches Throw to on_throw" do
     assert {:throw, :boom, %{}} ==
              TestLive.handle_info(
-               {AsyncCoroutine, :test_flow, %Throw{error: :boom}},
+               {FiberServer, :test_flow, %Throw{error: :boom}},
                %{}
              )
   end
@@ -58,15 +58,14 @@ defmodule Skuld.PageMachine.AsyncPageMachineTest do
   test "dispatches other values to on_complete" do
     assert {:complete, {:ok, :done}, %{}} ==
              TestLive.handle_info(
-               {AsyncCoroutine, :test_flow, {:ok, :done}},
+               {FiberServer, :test_flow, {:ok, :done}},
                %{}
              )
   end
 
   test "ignores messages with wrong tag" do
-    # This should raise FunctionClauseError since no clause matches
     assert_raise FunctionClauseError, fn ->
-      TestLive.handle_info({AsyncCoroutine, :other_tag, :whatever}, %{})
+      TestLive.handle_info({FiberServer, :other_tag, :whatever}, %{})
     end
   end
 
@@ -80,14 +79,14 @@ defmodule Skuld.PageMachine.AsyncPageMachineTest do
     test "works with only on_yield" do
       assert {:yielded, :step, %{}} ==
                MinimalLive.handle_info(
-                 {AsyncCoroutine, :minimal, %ExternalSuspend{value: :step}},
+                 {FiberServer, :minimal, %ExternalSuspend{value: :step}},
                  %{}
                )
     end
 
     test "raises on unmatched result when no callback given" do
       assert_raise FunctionClauseError, fn ->
-        MinimalLive.handle_info({AsyncCoroutine, :minimal, :unexpected}, %{})
+        MinimalLive.handle_info({FiberServer, :minimal, :unexpected}, %{})
       end
     end
   end
