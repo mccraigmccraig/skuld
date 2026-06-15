@@ -52,8 +52,8 @@ end
 ### Spindle computations
 
 The product browser spindle runs forever — each search yields results, then
-loops for the next event. When the user clicks "buy," it yields the selected
-product and loops back:
+loops for the next event. When the user clicks "buy," it forks a checkout
+spindle and continues its own loop:
 
 ```elixir
 defmodule MyApp.ProductBrowserSpindle do
@@ -71,6 +71,7 @@ defmodule MyApp.ProductBrowserSpindle do
 
     case event do
       {:buy, product} ->
+        _handle <- FiberPool.fiber(MyApp.CheckoutSpindle.run(product))
         Yield.yield({:buy, product})
         search_loop(filters, page)
 
@@ -142,12 +143,6 @@ defmodule MyApp.StoreLive do
   end
 
   defp handle_yield(:products, {:buy, product}, socket) do
-    # Fork a checkout spindle with the selected product
-    FiberPool.Server.resume(socket.assigns.runner, :checkout,
-      MyApp.CheckoutSpindle.run(product),
-      fork: true
-    )
-
     {:noreply, assign(socket, step: :shipping)}
   end
 
@@ -182,6 +177,7 @@ defmodule MyApp.StoreLive do
   def_pipe_event "search", :runner, before: &start_spinner/1
   def_pipe_event "filter", :runner, before: &start_spinner/1
   def_pipe_event "page", :runner, before: &start_spinner/1
+  def_pipe_event "buy", :runner
 
   # Checkout events — routed to :checkout spindle
   def_pipe_event "submit_shipping", :runner, into: :checkout, before: &start_spinner/1
@@ -247,15 +243,10 @@ defmodule MyApp.ProductBrowserSpindleTest do
     assert %Coroutine.ExternalSuspended{value: :browsing} = fiber
   end
 
-  test "buy event yields the selected product", %{comp: comp} do
+    test "buy event triggers checkout fork and yields product", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
     fiber = Coroutine.run(fiber, {:buy, %Product{name: "Phone"}})
-    assert %Coroutine.ExternalSuspended{value: {:buy, %Product{name: "Phone"}}} = fiber
-  end
-
-  test "filter change triggers new search, buy after search yields product" do
-    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    fiber = Coroutine.run(fiber, {:buy, %Product{name: "Phone"}})
+    # The buy yield surfaces for UI update; checkout spindle runs internally
     assert %Coroutine.ExternalSuspended{value: {:buy, %Product{name: "Phone"}}} = fiber
   end
 end
@@ -268,25 +259,25 @@ yield results, wait for events (filters or buy). The checkout spindle runs
 once per purchase: collect inputs, place order, exit. Both run concurrently
 in the same FiberPool.Server process — cooperatively scheduled, no locking.
 
-When the user clicks "buy," the product spindle yields `{:buy, product}`.
-The LiveView's `handle_yield/3` callback catches it and forks a checkout
-spindle. The checkout spindle runs its linear flow independently. If the
-user searches for more products while the checkout form is still open,
-those events go to the product spindle — the checkout spindle is
-unaffected.
+When the user clicks "buy, " the product spindle receives the event via
+`Yield.yield`, forks a checkout spindle with `FiberPool.fiber`, yields a
+UI update, and continues its search loop. The checkout spindle runs its
+linear flow independently. If the user searches for more products
+while the checkout form is still open, those events go to the product
+spindle — the checkout spindle is unaffected.
 
-## Dynamic forking vs static registration
+## Dynamic forking
 
-Spindles can be registered in two ways:
+Spindles can fork other spindles from within their own computation using
+`FiberPool.fiber/1`. The product spindle forks a checkout spindle when the
+user clicks "buy" — the new spindle starts its linear flow while the
+product spindle continues its search loop. Both run cooperatively in the
+same server process.
 
-1. **Static**: Pass all spindle computations to `AsyncPageMachine.run/2` at
-   mount time. All spindles start together.
-2. **Dynamic**: Fork spindles on demand via `FiberPool.Server.resume/4` with
-   `fork: true`. Useful when spindles are triggered by user actions — a
-   "buy" click, a "view details" tap, a "start upload" drag-and-drop.
-
-Dynamic forking keeps the initial page load light and avoids starting
-computations the user may never trigger.
+This pattern keeps the LiveView layer simple: events pipe in via
+`def_pipe_event`, computations spawn sub-computations as needed, and yields
+bubble up to the UI. No back-and-forth between the LiveView and the server
+for orchestration. The computation owns its lifecycle.
 
 ## Comparison to a monolithic LiveView
 
