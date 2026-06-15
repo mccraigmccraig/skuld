@@ -61,7 +61,15 @@ defmodule Skuld.FiberPool.FiberPoolState do
       defstruct []
     end
 
-    @type t :: Await.t() | Batch.t() | Channel.t()
+    defmodule FiberYield do
+      @moduledoc false
+
+      @type t :: %__MODULE__{value: term()}
+
+      defstruct [:value]
+    end
+
+    @type t :: Await.t() | Batch.t() | Channel.t() | FiberYield.t()
   end
 
   @type t :: %__MODULE__{

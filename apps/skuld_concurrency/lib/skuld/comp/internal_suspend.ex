@@ -29,7 +29,11 @@ defmodule Skuld.Comp.InternalSuspend do
   alias Skuld.Comp.Types
   alias Skuld.Coroutine.Handle
 
-  @type payload :: __MODULE__.Batch.t() | __MODULE__.Channel.t() | __MODULE__.Await.t()
+  @type payload ::
+          __MODULE__.Batch.t()
+          | __MODULE__.Channel.t()
+          | __MODULE__.Await.t()
+          | __MODULE__.FiberYield.t()
 
   @type t :: %__MODULE__{
           resume: (term(), Types.env() -> {term(), Types.env()}),
@@ -94,6 +98,20 @@ defmodule Skuld.Comp.InternalSuspend do
           }
 
     defstruct [:handles, :mode, consume_ids: []]
+  end
+
+  # Payload for fiber yield suspensions.
+  #
+  # When a fiber calls `Yield.yield(value)` in a FiberPool server context,
+  # the yield is surfaced as an InternalSuspend with this payload. The
+  # scheduler suspends just this fiber while other fibers continue running.
+  # The server layer routes the yield value to the caller.
+  defmodule FiberYield do
+    @moduledoc false
+
+    @type t :: %__MODULE__{value: term()}
+
+    defstruct [:value]
   end
 
   #############################################################################
@@ -171,12 +189,24 @@ defmodule Skuld.Comp.InternalSuspend do
       payload: %Await{handles: handles, mode: :any, consume_ids: []}
     }
   end
+
+  @doc """
+  Create a fiber yield suspension.
+  """
+  @spec fiber_yield(term(), Types.k()) :: t()
+  def fiber_yield(value, resume) do
+    %__MODULE__{
+      resume: resume,
+      payload: %FiberYield{value: value}
+    }
+  end
 end
 
 defimpl Skuld.Comp.ISentinel, for: Skuld.Comp.InternalSuspend do
   alias Skuld.Comp.InternalSuspend.Await
   alias Skuld.Comp.InternalSuspend.Batch
   alias Skuld.Comp.InternalSuspend.Channel
+  alias Skuld.Comp.InternalSuspend.FiberYield
 
   def run(suspend, env) do
     {drained, drained_env} = Skuld.FiberPool.Main.drain_pending(suspend, env)
@@ -201,5 +231,9 @@ defimpl Skuld.Comp.ISentinel, for: Skuld.Comp.InternalSuspend do
 
   def serializable_payload(%{payload: %Await{handles: handles, mode: mode}}) do
     %{type: :await, handle_ids: Enum.map(handles, & &1.id), mode: mode}
+  end
+
+  def serializable_payload(%{payload: %FiberYield{value: value}}) do
+    %{type: :fiber_yield, value: value}
   end
 end

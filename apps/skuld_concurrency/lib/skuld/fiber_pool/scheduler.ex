@@ -380,6 +380,15 @@ defmodule Skuld.FiberPool.Scheduler do
     end
   end
 
+  defp handle_internal_suspension(state, fiber, _internal_suspend, %InternalSuspend.FiberYield{}) do
+    state = FiberPoolState.put_fiber(state, fiber)
+
+    state =
+      FiberPoolState.put_suspension(state, fiber.id, %FiberPoolState.Suspension.FiberYield{})
+
+    {:suspended, fiber, state}
+  end
+
   # Clean up fiber results that have been consumed (single-consumer optimization)
   defp cleanup_consumed_ids(state, []), do: state
 
