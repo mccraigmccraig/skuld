@@ -49,9 +49,10 @@ defmodule Skuld.PageMachine.Spindle do
   `{:complete, spindle, result}` if it completed,
   `{:error, spindle, error}` if it errored.
   """
-  @spec step(t()) :: {:yield, t(), term()}
-                    | {:complete, t(), term()}
-                    | {:error, t(), term()}
+  @spec step(t()) ::
+          {:yield, t(), term()}
+          | {:complete, t(), term()}
+          | {:error, t(), term()}
   def step(%__MODULE__{fiber: fiber} = spindle) do
     resolved = Coroutine.run(fiber)
 
@@ -74,9 +75,10 @@ defmodule Skuld.PageMachine.Spindle do
   Step a spindle forward with a resume value. Use for suspended spindles
   that need an event to continue.
   """
-  @spec step(t(), term()) :: {:yield, t(), term()}
-                            | {:complete, t(), term()}
-                            | {:error, t(), term()}
+  @spec step(t(), term()) ::
+          {:yield, t(), term()}
+          | {:complete, t(), term()}
+          | {:error, t(), term()}
   def step(%__MODULE__{fiber: fiber} = spindle, value) do
     resolved = Coroutine.run(fiber, value)
 
