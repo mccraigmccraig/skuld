@@ -253,29 +253,30 @@ This means:
 ## Comparison to Elm / Redux / MVU
 
 This architecture is Elixir's answer to the Model-View-Update pattern that
-Elm enforces and Redux patterns towards. The mapping is direct:
+Elm enforces and Redux patterns towards:
 
-| Concept     | Elm/Redux          | PageMachine              |
-|-------------|--------------------|--------------------------|
-| Model       | Central store      | Scoped effects + fiber   |
-| Update      | Reducer function   | Computation (`defcomp`)  |
-| View        | Pure render        | `render(assigns)`        |
-| Message     | Action/dispatch    | `Yield.yield(tag)`       |
+| Concept     | Elm/Redux/re-frame        | PageMachine                   |
+|-------------|---------------------------|-------------------------------|
+| Model       | Store / app-db            | Scoped effects + fiber        |
+| Update      | Reducer / event handler   | Computation (`defcomp`)       |
+| View        | Pure render               | `render(assigns)`             |
+| Event       | Action / dispatch         | `handle_event` / `def_pipe_event` |
+
+`Yield.yield(tag)` has no direct Elm or Redux analog. In those models,
+the reducer is a pure `(state, event) -> state` function — it must return
+immediately. Coroutines allow the update function to *suspend* mid-execution
+and ask for input, then resume where it left off. This is what lets the
+computation read top-to-bottom as a narrative — reserve inventory, collect
+shipping, collect payment, place order — without manually threading state
+through each step.
 
 In standard LiveView, business logic, effect calls, and socket manipulation
 mingle in `handle_event` / `handle_info` callbacks — the equivalent of putting
 reducer logic, API calls, and DOM updates in a single function. PageMachine
-separates them: the computation is the update function `(state, event) -> state`,
-the LiveView is the view bridge. The computation knows nothing about sockets,
-assigns, or DOM. It reads top-to-bottom as a narrative — reserve inventory,
-collect shipping, collect payment, place order — without the ceremony of
-actions, reducers, and stores.
-
-The key difference from Redux: effects are *inline*, not middleware.
-`MyApp.Inventory.reserve(cart)` is a typed function call, not a dispatched
-action that a saga or thunk intercepts. This keeps the flow linear and the
-types visible — you can read the computation top-to-bottom and see exactly
-what it does.
+separates them: the computation is the update function, the LiveView is the
+view bridge. Effects are inline (`MyApp.Inventory.reserve(cart)` is a typed
+function call, not a dispatched action intercepted by middleware), keeping
+the types visible and the flow linear.
 
 ## Cancellation and cleanup
 
