@@ -47,7 +47,6 @@ defmodule Skuld.Concurrency.MixProject do
         groups_for_modules: [
           Coroutine: [
             Skuld.Coroutine,
-            Skuld.PageMachine.SyncPageMachine,
             Skuld.Coroutine.Handle,
             Skuld.Coroutine.Pending,
             Skuld.Coroutine.Completed,

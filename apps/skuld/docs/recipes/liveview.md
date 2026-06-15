@@ -4,7 +4,7 @@
 [< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
-`PageMachine` and `AsyncPageMachine` let you extract the state machine at
+`AsyncPageMachine` lets you extract the state machine at
 the heart of every LiveView page into a computation — where it can be tested
 in isolation from all of the LiveView machinery.
 
@@ -32,7 +32,7 @@ the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
 
 1. Write the page flow as an effectful computation using `Yield`
 2. Test it with `Coroutine` — deterministic, no processes
-3. Wrap it in a thin LiveView module via a `PageMachine` or `AsyncPageMachine`
+3. Wrap it in a thin LiveView module via `AsyncPageMachine`
 4. Use `def_pipe_event` to forward LiveView events as Yield resume values
 5. LiveView sends user events; yields update the UI
 
@@ -164,10 +164,6 @@ defmodule MyApp.CheckoutLive do
   end
 end
 ```
-
-The `handle_*` functions are shared between both approaches. Switching
-from `AsyncPageMachine` to `PageMachine` is just a mechanical change to
-`mount` — the callbacks don't change.
 
 ## Testing without LiveViewTest
 
@@ -395,74 +391,6 @@ diagram. AsyncPageMachine gives you linear flow with inline effects and a
 single error path — ideal when the flow is complex and branching is
 natural. Both test fast without processes. Pick the one that reads most
 naturally for the problem at hand.
-
-## Sync LiveView with Coroutine.SyncPageMachine
-
-For flows where effects are fast (or absent), `Coroutine.SyncPageMachine`
-runs in-process with no separate BEAM process. The callback functions
-are identical to the `AsyncPageMachine` example above — the only
-difference is how the page machine is started:
-
-```elixir
-defmodule MyApp.CheckoutLive do
-  use MyAppWeb, :live_view
-  use Skuld.PageMachine.SyncPageMachine
-
-  @impl true
-  def mount(_params, _session, socket) do
-    comp =
-      MyApp.CheckoutFlow.flow(socket.assigns.cart)
-      |> Port.with_handler(%{
-        MyApp.Inventory => MyApp.Inventory.Service,
-        MyApp.Orders => MyApp.Orders.Ecto
-      })
-      |> Yield.with_handler()
-      |> Throw.with_handler()
-
-    SyncPageMachine.run(comp, socket, :checkout,
-      on_yield: &handle_yield/2,
-      on_complete: &handle_complete/2,
-      on_error: &handle_error/2,
-      on_cancel: &handle_cancel/2
-    )
-  end
-
-  defp handle_yield(step, socket) do
-    {:noreply, assign(socket, step: step)}
-  end
-
-  defp handle_complete({:ok, order}, socket) do
-    {:noreply, assign(socket, order: order, step: :done)}
-  end
-
-  defp handle_error(:sold_out, socket) do
-    {:noreply, put_flash(socket, :error, "Sorry, this item is no longer available")}
-  end
-
-  defp handle_error(reason, socket) do
-    {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
-  end
-
-  defp handle_cancel(reason, socket) do
-    {:noreply, push_navigate(socket, to: ~p"/cart")}
-  end
-
-  def_pipe_event "submit_shipping", :checkout
-  def_pipe_event "submit_payment", :checkout
-
-  @impl true
-  def render(assigns) do
-    case assigns.step do
-      :shipping -> ~H|<.shipping_form myself={@myself} />|
-      :payment -> ~H|<.payment_form myself={@myself} />|
-      :done -> ~H|<.order_summary order={@order} />|
-    end
-  end
-end
-```
-
-For I/O-bound effects use `AsyncPageMachine` to keep the LiveView
-responsive. For fast effects this is the simplest possible integration.
 
 <!-- nav:footer:start -->
 

@@ -4,6 +4,20 @@
 
 All notable changes to `skuld_concurrency` will be documented in this file.
 
+## [Unreleased]
+
+### Removed
+
+- `Skuld.PageMachine.SyncPageMachine` (formerly `Skuld.Coroutine.PageMachine`).
+  Synchronous in-process page machines are incompatible with the Spindle model,
+  which requires its own process to keep running between yield and resume.
+  Use `Skuld.PageMachine.AsyncPageMachine` for all page flows.
+
+### Changed
+
+- PageMachine modules reorganized under `Skuld.PageMachine` namespace:
+  `Skuld.AsyncCoroutine.AsyncPageMachine` → `Skuld.PageMachine.AsyncPageMachine`
+
 ## [0.40.0] — 2026-06-14
 
 ### Added
