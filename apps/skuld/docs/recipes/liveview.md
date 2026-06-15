@@ -11,7 +11,8 @@ in isolation from all of the LiveView machinery.
 ## Why extract page state machines
 
 LiveView tests are slow. Even with DoubleDown replacing the database
-sandbox (often a 250× speedup), the process mechanics dominate — mount, render,
+sandbox (often a 250× speedup for tests whose main bottleneck was Ecto sandbox
+DB I/O), the process mechanics dominate — mount, render,
 socket assigns, DOM diffs. The test time floor is set by the LiveView
 process itself.
 
