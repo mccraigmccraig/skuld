@@ -30,8 +30,20 @@ defmodule Skuld.PageMachine do
 
   alias Skuld.FiberPool.Server, as: FiberServer
 
+  @default_tag Module.concat(__MODULE__, Default)
+
+  @doc """
+  The default PageMachine tag.
+
+  In the common single-PageMachine case the tag is implicit. Pass an
+  explicit `:tag` to `use` and `run/2` only when a page hosts multiple
+  page machines.
+  """
+  def default_tag, do: @default_tag
+
   @doc "Start a page machine in a separate FiberPool.Server process."
-  def run(computation, tag) when is_function(computation, 2) do
+  def run(computation, tag \\ @default_tag)
+      when is_function(computation, 2) do
     FiberServer.start_link([{tag, computation}])
   end
 
@@ -134,7 +146,7 @@ defmodule Skuld.PageMachine do
   #############################################################################
 
   defmacro __using__(opts) do
-    tag = Keyword.fetch!(opts, :tag)
+    tag = Keyword.get(opts, :tag, @default_tag)
     on_yield_ref = Keyword.fetch!(opts, :on_yield)
     on_complete = Keyword.get(opts, :on_complete)
     on_error = Keyword.get(opts, :on_error)
