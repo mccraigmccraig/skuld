@@ -116,6 +116,7 @@ defmodule MyApp.ProductBrowserSpindle do
 
   defcomp search_loop(filters) do
     {:ok, products, total} <- MyApp.ProductCatalog.search(filters)
+    _ <- StoreProtocol.yield(:products, :results, %{products: products, total: total})
     event <- Yield.yield(:browsing)
 
     case event do
@@ -132,7 +133,8 @@ end
 
 The checkout spindle is forked dynamically when the user selects a product.
 It receives the product, reserves inventory, collects shipping and payment,
-and places the order:
+and places the order. Its yields (`:shipping`, `:payment`) are untagged atoms —
+no typed params, so raw `Yield.yield` is cleanest:
 
 ```elixir
 defmodule MyApp.CheckoutSpindle do
@@ -299,21 +301,21 @@ defmodule MyApp.ProductBrowserSpindleTest do
     {:ok, comp: comp}
   end
 
-  test "first search yields browsing state", %{comp: comp} do
+  test "first search yields results to the LiveView", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    assert %Coroutine.ExternalSuspended{value: :browsing} = fiber
+    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.ProductsResults{}} = fiber
   end
 
     test "buy event triggers checkout fork and continues search loop", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
     fiber = Coroutine.run(fiber, {:buy, %Product{name: "Phone"}})
-    assert %Coroutine.ExternalSuspended{value: :browsing} = fiber
+    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.ProductsResults{}} = fiber
   end
 
-  test "filter change triggers new search", %{comp: comp} do
+  test "filter change triggers new search and new results", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
     fiber = Coroutine.run(fiber, %{category: "books"})
-    assert %Coroutine.ExternalSuspended{value: :browsing} = fiber
+    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.ProductsResults{}} = fiber
   end
 end
 ```
