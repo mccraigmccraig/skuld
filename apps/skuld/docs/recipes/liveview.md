@@ -213,11 +213,14 @@ defmodule MyApp.StoreLive do
     on_complete: &handle_complete/3,
     on_error: &handle_error/3
 
+  alias MyApp.{ProductBrowserSpindle, CheckoutSpindle}
+  alias MyApp.StoreProtocol.{Products, Checkout}
+
   @impl true
   def mount(_params, _session, socket) do
     socket =
       PageMachine.run(socket,
-        StoreProtocol.Products => MyApp.ProductBrowserSpindle.run(%{})
+        Products => ProductBrowserSpindle.run(%{})
       )
       |> assign(products: [], total: 0)
 
@@ -225,30 +228,30 @@ defmodule MyApp.StoreLive do
   end
 
   # Multi-spindle callbacks — dispatch by spindle module atom
-  def handle_yield(StoreProtocol.Products, %StoreProtocol.Products.Results{products: products, total: total}, socket) do
+  def handle_yield(Products, %Products.Results{products: products, total: total}, socket) do
     {:noreply, assign(socket, products: products, total: total)}
   end
 
-  def handle_yield(StoreProtocol.Checkout, step, socket) do
+  def handle_yield(Checkout, step, socket) do
     socket = clear_spinner(socket)
     {:noreply, assign(socket, step: step)}
   end
 
-  def handle_complete(StoreProtocol.Products, {:error, reason}, socket) do
+  def handle_complete(Products, {:error, reason}, socket) do
     {:noreply, put_flash(socket, :error, "Product search failed: #{inspect(reason)}")}
   end
 
-  def handle_complete(StoreProtocol.Checkout, {:ok, order}, socket) do
+  def handle_complete(Checkout, {:ok, order}, socket) do
     socket = clear_spinner(socket)
     {:noreply, assign(socket, order: order, step: :done)}
   end
 
-  def handle_error(StoreProtocol.Checkout, :sold_out, socket) do
+  def handle_error(Checkout, :sold_out, socket) do
     socket = clear_spinner(socket)
     {:noreply, put_flash(socket, :error, "Sorry, this item is no longer available")}
   end
 
-  def handle_error(StoreProtocol.Checkout, reason, socket) do
+  def handle_error(Checkout, reason, socket) do
     socket = clear_spinner(socket)
     {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
   end
