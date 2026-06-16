@@ -121,7 +121,7 @@ defmodule MyApp.ProductBrowserSpindle do
 
     case event do
       {:buy, product} ->
-        _handle <- Spindle.fork(:checkout, MyApp.CheckoutSpindle.run(product))
+        _handle <- Spindle.fork(StoreProtocol.Checkout, MyApp.CheckoutSpindle.run(product))
         search_loop(filters)
 
       new_filters ->
@@ -173,17 +173,22 @@ reference it:
 defmodule MyApp.StoreProtocol do
   use Skuld.PageMachine.Contract
 
-  defevent "search", into: :products, params: [query: String.t()]
-  defevent "filter", into: :products, params: [filters: map()]
-  defevent "buy", into: :products
+  defspindle Products do
+    defevent "search", params: [query: String.t()]
+    defevent "filter", params: [filters: map()]
+    defevent "buy"
 
-  defevent "submit_shipping", into: :checkout, params: [shipping: map()]
-  defevent "submit_payment", into: :checkout, params: [payment: map()]
+    defyield :browsing
+    defyield :results, params: [products: [Product.t()], total: integer()]
+  end
 
-  defyield :products, :browsing
-  defyield :products, :results, params: [products: [Product.t()], total: integer()]
-  defyield :checkout, :shipping
-  defyield :checkout, :payment
+  defspindle Checkout do
+    defevent "submit_shipping", params: [shipping: map()]
+    defevent "submit_payment", params: [payment: map()]
+
+    defyield :shipping
+    defyield :payment
+  end
 end
 ```
 
@@ -208,15 +213,15 @@ defmodule MyApp.StoreLive do
   def mount(_params, _session, socket) do
     socket =
       PageMachine.run(socket,
-        products: MyApp.ProductBrowserSpindle.run(%{})
+        StoreProtocol.Products => MyApp.ProductBrowserSpindle.run(%{})
       )
       |> assign(products: [], total: 0)
 
     {:ok, socket}
   end
 
-  # Multi-spindle callbacks — dispatch by spindle key
-  def handle_yield(:products, %StoreProtocol.Products.Results{products: products, total: total}, socket) do
+  # Multi-spindle callbacks — dispatch by spindle module atom
+  def handle_yield(StoreProtocol.Products, %StoreProtocol.Products.Results{products: products, total: total}, socket) do
     {:noreply, assign(socket, products: products, total: total)}
   end
 
@@ -346,7 +351,7 @@ pattern that Elm enforces and Redux patterns towards:
 | Model        | Store / app-db           | Scoped effects + fiber            |
 | Update       | Reducer / event handler  | Computation (`defcomp`)           |
 | View         | Pure render              | `render(assigns)`                 |
-| Event        | Action / dispatch        | `handle_event` / protocol `defevent` |
+| Event        | Action / dispatch        | `handle_event` / protocol `defspindle` `defevent` |
 | State update | `:db` effect             | `Yield.yield(tag)`                |
 
 In Elm and Redux, the reducer is a pure `(state, event) -> state` function —

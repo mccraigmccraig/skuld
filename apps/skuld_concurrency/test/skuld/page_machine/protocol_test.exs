@@ -7,14 +7,22 @@ defmodule Skuld.PageMachine.ProtocolTest do
   defmodule StoreProtocol do
     use Skuld.PageMachine.Contract
 
-    defevent("search", into: :products, params: [query: String.t()])
-    defevent("filter", into: :products)
-    defevent("submit_shipping", into: :checkout, params: [shipping: map()])
+    defspindle Products do
+      defevent("search", params: [query: String.t()])
+      defevent("filter", params: [filters: map()])
+      defevent("buy")
 
-    defyield(:products, :browsing)
-    defyield(:products, :results, params: [products: [map()], total: integer()])
-    defyield(:checkout, :shipping)
-    defyield(:checkout, :payment, params: [method: String.t()])
+      defyield(:browsing)
+      defyield(:results, params: [products: [map()], total: integer()])
+    end
+
+    defspindle Checkout do
+      defevent("submit_shipping", params: [shipping: map()])
+      defevent("submit_payment", params: [payment: map()])
+
+      defyield(:shipping)
+      defyield(:payment, params: [method: String.t()])
+    end
   end
 
   defmodule ProtocolLive2 do
@@ -63,8 +71,8 @@ defmodule Skuld.PageMachine.ProtocolTest do
     defmodule MultiSpindleProtocolLive do
       @moduledoc false
 
-      def handle_yield(:products, value, socket), do: {:products, value, socket}
-      def handle_yield(:checkout, value, socket), do: {:checkout, value, socket}
+      def handle_yield(StoreProtocol.Products, value, socket), do: {:products, value, socket}
+      def handle_yield(StoreProtocol.Checkout, value, socket), do: {:checkout, value, socket}
     end
 
     defmodule MultiSpindlePM do
@@ -76,7 +84,7 @@ defmodule Skuld.PageMachine.ProtocolTest do
     test "dispatches products yield to correct callback" do
       result =
         MultiSpindlePM.handle_info(
-          {FiberServer, :products, %ExternalSuspend{value: :browsing}},
+          {FiberServer, StoreProtocol.Products, %ExternalSuspend{value: :browsing}},
           %{assigns: %{}}
         )
 
@@ -86,7 +94,7 @@ defmodule Skuld.PageMachine.ProtocolTest do
     test "dispatches checkout yield to correct callback" do
       result =
         MultiSpindlePM.handle_info(
-          {FiberServer, :checkout, %ExternalSuspend{value: :shipping}},
+          {FiberServer, StoreProtocol.Checkout, %ExternalSuspend{value: :shipping}},
           %{assigns: %{}}
         )
 

@@ -2,38 +2,41 @@ defmodule Skuld.PageMachine.Contract do
   @moduledoc """
   Typed protocol contract for PageMachine spindle ↔ LiveView communication.
 
-  `use Skuld.PageMachine.Contract` imports `defevent` and `defyield` macros
-  to declare the typed interface between a page's spindles and its LiveView.
+  `use Skuld.PageMachine.Contract` imports `defspindle`, `defevent`,
+  and `defyield` macros to declare the typed interface between a page's
+  spindles and its LiveView.
 
-  Each declaration is validated at compile time. The protocol module acts as
-  the single source of truth for event routing and yield shapes.
+  Each declaration is validated at compile time. The protocol module acts
+  as the single source of truth for event routing and yield shapes.
 
   ## Usage
 
       defmodule MyApp.StoreProtocol do
         use Skuld.PageMachine.Contract
 
-        defevent "search", into: :products, params: [query: String.t()]
-        defevent "buy", into: :products
+        defspindle Products do
+          defevent "search", params: [query: String.t()]
+          defevent "filter"
+          defevent "buy"
 
-        defyield :products, :browsing
-        defyield :products, :results, params: [products: [Product.t()], total: integer()]
-        defyield :checkout, :shipping
-        defyield :checkout, :payment
+          defyield :browsing
+          defyield :results, params: [products: [Product.t()], total: integer()]
+        end
+
+        defspindle Checkout do
+          defevent "submit_shipping", params: [shipping: map()]
+          defevent "submit_payment", params: [payment: map()]
+
+          defyield :shipping
+          defyield :payment
+        end
       end
 
-  ## Generated Types and Functions
+  The spindle key is the module atom (`StoreProtocol.Products`) — the
+  same module where typed yield functions are generated:
 
-  For each `defyield` with `params:`, a nested struct module is generated:
-
-      defmodule StoreProtocol.Products.Results do
-        @type t :: %__MODULE__{products: [Product.t()], total: integer()}
-        defstruct products: nil, total: nil
-      end
-
-  The protocol module gains `yield/2` helpers:
-
-      StoreProtocol.yield(:products, :results, %{products: prods, total: n})
+      StoreProtocol.Products.results(products: prods, total: n)
+      StoreProtocol.Checkout.shipping()
 
   ## Integration with PageMachine
 
@@ -41,77 +44,103 @@ defmodule Skuld.PageMachine.Contract do
         protocol: MyApp.StoreProtocol,
         on_yield: &handle_yield/3
 
-  The `:protocol` option enables compile-time validation of `def_pipe_event`
-  declarations and generates them automatically from the protocol's events.
+  The `:protocol` option auto-generates `handle_event/3` clauses from
+  the protocol's event declarations.
   """
 
   @doc false
   defmacro __using__(_opts) do
     quote do
       import Skuld.PageMachine.Contract,
-        only: [defevent: 2, defyield: 2, defyield: 3]
+        only: [defspindle: 2, defevent: 1, defevent: 2, defyield: 1, defyield: 2]
 
       Module.register_attribute(__MODULE__, :pm_events, accumulate: true)
       Module.register_attribute(__MODULE__, :pm_yields, accumulate: true)
+      Module.register_attribute(__MODULE__, :pm_spindles, accumulate: true)
       @before_compile Skuld.PageMachine.Contract
     end
   end
 
   @doc """
-  Declare a LiveView event routed to a spindle.
+  Open a spindle block.
+
+  Inside the block, `defevent` and `defyield` infer the spindle from the
+  enclosing `defspindle` context — no need to repeat the spindle key.
+
+  The spindle name becomes the module atom under the protocol module
+  (e.g., `defspindle Products` → `StoreProtocol.Products`), which is
+  both the spindle key for event routing and the module where typed
+  yield functions are generated.
+
+  ## Example
+
+      defspindle Products do
+        defevent "search", params: [query: String.t()]
+        defyield :browsing
+        defyield :results, params: [products: [Product.t()], total: integer()]
+      end
+  """
+  defmacro defspindle(name, do: block) do
+    spindle_name =
+      case name do
+        {atom_name, _meta, nil} when is_atom(atom_name) -> atom_name
+        {:__aliases__, _meta, segments} -> List.last(segments)
+      end
+
+    spindle_atom = Module.concat(__CALLER__.module, spindle_name)
+
+    Module.put_attribute(__CALLER__.module, :current_spindle, spindle_atom)
+
+    quote do
+      @pm_spindles unquote(spindle_atom)
+      unquote(block)
+      Module.delete_attribute(__MODULE__, :current_spindle)
+    end
+  end
+
+  @doc """
+  Declare a LiveView event routed to the current spindle.
+
+  When called inside a `defspindle` block, the spindle is inferred.
+  When called outside, the `:into` option is required.
 
   ## Syntax
 
-      defevent event_name, into: spindle_key
-      defevent event_name, into: spindle_key, params: [field: type(), ...]
-
-  ## Examples
-
-      defevent "search", into: :products
-      defevent "search", into: :products, params: [query: String.t()]
-      defevent "buy", into: :products, params: [product: Product.t(), quantity: integer()]
+      defevent "event_name"
+      defevent "event_name", params: [field: type(), ...]
   """
-  defmacro defevent(event_name, opts) when is_binary(event_name) do
-    into = Keyword.fetch!(opts, :into)
+  defmacro defevent(event_name, opts \\ []) when is_binary(event_name) do
     params = Keyword.get(opts, :params)
-    event_name = clean_event_name(event_name)
 
     event = %{
-      event: event_name,
-      into: into,
+      event: clean_event_name(event_name),
+      spindle: current_or_explicit_spindle(opts, __CALLER__),
       params: params || []
     }
 
     escaped = Macro.escape(event)
 
     quote do
-      unless is_atom(unquote(into)) do
-        raise CompileError, "defevent :into must be an atom, got: #{inspect(unquote(into))}"
-      end
-
       @pm_events unquote(escaped)
     end
   end
 
   @doc """
-  Declare a yield from a spindle to the LiveView.
+  Declare a yield from the current spindle to the LiveView.
+
+  When called inside a `defspindle` block, the spindle is inferred.
+  When called outside, the first argument is the spindle key.
 
   ## Syntax
 
-      defyield spindle_key, tag
-      defyield spindle_key, tag, params: [field: type(), ...]
-
-  ## Examples
-
-      defyield :products, :browsing
-      defyield :products, :results, params: [products: [Product.t()], total: integer()]
-      defyield :checkout, :shipping
+      defyield :tag
+      defyield :tag, params: [field: type(), ...]
   """
-  defmacro defyield(spindle_key, tag, opts \\ []) when is_atom(spindle_key) and is_atom(tag) do
+  defmacro defyield(tag, opts \\ []) when is_atom(tag) do
     params = Keyword.get(opts, :params)
 
     yield = %{
-      spindle: spindle_key,
+      spindle: current_or_explicit_spindle(opts, __CALLER__),
       tag: tag,
       params: params || []
     }
@@ -120,6 +149,18 @@ defmodule Skuld.PageMachine.Contract do
 
     quote do
       @pm_yields unquote(escaped)
+    end
+  end
+
+  defp current_or_explicit_spindle(_opts, caller) do
+    case Module.get_attribute(caller.module, :current_spindle) do
+      nil ->
+        raise CompileError,
+          description: "defevent/defyield outside a defspindle block",
+          file: caller.file
+
+      spindle ->
+        spindle
     end
   end
 
@@ -151,16 +192,16 @@ defmodule Skuld.PageMachine.Contract do
         file: env.file
     end
 
-    Enum.each(events, fn %{event: event, into: into} ->
+    Enum.each(events, fn %{event: event, spindle: spindle} ->
       unless is_binary(event) and byte_size(event) > 0 do
         raise CompileError,
           description: "defevent event name must be a non-empty string",
           file: env.file
       end
 
-      unless is_atom(into) do
+      unless is_atom(spindle) do
         raise CompileError,
-          description: "defevent :into must be an atom, got: #{inspect(into)}",
+          description: "defevent spindle must be a module atom, got: #{inspect(spindle)}",
           file: env.file
       end
     end)
@@ -187,6 +228,7 @@ defmodule Skuld.PageMachine.Contract do
     end
 
     tag_pairs = Enum.map(yields, fn %{spindle: s, tag: t} -> {s, t} end)
+
     unique = MapSet.new(tag_pairs) |> MapSet.size()
 
     if unique != length(yields) do
@@ -198,12 +240,10 @@ defmodule Skuld.PageMachine.Contract do
     end
   end
 
-  defp generate_spindle_modules(protocol_module, yields) do
+  defp generate_spindle_modules(_protocol_module, yields) do
     yields
     |> Enum.group_by(& &1.spindle)
-    |> Enum.map(fn {spindle, spindle_yields} ->
-      spindle_module = Module.concat(protocol_module, spindle |> to_pascal_case())
-
+    |> Enum.map(fn {spindle_module, spindle_yields} ->
       struct_defs =
         Enum.flat_map(spindle_yields, fn
           %{params: []} -> []
@@ -215,9 +255,7 @@ defmodule Skuld.PageMachine.Contract do
       quote do
         defmodule unquote(spindle_module) do
           @moduledoc false
-
           unquote_splicing(struct_defs)
-
           unquote_splicing(yield_fns)
         end
       end
@@ -230,7 +268,6 @@ defmodule Skuld.PageMachine.Contract do
 
     fields = Enum.map(params, fn {name, _type} -> name end)
     field_defaults = Enum.map(fields, &{&1, nil})
-
     type_spec = Enum.map(params, fn {name, type} -> {name, type} end)
 
     quote do
@@ -305,8 +342,8 @@ defmodule Skuld.PageMachine.Contract do
 
   defp generate_event_list(_protocol_module, events) do
     entries =
-      Enum.map(events, fn %{event: event, into: into, params: params} ->
-        {event, into, params}
+      Enum.map(events, fn %{event: event, spindle: spindle, params: params} ->
+        {event, spindle, params}
       end)
 
     escaped = Macro.escape(entries)

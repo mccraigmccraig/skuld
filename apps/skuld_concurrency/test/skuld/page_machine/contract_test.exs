@@ -6,24 +6,47 @@ defmodule Skuld.PageMachine.ContractTest do
   defmodule TestProtocol do
     use Skuld.PageMachine.Contract
 
-    defevent("search", into: :products, params: [query: String.t()])
-    defevent("filter", into: :products)
-    defevent("buy", into: :products)
+    defspindle Products do
+      defevent("search", params: [query: String.t()])
+      defevent("filter")
+      defevent("buy")
 
-    defyield(:products, :browsing)
-    defyield(:products, :results, params: [products: [map()], total: integer()])
-    defyield(:checkout, :shipping)
-    defyield(:checkout, :payment, params: [method: String.t()])
+      defyield(:browsing)
+      defyield(:results, params: [products: [map()], total: integer()])
+    end
+
+    defspindle Checkout do
+      defevent("submit_shipping", params: [shipping: map()])
+      defevent("submit_payment", params: [payment: map()])
+
+      defyield(:shipping)
+      defyield(:payment, params: [method: String.t()])
+    end
   end
 
   describe "defevent declarations" do
     test "__protocol_events__/0 returns all event metadata" do
       events = TestProtocol.__protocol_events__()
 
-      assert length(events) == 3
-      assert Enum.any?(events, fn e -> e.event == "search" and e.into == :products end)
-      assert Enum.any?(events, fn e -> e.event == "filter" and e.into == :products end)
-      assert Enum.any?(events, fn e -> e.event == "buy" and e.into == :products end)
+      assert length(events) == 5
+
+      assert Enum.any?(events, fn e ->
+               e.event == "search" and e.spindle == TestProtocol.Products
+             end)
+
+      assert Enum.any?(events, fn e ->
+               e.event == "filter" and e.spindle == TestProtocol.Products
+             end)
+
+      assert Enum.any?(events, fn e -> e.event == "buy" and e.spindle == TestProtocol.Products end)
+
+      assert Enum.any?(events, fn e ->
+               e.event == "submit_shipping" and e.spindle == TestProtocol.Checkout
+             end)
+
+      assert Enum.any?(events, fn e ->
+               e.event == "submit_payment" and e.spindle == TestProtocol.Checkout
+             end)
     end
 
     test "event with params includes param metadata" do
@@ -36,20 +59,22 @@ defmodule Skuld.PageMachine.ContractTest do
       assert filter.params == []
     end
 
-    test "__pm_events__/0 returns event tuples" do
+    test "__pm_events__/0 returns event tuples with module atoms as spindles" do
       entries = TestProtocol.__pm_events__()
 
-      assert length(entries) == 3
+      assert length(entries) == 5
 
       search = Enum.find(entries, fn {event, _spindle, _params} -> event == "search" end)
-      assert {"search", :products, params} = search
+      assert {"search", TestProtocol.Products, params} = search
       assert is_list(params)
 
       filter = Enum.find(entries, fn {event, _spindle, _params} -> event == "filter" end)
-      assert {"filter", :products, []} = filter
+      assert {"filter", TestProtocol.Products, []} = filter
 
-      buy = Enum.find(entries, fn {event, _spindle, _params} -> event == "buy" end)
-      assert {"buy", :products, []} = buy
+      shipping =
+        Enum.find(entries, fn {event, _spindle, _params} -> event == "submit_shipping" end)
+
+      assert {"submit_shipping", TestProtocol.Checkout, [_]} = shipping
     end
   end
 
@@ -58,10 +83,22 @@ defmodule Skuld.PageMachine.ContractTest do
       yields = TestProtocol.__protocol_yields__()
 
       assert length(yields) == 4
-      assert Enum.any?(yields, fn y -> y.spindle == :products and y.tag == :browsing end)
-      assert Enum.any?(yields, fn y -> y.spindle == :products and y.tag == :results end)
-      assert Enum.any?(yields, fn y -> y.spindle == :checkout and y.tag == :shipping end)
-      assert Enum.any?(yields, fn y -> y.spindle == :checkout and y.tag == :payment end)
+
+      assert Enum.any?(yields, fn y ->
+               y.spindle == TestProtocol.Products and y.tag == :browsing
+             end)
+
+      assert Enum.any?(yields, fn y ->
+               y.spindle == TestProtocol.Products and y.tag == :results
+             end)
+
+      assert Enum.any?(yields, fn y ->
+               y.spindle == TestProtocol.Checkout and y.tag == :shipping
+             end)
+
+      assert Enum.any?(yields, fn y ->
+               y.spindle == TestProtocol.Checkout and y.tag == :payment
+             end)
     end
 
     test "yield without params has empty params list" do
@@ -145,7 +182,9 @@ defmodule Skuld.PageMachine.ContractTest do
           defmodule NoEventsProtocol do
             use Skuld.PageMachine.Contract
 
-            defyield(:products, :browsing)
+            defspindle Products do
+              defyield(:browsing)
+            end
           end
         end
 
@@ -158,7 +197,9 @@ defmodule Skuld.PageMachine.ContractTest do
           defmodule NoYieldsProtocol do
             use Skuld.PageMachine.Contract
 
-            defevent("search", into: :products)
+            defspindle Products do
+              defevent("search")
+            end
           end
         end
 
@@ -171,11 +212,14 @@ defmodule Skuld.PageMachine.ContractTest do
           defmodule DupEventProtocol do
             use Skuld.PageMachine.Contract
 
-            defevent("search", into: :products)
-            defevent("search", into: :checkout)
+            defspindle Products do
+              defevent("search")
+            end
 
-            defyield(:products, :browsing)
-            defyield(:checkout, :shipping)
+            defspindle Checkout do
+              defevent("search")
+              defyield(:shipping)
+            end
           end
         end
 
@@ -188,10 +232,11 @@ defmodule Skuld.PageMachine.ContractTest do
           defmodule DupYieldProtocol do
             use Skuld.PageMachine.Contract
 
-            defevent("search", into: :products)
-
-            defyield(:products, :browsing)
-            defyield(:products, :browsing)
+            defspindle Products do
+              defevent("search")
+              defyield(:browsing)
+              defyield(:browsing)
+            end
           end
         end
 

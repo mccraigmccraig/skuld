@@ -221,7 +221,7 @@ defmodule Skuld.PageMachine do
         protocol = resolve_protocol(protocol, __CALLER__)
 
         protocol.__protocol_events__()
-        |> Enum.map(fn %{event: event_name, into: spindle, params: params} ->
+        |> Enum.map(fn %{event: event_name, spindle: spindle, params: params} ->
           value =
             if params == [] do
               quote(do: {unquote(event_name), params})
