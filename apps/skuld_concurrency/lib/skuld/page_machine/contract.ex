@@ -17,10 +17,10 @@ defmodule Skuld.PageMachine.Contract do
         defspindle Products do
           defevent "search", SearchEvent, params: [query: String.t()]
           defevent "filter", FilterEvent, params: [filters: map()]
-          defevent "buy"
+          defevent "buy", BuyEvent, params: [product: Product.t()]
 
           defyield :browsing
-          defyield :results, params: [products: [Product.t()], total: integer()]
+          defyield results(products: [Product.t()], total: integer())
         end
 
         defspindle Checkout do
@@ -65,8 +65,7 @@ defmodule Skuld.PageMachine.Contract do
           defevent: 1,
           defevent: 2,
           defevent: 3,
-          defyield: 1,
-          defyield: 2
+          defyield: 1
         ]
 
       Module.register_attribute(__MODULE__, :pm_events, accumulate: true)
@@ -92,7 +91,7 @@ defmodule Skuld.PageMachine.Contract do
       defspindle Products do
         defevent "search", SearchEvent, params: [query: String.t()]
         defyield :browsing
-        defyield :results, params: [products: [Product.t()], total: integer()]
+        defyield results(products: [Product.t()], total: integer())
       end
   """
   defmacro defspindle(name, do: block) do
@@ -177,15 +176,28 @@ defmodule Skuld.PageMachine.Contract do
   ## Syntax
 
       defyield :tag
-      defyield :tag, params: [field: type(), ...]
+      defyield tag(key: type(), ...)
   """
-  defmacro defyield(tag, opts \\ []) when is_atom(tag) do
-    params = Keyword.get(opts, :params)
+  defmacro defyield(tag) when is_atom(tag) do
+    build_defyield(tag, [], __CALLER__)
+  end
 
+  defmacro defyield({tag, _meta, args}) when is_atom(tag) do
+    params = extract_keyword_params(args)
+    build_defyield(tag, params, __CALLER__)
+  end
+
+  defp extract_keyword_params([keyword_list]) when is_list(keyword_list) do
+    Enum.map(keyword_list, fn
+      {key, val} when is_atom(key) -> {key, val}
+    end)
+  end
+
+  defp build_defyield(tag, params, caller) do
     yield = %{
-      spindle: get_spindle!(__CALLER__),
+      spindle: get_spindle!(caller),
       tag: tag,
-      params: params || []
+      params: params
     }
 
     escaped = Macro.escape(yield)

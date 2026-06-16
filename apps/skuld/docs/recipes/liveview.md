@@ -114,7 +114,7 @@ defmodule MyApp.StoreProtocol do
     defevent "buy", BuyEvent, params: [product: Product.t()]
 
     defyield :browsing
-    defyield :results, params: [products: [Product.t()], total: integer()]
+    defyield results(products: [Product.t()], total: integer())
   end
 
   defspindle Checkout do

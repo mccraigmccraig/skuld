@@ -13,7 +13,7 @@ defmodule Skuld.PageMachine.ProtocolTest do
       defevent("buy")
 
       defyield(:browsing)
-      defyield(:results, params: [products: [map()], total: integer()])
+      defyield(results(products: [map()], total: integer()))
     end
 
     defspindle Checkout do
@@ -21,7 +21,7 @@ defmodule Skuld.PageMachine.ProtocolTest do
       defevent("submit_payment", PaymentEvent, params: [payment: map()])
 
       defyield(:shipping)
-      defyield(:payment, params: [method: String.t()])
+      defyield(payment(method: String.t()))
     end
   end
 
