@@ -16,7 +16,7 @@
 #
 #     state = FiberPoolState.new()
 #     {fiber_id, state} = FiberPoolState.add_fiber(state, fiber)
-#     {:done, results, state} = Scheduler.run(state, env)
+#     result = Scheduler.run(state, env)
 defmodule Skuld.FiberPool.Scheduler do
   @moduledoc false
 
@@ -59,14 +59,6 @@ defmodule Skuld.FiberPool.Scheduler do
           | {:done, FiberPoolState.t()}
           | {:suspended, Coroutine.t(), FiberPoolState.t()}
           | {:batch_ready, FiberPoolState.t()}
-          | {:error, term(), FiberPoolState.t()}
-
-  @type run_result ::
-          {:done, %{reference() => term()}, FiberPoolState.t()}
-          | {:suspended, Coroutine.t(), FiberPoolState.t()}
-          | {:waiting_for_tasks, FiberPoolState.t()}
-          | {:batch_ready, FiberPoolState.t()}
-          | {:foreign_suspends, FiberPoolState.t()}
           | {:error, term(), FiberPoolState.t()}
 
   #############################################################################
