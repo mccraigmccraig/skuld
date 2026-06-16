@@ -41,10 +41,20 @@ defmodule Skuld.PageMachine do
   """
   def default_tag, do: @default_tag
 
-  @doc "Start a page machine in a separate FiberPool.Server process."
-  def run(computation, tag \\ @default_tag)
-      when is_function(computation, 2) do
-    FiberServer.start_link([{tag, computation}])
+  @doc """
+  Start a page machine in a separate FiberPool.Server process.
+
+  The main computation is registered under `spindle_key` in the server.
+  This key is used in `handle_yield` patterns, `:into` on `def_pipe_event`,
+  and `Spindle.fork` to identify the spindle.
+
+  ## Options
+
+  - `:tag` — the PMC tag for message routing. Defaults to
+    `Skuld.PageMachine.Default`. Only needed for multi-PMC pages.
+  """
+  def run(computation, spindle_key, opts \\ []) when is_function(computation, 2) do
+    FiberServer.start_link([{spindle_key, computation}])
   end
 
   @doc "Resume a yielded spindle with a value."

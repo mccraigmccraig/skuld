@@ -52,10 +52,10 @@ the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
 4. Use `def_pipe_event` to forward LiveView events to the correct spindle
 5. Computations fork sub-computations as needed; yields update the UI
 
-The `:tag` option on `use` and `run/2` is optional — it defaults to
+The `:tag` option on `use` is optional — it defaults to
 `Skuld.PageMachine.Default`. Pass an explicit tag only when a page hosts
 multiple page machines. Every spindle key (in `handle_yield`, `:into`,
-`Spindle.fork`) is always explicit.
+`Spindle.fork`, and `run/2`) is always explicit.
 
 ## When to use concurrent spindles
 
@@ -165,16 +165,14 @@ machines.](https://en.wikipedia.org/wiki/Coroutine#Common_uses))
 
 ### LiveView module
 
-The product browser is the primary spindle — started at mount. The checkout
-spindle is forked on demand. Since this is a multi-spindle page, an explicit
-`tag: :products` names the primary spindle. (For single-spindle pages, the
-tag is optional — it defaults to `Skuld.PageMachine.Default`.)
+The product browser is the primary spindle — started at mount.
+The checkout spindle is forked on demand. The `/3` callbacks route
+each yield to the right UI region:
 
 ```elixir
 defmodule MyApp.StoreLive do
   use MyAppWeb, :live_view
   use Skuld.PageMachine,
-    tag: :products,
     on_yield: &handle_yield/3,
     on_complete: &handle_complete/3,
     on_error: &handle_error/3
@@ -415,7 +413,7 @@ the FiberPool.Server process, which cancels all registered fibers.
 
 | Operation                              | Purpose                             |
 |----------------------------------------|-------------------------------------|
-| `PageMachine.run/1,2`                  | Start page machine                  |
+| `PageMachine.run/2,3`                  | Start page machine with spindle key |
 | `PageMachine.resume/3`                 | Resume a spindle with a value       |
 | `PageMachine.def_pipe_event/2,4`       | Generate `handle_event/3`           |
 | `PageMachine.cancel/1`                 | Cancel page machine and spindles    |
