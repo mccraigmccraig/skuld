@@ -319,8 +319,8 @@ This means:
 
 ## Comparison to Elm / Redux / MVU
 
-This architecture is Elixir's answer to the Model-View-Update pattern that
-Elm enforces and Redux patterns towards:
+This architecture is an Elixir-based answer to the Model-View-Update
+pattern that Elm enforces and Redux patterns towards:
 
 | Concept      | Elm/Redux/re-frame       | PageMachine                       |
 |--------------|--------------------------|-----------------------------------|
@@ -331,15 +331,14 @@ Elm enforces and Redux patterns towards:
 | State update | `:db` effect             | `Yield.yield(tag)`                |
 
 In Elm and Redux, the reducer is a pure `(state, event) -> state` function —
-it must return the new state immediately. PageMachine lifts this constraint
-with coroutines: the update function can *suspend* mid-execution, surface state
-to the view via `Yield.yield`, and resume where it left off when the next
-event arrives.
+it must return the new state immediately, without blocking.
 
-With spindles, multiple update functions run concurrently — each spindle is
-an independent coroutine that yields independently. A product search doesn't
-block checkout form submission. The UI regions update independently because
-each yield carries the spindle key.
+PageMachine lifts this constraint with spindles — named coroutines that can
+*suspend* mid-execution, surface state to the view via `Yield.yield`, and
+resume where they left off when the next event arrives. Multiple spindles run
+concurrently in the same server process: a product search doesn't block
+checkout form submission, and UI regions update independently because each
+yield carries the spindle key.
 
 In re-frame terms, `Yield.yield(tag)` is analogous to returning a `:db`
 effect: it updates the store (assigns), making new state visible to the
@@ -356,30 +355,11 @@ keeping the types visible and the flow linear.
 
 ## How the spindles collaborate
 
-Each spindle is an independent coroutine. The product spindle loops: search,
-yield results, wait for events (filters or buy). The checkout spindle runs
-once per purchase: collect inputs, place order, exit. Both run concurrently
-in the same FiberPool.Server process — cooperatively scheduled, no locking.
-
-When the user clicks "buy," the product spindle receives the event via
-`Yield.yield`, forks a checkout spindle with `Spindle.fork`, yields a
-UI update, and continues its search loop. The checkout spindle runs its
-linear flow independently. If the user searches for more products
-while the checkout form is still open, those events go to the product
-spindle — the checkout spindle is unaffected.
-
-## Dynamic forking
-
-Spindles can fork other spindles from within their own computation using
-`Spindle.fork/2`. The product spindle forks a checkout spindle when the
-user clicks "buy" — the new spindle starts its linear flow while the
-product spindle continues its search loop. Both run cooperatively in the
-same server process.
-
-This pattern keeps the LiveView layer simple: events pipe in via
-`def_pipe_event`, computations spawn sub-computations as needed, and yields
-bubble up to the UI. No back-and-forth between the LiveView and the server
-for orchestration. The computation owns its lifecycle.
+When the user clicks "buy," the product spindle receives the event, forks
+a checkout spindle via `Spindle.fork`, and continues its search loop.
+The checkout spindle runs its linear flow independently. If the user
+searches while the checkout form is still open, those events go to the
+product spindle — the checkout spindle is unaffected.
 
 ## Cancellation and cleanup
 
