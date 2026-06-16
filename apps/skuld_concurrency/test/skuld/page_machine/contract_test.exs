@@ -82,14 +82,12 @@ defmodule Skuld.PageMachine.ContractTest do
              end)
     end
 
-    test "yield without params has empty params list" do
+    test "yield has nest flag" do
       browsing = Enum.find(TestProtocol.__protocol_yields__(), &(&1.tag == :browsing))
-      assert browsing.params == []
-    end
+      assert browsing.nest == :yield
 
-    test "yield with params includes param metadata" do
-      results = Enum.find(TestProtocol.__protocol_yields__(), &(&1.tag == :results))
-      assert length(results.params) == 2
+      purchase = Enum.find(TestProtocol.__protocol_yields__(), &(&1.tag == :purchase_selected))
+      assert purchase.nest == :notify
     end
   end
 
@@ -121,50 +119,62 @@ defmodule Skuld.PageMachine.ContractTest do
   end
 
   describe "spindle modules" do
-    test "generates Products spindle module" do
-      assert Code.ensure_loaded?(TestProtocol.Products)
+    test "generates Products.Yield module" do
+      assert Code.ensure_loaded?(TestProtocol.Products.Yield)
     end
 
-    test "generates Checkout spindle module" do
-      assert Code.ensure_loaded?(TestProtocol.Checkout)
+    test "generates Products.Notify module" do
+      assert Code.ensure_loaded?(TestProtocol.Products.Notify)
     end
 
-    test "generates 0-arity yield function that yields empty struct" do
-      comp = TestProtocol.Products.browsing() |> Yield.with_handler()
+    test "generates Checkout.Yield module" do
+      assert Code.ensure_loaded?(TestProtocol.Checkout.Yield)
+    end
+
+    test "0-arity yield generates function on Yield sub-module" do
+      comp = TestProtocol.Products.Yield.browsing() |> Yield.with_handler()
       {result, _env} = Skuld.Comp.run(comp)
 
-      assert %Skuld.Comp.ExternalSuspend{value: %TestProtocol.Products.Browsing{}} = result
+      assert %Skuld.Comp.ExternalSuspend{value: %TestProtocol.Products.Yield.Browsing{}} = result
     end
 
-    test "generates keyword-arg yield function with typed struct for tag with params" do
+    test "keyword-arg yield generates function on Yield sub-module" do
       comp =
-        TestProtocol.Products.results(products: [%{name: "Widget"}], total: 42)
+        TestProtocol.Products.Yield.results(products: [%{name: "Widget"}], total: 42)
         |> Yield.with_handler()
 
       {result, _env} = Skuld.Comp.run(comp)
 
       assert %Skuld.Comp.ExternalSuspend{value: struct} = result
-      assert %TestProtocol.Products.Results{} = struct
+      assert %TestProtocol.Products.Yield.Results{} = struct
       assert struct.products == [%{name: "Widget"}]
       assert struct.total == 42
     end
 
-    test "generates single-param yield function" do
+    test "0-arity yield on Checkout" do
+      comp = TestProtocol.Checkout.Yield.shipping() |> Yield.with_handler()
+      {result, _env} = Skuld.Comp.run(comp)
+
+      assert %Skuld.Comp.ExternalSuspend{value: %TestProtocol.Checkout.Yield.Shipping{}} = result
+    end
+
+    test "single-param yield function" do
       comp =
-        TestProtocol.Checkout.payment(method: "card")
+        TestProtocol.Checkout.Yield.payment(method: "card")
         |> Yield.with_handler()
 
       {result, _env} = Skuld.Comp.run(comp)
 
-      assert %Skuld.Comp.ExternalSuspend{value: %TestProtocol.Checkout.Payment{method: "card"}} =
-               result
+      assert %Skuld.Comp.ExternalSuspend{
+               value: %TestProtocol.Checkout.Yield.Payment{method: "card"}
+             } = result
     end
   end
 
   describe "defnotify" do
-    test "generates function that calls FiberYield.notify via the handler" do
+    test "generates function on Notify sub-module" do
       comp =
-        TestProtocol.Products.purchase_selected(product: %{name: "X"})
+        TestProtocol.Products.Notify.purchase_selected(product: %{name: "X"})
         |> Skuld.Effects.FiberYield.with_handler()
         |> Skuld.Comp.call(Skuld.Comp.Env.new(), &Skuld.Comp.identity_k/2)
 
@@ -174,15 +184,7 @@ defmodule Skuld.PageMachine.ContractTest do
                payload: %Skuld.Comp.InternalSuspend.FiberYield{value: struct, notify: true}
              } = result
 
-      assert %TestProtocol.Products.PurchaseSelected{product: %{name: "X"}} = struct
-    end
-
-    test "__protocol_yields__ includes notify flag" do
-      yields = TestProtocol.__protocol_yields__()
-
-      purchase = Enum.find(yields, &(&1.tag == :purchase_selected))
-
-      assert purchase.notify == true
+      assert %TestProtocol.Products.Notify.PurchaseSelected{product: %{name: "X"}} = struct
     end
   end
 

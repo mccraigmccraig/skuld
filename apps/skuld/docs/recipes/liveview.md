@@ -91,12 +91,11 @@ end
 ```
 
 ### Spindle
-
 The spindle is the computation — a linear flow that fetches data,
-surfaces results via `defnotify`, and suspends on `defyield` to wait
-for the next event. It uses the protocol's generated functions (`Search.results(...)`, `Search.browsing()`)
-and pattern-matches on the protocol's generated structs
-(`%Search.SearchEvent{}`, `%Search.FilterEvent{}`):
+surfaces results via `Search.Notify.results(...)`, and suspends on
+`Search.Yield.browsing()` to wait for the next event. It uses the
+protocol's generated functions and pattern-matches on the protocol's
+generated structs (`%Search.SearchEvent{}`, `%Search.FilterEvent{}`):
 
 ```elixir
 defmodule MyApp.SearchSpindle do
@@ -110,8 +109,8 @@ defmodule MyApp.SearchSpindle do
 
   defcomp search_loop(filters) do
     {:ok, products, total} <- MyApp.ProductCatalog.search(filters)
-    _ <- Search.results(products: products, total: total)
-    event <- Search.browsing()
+    _ <- Search.Notify.results(products: products, total: total)
+    event <- Search.Yield.browsing()
 
     case event do
       %Search.SearchEvent{query: query} ->
@@ -146,11 +145,11 @@ defmodule MyApp.SearchLive do
     {:ok, socket}
   end
 
-  def handle_yield(_spindle, %Search.Results{products: products, total: total}, socket) do
+  def handle_yield(_spindle, %Search.Notify.Results{products: products, total: total}, socket) do
     {:noreply, assign(socket, products: products, total: total)}
   end
 
-  def handle_yield(_spindle, %Search.Browsing{}, socket), do: {:noreply, socket}
+  def handle_yield(_spindle, %Search.Yield.Browsing{}, socket), do: {:noreply, socket}
 
   def handle_complete(_spindle, {:error, reason}, socket) do
     {:noreply, put_flash(socket, :error, "Search failed: #{inspect(reason)}")}
@@ -183,9 +182,10 @@ A few things to note:
   the incoming params into the struct before resuming the spindle. This is
   why the `case event` in the spindle pattern-matches on `%Search.SearchEvent{}`.
 - **`defyield` generates both a struct and a function** — `defyield browsing`
-  produces `%Search.Browsing{}` and `Search.browsing()`. `defnotify results(...)`
-  produces `%Search.Results{}` and `Search.results(products: ..., total: ...)` —
-  same pattern, but `defnotify` is fire-and-forget: the spindle doesn't pause.
+  produces `%Search.Yield.Browsing{}` and `Search.Yield.browsing()`.
+  `defnotify results(...)` produces `%Search.Notify.Results{}` and
+  `Search.Notify.results(products: ..., total: ...)` — same pattern, but
+  `defnotify` is fire-and-forget: the spindle doesn't pause.
 
 ### Test
 
@@ -280,8 +280,8 @@ defmodule MyApp.SearchSpindle do
 
   defcomp search_loop(filters) do
     {:ok, products, total} <- MyApp.ProductCatalog.search(filters)
-    _ <- Search.results(products: products, total: total)
-    event <- Search.browsing()
+    _ <- Search.Notify.results(products: products, total: total)
+    event <- Search.Yield.browsing()
 
     case event do
       %Search.BuyEvent{product: product} ->
@@ -310,8 +310,8 @@ defmodule MyApp.CheckoutSpindle do
 
   defcomp run(product) do
     {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
-    %Checkout.ShippingEvent{shipping: shipping} <- Checkout.shipping()
-    %Checkout.PaymentEvent{payment: payment} <- Checkout.payment()
+    %Checkout.Yield.ShippingEvent{shipping: shipping} <- Checkout.Yield.shipping()
+    %Checkout.Yield.PaymentEvent{payment: payment} <- Checkout.Yield.payment()
     {:ok, order} <- MyApp.Orders.place(%{product: product}, shipping, payment)
     {:ok, order}
   else
@@ -348,18 +348,18 @@ defmodule MyApp.StoreLive do
     {:ok, socket}
   end
 
-  def handle_yield(Search, %Search.Results{products: products, total: total}, socket) do
+  def handle_yield(Search, %Search.Notify.Results{products: products, total: total}, socket) do
     {:noreply, assign(socket, products: products, total: total)}
   end
 
-  def handle_yield(Search, %Search.Browsing{}, socket), do: {:noreply, socket}
+  def handle_yield(Search, %Search.Yield.Browsing{}, socket), do: {:noreply, socket}
 
-  def handle_yield(Checkout, %Checkout.Shipping{}, socket) do
+  def handle_yield(Checkout, %Checkout.Yield.Shipping{}, socket) do
     socket = clear_spinner(socket)
     {:noreply, assign(socket, step: :shipping)}
   end
 
-  def handle_yield(Checkout, %Checkout.Payment{}, socket) do
+  def handle_yield(Checkout, %Checkout.Yield.Payment{}, socket) do
     socket = clear_spinner(socket)
     {:noreply, assign(socket, step: :payment)}
   end
@@ -453,13 +453,13 @@ defmodule MyApp.SearchSpindleTest do
 
   test "first search yields results to the LiveView", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    assert %Coroutine.ExternalSuspended{value: %Search.Results{}} = fiber
+    assert %Coroutine.ExternalSuspended{value: %Search.Notify.Results{}} = fiber
   end
 
   test "filter event triggers new search and new results", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
     fiber = Coroutine.run(fiber, %Search.FilterEvent{filters: %{category: "books"}})
-    assert %Coroutine.ExternalSuspended{value: %Search.Results{}} = fiber
+    assert %Coroutine.ExternalSuspended{value: %Search.Notify.Results{}} = fiber
   end
 end
 ```

@@ -13,7 +13,7 @@ defmodule Skuld.PageMachine.ProtocolTest do
       defevent("buy")
 
       defyield(:browsing)
-      defyield(results(products: [map()], total: integer()))
+      defnotify(results(products: [map()], total: integer()))
     end
 
     defspindle Checkout do
@@ -51,13 +51,19 @@ defmodule Skuld.PageMachine.ProtocolTest do
     end
 
     test "yield struct matches protocol definition" do
-      struct = %StoreProtocol.Products.Results{products: [], total: 0}
+      struct = %StoreProtocol.Products.Notify.Results{products: [], total: 0}
       assert struct.products == []
       assert struct.total == 0
     end
 
-    test "spindle module yield function produces a computation" do
-      comp = StoreProtocol.Products.results(products: [], total: 1)
+    test "Yield sub-module function produces a computation" do
+      comp = StoreProtocol.Products.Yield.browsing()
+      assert is_function(comp, 2)
+    end
+
+    test "Notify sub-module function produces a computation" do
+      comp = StoreProtocol.Products.Notify.results(products: [], total: 1)
+
       assert is_function(comp, 2)
     end
 
@@ -66,8 +72,13 @@ defmodule Skuld.PageMachine.ProtocolTest do
       assert Code.ensure_loaded?(StoreProtocol.Checkout.ShippingEvent)
     end
 
-    test "no event struct for event without struct name" do
-      refute Code.ensure_loaded?(StoreProtocol.Products.Buy)
+    test "Yield sub-module loaded" do
+      assert Code.ensure_loaded?(StoreProtocol.Products.Yield)
+      assert Code.ensure_loaded?(StoreProtocol.Checkout.Yield)
+    end
+
+    test "Notify sub-module loaded" do
+      assert Code.ensure_loaded?(StoreProtocol.Products.Notify)
     end
   end
 

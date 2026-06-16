@@ -199,7 +199,7 @@ defmodule Skuld.PageMachine.Contract do
       spindle: get_spindle!(caller),
       tag: tag,
       params: params,
-      notify: false
+      nest: :yield
     }
 
     escaped = Macro.escape(yield)
@@ -235,7 +235,7 @@ defmodule Skuld.PageMachine.Contract do
       spindle: get_spindle!(caller),
       tag: tag,
       params: params,
-      notify: true
+      nest: :notify
     }
 
     escaped = Macro.escape(yield)
@@ -330,14 +330,16 @@ defmodule Skuld.PageMachine.Contract do
 
   defp generate_spindle_modules(_protocol_module, yields) do
     yields
-    |> Enum.group_by(& &1.spindle)
-    |> Enum.map(fn {spindle_module, spindle_yields} ->
-      struct_defs = Enum.map(spindle_yields, &generate_yield_struct(spindle_module, &1))
+    |> Enum.group_by(&{&1.spindle, &1.nest})
+    |> Enum.map(fn {{spindle_module, nest}, spindle_yields} ->
+      nest_module = Module.concat(spindle_module, to_pascal_case(nest))
 
-      yield_fns = Enum.map(spindle_yields, &generate_yield_fn(spindle_module, &1))
+      struct_defs = Enum.map(spindle_yields, &generate_yield_struct(nest_module, &1))
+
+      yield_fns = Enum.map(spindle_yields, &generate_yield_fn(nest_module, &1))
 
       quote do
-        defmodule unquote(spindle_module) do
+        defmodule unquote(nest_module) do
           @moduledoc false
           unquote_splicing(struct_defs)
           unquote_splicing(yield_fns)
@@ -367,16 +369,14 @@ defmodule Skuld.PageMachine.Contract do
     end
   end
 
-  defp generate_yield_fn(spindle_module, %{tag: tag, params: params} = y) do
+  defp generate_yield_fn(spindle_module, %{tag: tag, params: params, nest: nest}) do
     struct_name = to_pascal_case(tag)
     struct_module = Module.concat(spindle_module, struct_name)
-    notify? = Map.get(y, :notify, false)
 
     {effect_mod, effect_fun} =
-      if notify? do
-        {Skuld.Effects.FiberYield, :notify}
-      else
-        {Skuld.Effects.Yield, :yield}
+      case nest do
+        :notify -> {Skuld.Effects.FiberYield, :notify}
+        :yield -> {Skuld.Effects.Yield, :yield}
       end
 
     if params == [] do
