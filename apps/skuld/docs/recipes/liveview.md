@@ -46,16 +46,15 @@ the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
 
 ## Pattern
 
-1. Write each page region as an effectful computation using `Yield`
-2. Test each in isolation with `Coroutine` — deterministic, no processes
-3. Wrap the page in a thin LiveView module via `use Skuld.PageMachine` with `/3` callbacks
-4. Use `def_pipe_event` to forward LiveView events to the correct spindle
+1. Define a typed protocol with `use Skuld.PageMachine.Contract` and `defspindle` blocks
+2. Write each page region as an effectful computation using the protocol's yield functions
+3. Test each in isolation with `Coroutine` — deterministic, no processes
+4. Wrap the page in a thin LiveView module via `use Skuld.PageMachine, protocol: ...` with `/3` callbacks
 5. Computations fork sub-computations as needed; yields update the UI
 
 The `:tag` option on `use` is optional — it defaults to
 `Skuld.PageMachine.Default`. Pass an explicit tag only when a page hosts
-multiple page machines. Every spindle key (in `handle_yield`, `:into`,
-`Spindle.fork`, and `run/2`) is always explicit.
+multiple page machines.
 
 ## When to use concurrent spindles
 
@@ -69,10 +68,10 @@ in isolation.
 
 Two spindles running in the same page machine:
 
-| Spindle     | Role                                                  | Event source                                   |
-|-------------|-------------------------------------------------------|------------------------------------------------|
-| `:products` | Forever loop: search products, select one to buy      | `"search"`, `"filter"` events                  |
-| `:checkout` | Forked on buy: collect shipping, payment, place order | `"submit_shipping"`, `"submit_payment"` events |
+| Spindle                       | Role                                                  | Event source                                   |
+|-------------------------------|-------------------------------------------------------|------------------------------------------------|
+| `StoreProtocol.Products`      | Forever loop: search products, select one to buy      | `"search"`, `"filter"` events                  |
+| `StoreProtocol.Checkout`      | Forked on buy: collect shipping, payment, place order | `"submit_shipping"`, `"submit_payment"` events |
 
 ### Boundary contracts
 
@@ -95,6 +94,36 @@ defmodule MyApp.Inventory do
   use Skuld.Effects.Port.EffectfulFacade
 
   defcallback reserve(cart :: map()) :: {:ok, term()} | {:error, term()}
+end
+```
+
+### Protocol
+
+A typed protocol declares the full spindle ↔ LiveView contract — events,
+their target spindles, param types, and the shape of every yield. The
+protocol is the single source of truth; the LiveView and spindles both
+reference it:
+
+```elixir
+defmodule MyApp.StoreProtocol do
+  use Skuld.PageMachine.Contract
+
+  defspindle Products do
+    defevent "search", params: [query: String.t()]
+    defevent "filter", params: [filters: map()]
+    defevent "buy"
+
+    defyield :browsing
+    defyield :results, params: [products: [Product.t()], total: integer()]
+  end
+
+  defspindle Checkout do
+    defevent "submit_shipping", params: [shipping: map()]
+    defevent "submit_payment", params: [payment: map()]
+
+    defyield :shipping
+    defyield :payment
+  end
 end
 ```
 
@@ -162,36 +191,6 @@ machine, and the program counter *is* the current state.
 ([Coroutines are a classic technique for implementing state
 machines.](https://en.wikipedia.org/wiki/Coroutine#Common_uses))
 
-### Protocol
-
-A typed protocol declares the full spindle ↔ LiveView contract — events,
-their target spindles, param types, and the shape of every yield. The
-protocol is the single source of truth; the LiveView and spindles both
-reference it:
-
-```elixir
-defmodule MyApp.StoreProtocol do
-  use Skuld.PageMachine.Contract
-
-  defspindle Products do
-    defevent "search", params: [query: String.t()]
-    defevent "filter", params: [filters: map()]
-    defevent "buy"
-
-    defyield :browsing
-    defyield :results, params: [products: [Product.t()], total: integer()]
-  end
-
-  defspindle Checkout do
-    defevent "submit_shipping", params: [shipping: map()]
-    defevent "submit_payment", params: [payment: map()]
-
-    defyield :shipping
-    defyield :payment
-  end
-end
-```
-
 ### LiveView module
 
 The product browser is the primary spindle — started at mount.
@@ -225,26 +224,26 @@ defmodule MyApp.StoreLive do
     {:noreply, assign(socket, products: products, total: total)}
   end
 
-  def handle_yield(:checkout, step, socket) do
+  def handle_yield(StoreProtocol.Checkout, step, socket) do
     socket = clear_spinner(socket)
     {:noreply, assign(socket, step: step)}
   end
 
-  def handle_complete(:products, {:error, reason}, socket) do
+  def handle_complete(StoreProtocol.Products, {:error, reason}, socket) do
     {:noreply, put_flash(socket, :error, "Product search failed: #{inspect(reason)}")}
   end
 
-  def handle_complete(:checkout, {:ok, order}, socket) do
+  def handle_complete(StoreProtocol.Checkout, {:ok, order}, socket) do
     socket = clear_spinner(socket)
     {:noreply, assign(socket, order: order, step: :done)}
   end
 
-  def handle_error(:checkout, :sold_out, socket) do
+  def handle_error(StoreProtocol.Checkout, :sold_out, socket) do
     socket = clear_spinner(socket)
     {:noreply, put_flash(socket, :error, "Sorry, this item is no longer available")}
   end
 
-  def handle_error(:checkout, reason, socket) do
+  def handle_error(StoreProtocol.Checkout, reason, socket) do
     socket = clear_spinner(socket)
     {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
   end
