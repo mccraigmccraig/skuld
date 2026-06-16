@@ -49,7 +49,7 @@ defmodule Skuld.PageMachine do
   automatically in `socket.assigns` under the default assign key
   (`Skuld.PageMachine.DefaultAssign`):
 
-      {:ok, socket} =
+      socket =
         PageMachine.run(socket, products: ProductBrowserSpindle.run(%{}))
 
   Multiple spindles can be started at once:
@@ -67,7 +67,7 @@ defmodule Skuld.PageMachine do
 
   def run(%{assigns: assigns} = socket, fibers) when is_list(fibers) do
     {:ok, pid} = FiberServer.start_link(fibers)
-    {:ok, %{socket | assigns: Map.put(assigns, @default_assign_key, pid)}}
+    %{socket | assigns: Map.put(assigns, @default_assign_key, pid)}
   end
 
   @doc "Resume a yielded spindle with a value."

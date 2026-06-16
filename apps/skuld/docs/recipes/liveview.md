@@ -179,7 +179,7 @@ defmodule MyApp.StoreLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, socket} =
+    socket =
       PageMachine.run(socket,
         products: MyApp.ProductBrowserSpindle.run(%{})
       )
