@@ -212,10 +212,10 @@ end
 
 ### Protocol
 
-The protocol extends to include `Checkout` alongside `Search`. Unlike
-`Search`, `Checkout` has no `defevent` declarations — it doesn't receive
-events from the UI. It's forked by the search spindle when the user
-selects a product:
+The protocol extends to include `Checkout` alongside `Search`. The
+`Checkout` spindle declares events for form submissions — when the
+user fills the shipping and payment forms, the LiveView routes those
+events back to the checkout spindle as typed structs:
 
 ```elixir
 defmodule MyApp.StoreProtocol do
@@ -231,6 +231,9 @@ defmodule MyApp.StoreProtocol do
   end
 
   defspindle Checkout do
+    defevent "submit_shipping", ShippingEvent, params: [shipping: map()]
+    defevent "submit_payment", PaymentEvent, params: [payment: map()]
+
     defyield shipping
     defyield payment
   end
