@@ -49,8 +49,7 @@ the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
 1. Define a typed protocol with `use Skuld.PageMachine.Contract` and `defspindle` blocks
 2. Write each page region as an effectful computation using the protocol's yield functions
 3. Test each in isolation with `Coroutine` — deterministic, no processes
-4. Wrap the page in a thin LiveView module via `use Skuld.PageMachine, protocol: ...`
-   with `/2` callbacks (single spindle) or `/3` (multi-spindle)
+4. Wrap the page in a thin LiveView module via `use Skuld.PageMachine, protocol: ...` with `/3` callbacks
 5. Computations fork sub-computations with `Spindle.fork`; yields update the UI
 
 ## Example: single-spindle product browser
@@ -110,9 +109,9 @@ defmodule MyApp.SearchLive do
   use MyAppWeb, :live_view
   use Skuld.PageMachine,
     protocol: MyApp.SearchProtocol,
-    on_yield: &handle_yield/2,
-    on_complete: &handle_complete/2,
-    on_error: &handle_error/2
+    on_yield: &handle_yield/3,
+    on_complete: &handle_complete/3,
+    on_error: &handle_error/3
 
   alias MyApp.SearchProtocol.Search
 
@@ -125,17 +124,17 @@ defmodule MyApp.SearchLive do
     {:ok, socket}
   end
 
-  def handle_yield(%Search.Results{products: products, total: total}, socket) do
+  def handle_yield(_spindle, %Search.Results{products: products, total: total}, socket) do
     {:noreply, assign(socket, products: products, total: total)}
   end
 
-  def handle_yield(%Search.Browsing{}, socket), do: {:noreply, socket}
+  def handle_yield(_spindle, %Search.Browsing{}, socket), do: {:noreply, socket}
 
-  def handle_complete({:error, reason}, socket) do
+  def handle_complete(_spindle, {:error, reason}, socket) do
     {:noreply, put_flash(socket, :error, "Search failed: #{inspect(reason)}")}
   end
 
-  def handle_error(reason, socket) do
+  def handle_error(_spindle, reason, socket) do
     {:noreply, put_flash(socket, :error, "Error: #{inspect(reason)}")}
   end
 
@@ -153,8 +152,10 @@ end
 
 A few things to note:
 
-- **`/2` callbacks** — with a single spindle there's no dispatch by key.
-  The module atom (`Search`) isn't needed in the callback signature.
+- **`/3` callbacks from the start** — the spindle module atom is the
+  first argument. With a single spindle it's unused (`_spindle`), but
+  using `/3` from the beginning means no refactoring when you add a
+  second spindle — just add another clause.
 - **`defevent` + struct name** — `defevent "search", SearchEvent, params: [...]`
   generates `Search.SearchEvent`. The auto-generated `handle_event` wraps
   the incoming params into the struct before resuming the spindle. This is
@@ -387,8 +388,9 @@ end
 
 The key differences from the single-spindle version:
 
-- **`/3` callbacks** — `handle_yield(Search, ...)` and
+- **Additional clauses** — `handle_yield(Search, ...)` and
   `handle_yield(Checkout, ...)` dispatch by spindle module atom.
+  The single-spindle used `_spindle`; here each clause names its spindle.
 - **`Spindle.fork`** — the search spindle forks a checkout spindle
   rather than handling the buy event itself. The fork returns a
   `Handle` (ignored with `_handle`); the parent continues running.
