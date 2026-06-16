@@ -82,31 +82,32 @@ defmodule Skuld.FiberPool.Server do
 
   defp server_loop(caller, id_to_key, key_to_id, state, env) do
     state = Scheduler.process_external_wakes(state)
+    round = Scheduler.run(state, env)
 
-    case Scheduler.run(state, env) do
-      {:done, _results, state} ->
-        notify_completions(caller, id_to_key, state)
+    cond do
+      round.all_done ->
+        notify_completions(caller, id_to_key, round.state, round.completions)
         send(caller, {__MODULE__, :all_done, []})
 
-      {:suspended, fiber, state} ->
-        handle_suspended_fiber(caller, id_to_key, key_to_id, state, env, fiber)
+      round.suspended_yields != [] ->
+        Enum.each(round.suspended_yields, fn {fiber, _value} ->
+          handle_suspended_fiber(caller, id_to_key, round.state, fiber)
+        end)
 
-      {:waiting_for_tasks, state} ->
-        receive_resume(caller, id_to_key, key_to_id, state, env)
+        receive_resume(caller, id_to_key, key_to_id, round.state, env)
 
-      {:batch_ready, state} ->
-        server_loop(caller, id_to_key, key_to_id, state, env)
+      round.batch_ready ->
+        server_loop(caller, id_to_key, key_to_id, round.state, env)
 
-      {:error, reason, _state} ->
-        send(caller, {__MODULE__, :error, reason})
+      round.waiting_for_tasks ->
+        receive_resume(caller, id_to_key, key_to_id, round.state, env)
 
-      other ->
-        IO.puts("SERVER unexpected result: #{inspect(other)}")
-        server_loop(caller, id_to_key, key_to_id, state, env)
+      true ->
+        receive_resume(caller, id_to_key, key_to_id, round.state, env)
     end
   end
 
-  defp handle_suspended_fiber(caller, id_to_key, key_to_id, state, env, fiber) do
+  defp handle_suspended_fiber(caller, id_to_key, _state, fiber) do
     case fiber do
       %Coroutine.InternalSuspended{
         id: id,
@@ -117,10 +118,9 @@ defmodule Skuld.FiberPool.Server do
         fiber_key = Map.fetch!(id_to_key, id)
         ipc_suspend = %Comp.ExternalSuspend{value: value, resume: nil, data: nil}
         send(caller, {__MODULE__, fiber_key, ipc_suspend})
-        receive_resume(caller, id_to_key, key_to_id, state, env)
 
       _ ->
-        server_loop(caller, id_to_key, key_to_id, state, env)
+        :ok
     end
   end
 
@@ -147,9 +147,9 @@ defmodule Skuld.FiberPool.Server do
     end
   end
 
-  defp notify_completions(caller, id_to_key, state) do
+  defp notify_completions(caller, id_to_key, _state, completions) do
     Enum.each(id_to_key, fn {fiber_id, key} ->
-      case Map.get(state.completed, fiber_id) do
+      case Map.get(completions, fiber_id) do
         {:ok, result} -> send(caller, {__MODULE__, key, result})
         {:error, error} -> send(caller, {__MODULE__, key, error_to_ipc(error)})
         nil -> :ok

@@ -101,19 +101,14 @@ defmodule Skuld.FiberPool.Main do
   # Delegates to Scheduler.run and handles batch rounds.
   defp run_fibers_to_completion(state, env, result) do
     snapshot = FiberPoolState.progress_snapshot(state)
+    round_result = Scheduler.run(state, env)
+    state = round_result.state
 
-    case Scheduler.run(state, env) do
-      {:done, _results, final_state} ->
-        {result, %{env | state: FiberPoolState.get_env_state(final_state)}}
+    cond do
+      round_result.all_done ->
+        {result, %{env | state: FiberPoolState.get_env_state(state)}}
 
-      {:suspended, _fiber, final_state} ->
-        {result, %{env | state: FiberPoolState.get_env_state(final_state)}}
-
-      {:waiting_for_tasks, state} ->
-        final_state = Tasks.wait_for_all(state)
-        {result, %{env | state: FiberPoolState.get_env_state(final_state)}}
-
-      {:batch_ready, state} ->
+      round_result.batch_ready ->
         {state, env} = Batching.execute_pending_batches(state, env)
 
         if FiberPoolState.progressed?(snapshot, FiberPoolState.progress_snapshot(state)) do
@@ -122,8 +117,18 @@ defmodule Skuld.FiberPool.Main do
           {{:error, {:deadlock, deadlock_diagnostic(state)}}, env}
         end
 
-      {:foreign_suspends, state} ->
+      round_result.waiting_for_tasks ->
+        final_state = Tasks.wait_for_all(state)
+        {result, %{env | state: FiberPoolState.get_env_state(final_state)}}
+
+      round_result.suspended_yields != [] ->
+        {result, %{env | state: FiberPoolState.get_env_state(state)}}
+
+      map_size(state.foreign_suspends) > 0 ->
         bundle_foreign_suspensions(state, env)
+
+      true ->
+        {result, %{env | state: FiberPoolState.get_env_state(state)}}
     end
   end
 

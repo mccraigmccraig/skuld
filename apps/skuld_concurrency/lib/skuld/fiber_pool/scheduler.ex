@@ -32,6 +32,28 @@ defmodule Skuld.FiberPool.Scheduler do
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
 
+  defmodule RoundResult do
+    @moduledoc false
+
+    @type t :: %__MODULE__{
+            suspended_yields: [{Coroutine.t(), term()}],
+            completions: %{(Types.fiber_id() | :main) => {:ok, term()} | {:error, term()}},
+            all_done: boolean(),
+            waiting_for_tasks: boolean(),
+            batch_ready: boolean(),
+            state: FiberPoolState.t()
+          }
+
+    defstruct [
+      :state,
+      suspended_yields: [],
+      completions: %{},
+      all_done: false,
+      waiting_for_tasks: false,
+      batch_ready: false
+    ]
+  end
+
   @type step_result ::
           {:continue, FiberPoolState.t()}
           | {:done, FiberPoolState.t()}
@@ -52,17 +74,15 @@ defmodule Skuld.FiberPool.Scheduler do
   #############################################################################
 
   @doc """
-  Run all fibers until completion or external suspension.
+  Run all ready fibers in a single round and return a `RoundResult`.
 
-  Returns:
-  - `{:done, results, state}` - All fibers and tasks completed
-  - `{:suspended, fiber, state}` - A fiber yielded externally (not an await)
-  - `{:waiting_for_tasks, state}` - Fibers done but tasks still running
-  - `{:error, reason, state}` - Fatal error (when on_error: :stop)
+  Drains the run queue once — fibers that become ready during the round
+  (e.g. via task completion) are left for the next call. Returns a
+  struct with all suspended yields, completions, and status flags.
   """
-  @spec run(FiberPoolState.t(), Types.env()) :: run_result()
+  @spec run(FiberPoolState.t(), Types.env()) :: RoundResult.t()
   def run(state, env) do
-    run_loop(state, env)
+    run_loop(state, env, %RoundResult{state: state})
   end
 
   @doc """
@@ -150,13 +170,13 @@ defmodule Skuld.FiberPool.Scheduler do
   ## Internal
   #############################################################################
 
-  defp run_loop(state, env) do
+  defp run_loop(state, env, round_result) do
     # Process any pending channel wakes before each step
     state = process_external_wakes(state)
 
     case step(state, env) do
       {:continue, state} ->
-        run_loop(state, env)
+        run_loop(state, env, round_result)
 
       {:done, state} ->
         # Process any final channel wakes
@@ -166,32 +186,76 @@ defmodule Skuld.FiberPool.Scheduler do
         if FiberPoolState.queue_empty?(state) do
           cond do
             map_size(state.foreign_suspends) > 0 ->
-              {:foreign_suspends, state}
+              suspended = suspended_yields_from(state)
 
-            FiberPoolState.has_tasks?(state) ->
-              {:waiting_for_tasks, state}
+              %{round_result | state: state, suspended_yields: suspended}
 
             true ->
-              # Collect results for completed fibers/tasks
-              results = collect_results(state)
-              {:done, results, state}
+              suspended = suspended_yields_from(state)
+
+              %{
+                round_result
+                | state: state,
+                  suspended_yields: round_result.suspended_yields ++ suspended,
+                  completions: state.completed,
+                  waiting_for_tasks: FiberPoolState.has_tasks?(state),
+                  all_done:
+                    suspended == [] and
+                      not FiberPoolState.has_tasks?(state) and
+                      map_size(state.suspensions) == 0 and
+                      map_size(state.fibers) == 0
+              }
           end
         else
-          run_loop(state, env)
+          run_loop(state, env, round_result)
         end
 
       {:suspended, fiber, state} ->
-        {:suspended, fiber, state}
+        value = yield_value(fiber)
+
+        run_loop(
+          state,
+          env,
+          %{
+            round_result
+            | state: state,
+              suspended_yields: [{fiber, value} | round_result.suspended_yields]
+          }
+        )
 
       {:batch_ready, state} ->
         # Batch suspensions are ready - return control for batch execution
-        {:batch_ready, state}
+        %{round_result | state: state, batch_ready: true}
 
         # Reserved for future error handling with on_error: :stop
         # {:error, reason, state} ->
         #   {:error, reason, state}
     end
   end
+
+  defp suspended_yields_from(state) do
+    Enum.flat_map(state.suspensions, fn {fiber_id, suspension} ->
+      case suspension do
+        %FiberPoolState.Suspension.FiberYield{} ->
+          case FiberPoolState.get_fiber(state, fiber_id) do
+            nil -> []
+            fiber -> [{fiber, yield_value(fiber)}]
+          end
+
+        _ ->
+          []
+      end
+    end)
+  end
+
+  defp yield_value(%Coroutine.ExternalSuspended{value: value}), do: value
+
+  defp yield_value(%Coroutine.InternalSuspended{
+         suspend: %InternalSuspend{payload: %InternalSuspend.FiberYield{value: value}}
+       }),
+       do: value
+
+  defp yield_value(_), do: nil
 
   defp run_one_fiber(state, fiber_id, env) do
     case FiberPoolState.get_fiber(state, fiber_id) do
@@ -415,10 +479,6 @@ defmodule Skuld.FiberPool.Scheduler do
         state = %{state | consume_ids: remaining}
         cleanup_consumed_ids(state, consume_ids)
     end
-  end
-
-  defp collect_results(state) do
-    state.completed
   end
 
   #############################################################################

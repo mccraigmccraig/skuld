@@ -40,7 +40,9 @@ defmodule Skuld.FiberPool.SchedulerTest do
       {fid2, state} = FiberPoolState.add_fiber(state, fiber2)
       {fid3, state} = FiberPoolState.add_fiber(state, fiber3)
 
-      {:done, results, _state} = Scheduler.run(state, env)
+      round = Scheduler.run(state, env)
+      assert round.all_done
+      results = round.completions
 
       assert results[fid1] == {:ok, 1}
       assert results[fid2] == {:ok, 2}
@@ -51,9 +53,9 @@ defmodule Skuld.FiberPool.SchedulerTest do
       state = FiberPoolState.new()
       env = Env.new()
 
-      {:done, results, _state} = Scheduler.run(state, env)
-
-      assert results == %{}
+      round = Scheduler.run(state, env)
+      assert round.all_done
+      assert round.completions == %{}
     end
 
     test "collects errors from failed fibers" do
@@ -68,7 +70,9 @@ defmodule Skuld.FiberPool.SchedulerTest do
       fiber = Coroutine.new(error_comp, env, id: :error_fiber)
       {fid, state} = FiberPoolState.add_fiber(state, fiber)
 
-      {:done, results, _state} = Scheduler.run(state, env)
+      round = Scheduler.run(state, env)
+      assert round.all_done
+      results = round.completions
 
       assert {:error, %Coroutine.Error{type: :exception, error: %RuntimeError{message: "boom"}}} =
                results[fid]
