@@ -92,8 +92,8 @@ defmodule Skuld.PageMachineTest do
 
   describe "def_pipe_event/2" do
     defmodule PipeEventAsyncTest do
-      import Skuld.PageMachine, only: [def_pipe_event: 2]
-      def_pipe_event("test_event", :runner)
+      import Skuld.PageMachine, only: [def_pipe_event: 1]
+      def_pipe_event "test_event"
     end
 
     test "generates handle_event/3 function" do
@@ -109,9 +109,9 @@ defmodule Skuld.PageMachineTest do
 
   describe "def_pipe_event/2 with pattern+block" do
     defmodule PipeEventAsyncPatternTest do
-      import Skuld.PageMachine, only: [def_pipe_event: 4]
+      import Skuld.PageMachine, only: [def_pipe_event: 3]
 
-      def_pipe_event "submit", :runner, %{"value" => v} do
+      def_pipe_event "submit", %{"value" => v} do
         {:ok, v}
       end
     end

@@ -21,25 +21,22 @@ defmodule Skuld.PageMachine do
 
   ## Event routing
 
-  By default, events go to the main fiber (the PMC tag). Use `into:`
-  to route to a specific spindle:
+  Events route to spindles by name:
 
-      def_pipe_event "add_to_cart", :runner, into: :cart
-      def_pipe_event "submit_shipping", :runner
+      def_pipe_event "search", into: :products, before: &start_spinner/1
+      def_pipe_event "buy", into: :products
   """
 
   alias Skuld.FiberPool.Server, as: FiberServer
 
   @default_tag Module.concat(__MODULE__, Default)
+  @default_assign_key Module.concat(__MODULE__, DefaultAssign)
 
-  @doc """
-  The default PageMachine tag.
-
-  In the common single-PageMachine case the tag is implicit. Pass an
-  explicit `:tag` to `use` and `run/2` only when a page hosts multiple
-  page machines.
-  """
+  @doc "The default PageMachine tag."
   def default_tag, do: @default_tag
+
+  @doc "The default assign key used to look up the PageMachine pid from socket.assigns."
+  def default_assign_key, do: @default_assign_key
 
   @doc """
   Start a page machine in a separate FiberPool.Server process.
@@ -57,7 +54,7 @@ defmodule Skuld.PageMachine do
   - `:tag` — the PMC tag for message routing. Defaults to
     `Skuld.PageMachine.Default`. Only needed for multi-PMC pages.
   """
-  def run(fibers, opts \\ []) when is_list(fibers) do
+  def run(fibers, _opts \\ []) when is_list(fibers) do
     FiberServer.start_link(fibers)
   end
 
@@ -75,85 +72,60 @@ defmodule Skuld.PageMachine do
   ## def_pipe_event macros
   #############################################################################
 
-  defmacro def_pipe_event(event, assign_key) do
-    into = nil
-    pmc_tag = Module.get_attribute(__CALLER__.module, :pmc_tag)
-
-    quote do
-      def handle_event(unquote(event), params, socket) do
-        fiber_key = unquote(into) || unquote(pmc_tag) || unquote(assign_key)
-
-        Skuld.PageMachine.resume(
-          Map.fetch!(socket.assigns, unquote(assign_key)),
-          fiber_key,
-          {unquote(event), params}
-        )
-
-        {:noreply, socket}
-      end
-    end
+  defmacro def_pipe_event(event, opts \\ []) do
+    generate_clause(event, nil, opts)
   end
 
-  defmacro def_pipe_event(event, assign_key, before: before) do
-    into = nil
-    pmc_tag = Module.get_attribute(__CALLER__.module, :pmc_tag)
-
-    quote do
-      def handle_event(unquote(event), params, socket) do
-        socket = unquote(before).(socket)
-        fiber_key = unquote(into) || unquote(pmc_tag) || unquote(assign_key)
-
-        Skuld.PageMachine.resume(
-          Map.fetch!(socket.assigns, unquote(assign_key)),
-          fiber_key,
-          {unquote(event), params}
-        )
-
-        {:noreply, socket}
-      end
-    end
+  defmacro def_pipe_event(event, pattern, opts) do
+    generate_clause(event, pattern, opts)
   end
 
-  defmacro def_pipe_event(event, assign_key, pattern, do: block) do
-    into = nil
-    pmc_tag = Module.get_attribute(__CALLER__.module, :pmc_tag)
+  defp generate_clause(event, pattern, opts) do
+    into = Keyword.get(opts, :into)
+    before = Keyword.get(opts, :before)
+    assign_key = Keyword.get(opts, :assign, @default_assign_key)
+    block = Keyword.get(opts, :do)
 
-    quote do
-      def handle_event(unquote(event), unquote(pattern), socket) do
-        fiber_key = unquote(into) || unquote(pmc_tag) || unquote(assign_key)
-        value = unquote(block)
+    body =
+      case pattern do
+        nil ->
+          quote do
+            def handle_event(unquote(event), params, socket) do
+              unquote(before_call(before))
 
-        Skuld.PageMachine.resume(
-          Map.fetch!(socket.assigns, unquote(assign_key)),
-          fiber_key,
-          value
-        )
+              Skuld.PageMachine.resume(
+                Map.fetch!(socket.assigns, unquote(assign_key)),
+                unquote(into),
+                {unquote(event), params}
+              )
 
-        {:noreply, socket}
+              {:noreply, socket}
+            end
+          end
+
+        _ ->
+          quote do
+            def handle_event(unquote(event), unquote(pattern), socket) do
+              unquote(before_call(before))
+
+              value = unquote(block)
+
+              Skuld.PageMachine.resume(
+                Map.fetch!(socket.assigns, unquote(assign_key)),
+                unquote(into),
+                value
+              )
+
+              {:noreply, socket}
+            end
+          end
       end
-    end
+
+    body
   end
 
-  defmacro def_pipe_event(event, assign_key, pattern, do: block, before: before) do
-    into = nil
-    pmc_tag = Module.get_attribute(__CALLER__.module, :pmc_tag)
-
-    quote do
-      def handle_event(unquote(event), unquote(pattern), socket) do
-        socket = unquote(before).(socket)
-        fiber_key = unquote(into) || unquote(pmc_tag) || unquote(assign_key)
-        value = unquote(block)
-
-        Skuld.PageMachine.resume(
-          Map.fetch!(socket.assigns, unquote(assign_key)),
-          fiber_key,
-          value
-        )
-
-        {:noreply, socket}
-      end
-    end
-  end
+  defp before_call(nil), do: nil
+  defp before_call(callback), do: quote(do: socket = unquote(callback).(socket))
 
   #############################################################################
   ## __using__ macro
@@ -206,9 +178,10 @@ defmodule Skuld.PageMachine do
 
     quote do
       @pmc_tag unquote(tag)
+      @pmc_assign_key unquote(@default_assign_key)
 
       import Skuld.PageMachine,
-        only: [def_pipe_event: 2, def_pipe_event: 3, def_pipe_event: 4]
+        only: [def_pipe_event: 1, def_pipe_event: 2, def_pipe_event: 3]
 
       (unquote_splicing(clauses))
     end

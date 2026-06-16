@@ -179,14 +179,14 @@ defmodule MyApp.StoreLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, page_machine_pid} =
+    {:ok, pm} =
       PageMachine.run(
         products: MyApp.ProductBrowserSpindle.run(%{})
       )
 
     {:ok,
      assign(socket,
-        page_machine_pid: page_machine_pid,
+        pm: pm,
        products: [],
        total: 0,
        page: 1
@@ -230,14 +230,14 @@ defmodule MyApp.StoreLive do
   defp clear_spinner(socket), do: assign(socket, :loading, false)
 
   # Product browser events — routed to :products spindle
-  def_pipe_event "search", :page_machine_pid, into: :products, before: &start_spinner/1
-  def_pipe_event "filter", :page_machine_pid, into: :products, before: &start_spinner/1
-  def_pipe_event "page", :page_machine_pid, into: :products, before: &start_spinner/1
-  def_pipe_event "buy", :page_machine_pid, into: :products
+  def_pipe_event "search", into: :products, before: &start_spinner/1
+  def_pipe_event "filter", into: :products, before: &start_spinner/1
+  def_pipe_event "page", into: :products, before: &start_spinner/1
+  def_pipe_event "buy", into: :products
 
   # Checkout events — routed to :checkout spindle
-  def_pipe_event "submit_shipping", :page_machine_pid, into: :checkout, before: &start_spinner/1
-  def_pipe_event "submit_payment", :page_machine_pid, into: :checkout, before: &start_spinner/1
+  def_pipe_event "submit_shipping", into: :checkout, before: &start_spinner/1
+  def_pipe_event "submit_payment", into: :checkout, before: &start_spinner/1
 
   @impl true
   def render(assigns) do
@@ -399,7 +399,7 @@ Cancel on mount to prevent duplicate runners:
 ```elixir
 def mount(_params, _session, socket) do
   if connected?(socket) do
-    socket.assigns[:page_machine_pid] && PageMachine.cancel(socket.assigns.page_machine_pid)
+    socket.assigns[:pm] && PageMachine.cancel(socket.assigns.pm)
   end
   ...
 end
