@@ -49,10 +49,10 @@ bridges events and renders. This has two big payoffs:
 
 ## Pattern
 
-1. Define a typed protocol with `use Skuld.PageMachine.Contract` and `defspindle` blocks
-2. Write each page region as an effectful computation using the protocol's yield functions
+1. Define a typed contract with `use Skuld.PageMachine.Contract` and `defspindle` blocks
+2. Write each page region as an effectful computation using the contract's yield functions
 3. Test each in isolation with `Coroutine` — deterministic, no processes
-4. Wrap the page in a thin LiveView module via `use Skuld.PageMachine, protocol: ...` with `/3` callbacks
+4. Wrap the page in a thin LiveView module via `use Skuld.PageMachine, contract: ...` with `/3` callbacks
 5. Computations fork sub-computations with `Spindle.fork`; yields update the UI
 
 ## Example: single-spindle product browser
@@ -61,9 +61,9 @@ A product search page — one spindle, one event loop. The user types a
 query, the spindle fetches results, sends them to the LiveView, then
 waits for the next event.
 
-### Protocol
+### Contract
 
-The protocol is the single source of truth for the spindle ↔ LiveView
+The contract is the single source of truth for the spindle ↔ LiveView
 contract. `defspindle` opens a spindle block; inside, `defevent` declares
 events the LiveView can send to this spindle, `defyield` declares
 blocking yields, and `defnotify` declares fire-and-forget notifications.
@@ -79,7 +79,7 @@ results(products: [...], total: integer())` generates `Search.Notify.results(...
 fire-and-forget — the spindle surfaces results and continues without pausing:
 
 ```elixir
-defmodule MyApp.SearchProtocol do
+defmodule MyApp.SearchContract do
   use Skuld.PageMachine.Contract
 
   defspindle Search do
@@ -96,14 +96,14 @@ end
 The spindle is the computation — a function that fetches data,
 surfaces results via `Search.Notify.results(...)`, and suspends on
 `Search.Yield.browsing()` to wait for the next event. It uses the
-protocol's generated functions and pattern-matches on the protocol's
+contract's generated functions and pattern-matches on the contract's
 generated structs (`%Search.SearchEvent{}`, `%Search.FilterEvent{}`):
 
 ```elixir
 defmodule MyApp.SearchSpindle do
   use Skuld.Syntax
 
-  alias MyApp.SearchProtocol.Search
+  alias MyApp.SearchContract.Search
 
   defcomp run(initial_filters) do
     search_loop(initial_filters)
@@ -131,12 +131,12 @@ end
 defmodule MyApp.SearchLive do
   use MyAppWeb, :live_view
   use Skuld.PageMachine,
-    protocol: MyApp.SearchProtocol,
+    contract: MyApp.SearchContract,
     on_yield: &handle_yield/3,
     on_complete: &handle_complete/3,
     on_error: &handle_error/3
 
-  alias MyApp.SearchProtocol.Search
+  alias MyApp.SearchContract.Search
 
   @impl true
   def mount(_params, _session, socket) do
@@ -208,7 +208,7 @@ A few things to note:
 
 When you need an independent region with its own event loop — say a
 checkout form alongside the product browser — add a second spindle.
-The protocol gains a `Checkout` block, the LiveView switches to `/3`
+The contract gains a `Checkout` block, the LiveView switches to `/3`
 callbacks, and the product spindle forks the checkout spindle on demand.
 
 ### Boundary contracts
@@ -235,15 +235,15 @@ defmodule MyApp.Inventory do
 end
 ```
 
-### Protocol
+### Contract
 
-The protocol extends to include `Checkout` alongside `Search`. The
+The contract extends to include `Checkout` alongside `Search`. The
 `Checkout` spindle declares events for form submissions — when the
 user fills the shipping and payment forms, the LiveView routes those
 events back to the checkout spindle as typed structs:
 
 ```elixir
-defmodule MyApp.StoreProtocol do
+defmodule MyApp.StoreContract do
   use Skuld.PageMachine.Contract
 
   defspindle Search do
@@ -274,7 +274,7 @@ forks the checkout spindle and continues its own loop:
 defmodule MyApp.SearchSpindle do
   use Skuld.Syntax
 
-  alias MyApp.StoreProtocol.{Search, Checkout}
+  alias MyApp.StoreContract.{Search, Checkout}
 
   defcomp run(initial_filters) do
     search_loop(initial_filters)
@@ -308,7 +308,7 @@ to drive a step-by-step form in the LiveView:
 defmodule MyApp.CheckoutSpindle do
   use Skuld.Syntax
 
-  alias MyApp.StoreProtocol.Checkout
+  alias MyApp.StoreContract.Checkout
 
   defcomp run(product) do
     {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
@@ -326,20 +326,20 @@ end
 ### LiveView
 
 With two spindles, the LiveView switches to `/3` callbacks — the first
-argument is the spindle module atom. The `:protocol` option auto-generates
-`handle_event/3` from the protocol's `defevent` declarations:
+argument is the spindle module atom. The `:contract` option auto-generates
+`handle_event/3` from the contract's `defevent` declarations:
 
 ```elixir
 defmodule MyApp.StoreLive do
   use MyAppWeb, :live_view
   use Skuld.PageMachine,
-    protocol: MyApp.StoreProtocol,
+    contract: MyApp.StoreContract,
     on_yield: &handle_yield/3,
     on_complete: &handle_complete/3,
     on_error: &handle_error/3
 
   alias MyApp.{SearchSpindle, CheckoutSpindle}
-  alias MyApp.StoreProtocol.{Search, Checkout}
+  alias MyApp.StoreContract.{Search, Checkout}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -438,7 +438,7 @@ defmodule MyApp.SearchSpindleTest do
   alias Skuld.Comp.Env
   alias Skuld.Coroutine
   alias Skuld.Effects.Yield
-  alias MyApp.SearchProtocol.Search
+  alias MyApp.SearchContract.Search
 
   setup do
     comp =
@@ -494,7 +494,7 @@ pattern that Elm enforces and Redux patterns towards:
 | Model        | Store / app-db           | Scoped effects + fiber            |
 | Update       | Reducer / event handler  | Computation (`defcomp`)           |
 | View         | Pure render              | `render(assigns)`                 |
-| Event        | Action / dispatch        | `handle_event` / protocol `defspindle` `defevent` |
+| Event        | Action / dispatch        | `handle_event` / contract `defspindle` `defevent` |
 | State update | `:db` effect             | `Yield.yield(tag)`                |
 
 In Elm and Redux, the reducer is a pure `(state, event) -> state` function —
@@ -572,8 +572,8 @@ the FiberPool.Server process, which cancels all registered fibers.
 | `PageMachine.resume/3`                 | Resume a spindle with a value       |
 | `PageMachine.cancel/1`                 | Cancel page machine and spindles    |
 | `Spindle.fork/2`                       | Fork a spindle from a computation   |
-| `use Skuld.PageMachine, protocol: ...` | Typed protocol with auto-generated events and compile-time validation |
-| `use Skuld.PageMachine.Contract`       | Define a typed event/yield protocol |
+| `use Skuld.PageMachine, contract: ...` | Typed contract with auto-generated events and compile-time validation |
+| `use Skuld.PageMachine.Contract`       | Define a typed event/yield contract |
 
 ## Comparison to a monolithic LiveView
 

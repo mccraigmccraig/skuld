@@ -27,8 +27,8 @@ defmodule Skuld.PageMachine.ContractTest do
   end
 
   describe "defevent declarations" do
-    test "__protocol_events__/0 returns all event metadata" do
-      events = TestProtocol.__protocol_events__()
+    test "__contract_events__/0 returns all event metadata" do
+      events = TestProtocol.__contract_events__()
 
       assert length(events) == 5
 
@@ -42,7 +42,7 @@ defmodule Skuld.PageMachine.ContractTest do
     end
 
     test "event with params and struct name records both" do
-      search = Enum.find(TestProtocol.__protocol_events__(), &(&1.event == "search"))
+      search = Enum.find(TestProtocol.__contract_events__(), &(&1.event == "search"))
       assert length(search.params) == 1
     end
 
@@ -60,8 +60,8 @@ defmodule Skuld.PageMachine.ContractTest do
   end
 
   describe "defyield declarations" do
-    test "__protocol_yields__/0 returns all yield metadata" do
-      yields = TestProtocol.__protocol_yields__()
+    test "__contract_yields__/0 returns all yield metadata" do
+      yields = TestProtocol.__contract_yields__()
 
       assert length(yields) == 5
 
@@ -83,10 +83,10 @@ defmodule Skuld.PageMachine.ContractTest do
     end
 
     test "yield has nest flag" do
-      browsing = Enum.find(TestProtocol.__protocol_yields__(), &(&1.tag == :browsing))
+      browsing = Enum.find(TestProtocol.__contract_yields__(), &(&1.tag == :browsing))
       assert browsing.nest == :yield
 
-      purchase = Enum.find(TestProtocol.__protocol_yields__(), &(&1.tag == :purchase_selected))
+      purchase = Enum.find(TestProtocol.__contract_yields__(), &(&1.tag == :purchase_selected))
       assert purchase.nest == :notify
     end
   end

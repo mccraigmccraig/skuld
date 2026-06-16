@@ -446,14 +446,14 @@ defmodule Skuld.PageMachine.Contract do
       @doc """
       Returns the list of defevent declarations as maps.
       """
-      @spec __protocol_events__() :: [map()]
-      def __protocol_events__, do: unquote(escaped_events)
+      @spec __contract_events__() :: [map()]
+      def __contract_events__, do: unquote(escaped_events)
 
       @doc """
       Returns the list of defyield declarations as maps.
       """
-      @spec __protocol_yields__() :: [map()]
-      def __protocol_yields__, do: unquote(escaped_yields)
+      @spec __contract_yields__() :: [map()]
+      def __contract_yields__, do: unquote(escaped_yields)
     end
   end
 

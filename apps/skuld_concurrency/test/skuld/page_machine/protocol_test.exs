@@ -27,7 +27,7 @@ defmodule Skuld.PageMachine.ProtocolTest do
 
   defmodule ProtocolLive2 do
     use Skuld.PageMachine,
-      protocol: StoreProtocol,
+      contract: StoreProtocol,
       on_yield: &__MODULE__.handle_yield/2,
       on_error: &__MODULE__.handle_error/2
 
@@ -92,7 +92,7 @@ defmodule Skuld.PageMachine.ProtocolTest do
 
     defmodule MultiSpindlePM do
       use Skuld.PageMachine,
-        protocol: StoreProtocol,
+        contract: StoreProtocol,
         on_yield: &MultiSpindleProtocolLive.handle_yield/3
     end
 

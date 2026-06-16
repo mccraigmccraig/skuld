@@ -26,28 +26,28 @@ defmodule Skuld.PageMachine do
       def_pipe_event "search", into: :products, before: &start_spinner/1
       def_pipe_event "buy", into: :products
 
-  ## Typed protocol
+  ## Typed contract
 
   For compile-time validation of the entire spindle ↔ LiveView contract,
-  define a protocol module with `use Skuld.PageMachine.Contract` and pass
-  it via the `:protocol` option:
+  define a contract module with `use Skuld.PageMachine.Contract` and pass
+  it via the `:contract` option:
 
-      defmodule MyApp.StoreProtocol do
+      defmodule MyApp.StoreContract do
         use Skuld.PageMachine.Contract
 
-        defevent "search", into: :products, params: [query: String.t()]
-        defevent "buy", into: :products
+        defevent "search", SearchEvent, params: [query: String.t()]
+        defevent "buy", BuyEvent, params: [product: Product.t()]
 
-        defyield :products, :browsing
-        defyield :products, :results, params: [products: [Product.t()], total: integer()]
+        defyield :browsing
+        defyield :results, params: [products: [Product.t()], total: integer()]
         defyield :checkout, :shipping
       end
 
       use Skuld.PageMachine,
-        protocol: MyApp.StoreProtocol,
+        contract: MyApp.StoreContract,
         on_yield: &handle_yield/3
 
-  The protocol auto-generates `handle_event/3` clauses for each event,
+  The contract auto-generates `handle_event/3` clauses for each event,
   so manual `def_pipe_event` declarations are unnecessary (though still
   available for ad-hoc additions).
   """
@@ -171,7 +171,7 @@ defmodule Skuld.PageMachine do
   #############################################################################
 
   defmacro __using__(opts) do
-    protocol = Keyword.get(opts, :protocol)
+    contract = Keyword.get(opts, :contract)
     tag = Keyword.get(opts, :tag, @default_tag)
     on_yield_ref = Keyword.fetch!(opts, :on_yield)
     on_complete = Keyword.get(opts, :on_complete)
@@ -216,11 +216,11 @@ defmodule Skuld.PageMachine do
       ]
       |> Enum.filter(& &1)
 
-    protocol_clauses =
-      if protocol do
-        protocol = resolve_protocol(protocol, __CALLER__)
+    contract_clauses =
+      if contract do
+        contract = resolve_contract(contract, __CALLER__)
 
-        protocol.__protocol_events__()
+        contract.__contract_events__()
         |> Enum.map(fn %{
                          event: event_name,
                          spindle: spindle,
@@ -270,32 +270,32 @@ defmodule Skuld.PageMachine do
         only: [def_pipe_event: 1, def_pipe_event: 2, def_pipe_event: 3]
 
       (unquote_splicing(clauses))
-      (unquote_splicing(protocol_clauses))
+      (unquote_splicing(contract_clauses))
     end
   end
 
-  defp resolve_protocol(protocol, caller) do
-    protocol = Macro.expand(protocol, caller)
+  defp resolve_contract(contract, caller) do
+    contract = Macro.expand(contract, caller)
 
-    unless Code.ensure_loaded?(protocol) do
+    unless Code.ensure_loaded?(contract) do
       raise CompileError,
         description:
-          "Protocol module #{inspect(protocol)} is not loaded. " <>
+          "Contract module #{inspect(contract)} is not loaded. " <>
             "Ensure it is compiled before the module using it.",
         file: caller.file,
         line: 0
     end
 
-    unless function_exported?(protocol, :__protocol_events__, 0) do
+    unless function_exported?(contract, :__contract_events__, 0) do
       raise CompileError,
         description:
-          "#{inspect(protocol)} does not export __protocol_events__/0. " <>
+          "#{inspect(contract)} does not export __contract_events__/0. " <>
             "Did you `use Skuld.PageMachine.Contract`?",
         file: caller.file,
         line: 0
     end
 
-    protocol
+    contract
   end
 
   defp callback_arity({:&, _, [{:/, _, [_, arity]}]}), do: arity
