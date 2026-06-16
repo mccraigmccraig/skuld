@@ -137,8 +137,6 @@ spindle and continues its own loop:
 defmodule MyApp.ProductBrowserSpindle do
   use Skuld.Syntax
 
-  alias Skuld.Effects.Yield
-
   defcomp run(initial_filters) do
     search_loop(initial_filters)
   end
@@ -319,7 +317,7 @@ defmodule MyApp.ProductBrowserSpindleTest do
 
   test "filter change triggers new search and new results", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    fiber = Coroutine.run(fiber, %{category: "books"})
+    fiber = Coroutine.run(fiber, %StoreProtocol.Products.FilterEvent{filters: %{category: "books"}})
     assert %Coroutine.ExternalSuspended{value: %StoreProtocol.Products.Results{}} = fiber
   end
 end
