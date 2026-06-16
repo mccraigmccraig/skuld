@@ -63,8 +63,8 @@ waits for the next event.
 
 ### Contract
 
-The contract is the single source of truth for the spindle ↔ LiveView
-contract. `defspindle` opens a spindle block; inside, `defevent` declares
+The contract is the single source of truth at the spindle ↔ LiveView
+boundary. `defspindle` opens a spindle block; inside, `defevent` declares
 events the LiveView can send to this spindle, `defyield` declares
 blocking yields, and `defnotify` declares fire-and-forget notifications.
 
