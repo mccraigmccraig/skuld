@@ -100,7 +100,7 @@ defmodule Skuld.FiberPool.Server do
   # since the last round, and merge them into the server's key maps.
   defp collect_new_spindle_keys(id_to_key, key_to_id, state) do
     new_id_to_key = Map.get(state.env_state, Spindle.env_key(), %{})
-    new_key_to_id = Map.get(state.env_state, :spindle_key_to_id, %{})
+    new_key_to_id = Map.get(state.env_state, Spindle.key_to_id_key(), %{})
 
     {Map.merge(id_to_key, new_id_to_key), Map.merge(key_to_id, new_key_to_id)}
   end

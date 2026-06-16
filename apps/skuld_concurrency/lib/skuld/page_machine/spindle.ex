@@ -29,10 +29,14 @@ defmodule Skuld.PageMachine.Spindle do
 
   @sig __MODULE__
 
-  @env_key :spindle_keys
+  @env_key Module.concat(__MODULE__, SpindleKeys)
+  @key_to_id_key Module.concat(__MODULE__, SpindleKeyToId)
 
   @doc "Environment state key for spindle key → fiber_id mappings."
   def env_key, do: @env_key
+
+  @doc "Environment state key for fiber_id → spindle key mappings."
+  def key_to_id_key, do: @key_to_id_key
 
   #############################################################################
   ## Public API
@@ -65,12 +69,12 @@ defmodule Skuld.PageMachine.Spindle do
   def handle({:fork, key, computation}, env, k) do
     wrapped_k = fn handle, fiber_env ->
       id_to_key = Env.get_state(fiber_env, @env_key, %{})
-      key_to_id = Env.get_state(fiber_env, :spindle_key_to_id, %{})
+      key_to_id = Env.get_state(fiber_env, @key_to_id_key, %{})
 
       next_env =
         fiber_env
         |> Env.put_state(@env_key, Map.put(id_to_key, handle.id, key))
-        |> Env.put_state(:spindle_key_to_id, Map.put(key_to_id, key, handle.id))
+        |> Env.put_state(@key_to_id_key, Map.put(key_to_id, key, handle.id))
 
       k.(handle, next_env)
     end
