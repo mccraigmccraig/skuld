@@ -12,17 +12,17 @@ single function.
 
 PageMachine separates these concerns, Elixir-style. Like Elm, Redux,
 or re-frame, it enforces a Model-View-Update architecture. But instead of pure
-reducers that must return immediately, PageMachine uses coroutines: each
-state machine is a sequential computation that can *suspend* mid-execution,
-surface updates to the view, and resume where it left off.
+reducers, PageMachine uses coroutines: each state machine is a sequential
+computation that can *suspend* mid-execution, *notify* the view without
+pausing, and resume where it left off.
 
 A PageMachine runs one or more concurrent **spindles** — named coroutine
 fibers, each an independent state machine with its own event stream and its
-own yields to the LiveView. A single-spindle page is just a page machine with
-one spindle. A multi-spindle page runs a product browser *and* a checkout form,
-a chat panel *and* a document editor — each region its own computation, its
-own testable module. The LiveView routes events to the right spindle and
-forwards yields from each to the right UI region.
+own yields and notifications to the LiveView. A single-spindle page is just
+a page machine with one spindle. A multi-spindle page runs a product browser
+*and* a checkout form, a chat panel *and* a document editor — each region its
+own computation, its own testable module. The LiveView routes events to the
+right spindle and forwards yields from each to the right UI region.
 
 ## Why extract page state machines
 
@@ -189,16 +189,16 @@ A few things to note:
 ### Test
 
 ```elixir
-test "search yields results", %{comp: comp} do
-  fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-  assert %Coroutine.ExternalSuspended{value: %Search.Results{}} = fiber
-end
+  test "search yields results", %{comp: comp} do
+    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+    assert %Coroutine.ExternalSuspended{value: %Search.Notify.Results{}} = fiber
+  end
 
-test "filter event triggers new search", %{comp: comp} do
-  fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-  fiber = Coroutine.run(fiber, %Search.FilterEvent{filters: %{category: "books"}})
-  assert %Coroutine.ExternalSuspended{value: %Search.Results{}} = fiber
-end
+  test "filter event triggers new search", %{comp: comp} do
+    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+    fiber = Coroutine.run(fiber, %Search.FilterEvent{filters: %{category: "books"}})
+    assert %Coroutine.ExternalSuspended{value: %Search.Notify.Results{}} = fiber
+  end
 ```
 
 ## Adding a second spindle: checkout
