@@ -27,8 +27,7 @@ defmodule Skuld.PageMachine.SpindleTest do
     test "creates a pending spindle with a key" do
       env = Env.new()
       spindle = Spindle.new(:cart, wrap(TestFlow.cart_flow()), env)
-      assert %Spindle{key: :cart, ref: ref} = spindle
-      assert is_reference(ref)
+      assert %Spindle{key: :cart} = spindle
     end
   end
 

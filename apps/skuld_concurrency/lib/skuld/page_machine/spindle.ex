@@ -8,27 +8,25 @@ defmodule Skuld.PageMachine.Spindle do
 
   ## Lifecycle
 
-  1. A computation calls `Spindle.fork(:cart, comp)` — this returns a ref
-  2. The PageMachine main loop detects the fork, creates a Spindle struct,
-     and adds it to its registry
-  3. When the spindle fiber yields (`Yield.yield`), the main loop wraps
-     the value as `{:spindle, :cart, value}` and forwards to the LiveView
-  4. When the LiveView sends an event for that spindle, the main loop
-     resumes the fiber
-  5. When the spindle completes, the main loop removes it from the registry
+   1. A computation calls `Spindle.fork(:cart, comp)` — the PageMachine
+      main loop creates a Spindle struct and adds it to its registry
+   2. When the spindle fiber yields (`Yield.yield`), the main loop wraps
+      the value as `{:spindle, :cart, value}` and forwards to the LiveView
+   3. When the LiveView sends an event for that spindle, the main loop
+      resumes the fiber
+   4. When the spindle completes, the main loop removes it from the registry
   """
 
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
   alias Skuld.Coroutine
 
-  defstruct [:key, :fiber, :ref]
+  defstruct [:key, :fiber]
 
   @typedoc "A named coroutine fiber managed by the PageMachine main loop."
   @type t :: %__MODULE__{
           key: atom(),
-          fiber: Coroutine.t(),
-          ref: reference()
+          fiber: Coroutine.t()
         }
 
   @doc """
@@ -38,7 +36,7 @@ defmodule Skuld.PageMachine.Spindle do
   @spec new(atom(), Types.computation(), Env.t()) :: t()
   def new(key, computation, env) when is_atom(key) do
     fiber = Coroutine.new(computation, env)
-    %__MODULE__{key: key, fiber: fiber, ref: make_ref()}
+    %__MODULE__{key: key, fiber: fiber}
   end
 
   @doc """
