@@ -84,14 +84,12 @@ defmodule Skuld.FiberPool.Server do
     state = Scheduler.process_external_wakes(state)
     round = Scheduler.run(state, env)
 
-    cond do
-      round.all_done ->
-        notify_completions(caller, id_to_key, round.state, round.completions)
-        send(caller, {__MODULE__, :all_done, []})
-
-      true ->
-        send_yields(caller, id_to_key, round.suspended_yields)
-        drain_or_block(caller, id_to_key, key_to_id, round.state, env)
+    if round.all_done do
+      notify_completions(caller, id_to_key, round.state, round.completions)
+      send(caller, {__MODULE__, :all_done, []})
+    else
+      send_yields(caller, id_to_key, round.suspended_yields)
+      drain_or_block(caller, id_to_key, key_to_id, round.state, env)
     end
   end
 
