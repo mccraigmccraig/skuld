@@ -183,13 +183,9 @@ defmodule MyApp.StoreLive do
       PageMachine.run(socket,
         products: MyApp.ProductBrowserSpindle.run(%{})
       )
+      |> assign(products: [], total: 0, page: 1)
 
-    {:ok,
-     assign(socket,
-        products: [],
-        total: 0,
-        page: 1
-      )}
+    {:ok, socket}
   end
 
   # Multi-spindle callbacks — dispatch by spindle key
