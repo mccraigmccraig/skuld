@@ -37,7 +37,7 @@ defmodule Skuld.FiberPool.Scheduler do
 
     @type t :: %__MODULE__{
             suspended_yields: [{Coroutine.t(), term()}],
-            completions: %{(Types.fiber_id() | :main) => {:ok, term()} | {:error, term()}},
+            completions: %{term() => {:ok, term()} | {:error, term()}},
             all_done: boolean(),
             waiting_for_tasks: boolean(),
             batch_ready: boolean(),
@@ -170,6 +170,7 @@ defmodule Skuld.FiberPool.Scheduler do
   ## Internal
   #############################################################################
 
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_loop(state, env, round_result) do
     # Process any pending channel wakes before each step
     state = process_external_wakes(state)
@@ -184,27 +185,24 @@ defmodule Skuld.FiberPool.Scheduler do
 
         # Check if we now have work to do
         if FiberPoolState.queue_empty?(state) do
-          cond do
-            map_size(state.foreign_suspends) > 0 ->
-              suspended = suspended_yields_from(state)
+          if map_size(state.foreign_suspends) > 0 do
+            suspended = suspended_yields_from(state)
+            %{round_result | state: state, suspended_yields: suspended}
+          else
+            suspended = suspended_yields_from(state)
 
-              %{round_result | state: state, suspended_yields: suspended}
-
-            true ->
-              suspended = suspended_yields_from(state)
-
-              %{
-                round_result
-                | state: state,
-                  suspended_yields: round_result.suspended_yields ++ suspended,
-                  completions: state.completed,
-                  waiting_for_tasks: FiberPoolState.has_tasks?(state),
-                  all_done:
-                    suspended == [] and
-                      not FiberPoolState.has_tasks?(state) and
-                      map_size(state.suspensions) == 0 and
-                      map_size(state.fibers) == 0
-              }
+            %{
+              round_result
+              | state: state,
+                suspended_yields: round_result.suspended_yields ++ suspended,
+                completions: state.completed,
+                waiting_for_tasks: FiberPoolState.has_tasks?(state),
+                all_done:
+                  suspended == [] and
+                    not FiberPoolState.has_tasks?(state) and
+                    map_size(state.suspensions) == 0 and
+                    map_size(state.fibers) == 0
+            }
           end
         else
           run_loop(state, env, round_result)

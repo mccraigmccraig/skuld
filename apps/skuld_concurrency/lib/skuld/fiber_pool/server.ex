@@ -71,7 +71,7 @@ defmodule Skuld.FiberPool.Server do
   end
 
   defp boot_computation(wrapped) do
-    Enum.reduce(wrapped, Comp.pure([]), fn {key, comp}, acc ->
+    Enum.reduce(wrapped, [], fn {key, comp}, acc ->
       Comp.bind(acc, fn results ->
         Comp.map(FiberPool.fiber(comp), fn handle ->
           [{key, handle} | results]
