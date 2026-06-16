@@ -149,7 +149,7 @@ defmodule MyApp.ProductBrowserSpindle do
     event <- StoreProtocol.Products.browsing()
 
     case event do
-      {:buy, product} ->
+      {"buy", product} ->
         _handle <- Spindle.fork(StoreProtocol.Checkout, MyApp.CheckoutSpindle.run(product))
         search_loop(filters)
 
@@ -310,7 +310,7 @@ defmodule MyApp.ProductBrowserSpindleTest do
 
     test "buy event triggers checkout fork and continues search loop", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    fiber = Coroutine.run(fiber, {:buy, %Product{name: "Phone"}})
+    fiber = Coroutine.run(fiber, {"buy", %Product{name: "Phone"}})
     assert %Coroutine.ExternalSuspended{value: %StoreProtocol.Products.Results{}} = fiber
   end
 
