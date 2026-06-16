@@ -1,8 +1,28 @@
 # Changelog
 
-<!-- last-updated-against: b557f0120652838c3dbec27b24fae042f0c3cffd -->
+<!-- last-updated-against: c8ede0a061f2035081c420eb641b1e6350888588 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [Unreleased]
+
+### Added
+
+- `Skuld.PageMachine.Contract` — typed protocol contract for PageMachine
+  spindle ↔ LiveView communication. `defevent` declares events routed to
+  spindles with optional param types. `defyield` declares yield shapes from
+  spindles to the LiveView, generating typed struct modules and `yield/2`
+  helpers. Introspection via `__protocol_events__/0` and
+  `__protocol_yields__/0`.
+- `:protocol` option on `use Skuld.PageMachine` — auto-generates
+  `handle_event/3` clauses from protocol event declarations. Event names
+  and spindle keys are validated at compile time.
+
+### Fixed
+
+- `callback_arity/1` now correctly detects arity for `&Module.func/n`
+  capture syntax (dot-access references), enabling /3 callback callbacks
+  with external modules.
 
 ## [0.42.0] — 2026-06-16
 

@@ -25,6 +25,31 @@ defmodule Skuld.PageMachine do
 
       def_pipe_event "search", into: :products, before: &start_spinner/1
       def_pipe_event "buy", into: :products
+
+  ## Typed protocol
+
+  For compile-time validation of the entire spindle ↔ LiveView contract,
+  define a protocol module with `use Skuld.PageMachine.Contract` and pass
+  it via the `:protocol` option:
+
+      defmodule MyApp.StoreProtocol do
+        use Skuld.PageMachine.Contract
+
+        defevent "search", into: :products, params: [query: String.t()]
+        defevent "buy", into: :products
+
+        defyield :products, :browsing
+        defyield :products, :results, params: [products: [Product.t()], total: integer()]
+        defyield :checkout, :shipping
+      end
+
+      use Skuld.PageMachine,
+        protocol: MyApp.StoreProtocol,
+        on_yield: &handle_yield/3
+
+  The protocol auto-generates `handle_event/3` clauses for each event,
+  so manual `def_pipe_event` declarations are unnecessary (though still
+  available for ad-hoc additions).
   """
 
   alias Skuld.FiberPool.Server, as: FiberServer
@@ -146,6 +171,7 @@ defmodule Skuld.PageMachine do
   #############################################################################
 
   defmacro __using__(opts) do
+    protocol = Keyword.get(opts, :protocol)
     tag = Keyword.get(opts, :tag, @default_tag)
     on_yield_ref = Keyword.fetch!(opts, :on_yield)
     on_complete = Keyword.get(opts, :on_complete)
@@ -190,6 +216,35 @@ defmodule Skuld.PageMachine do
       ]
       |> Enum.filter(& &1)
 
+    protocol_clauses =
+      if protocol do
+        protocol = resolve_protocol(protocol, __CALLER__)
+
+        protocol.__protocol_events__()
+        |> Enum.map(fn %{event: event_name, into: spindle, params: params} ->
+          value =
+            if params == [] do
+              quote(do: {unquote(event_name), params})
+            else
+              quote(do: params)
+            end
+
+          quote do
+            def handle_event(unquote(event_name), params, socket) do
+              Skuld.PageMachine.resume(
+                Map.fetch!(socket.assigns, @pmc_assign_key),
+                unquote(spindle),
+                unquote(value)
+              )
+
+              {:noreply, socket}
+            end
+          end
+        end)
+      else
+        []
+      end
+
     quote do
       @pmc_tag unquote(tag)
       @pmc_assign_key unquote(@default_assign_key)
@@ -198,10 +253,35 @@ defmodule Skuld.PageMachine do
         only: [def_pipe_event: 1, def_pipe_event: 2, def_pipe_event: 3]
 
       (unquote_splicing(clauses))
+      (unquote_splicing(protocol_clauses))
     end
   end
 
-  defp callback_arity({:&, _, [{:/, _, [{_name, _, nil}, arity]}]}), do: arity
+  defp resolve_protocol(protocol, caller) do
+    protocol = Macro.expand(protocol, caller)
+
+    unless Code.ensure_loaded?(protocol) do
+      raise CompileError,
+        description:
+          "Protocol module #{inspect(protocol)} is not loaded. " <>
+            "Ensure it is compiled before the module using it.",
+        file: caller.file,
+        line: 0
+    end
+
+    unless function_exported?(protocol, :__protocol_events__, 0) do
+      raise CompileError,
+        description:
+          "#{inspect(protocol)} does not export __protocol_events__/0. " <>
+            "Did you `use Skuld.PageMachine.Contract`?",
+        file: caller.file,
+        line: 0
+    end
+
+    protocol
+  end
+
+  defp callback_arity({:&, _, [{:/, _, [_, arity]}]}), do: arity
   defp callback_arity(_), do: 2
 
   defp build_clause(callback_ref, arity, pattern, value_expr) do
