@@ -13,6 +13,8 @@ defmodule Skuld.PageMachine.ContractTest do
 
       defyield(:browsing)
       defyield(results(products: [map()], total: integer()))
+
+      defnotify(purchase_selected(product: map()))
     end
 
     defspindle Checkout do
@@ -61,7 +63,7 @@ defmodule Skuld.PageMachine.ContractTest do
     test "__protocol_yields__/0 returns all yield metadata" do
       yields = TestProtocol.__protocol_yields__()
 
-      assert length(yields) == 4
+      assert length(yields) == 5
 
       assert Enum.any?(yields, fn y ->
                y.spindle == TestProtocol.Products and y.tag == :browsing
@@ -156,6 +158,31 @@ defmodule Skuld.PageMachine.ContractTest do
 
       assert %Skuld.Comp.ExternalSuspend{value: %TestProtocol.Checkout.Payment{method: "card"}} =
                result
+    end
+  end
+
+  describe "defnotify" do
+    test "generates function that calls FiberYield.notify via the handler" do
+      comp =
+        TestProtocol.Products.purchase_selected(product: %{name: "X"})
+        |> Skuld.Effects.FiberYield.with_handler()
+        |> Skuld.Comp.call(Skuld.Comp.Env.new(), &Skuld.Comp.identity_k/2)
+
+      {result, _env} = comp
+
+      assert %Skuld.Comp.InternalSuspend{
+               payload: %Skuld.Comp.InternalSuspend.FiberYield{value: struct, notify: true}
+             } = result
+
+      assert %TestProtocol.Products.PurchaseSelected{product: %{name: "X"}} = struct
+    end
+
+    test "__protocol_yields__ includes notify flag" do
+      yields = TestProtocol.__protocol_yields__()
+
+      purchase = Enum.find(yields, &(&1.tag == :purchase_selected))
+
+      assert purchase.notify == true
     end
   end
 

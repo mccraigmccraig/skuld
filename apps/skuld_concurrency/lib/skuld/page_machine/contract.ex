@@ -65,7 +65,8 @@ defmodule Skuld.PageMachine.Contract do
           defevent: 1,
           defevent: 2,
           defevent: 3,
-          defyield: 1
+          defyield: 1,
+          defnotify: 1
         ]
 
       Module.register_attribute(__MODULE__, :pm_events, accumulate: true)
@@ -197,7 +198,44 @@ defmodule Skuld.PageMachine.Contract do
     yield = %{
       spindle: get_spindle!(caller),
       tag: tag,
-      params: params
+      params: params,
+      notify: false
+    }
+
+    escaped = Macro.escape(yield)
+
+    quote do
+      @pm_yields unquote(escaped)
+    end
+  end
+
+  @doc """
+  Declare a fire-and-forget notification from the current spindle.
+
+  Same syntax as `defyield`, but generates a function that calls
+  `FiberYield.notify/1` instead of `Yield.yield/1` — the spindle
+  surfaces the value to the caller without pausing.
+
+  ## Syntax
+
+      defnotify :tag
+      defnotify tag(key: type(), ...)
+  """
+  defmacro defnotify(tag) when is_atom(tag) do
+    build_defnotify(tag, [], __CALLER__)
+  end
+
+  defmacro defnotify({tag, _meta, args}) when is_atom(tag) do
+    params = extract_keyword_params(args)
+    build_defnotify(tag, params, __CALLER__)
+  end
+
+  defp build_defnotify(tag, params, caller) do
+    yield = %{
+      spindle: get_spindle!(caller),
+      tag: tag,
+      params: params,
+      notify: true
     }
 
     escaped = Macro.escape(yield)
@@ -329,15 +367,23 @@ defmodule Skuld.PageMachine.Contract do
     end
   end
 
-  defp generate_yield_fn(spindle_module, %{tag: tag, params: params}) do
+  defp generate_yield_fn(spindle_module, %{tag: tag, params: params} = y) do
     struct_name = to_pascal_case(tag)
     struct_module = Module.concat(spindle_module, struct_name)
+    notify? = Map.get(y, :notify, false)
+
+    {effect_mod, effect_fun} =
+      if notify? do
+        {Skuld.Effects.FiberYield, :notify}
+      else
+        {Skuld.Effects.Yield, :yield}
+      end
 
     if params == [] do
       quote do
         @spec unquote(tag)() :: unquote(struct_module).t()
         def unquote(tag)() do
-          Skuld.Effects.Yield.yield(%unquote(struct_module){})
+          unquote(effect_mod).unquote(effect_fun)(%unquote(struct_module){})
         end
       end
     else
@@ -362,7 +408,7 @@ defmodule Skuld.PageMachine.Contract do
         def unquote(tag)(opts) do
           unquote_splicing(fetch_bindings)
           struct = struct(unquote(struct_module), unquote(field_kvs))
-          Skuld.Effects.Yield.yield(struct)
+          unquote(effect_mod).unquote(effect_fun)(struct)
         end
       end
     end
