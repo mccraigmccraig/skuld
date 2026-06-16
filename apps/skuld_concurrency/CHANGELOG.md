@@ -1,30 +1,37 @@
 # Changelog
 
-<!-- last-updated-against: c8ede0a061f2035081c420eb641b1e6350888588 -->
+<!-- last-updated-against: e13a589edf4885e66bd1df1c4a27be5864b985ca -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
 
-## [Unreleased]
+## [0.43.0] — 2026-06-16
 
 ### Added
 
 - `Skuld.PageMachine.Contract` — typed protocol contract for PageMachine
-  spindle ↔ LiveView communication. `defevent` declares events routed to
-  spindles with optional param types. `defyield` declares yield shapes from
-  spindles to the LiveView, generating typed struct modules and `yield/2`
-  helpers. Introspection via `__protocol_events__/0` and
-  `__protocol_yields__/0`.
+  spindle ↔ LiveView communication. `defspindle` blocks scope events and
+  yields to a spindle. The spindle key is the generated module atom
+  (e.g. `StoreProtocol.Products`), used consistently across
+  `PageMachine.run`, `Spindle.fork`, and `handle_yield`.
+- `defevent` — declares LiveView events with optional `StructName` and
+  typed `params:`. Events with a struct name generate a typed struct
+  module under the spindle (e.g. `Products.SearchEvent`).
+  Auto-generated `handle_event` wraps params into the struct before
+  resuming the spindle.
+- `defyield` — function-head style yield declarations.
+  `defyield browsing` generates a 0-arity function yielding an empty
+  struct (`%Products.Browsing{}`). `defyield results(products: [...], total: integer())`
+  generates a keyword-arg function yielding a typed struct. Every yield
+  produces a struct — no bare atoms.
 - `:protocol` option on `use Skuld.PageMachine` — auto-generates
-  `handle_event/3` clauses from protocol event declarations. Event names
-  and spindle keys are validated at compile time.
+  `handle_event/3` clauses from protocol event declarations. Events
+  with a struct name are auto-wrapped before resume.
 
 ### Fixed
 
 - `callback_arity/1` now correctly detects arity for `&Module.func/n`
-  capture syntax (dot-access references), enabling /3 callback callbacks
+  capture syntax (dot-access references), enabling `/3` callbacks
   with external modules.
-
-## [0.42.0] — 2026-06-16
 
 ### Changed
 
