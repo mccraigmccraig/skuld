@@ -99,8 +99,8 @@ defmodule Skuld.FiberPool.Server do
   # Read any new spindle key mappings written to env state by Spindle.fork
   # since the last round, and merge them into the server's key maps.
   defp collect_new_spindle_keys(id_to_key, key_to_id, state) do
-    new_id_to_key = Map.get(state.env_state, Spindle.env_key(), %{})
-    new_key_to_id = Map.get(state.env_state, Spindle.key_to_id_key(), %{})
+    new_id_to_key = Map.get(state.env_state, Spindle.keys_by_id_key(), %{})
+    new_key_to_id = Map.get(state.env_state, Spindle.ids_by_key_key(), %{})
 
     {Map.merge(id_to_key, new_id_to_key), Map.merge(key_to_id, new_key_to_id)}
   end

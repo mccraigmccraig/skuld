@@ -56,8 +56,8 @@ defmodule Skuld.PageMachine.SpindleTest do
         |> Comp.call(Env.new(), &Comp.identity_k/2)
 
       # Key mapping is written to env state
-      id_to_key = Env.get_state(env, Spindle.env_key(), %{})
-      key_to_id = Env.get_state(env, Spindle.key_to_id_key(), %{})
+      id_to_key = Env.get_state(env, Spindle.keys_by_id_key(), %{})
+      key_to_id = Env.get_state(env, Spindle.ids_by_key_key(), %{})
 
       assert map_size(id_to_key) == 2
       assert Map.has_key?(key_to_id, :cart)
