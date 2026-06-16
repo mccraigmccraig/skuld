@@ -61,7 +61,9 @@ defmodule Skuld.PageMachine do
   - `:tag` — the PMC tag for message routing. Defaults to
     `Skuld.PageMachine.Default`. Only needed for multi-PMC pages.
   """
-  def run(fibers, _opts \\ []) when is_list(fibers) do
+  def run(fibers, _opts \\ [])
+
+  def run(fibers, _opts) when is_list(fibers) do
     FiberServer.start_link(fibers)
   end
 

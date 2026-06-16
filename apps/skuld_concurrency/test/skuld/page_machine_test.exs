@@ -93,7 +93,7 @@ defmodule Skuld.PageMachineTest do
   describe "def_pipe_event/2" do
     defmodule PipeEventAsyncTest do
       import Skuld.PageMachine, only: [def_pipe_event: 1]
-      def_pipe_event "test_event"
+      def_pipe_event("test_event")
     end
 
     test "generates handle_event/3 function" do

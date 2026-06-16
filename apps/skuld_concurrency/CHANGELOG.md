@@ -1,10 +1,25 @@
 # Changelog
 
-<!-- last-updated-against: a59c3e8ffe59fd11bf98f3644406b6073f0dbf9b -->
+<!-- last-updated-against: b557f0120652838c3dbec27b24fae042f0c3cffd -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
 
-## [0.41.0] — 2026-06-16
+## [0.42.0] — 2026-06-16
+
+### Changed
+
+- `PageMachine.run/1` takes a keyword list of `{spindle_key, computation}`
+  pairs — `run(products: ProductSpindle.run(%{}))`. Spindle naming is
+  obvious from the keyword key. Multiple spindles can start at once.
+- `PageMachine.run/2` takes a socket as the first argument, stores the
+  pid in `socket.assigns` under the default assign key, and returns
+  the socket. Simplifies mount to a pipe.
+- `def_pipe_event` signatures changed: the `assign_key` positional arg
+  is removed. Events route via keyword opts — `into:` for spindle key,
+  `before:` for spinner callback. The assign key defaults to
+  `Skuld.PageMachine.DefaultAssign`.
+- `PageMachine.run` returns `socket` (not `{:ok, socket}`) when a
+  socket is passed — pipes cleanly with `assign`.
 
 ### Added
 
