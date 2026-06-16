@@ -94,16 +94,13 @@ defmodule Skuld.FiberPool.Server do
           handle_suspended_fiber(caller, id_to_key, round.state, fiber)
         end)
 
-        receive_resume(caller, id_to_key, key_to_id, round.state, env)
-
-      round.batch_ready ->
-        server_loop(caller, id_to_key, key_to_id, round.state, env)
-
-      round.waiting_for_tasks ->
+        # Fibers yielded — need caller input. Block until resume or cancel.
         receive_resume(caller, id_to_key, key_to_id, round.state, env)
 
       true ->
-        receive_resume(caller, id_to_key, key_to_id, round.state, env)
+        # Tasks may complete, batches may execute — don't block.
+        # Loop back to the scheduler for another round.
+        server_loop(caller, id_to_key, key_to_id, round.state, env)
     end
   end
 
