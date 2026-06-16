@@ -18,7 +18,7 @@ defmodule Skuld.Effects.FiberYieldTest do
 
       env = Env.new()
 
-      {_result, _env} = call(comp, env)
+      {result, _env} = call(comp, env)
       assert %InternalSuspend{payload: %InternalSuspend.FiberYield{value: :step_one}} = result
     end
 
