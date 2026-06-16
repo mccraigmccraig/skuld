@@ -330,13 +330,13 @@ This means:
 This architecture is Elixir's answer to the Model-View-Update pattern that
 Elm enforces and Redux patterns towards:
 
-| Concept      | Elm/Redux/re-frame      | PageMachine                       |
-|--------------|-------------------------|-----------------------------------|
-| Model        | Store / app-db          | Scoped effects + fiber            |
-| Update       | Reducer / event handler | Computation (`defcomp`)           |
-| View         | Pure render             | `render(assigns)`                 |
-| Event        | Action / dispatch       | `handle_event` / `def_pipe_event` |
-| State update | `:db` effect            | `Yield.yield(tag)`                |
+| Concept      | Elm/Redux/re-frame       | PageMachine                       |
+|--------------|--------------------------|-----------------------------------|
+| Model        | Store / app-db           | Scoped effects + fiber            |
+| Update       | Reducer / event handler  | Computation (`defcomp`)           |
+| View         | Pure render              | `render(assigns)`                 |
+| Event        | Action / dispatch        | `handle_event` / `def_pipe_event` |
+| State update | `:db` effect             | `Yield.yield(tag)`                |
 
 In Elm and Redux, the reducer is a pure `(state, event) -> state` function —
 it must return the new state immediately. PageMachine lifts this constraint
@@ -407,13 +407,13 @@ the FiberPool.Server process, which cancels all registered fibers.
 
 ## Operation reference
 
-| Operation                              | Purpose                          |
-|----------------------------------------|----------------------------------|
-| `PageMachine.run/2`               | Start page machine               |
-| `PageMachine.resume/3`            | Resume a spindle with a value    |
-| `PageMachine.def_pipe_event/2,4`  | Generate `handle_event/3`        |
-| `PageMachine.cancel/1`            | Cancel page machine and spindles |
-| `Spindle.fork/2`                      | Fork a spindle from a computation|
+| Operation                         | Purpose                             |
+|-----------------------------------|-------------------------------------|
+| `PageMachine.run/2`               | Start page machine                  |
+| `PageMachine.resume/3`            | Resume a spindle with a value       |
+| `PageMachine.def_pipe_event/2,4`  | Generate `handle_event/3`           |
+| `PageMachine.cancel/1`            | Cancel page machine and spindles    |
+| `Spindle.fork/2`                  | Fork a spindle from a computation   |
 
 ## Comparison to a monolithic LiveView
 
