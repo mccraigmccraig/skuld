@@ -130,29 +130,6 @@ defmodule MyApp.ProductBrowserSpindle do
 end
 ```
 
-The checkout spindle is forked dynamically when the user selects a product.
-It receives the product, reserves inventory, collects shipping and payment,
-and places the order:
-
-```elixir
-defmodule MyApp.CheckoutSpindle do
-  use Skuld.Syntax
-
-  alias Skuld.Effects.Yield
-
-  defcomp run(product) do
-    {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
-    {"submit_shipping", shipping} <- Yield.yield(:shipping)
-    {"submit_payment", payment} <- Yield.yield(:payment)
-    {:ok, order} <- MyApp.Orders.place(%{product: product}, shipping, payment)
-    {:ok, order}
-  else
-    {:error, :sold_out} -> {:error, :sold_out}
-    {:error, reason} -> {:error, reason}
-  end
-end
-```
-
 Each computation reads like regular sequential code — there's no explicit
 state enumeration, transition table, or event loop. This is possible
 because Skuld's coroutines are a natural fit for implementing state
@@ -162,16 +139,44 @@ machine, and the program counter *is* the current state.
 ([Coroutines are a classic technique for implementing state
 machines.](https://en.wikipedia.org/wiki/Coroutine#Common_uses))
 
+### Protocol
+
+A typed protocol declares the full spindle ↔ LiveView contract — events,
+their target spindles, param types, and the shape of every yield. The
+protocol is the single source of truth; the LiveView and spindles both
+reference it:
+
+```elixir
+defmodule MyApp.StoreProtocol do
+  use Skuld.PageMachine.Contract
+
+  defevent "search", into: :products, params: [query: String.t()]
+  defevent "filter", into: :products, params: [filters: map()]
+  defevent "buy", into: :products
+
+  defevent "submit_shipping", into: :checkout, params: [shipping: map()]
+  defevent "submit_payment", into: :checkout, params: [payment: map()]
+
+  defyield :products, :browsing
+  defyield :products, :results, params: [products: [Product.t()], total: integer()]
+  defyield :checkout, :shipping
+  defyield :checkout, :payment
+end
+```
+
 ### LiveView module
 
 The product browser is the primary spindle — started at mount.
-The checkout spindle is forked on demand. The `/3` callbacks route
+The checkout spindle is forked on demand. The `:protocol` option
+generates `handle_event/3` from the protocol's event declarations,
+so no manual `def_pipe_event` is needed. The `/3` callbacks route
 each yield to the right UI region:
 
 ```elixir
 defmodule MyApp.StoreLive do
   use MyAppWeb, :live_view
   use Skuld.PageMachine,
+    protocol: MyApp.StoreProtocol,
     on_yield: &handle_yield/3,
     on_complete: &handle_complete/3,
     on_error: &handle_error/3
@@ -188,45 +193,36 @@ defmodule MyApp.StoreLive do
   end
 
   # Multi-spindle callbacks — dispatch by spindle key
-  defp handle_yield(:products, {:results, products, total}, socket) do
+  def handle_yield(:products, %StoreProtocol.ProductsResults{products: products, total: total}, socket) do
     {:noreply, assign(socket, products: products, total: total)}
   end
 
-  defp handle_yield(:checkout, step, socket) do
+  def handle_yield(:checkout, step, socket) do
     socket = clear_spinner(socket)
     {:noreply, assign(socket, step: step)}
   end
 
-  defp handle_complete(:products, {:error, reason}, socket) do
+  def handle_complete(:products, {:error, reason}, socket) do
     {:noreply, put_flash(socket, :error, "Product search failed: #{inspect(reason)}")}
   end
 
-  defp handle_complete(:checkout, {:ok, order}, socket) do
+  def handle_complete(:checkout, {:ok, order}, socket) do
     socket = clear_spinner(socket)
     {:noreply, assign(socket, order: order, step: :done)}
   end
 
-  defp handle_error(:checkout, :sold_out, socket) do
+  def handle_error(:checkout, :sold_out, socket) do
     socket = clear_spinner(socket)
     {:noreply, put_flash(socket, :error, "Sorry, this item is no longer available")}
   end
 
-  defp handle_error(:checkout, reason, socket) do
+  def handle_error(:checkout, reason, socket) do
     socket = clear_spinner(socket)
     {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
   end
 
   defp start_spinner(socket), do: assign(socket, :loading, true)
   defp clear_spinner(socket), do: assign(socket, :loading, false)
-
-  # Product browser events — routed to :products spindle
-  def_pipe_event "search", into: :products, before: &start_spinner/1
-  def_pipe_event "filter", into: :products, before: &start_spinner/1
-  def_pipe_event "buy", into: :products
-
-  # Checkout events — routed to :checkout spindle
-  def_pipe_event "submit_shipping", into: :checkout, before: &start_spinner/1
-  def_pipe_event "submit_payment", into: :checkout, before: &start_spinner/1
 
   @impl true
   def render(assigns) do
@@ -327,7 +323,7 @@ pattern that Elm enforces and Redux patterns towards:
 | Model        | Store / app-db           | Scoped effects + fiber            |
 | Update       | Reducer / event handler  | Computation (`defcomp`)           |
 | View         | Pure render              | `render(assigns)`                 |
-| Event        | Action / dispatch        | `handle_event` / `def_pipe_event` |
+| Event        | Action / dispatch        | `handle_event` / protocol `defevent` |
 | State update | `:db` effect             | `Yield.yield(tag)`                |
 
 In Elm and Redux, the reducer is a pure `(state, event) -> state` function —
@@ -383,9 +379,10 @@ the FiberPool.Server process, which cancels all registered fibers.
 |----------------------------------------|-------------------------------------|
 | `PageMachine.run/1,2`                  | Start page machine with spindle keys|
 | `PageMachine.resume/3`                 | Resume a spindle with a value       |
-| `PageMachine.def_pipe_event/2,4`       | Generate `handle_event/3`           |
 | `PageMachine.cancel/1`                 | Cancel page machine and spindles    |
 | `Spindle.fork/2`                       | Fork a spindle from a computation   |
+| `use Skuld.PageMachine, protocol: ...` | Typed protocol with auto-generated events and compile-time validation |
+| `use Skuld.PageMachine.Contract`       | Define a typed event/yield protocol |
 
 ## Comparison to a monolithic LiveView
 
