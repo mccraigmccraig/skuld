@@ -1,8 +1,17 @@
 # Changelog
 
-<!-- last-updated-against: 9424302f0e6c99781a086bede50b6d2950666b9e -->
+<!-- last-updated-against: 1b266aea95e55f05887cb7430f63ab7f54a12102 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [0.45.0] — 2026-06-16
+
+### Changed
+
+- `defyield` and `defnotify` now generate functions nested under
+  `Spindle.Yield` and `Spindle.Notify` sub-modules. Call sites are
+  explicit about whether execution pauses (`Search.Yield.browsing()`)
+  or continues (`Search.Notify.results(...)`).
 
 ## [0.44.0] — 2026-06-16
 
