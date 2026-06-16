@@ -36,12 +36,12 @@ defmodule Skuld.PageMachine.Spindle do
 
     @typedoc false
     @type t :: %__MODULE__{
-            fiber_ids_by_spindle_key: %{atom() => reference()},
-            spindle_keys_by_fiber_id: %{reference() => atom()}
+            fiber_ids_by_spindle_key: %{atom() => term()},
+            spindle_keys_by_fiber_id: %{term() => atom()}
           }
 
     @doc "Register a spindle key -> fiber_id pair in both maps."
-    @spec register(t(), atom(), reference()) :: t()
+    @spec register(t(), atom(), term()) :: t()
     def register(mappings, spindle_key, fiber_id) do
       %{
         mappings
@@ -53,7 +53,7 @@ defmodule Skuld.PageMachine.Spindle do
     end
 
     @doc "Look up the spindle key for a given fiber ID."
-    @spec spindle_key(t(), reference()) :: atom() | nil
+    @spec spindle_key(t(), term()) :: atom() | nil
     def spindle_key(mappings, fiber_id) do
       Map.get(mappings.spindle_keys_by_fiber_id, fiber_id)
     end
