@@ -181,8 +181,7 @@ defmodule MyApp.StoreLive do
   def mount(_params, _session, socket) do
     {:ok, runner} =
       PageMachine.run(
-        MyApp.ProductBrowserSpindle.run(%{}),
-        :products
+        products: MyApp.ProductBrowserSpindle.run(%{})
       )
 
     {:ok,
@@ -413,7 +412,7 @@ the FiberPool.Server process, which cancels all registered fibers.
 
 | Operation                              | Purpose                             |
 |----------------------------------------|-------------------------------------|
-| `PageMachine.run/2,3`                  | Start page machine with spindle key |
+| `PageMachine.run/1,2`                  | Start page machine with spindle keys|
 | `PageMachine.resume/3`                 | Resume a spindle with a value       |
 | `PageMachine.def_pipe_event/2,4`       | Generate `handle_event/3`           |
 | `PageMachine.cancel/1`                 | Cancel page machine and spindles    |

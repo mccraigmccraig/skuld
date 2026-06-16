@@ -44,17 +44,21 @@ defmodule Skuld.PageMachine do
   @doc """
   Start a page machine in a separate FiberPool.Server process.
 
-  The main computation is registered under `spindle_key` in the server.
-  This key is used in `handle_yield` patterns, `:into` on `def_pipe_event`,
-  and `Spindle.fork` to identify the spindle.
+  Takes a keyword list of `{spindle_key, computation}` pairs:
+
+      PageMachine.run(products: ProductBrowserSpindle.run(%{}))
+
+  Multiple spindles can be started at once:
+
+      PageMachine.run(products: product_comp, checkout: checkout_comp)
 
   ## Options
 
   - `:tag` — the PMC tag for message routing. Defaults to
     `Skuld.PageMachine.Default`. Only needed for multi-PMC pages.
   """
-  def run(computation, spindle_key, opts \\ []) when is_function(computation, 2) do
-    FiberServer.start_link([{spindle_key, computation}])
+  def run(fibers, opts \\ []) when is_list(fibers) do
+    FiberServer.start_link(fibers)
   end
 
   @doc "Resume a yielded spindle with a value."
