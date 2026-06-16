@@ -1,113 +1,81 @@
 defmodule Skuld.PageMachine.Spindle do
   @moduledoc """
-  Named coroutine fibers managed by the PageMachine main loop.
+  Named concurrent sub-computations (spindles) that run as fibers within
+  a FiberPool. Each spindle is identified by an atom key and communicates
+  results through auto-tagged yields.
 
-  A spindle wraps a coroutine fiber with an atom key that identifies it
-  in the main loop. The main loop steps each spindle, tags its yields
-  with the key, and routes incoming events to the correct spindle.
+  ## Usage
 
-  ## Lifecycle
+      use Skuld.Syntax
 
-   1. A computation calls `Spindle.fork(:cart, comp)` — the PageMachine
-      main loop creates a Spindle struct and adds it to its registry
-   2. When the spindle fiber yields (`Yield.yield`), the main loop wraps
-      the value as `{:spindle, :cart, value}` and forwards to the LiveView
-   3. When the LiveView sends an event for that spindle, the main loop
-      resumes the fiber
-   4. When the spindle completes, the main loop removes it from the registry
+      comp do
+        checkout <- Spindle.fork(:checkout, MyApp.CheckoutFlow.flow(product))
+
+        # Main spindle continues...
+        filters <- Yield.yield(:search)
+        {:ok, results} <- MyApp.ProductCatalog.search(filters)
+        Yield.yield({:results, results})
+      end
+      |> Spindle.with_handler()
+      |> FiberYield.with_handler()
+      |> FiberPool.with_handler()
+      |> Comp.run()
   """
 
+  alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
-  alias Skuld.Coroutine
+  alias Skuld.Effects.FiberPool
 
-  defstruct [:key, :fiber]
+  @sig __MODULE__
 
-  @typedoc "A named coroutine fiber managed by the PageMachine main loop."
-  @type t :: %__MODULE__{
-          key: atom(),
-          fiber: Coroutine.t()
-        }
+  @env_key :spindle_keys
+
+  @doc "Environment state key for spindle key → fiber_id mappings."
+  def env_key, do: @env_key
+
+  #############################################################################
+  ## Public API
+  #############################################################################
 
   @doc """
-  Create a new spindle from a computation. The spindle starts as pending
-  — it must be stepped via `step/2` before it runs.
+  Fork a named spindle as a FiberPool fiber.
+
+  Returns a Handle that can be used with `FiberPool.await!/1`.
   """
-  @spec new(atom(), Types.computation(), Env.t()) :: t()
-  def new(key, computation, env) when is_atom(key) do
-    fiber = Coroutine.new(computation, env)
-    %__MODULE__{key: key, fiber: fiber}
+  @spec fork(atom(), Types.computation()) :: Types.computation()
+  def fork(key, computation) when is_atom(key) do
+    Comp.effect(@sig, {:fork, key, computation})
   end
 
   @doc """
-  Step a spindle forward. Runs from current state — starts a pending spindle,
-  or resumes a suspended spindle with the given value.
-
-  Returns `{:yield, spindle, value}` if the spindle yielded,
-  `{:complete, spindle, result}` if it completed,
-  `{:error, spindle, error}` if it errored.
+  Install the Spindle handler. Must be installed outside `FiberPool.with_handler/1`
+  in the handler chain.
   """
-  @spec step(t()) ::
-          {:yield, t(), term()}
-          | {:complete, t(), term()}
-          | {:error, t(), term()}
-  def step(%__MODULE__{fiber: fiber} = spindle) do
-    resolved = Coroutine.run(fiber)
+  @spec with_handler(Types.computation()) :: Types.computation()
+  def with_handler(computation) do
+    Comp.with_handler(computation, @sig, &handle/3)
+  end
 
-    case resolved do
-      %Coroutine.ExternalSuspended{value: value} ->
-        {:yield, %{spindle | fiber: resolved}, value}
+  #############################################################################
+  ## Handler Implementation
+  #############################################################################
 
-      %Coroutine.Completed{result: result} ->
-        {:complete, %{spindle | fiber: resolved}, result}
+  @doc false
+  def handle({:fork, key, computation}, env, k) do
+    wrapped_k = fn handle, fiber_env ->
+      id_to_key = Env.get_state(fiber_env, @env_key, %{})
+      key_to_id = Env.get_state(fiber_env, :spindle_key_to_id, %{})
 
-      %Coroutine.Errored{error: error} ->
-        {:error, %{spindle | fiber: resolved}, error}
+      next_env =
+        fiber_env
+        |> Env.put_state(@env_key, Map.put(id_to_key, handle.id, key))
+        |> Env.put_state(:spindle_key_to_id, Map.put(key_to_id, key, handle.id))
 
-      other ->
-        raise "unexpected spindle fiber state: #{inspect(other)}"
+      k.(handle, next_env)
     end
-  end
 
-  @doc """
-  Step a spindle forward with a resume value. Use for suspended spindles
-  that need an event to continue.
-  """
-  @spec step(t(), term()) ::
-          {:yield, t(), term()}
-          | {:complete, t(), term()}
-          | {:error, t(), term()}
-  def step(%__MODULE__{fiber: fiber} = spindle, value) do
-    resolved = Coroutine.run(fiber, value)
-
-    case resolved do
-      %Coroutine.ExternalSuspended{value: value} ->
-        {:yield, %{spindle | fiber: resolved}, value}
-
-      %Coroutine.Completed{result: result} ->
-        {:complete, %{spindle | fiber: resolved}, result}
-
-      %Coroutine.Errored{error: error} ->
-        {:error, %{spindle | fiber: resolved}, error}
-
-      other ->
-        raise "unexpected spindle fiber state: #{inspect(other)}"
-    end
-  end
-
-  @doc """
-  Tag a spindle yield for forwarding to the LiveView.
-  Returns `{:spindle, key, value}`.
-  """
-  @spec tag_yield(t(), term()) :: {:spindle, atom(), term()}
-  def tag_yield(%__MODULE__{key: key}, value), do: {:spindle, key, value}
-
-  @doc """
-  Cancel a spindle, running leave_scope cleanup.
-  """
-  @spec cancel(t(), term()) :: t()
-  def cancel(%__MODULE__{fiber: fiber} = spindle, reason \\ :cancelled) do
-    cancelled = Coroutine.cancel(fiber, reason)
-    %{spindle | fiber: cancelled}
+    fiber_effect = FiberPool.fiber(computation)
+    Comp.call(fiber_effect, env, wrapped_k)
   end
 end

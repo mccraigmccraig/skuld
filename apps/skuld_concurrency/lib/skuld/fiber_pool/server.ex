@@ -10,6 +10,7 @@ defmodule Skuld.FiberPool.Server do
   alias Skuld.Effects.FiberPool
   alias Skuld.Effects.FiberYield
   alias Skuld.Effects.FreshInt
+  alias Skuld.PageMachine.Spindle
   alias Skuld.FiberPool.FiberPoolState
   alias Skuld.FiberPool.PendingWork
   alias Skuld.FiberPool.Scheduler
@@ -44,6 +45,7 @@ defmodule Skuld.FiberPool.Server do
     # We want to drive the scheduler ourselves.
     {handles_with_keys, env} =
       boot_computation(wrapped)
+      |> Spindle.with_handler()
       |> FiberYield.with_handler()
       |> FreshInt.with_handler()
       |> Comp.with_handler(Skuld.Effects.FiberPool, FiberPool.handler())
@@ -82,6 +84,7 @@ defmodule Skuld.FiberPool.Server do
 
   defp server_loop(caller, id_to_key, key_to_id, state, env) do
     state = Scheduler.process_external_wakes(state)
+    {id_to_key, key_to_id} = collect_new_spindle_keys(id_to_key, key_to_id, state)
     round = Scheduler.run(state, env)
 
     if round.all_done do
@@ -91,6 +94,15 @@ defmodule Skuld.FiberPool.Server do
       send_yields(caller, id_to_key, round.suspended_yields)
       drain_or_block(caller, id_to_key, key_to_id, round.state, env)
     end
+  end
+
+  # Read any new spindle key mappings written to env state by Spindle.fork
+  # since the last round, and merge them into the server's key maps.
+  defp collect_new_spindle_keys(id_to_key, key_to_id, state) do
+    new_id_to_key = Map.get(state.env_state, Spindle.env_key(), %{})
+    new_key_to_id = Map.get(state.env_state, :spindle_key_to_id, %{})
+
+    {Map.merge(id_to_key, new_id_to_key), Map.merge(key_to_id, new_key_to_id)}
   end
 
   defp send_yields(caller, id_to_key, suspended_yields) do

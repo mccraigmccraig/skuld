@@ -115,7 +115,7 @@ defmodule MyApp.ProductBrowserSpindle do
 
     case event do
       {:buy, product} ->
-        _handle <- FiberPool.fiber(MyApp.CheckoutSpindle.run(product))
+        _handle <- Spindle.fork(:checkout, MyApp.CheckoutSpindle.run(product))
         Yield.yield({:buy, product})
         search_loop(filters, page)
 
@@ -370,7 +370,7 @@ once per purchase: collect inputs, place order, exit. Both run concurrently
 in the same FiberPool.Server process — cooperatively scheduled, no locking.
 
 When the user clicks "buy," the product spindle receives the event via
-`Yield.yield`, forks a checkout spindle with `FiberPool.fiber`, yields a
+`Yield.yield`, forks a checkout spindle with `Spindle.fork`, yields a
 UI update, and continues its search loop. The checkout spindle runs its
 linear flow independently. If the user searches for more products
 while the checkout form is still open, those events go to the product
@@ -379,7 +379,7 @@ spindle — the checkout spindle is unaffected.
 ## Dynamic forking
 
 Spindles can fork other spindles from within their own computation using
-`FiberPool.fiber/1`. The product spindle forks a checkout spindle when the
+`Spindle.fork/2`. The product spindle forks a checkout spindle when the
 user clicks "buy" — the new spindle starts its linear flow while the
 product spindle continues its search loop. Both run cooperatively in the
 same server process.
@@ -413,7 +413,7 @@ the FiberPool.Server process, which cancels all registered fibers.
 | `PageMachine.resume/3`            | Resume a spindle with a value    |
 | `PageMachine.def_pipe_event/2,4`  | Generate `handle_event/3`        |
 | `PageMachine.cancel/1`            | Cancel page machine and spindles |
-| `FiberPool.fiber/1`                    | Fork a spindle from a computation|
+| `Spindle.fork/2`                      | Fork a spindle from a computation|
 
 ## Comparison to a monolithic LiveView
 

@@ -1,12 +1,16 @@
 defmodule Skuld.PageMachine.SpindleTest do
   use ExUnit.Case, async: true
+  use Skuld.Syntax
 
+  alias Skuld.Comp
   alias Skuld.Comp.Env
+  alias Skuld.Coroutine
+  alias Skuld.Effects.FiberPool
+  alias Skuld.Effects.FiberYield
   alias Skuld.Effects.Yield
   alias Skuld.PageMachine.Spindle
-  alias Skuld.Coroutine
 
-  defmodule TestFlow do
+  defmodule TestFlows do
     use Skuld.Syntax
 
     defcomp cart_flow do
@@ -21,58 +25,43 @@ defmodule Skuld.PageMachine.SpindleTest do
     end
   end
 
-  defp wrap(comp), do: comp |> Yield.with_handler()
-
-  describe "new/3" do
-    test "creates a pending spindle with a key" do
-      env = Env.new()
-      spindle = Spindle.new(:cart, wrap(TestFlow.cart_flow()), env)
-      assert %Spindle{key: :cart} = spindle
-    end
+  defp wrap(comp) do
+    comp
+    |> Spindle.with_handler()
+    |> FiberYield.with_handler()
+    |> FiberPool.with_handler()
   end
 
-  describe "step/1" do
-    test "runs a pending spindle to its first yield" do
-      spindle = Spindle.new(:cart, wrap(TestFlow.cart_flow()), Env.new())
-      assert {:yield, %Spindle{key: :cart}, :validating} = Spindle.step(spindle)
+  describe "fork/2" do
+    test "creates a fiber and returns a Handle" do
+      {handles, _env} =
+        comp do
+          h <- Spindle.fork(:cart, TestFlows.cart_flow())
+          [h]
+        end
+        |> wrap()
+        |> Comp.call(Env.new(), &Comp.identity_k/2)
+
+      assert [%Coroutine.Handle{}] = handles
     end
-  end
 
-  describe "step/2 resume" do
-    test "resumes a yielded spindle with a value" do
-      spindle = Spindle.new(:cart, wrap(TestFlow.cart_flow()), Env.new())
-      {:yield, spindle, :validating} = Spindle.step(spindle)
-      {:complete, _spindle, {:valid, true}} = Spindle.step(spindle, 42)
-    end
-  end
+    test "registers the key → fiber_id mapping in env state" do
+      {_handles, env} =
+        comp do
+          h <- Spindle.fork(:cart, TestFlows.cart_flow())
+          _i <- Spindle.fork(:inventory, TestFlows.inventory_flow())
+          [h]
+        end
+        |> wrap()
+        |> Comp.call(Env.new(), &Comp.identity_k/2)
 
-  describe "tag_yield/2" do
-    test "wraps yield values with the spindle key" do
-      spindle = Spindle.new(:cart, wrap(TestFlow.cart_flow()), Env.new())
-      {:yield, spindle, :validating} = Spindle.step(spindle)
-      assert {:spindle, :cart, :validating} = Spindle.tag_yield(spindle, :validating)
-    end
-  end
+      # Key mapping is written to env state
+      id_to_key = Env.get_state(env, Spindle.env_key(), %{})
+      key_to_id = Env.get_state(env, :spindle_key_to_id, %{})
 
-  describe "cancel/2" do
-    test "cancels a running spindle" do
-      spindle = Spindle.new(:cart, wrap(TestFlow.cart_flow()), Env.new())
-      {:yield, spindle, :validating} = Spindle.step(spindle)
-      spindle = Spindle.cancel(spindle)
-      assert %Coroutine.Cancelled{} = spindle.fiber
-    end
-  end
-
-  describe "multiple spindles" do
-    test "two spindles can run independently" do
-      cart = Spindle.new(:cart, wrap(TestFlow.cart_flow()), Env.new())
-      inv = Spindle.new(:inventory, wrap(TestFlow.inventory_flow()), Env.new())
-
-      {:yield, cart, :validating} = Spindle.step(cart)
-      {:yield, inv, :reserving} = Spindle.step(inv)
-
-      {:complete, _cart, {:valid, true}} = Spindle.step(cart, 10)
-      {:complete, _inv, {:ok, 99}} = Spindle.step(inv, 99)
+      assert map_size(id_to_key) == 2
+      assert Map.has_key?(key_to_id, :cart)
+      assert Map.has_key?(key_to_id, :inventory)
     end
   end
 end
