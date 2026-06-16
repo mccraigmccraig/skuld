@@ -113,7 +113,7 @@ defmodule MyApp.StoreProtocol do
     defevent "filter", FilterEvent, params: [filters: map()]
     defevent "buy", BuyEvent, params: [product: Product.t()]
 
-    defyield :browsing
+    defyield browsing
     defyield results(products: [Product.t()], total: integer())
   end
 
@@ -121,8 +121,8 @@ defmodule MyApp.StoreProtocol do
     defevent "submit_shipping", ShippingEvent, params: [shipping: map()]
     defevent "submit_payment", PaymentEvent, params: [payment: map()]
 
-    defyield :shipping
-    defyield :payment
+    defyield shipping
+    defyield payment
   end
 end
 ```
