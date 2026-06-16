@@ -89,22 +89,63 @@ defmodule Skuld.FiberPool.Server do
         notify_completions(caller, id_to_key, round.state, round.completions)
         send(caller, {__MODULE__, :all_done, []})
 
-      round.suspended_yields != [] ->
-        Enum.each(round.suspended_yields, fn {fiber, _value} ->
-          handle_suspended_fiber(caller, id_to_key, round.state, fiber)
-        end)
-
-        # Fibers yielded — need caller input. Block until resume or cancel.
-        receive_resume(caller, id_to_key, key_to_id, round.state, env)
-
       true ->
-        # Tasks may complete, batches may execute — don't block.
-        # Loop back to the scheduler for another round.
-        server_loop(caller, id_to_key, key_to_id, round.state, env)
+        send_yields(caller, id_to_key, round.suspended_yields)
+        drain_or_block(caller, id_to_key, key_to_id, round.state, env)
     end
   end
 
-  defp handle_suspended_fiber(caller, id_to_key, _state, fiber) do
+  defp send_yields(caller, id_to_key, suspended_yields) do
+    Enum.each(suspended_yields, fn {fiber, _value} ->
+      handle_suspended_fiber(caller, id_to_key, fiber)
+    end)
+  end
+
+  # Check for caller messages without blocking. If nothing waiting and the
+  # scheduler can advance (tasks, batches, internal suspensions), loop back.
+  # Only block when all fibers need external input.
+  defp drain_or_block(caller, id_to_key, key_to_id, state, env) do
+    receive do
+      {:fiber_resume, fiber_key, value} ->
+        new_state = inject_wake(state, key_to_id, fiber_key, value)
+        server_loop(caller, id_to_key, key_to_id, new_state, env)
+
+      {:fiber_cancel, _fiber_key} ->
+        server_loop(caller, id_to_key, key_to_id, state, env)
+    after
+      0 ->
+        if needs_caller_input?(state) do
+          wait_for_caller(caller, id_to_key, key_to_id, state, env)
+        else
+          server_loop(caller, id_to_key, key_to_id, state, env)
+        end
+    end
+  end
+
+  defp wait_for_caller(caller, id_to_key, key_to_id, state, env) do
+    receive do
+      {:fiber_resume, fiber_key, value} ->
+        new_state = inject_wake(state, key_to_id, fiber_key, value)
+        server_loop(caller, id_to_key, key_to_id, new_state, env)
+
+      {:fiber_cancel, _fiber_key} ->
+        server_loop(caller, id_to_key, key_to_id, state, env)
+    end
+  end
+
+  defp needs_caller_input?(state) do
+    has_fibers = map_size(state.fibers) > 0
+
+    all_suspensions_are_yields =
+      map_size(state.suspensions) > 0 and
+        Enum.all?(state.suspensions, fn {_id, suspension} ->
+          match?(%FiberPoolState.Suspension.FiberYield{}, suspension)
+        end)
+
+    not FiberPoolState.has_tasks?(state) and (all_suspensions_are_yields or not has_fibers)
+  end
+
+  defp handle_suspended_fiber(caller, id_to_key, fiber) do
     case fiber do
       %Coroutine.InternalSuspended{
         id: id,
@@ -118,17 +159,6 @@ defmodule Skuld.FiberPool.Server do
 
       _ ->
         :ok
-    end
-  end
-
-  defp receive_resume(caller, id_to_key, key_to_id, state, env) do
-    receive do
-      {:fiber_resume, fiber_key, value} ->
-        new_state = inject_wake(state, key_to_id, fiber_key, value)
-        server_loop(caller, id_to_key, key_to_id, new_state, env)
-
-      {:fiber_cancel, _fiber_key} ->
-        server_loop(caller, id_to_key, key_to_id, state, env)
     end
   end
 
