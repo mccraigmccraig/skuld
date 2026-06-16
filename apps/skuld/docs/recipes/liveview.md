@@ -10,13 +10,13 @@ and socket manipulation mingle in `handle_event` and `handle_info` callbacks.
 It's the equivalent of putting reducer logic, API calls, and DOM updates in a
 single function.
 
-`AsyncPageMachine` separates these concerns, Elixir-style. Like Elm, Redux,
+PageMachine separates these concerns, Elixir-style. Like Elm, Redux,
 or re-frame, it enforces a Model-View-Update architecture. But instead of pure
-reducers that must return immediately, AsyncPageMachine uses coroutines: each
+reducers that must return immediately, PageMachine uses coroutines: each
 state machine is a sequential computation that can *suspend* mid-execution,
 surface updates to the view, and resume where it left off.
 
-An AsyncPageMachine runs one or more concurrent **spindles** — named coroutine
+A PageMachine runs one or more concurrent **spindles** — named coroutine
 fibers, each an independent state machine with its own event stream and its
 own yields to the LiveView. A single-spindle page is just a page machine with
 one spindle. A multi-spindle page runs a product browser *and* a checkout form,
@@ -48,7 +48,7 @@ the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
 
 1. Write each page region as an effectful computation using `Yield`
 2. Test each in isolation with `Coroutine` — deterministic, no processes
-3. Wrap the page in a thin LiveView module via `AsyncPageMachine` with `/3` callbacks
+3. Wrap the page in a thin LiveView module via `PageMachine` with `/3` callbacks
 4. Use `def_pipe_event` to forward LiveView events to the correct spindle
 5. Computations fork sub-computations as needed; yields update the UI
 
@@ -167,7 +167,7 @@ right UI region:
 ```elixir
 defmodule MyApp.StoreLive do
   use MyAppWeb, :live_view
-  use Skuld.PageMachine.AsyncPageMachine,
+  use Skuld.PageMachine,
     tag: :products,
     on_yield: &handle_yield/3,
     on_complete: &handle_complete/3,
@@ -176,7 +176,7 @@ defmodule MyApp.StoreLive do
   @impl true
   def mount(_params, _session, socket) do
     {:ok, runner} =
-      AsyncPageMachine.run(
+      PageMachine.run(
         MyApp.ProductBrowserSpindle.run(%{}),
         :products
       )
@@ -396,23 +396,23 @@ Cancel on mount to prevent duplicate runners:
 ```elixir
 def mount(_params, _session, socket) do
   if connected?(socket) do
-    socket.assigns[:runner] && AsyncPageMachine.cancel(socket.assigns.runner)
+    socket.assigns[:runner] && PageMachine.cancel(socket.assigns.runner)
   end
   ...
 end
 ```
 
-Cancellation cascades to all spindles — `AsyncPageMachine.cancel/1` exits
+Cancellation cascades to all spindles — `PageMachine.cancel/1` exits
 the FiberPool.Server process, which cancels all registered fibers.
 
 ## Operation reference
 
 | Operation                              | Purpose                          |
 |----------------------------------------|----------------------------------|
-| `AsyncPageMachine.run/2`               | Start page machine               |
-| `AsyncPageMachine.resume/3`            | Resume a spindle with a value    |
-| `AsyncPageMachine.def_pipe_event/2,4`  | Generate `handle_event/3`        |
-| `AsyncPageMachine.cancel/1`            | Cancel page machine and spindles |
+| `PageMachine.run/2`               | Start page machine               |
+| `PageMachine.resume/3`            | Resume a spindle with a value    |
+| `PageMachine.def_pipe_event/2,4`  | Generate `handle_event/3`        |
+| `PageMachine.cancel/1`            | Cancel page machine and spindles |
 | `FiberPool.fiber/1`                    | Fork a spindle from a computation|
 
 ## Comparison to a monolithic LiveView

@@ -1,14 +1,13 @@
-defmodule Skuld.PageMachine.AsyncPageMachineTest do
+defmodule Skuld.PageMachineTest do
   use ExUnit.Case, async: true
 
-  alias Skuld.PageMachine.AsyncPageMachine
   alias Skuld.FiberPool.Server, as: FiberServer
   alias Skuld.Comp.Cancelled
   alias Skuld.Comp.ExternalSuspend
   alias Skuld.Comp.Throw
 
   defmodule TestLive do
-    use AsyncPageMachine,
+    use Skuld.PageMachine,
       tag: :test_flow,
       on_yield: &__MODULE__.handle_yield/2,
       on_complete: &__MODULE__.handle_complete/2,
@@ -71,7 +70,7 @@ defmodule Skuld.PageMachine.AsyncPageMachineTest do
 
   describe "optional callbacks" do
     defmodule MinimalLive do
-      use AsyncPageMachine,
+      use Skuld.PageMachine,
         tag: :minimal,
         on_yield: fn value, socket -> {:yielded, value, socket} end
     end
@@ -93,7 +92,7 @@ defmodule Skuld.PageMachine.AsyncPageMachineTest do
 
   describe "def_pipe_event/2" do
     defmodule PipeEventAsyncTest do
-      import AsyncPageMachine, only: [def_pipe_event: 2]
+      import Skuld.PageMachine, only: [def_pipe_event: 2]
       def_pipe_event("test_event", :runner)
     end
 
@@ -110,7 +109,7 @@ defmodule Skuld.PageMachine.AsyncPageMachineTest do
 
   describe "def_pipe_event/2 with pattern+block" do
     defmodule PipeEventAsyncPatternTest do
-      import AsyncPageMachine, only: [def_pipe_event: 4]
+      import Skuld.PageMachine, only: [def_pipe_event: 4]
 
       def_pipe_event "submit", :runner, %{"value" => v} do
         {:ok, v}

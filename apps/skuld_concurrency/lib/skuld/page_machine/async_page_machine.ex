@@ -1,11 +1,11 @@
-defmodule Skuld.PageMachine.AsyncPageMachine do
+defmodule Skuld.PageMachine do
   @moduledoc """
   LiveView integration for FiberPool.Server — a multi-fiber page machine
   with bidirectional message passing.
 
   ## Usage
 
-      use Skuld.PageMachine.AsyncPageMachine,
+      use Skuld.PageMachine,
         tag: :checkout,
         on_yield: &handle_yield/2,
         on_complete: &handle_complete/2
@@ -57,7 +57,7 @@ defmodule Skuld.PageMachine.AsyncPageMachine do
       def handle_event(unquote(event), params, socket) do
         fiber_key = unquote(into) || unquote(pmc_tag) || unquote(assign_key)
 
-        Skuld.PageMachine.AsyncPageMachine.resume(
+        Skuld.PageMachine.resume(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           fiber_key,
           {unquote(event), params}
@@ -77,7 +77,7 @@ defmodule Skuld.PageMachine.AsyncPageMachine do
         socket = unquote(before).(socket)
         fiber_key = unquote(into) || unquote(pmc_tag) || unquote(assign_key)
 
-        Skuld.PageMachine.AsyncPageMachine.resume(
+        Skuld.PageMachine.resume(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           fiber_key,
           {unquote(event), params}
@@ -97,7 +97,7 @@ defmodule Skuld.PageMachine.AsyncPageMachine do
         fiber_key = unquote(into) || unquote(pmc_tag) || unquote(assign_key)
         value = unquote(block)
 
-        Skuld.PageMachine.AsyncPageMachine.resume(
+        Skuld.PageMachine.resume(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           fiber_key,
           value
@@ -118,7 +118,7 @@ defmodule Skuld.PageMachine.AsyncPageMachine do
         fiber_key = unquote(into) || unquote(pmc_tag) || unquote(assign_key)
         value = unquote(block)
 
-        Skuld.PageMachine.AsyncPageMachine.resume(
+        Skuld.PageMachine.resume(
           Map.fetch!(socket.assigns, unquote(assign_key)),
           fiber_key,
           value
@@ -181,7 +181,7 @@ defmodule Skuld.PageMachine.AsyncPageMachine do
     quote do
       @pmc_tag unquote(tag)
 
-      import Skuld.PageMachine.AsyncPageMachine,
+      import Skuld.PageMachine,
         only: [def_pipe_event: 2, def_pipe_event: 3, def_pipe_event: 4]
 
       (unquote_splicing(clauses))
