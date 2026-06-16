@@ -30,7 +30,7 @@ yields from each to the right UI region.
 LiveView modules mix three concerns: state transitions, business logic,
 and DOM updates. When `handle_event` calls APIs, manipulates assigns,
 and pushes UI state all in one function, the result is hard to test,
-hard to change, and hard to reason about.
+change, and reason about.
 
 Extracting the state machine into a pure module — one that receives
 events and returns new state, with no LiveView dependency — separates
@@ -38,7 +38,7 @@ these concerns. The spindle handles state and effects; the LiveView
 bridges events and renders. This has two big payoffs:
 
 - **Fast, deterministic tests** — test the page logic with plain
-  `assert`. No process. No LiveViewTest. No DOM. Even with DoubleDown
+  `assert`. No process, LiveViewTest, or DOM. Even with DoubleDown
   replacing the database sandbox (often a 250× speedup for tests whose
   main bottleneck was Ecto sandbox DB I/O), the LiveView process itself
   sets a floor on test time. Pure state transitions have no such floor.
@@ -58,7 +58,7 @@ bridges events and renders. This has two big payoffs:
 ## Example: single-spindle product browser
 
 A product search page — one spindle, one event loop. The user types a
-query, the spindle fetches results, yields them to the LiveView, then
+query, the spindle fetches results, sends them to the LiveView, then
 waits for the next event.
 
 ### Protocol
@@ -93,7 +93,7 @@ end
 ```
 
 ### Spindle
-The spindle is the computation — a linear flow that fetches data,
+The spindle is the computation — a function that fetches data,
 surfaces results via `Search.Notify.results(...)`, and suspends on
 `Search.Yield.browsing()` to wait for the next event. It uses the
 protocol's generated functions and pattern-matches on the protocol's
