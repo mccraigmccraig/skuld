@@ -137,24 +137,26 @@ spindle and continues its own loop:
 defmodule MyApp.ProductBrowserSpindle do
   use Skuld.Syntax
 
+  alias StoreProtocol.Products
+
   defcomp run(initial_filters) do
     search_loop(initial_filters)
   end
 
   defcomp search_loop(filters) do
     {:ok, products, total} <- MyApp.ProductCatalog.search(filters)
-    _ <- StoreProtocol.Products.results(products: products, total: total)
-    event <- StoreProtocol.Products.browsing()
+    _ <- Products.results(products: products, total: total)
+    event <- Products.browsing()
 
     case event do
-      %StoreProtocol.Products.BuyEvent{product: product} ->
+      %Products.BuyEvent{product: product} ->
         _handle <- Spindle.fork(StoreProtocol.Checkout, MyApp.CheckoutSpindle.run(product))
         search_loop(filters)
 
-      %StoreProtocol.Products.FilterEvent{filters: filters} ->
+      %Products.FilterEvent{filters: filters} ->
         search_loop(filters)
 
-      %StoreProtocol.Products.SearchEvent{query: query} ->
+      %Products.SearchEvent{query: query} ->
         search_loop(%{query: query})
     end
   end
@@ -170,10 +172,12 @@ and places the order. Its yields use the protocol's generated functions —
 defmodule MyApp.CheckoutSpindle do
   use Skuld.Syntax
 
+  alias StoreProtocol.Checkout
+
   defcomp run(product) do
     {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
-    %StoreProtocol.Checkout.ShippingEvent{shipping: shipping} <- StoreProtocol.Checkout.shipping()
-    %StoreProtocol.Checkout.PaymentEvent{payment: payment} <- StoreProtocol.Checkout.payment()
+    %Checkout.ShippingEvent{shipping: shipping} <- Checkout.shipping()
+    %Checkout.PaymentEvent{payment: payment} <- Checkout.payment()
     {:ok, order} <- MyApp.Orders.place(%{product: product}, shipping, payment)
     {:ok, order}
   else
