@@ -43,7 +43,14 @@ defmodule Skuld.PageMachine do
 
   Takes a keyword list of `{spindle_key, computation}` pairs:
 
-      PageMachine.run(products: ProductBrowserSpindle.run(%{}))
+      {:ok, pid} = PageMachine.run(products: ProductBrowserSpindle.run(%{}))
+
+  When a socket is passed as the first argument, the pid is stored
+  automatically in `socket.assigns` under the default assign key
+  (`Skuld.PageMachine.DefaultAssign`):
+
+      {:ok, socket} =
+        PageMachine.run(socket, products: ProductBrowserSpindle.run(%{}))
 
   Multiple spindles can be started at once:
 
@@ -56,6 +63,11 @@ defmodule Skuld.PageMachine do
   """
   def run(fibers, _opts \\ []) when is_list(fibers) do
     FiberServer.start_link(fibers)
+  end
+
+  def run(%{assigns: assigns} = socket, fibers) when is_list(fibers) do
+    {:ok, pid} = FiberServer.start_link(fibers)
+    {:ok, %{socket | assigns: Map.put(assigns, @default_assign_key, pid)}}
   end
 
   @doc "Resume a yielded spindle with a value."

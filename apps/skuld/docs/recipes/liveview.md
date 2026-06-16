@@ -179,18 +179,17 @@ defmodule MyApp.StoreLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, pm} =
-      PageMachine.run(
+    {:ok, socket} =
+      PageMachine.run(socket,
         products: MyApp.ProductBrowserSpindle.run(%{})
       )
 
     {:ok,
      assign(socket,
-        pm: pm,
-       products: [],
-       total: 0,
-       page: 1
-     )}
+        products: [],
+        total: 0,
+        page: 1
+      )}
   end
 
   # Multi-spindle callbacks — dispatch by spindle key
