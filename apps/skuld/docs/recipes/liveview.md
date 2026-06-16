@@ -49,29 +49,141 @@ the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
 1. Define a typed protocol with `use Skuld.PageMachine.Contract` and `defspindle` blocks
 2. Write each page region as an effectful computation using the protocol's yield functions
 3. Test each in isolation with `Coroutine` — deterministic, no processes
-4. Wrap the page in a thin LiveView module via `use Skuld.PageMachine, protocol: ...` with `/3` callbacks
-5. Computations fork sub-computations as needed; yields update the UI
+4. Wrap the page in a thin LiveView module via `use Skuld.PageMachine, protocol: ...`
+   with `/2` callbacks (single spindle) or `/3` (multi-spindle)
+5. Computations fork sub-computations with `Spindle.fork`; yields update the UI
 
-The `:tag` option on `use` is optional — it defaults to
-`Skuld.PageMachine.Default`. Pass an explicit tag only when a page hosts
-multiple page machines.
+## Example: single-spindle product browser
 
-## When to use concurrent spindles
+A product search page — one spindle, one event loop. The user types a
+query, the spindle fetches results, yields them to the LiveView, then
+waits for the next event.
 
-A page with a product browser and a checkout form side by side. The product
-browser has its own lifecycle (search, filter, paginate, select product)
-independent of the checkout flow (collect shipping, collect payment, place
-order). Running them as separate spindles keeps each flow linear and testable
-in isolation.
+### Protocol
 
-## Example: product browser + checkout
+```elixir
+defmodule MyApp.SearchProtocol do
+  use Skuld.PageMachine.Contract
 
-Two spindles running in the same page machine:
+  defspindle Search do
+    defevent "search", SearchEvent, params: [query: String.t()]
+    defevent "filter", FilterEvent, params: [filters: map()]
 
-| Spindle                       | Role                                                  | Event source                                   |
-|-------------------------------|-------------------------------------------------------|------------------------------------------------|
-| `StoreProtocol.Products`      | Forever loop: search products, select one to buy      | `"search"`, `"filter"` events                  |
-| `StoreProtocol.Checkout`      | Forked on buy: collect shipping, payment, place order | `"submit_shipping"`, `"submit_payment"` events |
+    defyield browsing
+    defyield results(products: [Product.t()], total: integer())
+  end
+end
+```
+
+### Spindle
+
+```elixir
+defmodule MyApp.SearchSpindle do
+  use Skuld.Syntax
+
+  alias MyApp.SearchProtocol.Search
+
+  defcomp run(initial_filters) do
+    search_loop(initial_filters)
+  end
+
+  defcomp search_loop(filters) do
+    {:ok, products, total} <- MyApp.ProductCatalog.search(filters)
+    _ <- Search.results(products: products, total: total)
+    event <- Search.browsing()
+
+    case event do
+      %Search.SearchEvent{query: query} ->
+        search_loop(%{query: query})
+
+      %Search.FilterEvent{filters: filters} ->
+        search_loop(filters)
+    end
+  end
+end
+```
+
+### LiveView
+
+```elixir
+defmodule MyApp.SearchLive do
+  use MyAppWeb, :live_view
+  use Skuld.PageMachine,
+    protocol: MyApp.SearchProtocol,
+    on_yield: &handle_yield/2,
+    on_complete: &handle_complete/2,
+    on_error: &handle_error/2
+
+  alias MyApp.SearchProtocol.Search
+
+  @impl true
+  def mount(_params, _session, socket) do
+    socket =
+      PageMachine.run(socket, Search => MyApp.SearchSpindle.run(%{}))
+      |> assign(products: [], total: 0)
+
+    {:ok, socket}
+  end
+
+  def handle_yield(%Search.Results{products: products, total: total}, socket) do
+    {:noreply, assign(socket, products: products, total: total)}
+  end
+
+  def handle_yield(%Search.Browsing{}, socket), do: {:noreply, socket}
+
+  def handle_complete({:error, reason}, socket) do
+    {:noreply, put_flash(socket, :error, "Search failed: #{inspect(reason)}")}
+  end
+
+  def handle_error(reason, socket) do
+    {:noreply, put_flash(socket, :error, "Error: #{inspect(reason)}")}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <div>
+      <.search_form myself={@myself} />
+      <.product_list products={@products} total={@total} myself={@myself} />
+    </div>
+    """
+  end
+end
+```
+
+A few things to note:
+
+- **`/2` callbacks** — with a single spindle there's no dispatch by key.
+  The module atom (`Search`) isn't needed in the callback signature.
+- **`defevent` + struct name** — `defevent "search", SearchEvent, params: [...]`
+  generates `Search.SearchEvent`. The auto-generated `handle_event` wraps
+  the incoming params into the struct before resuming the spindle. This is
+  why the `case event` in the spindle pattern-matches on `%Search.SearchEvent{}`.
+- **`defyield` generates both a struct and a function** — `defyield browsing`
+  produces `%Search.Browsing{}` and `Search.browsing()`. `defyield results(...)`
+  produces `%Search.Results{}` and `Search.results(products: ..., total: ...)`.
+
+### Test
+
+```elixir
+test "search yields results", %{comp: comp} do
+  fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+  assert %Coroutine.ExternalSuspended{value: %Search.Results{}} = fiber
+end
+
+test "filter event triggers new search", %{comp: comp} do
+  fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
+  fiber = Coroutine.run(fiber, %Search.FilterEvent{filters: %{category: "books"}})
+  assert %Coroutine.ExternalSuspended{value: %Search.Results{}} = fiber
+end
+```
+
+## Adding a second spindle: checkout
+
+When you need an independent region with its own event loop — say a
+checkout form alongside the product browser — add a second spindle.
+The protocol gains a `Checkout` block, the LiveView switches to `/3`
+callbacks, and the product spindle forks the checkout spindle on demand.
 
 ### Boundary contracts
 
@@ -99,16 +211,16 @@ end
 
 ### Protocol
 
-A typed protocol declares the full spindle ↔ LiveView contract — events,
-their target spindles, param types, and the shape of every yield. The
-protocol is the single source of truth; the LiveView and spindles both
-reference it:
+The protocol extends to include `Checkout` alongside `Search`. Unlike
+`Search`, `Checkout` has no `defevent` declarations — it doesn't receive
+events from the UI. It's forked by the search spindle when the user
+selects a product:
 
 ```elixir
 defmodule MyApp.StoreProtocol do
   use Skuld.PageMachine.Contract
 
-  defspindle Products do
+  defspindle Search do
     defevent "search", SearchEvent, params: [query: String.t()]
     defevent "filter", FilterEvent, params: [filters: map()]
     defevent "buy", BuyEvent, params: [product: Product.t()]
@@ -118,9 +230,6 @@ defmodule MyApp.StoreProtocol do
   end
 
   defspindle Checkout do
-    defevent "submit_shipping", ShippingEvent, params: [shipping: map()]
-    defevent "submit_payment", PaymentEvent, params: [payment: map()]
-
     defyield shipping
     defyield payment
   end
@@ -129,15 +238,14 @@ end
 
 ### Spindle computations
 
-The product browser spindle runs forever — each search yields results, then
-loops for the next event. When the user clicks "buy," it forks a checkout
-spindle and continues its own loop:
+The search spindle is extended with a `%Search.BuyEvent{}` branch that
+forks the checkout spindle and continues its own loop:
 
 ```elixir
-defmodule MyApp.ProductBrowserSpindle do
+defmodule MyApp.SearchSpindle do
   use Skuld.Syntax
 
-  alias StoreProtocol.Products
+  alias MyApp.StoreProtocol.{Search, Checkout}
 
   defcomp run(initial_filters) do
     search_loop(initial_filters)
@@ -145,33 +253,33 @@ defmodule MyApp.ProductBrowserSpindle do
 
   defcomp search_loop(filters) do
     {:ok, products, total} <- MyApp.ProductCatalog.search(filters)
-    _ <- Products.results(products: products, total: total)
-    event <- Products.browsing()
+    _ <- Search.results(products: products, total: total)
+    event <- Search.browsing()
 
     case event do
-      %Products.BuyEvent{product: product} ->
-        _handle <- Spindle.fork(StoreProtocol.Checkout, MyApp.CheckoutSpindle.run(product))
+      %Search.BuyEvent{product: product} ->
+        _handle <- Spindle.fork(Checkout, MyApp.CheckoutSpindle.run(product))
         search_loop(filters)
 
-      %Products.FilterEvent{filters: filters} ->
+      %Search.FilterEvent{filters: filters} ->
         search_loop(filters)
 
-      %Products.SearchEvent{query: query} ->
+      %Search.SearchEvent{query: query} ->
         search_loop(%{query: query})
     end
   end
 end
 ```
 
-The checkout spindle is forked dynamically when the user selects a product.
-It receives the product, reserves inventory, collects shipping and payment,
-and places the order. Its yields use the protocol's generated functions —
+The checkout spindle is forked with the selected product. It reserves
+inventory, then yields `%Checkout.Shipping{}` and `%Checkout.Payment{}`
+to drive a step-by-step form in the LiveView:
 
 ```elixir
 defmodule MyApp.CheckoutSpindle do
   use Skuld.Syntax
 
-  alias StoreProtocol.Checkout
+  alias MyApp.StoreProtocol.Checkout
 
   defcomp run(product) do
     {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
@@ -186,22 +294,11 @@ defmodule MyApp.CheckoutSpindle do
 end
 ```
 
-Each computation reads like regular sequential code — there's no explicit
-state enumeration, transition table, or event loop. This is possible
-because Skuld's coroutines are a natural fit for implementing state
-machines: each `Yield.yield` suspends at a well-defined point, and each
-resume value picks up where it left off. The computation *is* the state
-machine, and the program counter *is* the current state.
-([Coroutines are a classic technique for implementing state
-machines.](https://en.wikipedia.org/wiki/Coroutine#Common_uses))
+### LiveView
 
-### LiveView module
-
-The product browser is the primary spindle — started at mount.
-The checkout spindle is forked on demand. The `:protocol` option
-generates `handle_event/3` from the protocol's event declarations,
-so no manual `def_pipe_event` is needed. The `/3` callbacks route
-each yield to the right UI region:
+With two spindles, the LiveView switches to `/3` callbacks — the first
+argument is the spindle module atom. The `:protocol` option auto-generates
+`handle_event/3` from the protocol's `defevent` declarations:
 
 ```elixir
 defmodule MyApp.StoreLive do
@@ -212,32 +309,36 @@ defmodule MyApp.StoreLive do
     on_complete: &handle_complete/3,
     on_error: &handle_error/3
 
-  alias MyApp.{ProductBrowserSpindle, CheckoutSpindle}
-  alias MyApp.StoreProtocol.{Products, Checkout}
+  alias MyApp.{SearchSpindle, CheckoutSpindle}
+  alias MyApp.StoreProtocol.{Search, Checkout}
 
   @impl true
   def mount(_params, _session, socket) do
     socket =
-      PageMachine.run(socket,
-        Products => ProductBrowserSpindle.run(%{})
-      )
+      PageMachine.run(socket, Search => SearchSpindle.run(%{}))
       |> assign(products: [], total: 0)
 
     {:ok, socket}
   end
 
-  # Multi-spindle callbacks — dispatch by spindle module atom
-  def handle_yield(Products, %Products.Results{products: products, total: total}, socket) do
+  def handle_yield(Search, %Search.Results{products: products, total: total}, socket) do
     {:noreply, assign(socket, products: products, total: total)}
   end
+
+  def handle_yield(Search, %Search.Browsing{}, socket), do: {:noreply, socket}
 
   def handle_yield(Checkout, %Checkout.Shipping{}, socket) do
     socket = clear_spinner(socket)
     {:noreply, assign(socket, step: :shipping)}
   end
 
-  def handle_complete(Products, {:error, reason}, socket) do
-    {:noreply, put_flash(socket, :error, "Product search failed: #{inspect(reason)}")}
+  def handle_yield(Checkout, %Checkout.Payment{}, socket) do
+    socket = clear_spinner(socket)
+    {:noreply, assign(socket, step: :payment)}
+  end
+
+  def handle_complete(Search, {:error, reason}, socket) do
+    {:noreply, put_flash(socket, :error, "Search failed: #{inspect(reason)}")}
   end
 
   def handle_complete(Checkout, {:ok, order}, socket) do
@@ -284,22 +385,34 @@ defmodule MyApp.StoreLive do
 end
 ```
 
+The key differences from the single-spindle version:
+
+- **`/3` callbacks** — `handle_yield(Search, ...)` and
+  `handle_yield(Checkout, ...)` dispatch by spindle module atom.
+- **`Spindle.fork`** — the search spindle forks a checkout spindle
+  rather than handling the buy event itself. The fork returns a
+  `Handle` (ignored with `_handle`); the parent continues running.
+  Completion and errors from the child are delivered via the LiveView.
+- **`mount` starts only the primary spindle** — the checkout spindle
+  doesn't exist until a `BuyEvent` arrives.
+
 ## Testing in isolation
 
 Each spindle is tested independently with `Coroutine` — deterministic, no
-processes, no stubs:
+processes, no stubs. Here's the search spindle from the single-spindle example:
 
 ```elixir
-defmodule MyApp.ProductBrowserSpindleTest do
+defmodule MyApp.SearchSpindleTest do
   use ExUnit.Case, async: true
 
   alias Skuld.Comp.Env
   alias Skuld.Coroutine
   alias Skuld.Effects.Yield
+  alias MyApp.SearchProtocol.Search
 
   setup do
     comp =
-      MyApp.ProductBrowserSpindle.run(%{category: "electronics"})
+      MyApp.SearchSpindle.run(%{category: "electronics"})
       |> Port.with_handler(%{
         MyApp.ProductCatalog => fn _, :search, [%{category: "electronics"}] ->
           {:ok, [%Product{name: "Phone"}], 1}
@@ -312,19 +425,13 @@ defmodule MyApp.ProductBrowserSpindleTest do
 
   test "first search yields results to the LiveView", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.Products.Results{}} = fiber
+    assert %Coroutine.ExternalSuspended{value: %Search.Results{}} = fiber
   end
 
-    test "buy event triggers checkout fork and continues search loop", %{comp: comp} do
+  test "filter event triggers new search and new results", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    fiber = Coroutine.run(fiber, %StoreProtocol.Products.BuyEvent{product: %Product{name: "Phone"}})
-    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.Products.Results{}} = fiber
-  end
-
-  test "filter change triggers new search and new results", %{comp: comp} do
-    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    fiber = Coroutine.run(fiber, %StoreProtocol.Products.FilterEvent{filters: %{category: "books"}})
-    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.Products.Results{}} = fiber
+    fiber = Coroutine.run(fiber, %Search.FilterEvent{filters: %{category: "books"}})
+    assert %Coroutine.ExternalSuspended{value: %Search.Results{}} = fiber
   end
 end
 ```
