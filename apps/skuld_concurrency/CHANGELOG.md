@@ -4,6 +4,17 @@
 
 All notable changes to `skuld_concurrency` will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `Spindle.notify/1` — fire-and-forget notification to the PageMachine
+  caller. Surfaces a value to the caller (e.g. LiveView) without pausing
+  the spindle — the fiber continues immediately on the next scheduler
+  round. Uses a new `InternalSuspend.FiberYield` with `notify: true`.
+  The scheduler auto-resumes notifying fibers; the server forwards
+  notifications without entering `wait_for_caller`.
+
 ## [0.43.0] — 2026-06-16
 
 ### Added

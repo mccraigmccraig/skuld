@@ -64,9 +64,9 @@ defmodule Skuld.FiberPool.FiberPoolState do
     defmodule FiberYield do
       @moduledoc false
 
-      @type t :: %__MODULE__{value: term()}
+      @type t :: %__MODULE__{value: term(), notify: boolean()}
 
-      defstruct [:value]
+      defstruct [:value, notify: false]
     end
 
     @type t :: Await.t() | Batch.t() | Channel.t() | FiberYield.t()

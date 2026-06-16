@@ -24,6 +24,7 @@ defmodule Skuld.PageMachine.Spindle do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
+  alias Skuld.Comp.InternalSuspend
   alias Skuld.Comp.Types
   alias Skuld.Effects.FiberPool
 
@@ -97,6 +98,27 @@ defmodule Skuld.PageMachine.Spindle do
   end
 
   @doc """
+  Fire-and-forget notification to the PageMachine caller.
+
+  Surfaces `value` to the caller (e.g., the LiveView) without pausing
+  the spindle. The fiber continues immediately on the next scheduler
+  round. Returns `nil` on resume.
+
+  ## Example
+
+      comp do
+        Spindle.notify(:purchase_selected)
+        # spindle continues immediately, no Yield.yield pause
+        {:ok, results} <- MyApp.Catalog.search(filters)
+        ...
+      end
+  """
+  @spec notify(term()) :: Types.computation()
+  def notify(value) do
+    Comp.effect(@sig, {:notify, value})
+  end
+
+  @doc """
   Install the Spindle handler. Must be installed outside `FiberPool.with_handler/1`
   in the handler chain.
   """
@@ -108,6 +130,13 @@ defmodule Skuld.PageMachine.Spindle do
   #############################################################################
   ## Handler Implementation
   #############################################################################
+
+  @doc false
+  def handle({:notify, value}, env, k) do
+    resume = fn _input, resume_env -> k.(nil, resume_env) end
+    suspend = InternalSuspend.fiber_notify(value, resume)
+    {suspend, env}
+  end
 
   @doc false
   def handle({:fork, key, computation}, env, k) do

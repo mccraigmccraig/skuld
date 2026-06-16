@@ -37,6 +37,7 @@ defmodule Skuld.FiberPool.Scheduler do
 
     @type t :: %__MODULE__{
             suspended_yields: [{Coroutine.t(), term()}],
+            notifications: [{Coroutine.t(), term()}],
             completions: %{term() => {:ok, term()} | {:error, term()}},
             all_done: boolean(),
             waiting_for_tasks: boolean(),
@@ -47,6 +48,7 @@ defmodule Skuld.FiberPool.Scheduler do
     defstruct [
       :state,
       suspended_yields: [],
+      notifications: [],
       completions: %{},
       all_done: false,
       waiting_for_tasks: false,
@@ -58,6 +60,7 @@ defmodule Skuld.FiberPool.Scheduler do
           {:continue, FiberPoolState.t()}
           | {:done, FiberPoolState.t()}
           | {:suspended, Coroutine.t(), FiberPoolState.t()}
+          | {:notify, Coroutine.t(), FiberPoolState.t()}
           | {:batch_ready, FiberPoolState.t()}
           | {:error, term(), FiberPoolState.t()}
 
@@ -98,6 +101,7 @@ defmodule Skuld.FiberPool.Scheduler do
   - `{:continue, state}` - Step completed, more work may be available
   - `{:done, state}` - No more work to do
   - `{:suspended, fiber, state}` - Fiber yielded externally
+  - `{:notify, fiber, state}` - Fiber sent a fire-and-forget notification
   - `{:batch_ready, state}` - Queue empty but batch suspensions ready for execution
   - `{:error, reason, state}` - Fiber errored (with on_error: :stop)
   """
@@ -171,6 +175,19 @@ defmodule Skuld.FiberPool.Scheduler do
       {:continue, state} ->
         run_loop(state, env, round_result)
 
+      {:notify, fiber, state} ->
+        value = yield_value(fiber)
+
+        run_loop(
+          state,
+          env,
+          %{
+            round_result
+            | state: state,
+              notifications: [{fiber, value} | round_result.notifications]
+          }
+        )
+
       {:done, state} ->
         # Process any final channel wakes
         state = process_external_wakes(state)
@@ -187,10 +204,12 @@ defmodule Skuld.FiberPool.Scheduler do
               round_result
               | state: state,
                 suspended_yields: round_result.suspended_yields ++ suspended,
+                notifications: round_result.notifications,
                 completions: state.completed,
                 waiting_for_tasks: FiberPoolState.has_tasks?(state),
                 all_done:
                   suspended == [] and
+                    round_result.notifications == [] and
                     not FiberPoolState.has_tasks?(state) and
                     map_size(state.suspensions) == 0 and
                     map_size(state.fibers) == 0
@@ -432,6 +451,13 @@ defmodule Skuld.FiberPool.Scheduler do
         state = store_consume_ids(state, fiber.id, consume_ids)
         {:continue, state}
     end
+  end
+
+  defp handle_internal_suspension(state, fiber, _internal_suspend, %InternalSuspend.FiberYield{
+         notify: true
+       }) do
+    state = FiberPoolState.put_fiber(state, fiber)
+    {:notify, fiber, state}
   end
 
   defp handle_internal_suspension(state, fiber, _internal_suspend, %InternalSuspend.FiberYield{}) do

@@ -88,10 +88,12 @@ defmodule Skuld.FiberPool.Server do
     round = Scheduler.run(state, env)
 
     if round.all_done do
+      send_notifications(caller, id_to_key, round.notifications)
       notify_completions(caller, id_to_key, round.state, round.completions)
       send(caller, {__MODULE__, :all_done, []})
     else
       send_yields(caller, id_to_key, round.suspended_yields)
+      send_notifications(caller, id_to_key, round.notifications)
       drain_or_block(caller, id_to_key, key_to_id, round.state, env)
     end
   end
@@ -119,6 +121,16 @@ defmodule Skuld.FiberPool.Server do
   defp send_yields(caller, id_to_key, suspended_yields) do
     Enum.each(suspended_yields, fn {fiber, _value} ->
       handle_suspended_fiber(caller, id_to_key, fiber)
+    end)
+  end
+
+  defp send_notifications(caller, id_to_key, notifications) do
+    Enum.each(notifications, fn {fiber, value} ->
+      fiber_key = Map.fetch!(id_to_key, fiber.id)
+
+      ipc_suspend = %Comp.ExternalSuspend{value: value, resume: nil, data: nil}
+
+      send(caller, {__MODULE__, fiber_key, ipc_suspend})
     end)
   end
 

@@ -106,12 +106,16 @@ defmodule Skuld.Comp.InternalSuspend do
   # the yield is surfaced as an InternalSuspend with this payload. The
   # scheduler suspends just this fiber while other fibers continue running.
   # The server layer routes the yield value to the caller.
+  #
+  # When `notify: true`, the yield is fire-and-forget — the server forwards
+  # the value to the caller but the fiber auto-resumes on the next scheduler
+  # round without waiting for explicit caller input.
   defmodule FiberYield do
     @moduledoc false
 
-    @type t :: %__MODULE__{value: term()}
+    @type t :: %__MODULE__{value: term(), notify: boolean()}
 
-    defstruct [:value]
+    defstruct [:value, notify: false]
   end
 
   #############################################################################
@@ -200,6 +204,20 @@ defmodule Skuld.Comp.InternalSuspend do
       payload: %FiberYield{value: value}
     }
   end
+
+  @doc """
+  Create a fire-and-forget fiber notification.
+
+  Like `fiber_yield/2` but sets `notify: true` so the scheduler
+  auto-resumes the fiber after forwarding the value to the caller.
+  """
+  @spec fiber_notify(term(), Types.k()) :: t()
+  def fiber_notify(value, resume) do
+    %__MODULE__{
+      resume: resume,
+      payload: %FiberYield{value: value, notify: true}
+    }
+  end
 end
 
 defimpl Skuld.Comp.ISentinel, for: Skuld.Comp.InternalSuspend do
@@ -233,7 +251,7 @@ defimpl Skuld.Comp.ISentinel, for: Skuld.Comp.InternalSuspend do
     %{type: :await, handle_ids: Enum.map(handles, & &1.id), mode: mode}
   end
 
-  def serializable_payload(%{payload: %FiberYield{value: value}}) do
-    %{type: :fiber_yield, value: value}
+  def serializable_payload(%{payload: %FiberYield{value: value, notify: notify}}) do
+    %{type: :fiber_yield, value: value, notify: notify}
   end
 end
