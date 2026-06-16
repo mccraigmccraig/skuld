@@ -62,8 +62,8 @@ waits for the next event.
 
 The protocol is the single source of truth for the spindle ↔ LiveView
 contract. `defspindle` opens a spindle block; inside, `defevent` declares
-events the LiveView can send to this spindle, and `defyield` declares
-what the spindle sends back.
+events the LiveView can send to this spindle, `defyield` declares
+blocking yields, and `defnotify` declares fire-and-forget notifications.
 
 `defevent` takes an event name, an explicit struct name, and typed
 params. It generates a struct module under the spindle (e.g.
@@ -72,8 +72,9 @@ into that struct before resuming the spindle.
 
 `defyield` uses function-head syntax — `defyield browsing` generates
 a 0-arity function (`Search.browsing()`) that yields an empty struct.
-`defyield results(products: [...], total: integer())` takes keyword args
-and yields a typed struct:
+`defnotify results(products: [...], total: integer())` generates a
+fire-and-forget notification — the spindle surfaces results and continues
+without pausing:
 
 ```elixir
 defmodule MyApp.SearchProtocol do
@@ -84,7 +85,7 @@ defmodule MyApp.SearchProtocol do
     defevent "filter", FilterEvent, params: [filters: map()]
 
     defyield browsing
-    defyield results(products: [Product.t()], total: integer())
+    defnotify results(products: [Product.t()], total: integer())
   end
 end
 ```
@@ -92,8 +93,8 @@ end
 ### Spindle
 
 The spindle is the computation — a linear flow that fetches data,
-yields to the LiveView, and resumes where it left off. It uses the
-protocol's generated functions (`Search.results(...)`, `Search.browsing()`)
+surfaces results via `defnotify`, and suspends on `defyield` to wait
+for the next event. It uses the protocol's generated functions (`Search.results(...)`, `Search.browsing()`)
 and pattern-matches on the protocol's generated structs
 (`%Search.SearchEvent{}`, `%Search.FilterEvent{}`):
 
@@ -182,8 +183,9 @@ A few things to note:
   the incoming params into the struct before resuming the spindle. This is
   why the `case event` in the spindle pattern-matches on `%Search.SearchEvent{}`.
 - **`defyield` generates both a struct and a function** — `defyield browsing`
-  produces `%Search.Browsing{}` and `Search.browsing()`. `defyield results(...)`
-  produces `%Search.Results{}` and `Search.results(products: ..., total: ...)`.
+  produces `%Search.Browsing{}` and `Search.browsing()`. `defnotify results(...)`
+  produces `%Search.Results{}` and `Search.results(products: ..., total: ...)` —
+  same pattern, but `defnotify` is fire-and-forget: the spindle doesn't pause.
 
 ### Test
 
@@ -248,7 +250,7 @@ defmodule MyApp.StoreProtocol do
     defevent "buy", BuyEvent, params: [product: Product.t()]
 
     defyield browsing
-    defyield results(products: [Product.t()], total: integer())
+    defnotify results(products: [Product.t()], total: integer())
   end
 
   defspindle Checkout do
