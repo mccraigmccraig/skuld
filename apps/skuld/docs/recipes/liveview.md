@@ -71,7 +71,7 @@ Two spindles running in the same page machine:
 
 | Spindle | Role | Event source |
 |---------|------|-------------|
-| `:products` | Forever loop: search products, select one to buy | `"search"`, `"filter"`, `"page"` events |
+| `:products` | Forever loop: search products, select one to buy | `"search"`, `"filter"` events |
 | `:checkout` | Forked on buy: collect shipping, payment, place order | `"submit_shipping"`, `"submit_payment"` events |
 
 ### Boundary contracts
@@ -80,7 +80,7 @@ Two spindles running in the same page machine:
 defmodule MyApp.ProductCatalog do
   use Skuld.Effects.Port.EffectfulFacade
 
-  defcallback search(filters :: map(), page :: integer()) ::
+  defcallback search(filters :: map()) ::
               {:ok, [Product.t()], total :: integer()} | {:error, term()}
 end
 
@@ -111,21 +111,21 @@ defmodule MyApp.ProductBrowserSpindle do
   alias Skuld.Effects.Yield
 
   defcomp run(initial_filters) do
-    search_loop(initial_filters, 1)
+    search_loop(initial_filters)
   end
 
-  defcomp search_loop(filters, page) do
-    {:ok, products, total} <- MyApp.ProductCatalog.search(filters, page)
+  defcomp search_loop(filters) do
+    {:ok, products, total} <- MyApp.ProductCatalog.search(filters)
     event <- Yield.yield(:browsing)
 
     case event do
       {:buy, product} ->
         _handle <- Spindle.fork(:checkout, MyApp.CheckoutSpindle.run(product))
         Yield.yield({:buy, product})
-        search_loop(filters, page)
+        search_loop(filters)
 
       new_filters ->
-        search_loop(new_filters, 1)
+        search_loop(new_filters)
     end
   end
 end
@@ -183,14 +183,14 @@ defmodule MyApp.StoreLive do
       PageMachine.run(socket,
         products: MyApp.ProductBrowserSpindle.run(%{})
       )
-      |> assign(products: [], total: 0, page: 1)
+      |> assign(products: [], total: 0)
 
     {:ok, socket}
   end
 
   # Multi-spindle callbacks — dispatch by spindle key
-  defp handle_yield(:products, {:results, products, total, page}, socket) do
-    {:noreply, assign(socket, products: products, total: total, page: page)}
+  defp handle_yield(:products, {:results, products, total}, socket) do
+    {:noreply, assign(socket, products: products, total: total)}
   end
 
   defp handle_yield(:products, {:buy, product}, socket) do
@@ -227,7 +227,6 @@ defmodule MyApp.StoreLive do
   # Product browser events — routed to :products spindle
   def_pipe_event "search", into: :products, before: &start_spinner/1
   def_pipe_event "filter", into: :products, before: &start_spinner/1
-  def_pipe_event "page", into: :products, before: &start_spinner/1
   def_pipe_event "buy", into: :products
 
   # Checkout events — routed to :checkout spindle
@@ -240,7 +239,7 @@ defmodule MyApp.StoreLive do
     <div class="store-layout">
       <div class="product-browser">
         <.search_form myself={@myself} loading={@loading} />
-        <.product_list products={@products} page={@page} total={@total} myself={@myself} />
+        <.product_list products={@products} total={@total} myself={@myself} />
       </div>
       <div class="checkout-panel">
         <%= case assigns[:step] do %>
@@ -277,7 +276,7 @@ defmodule MyApp.ProductBrowserSpindleTest do
     comp =
       MyApp.ProductBrowserSpindle.run(%{category: "electronics"})
       |> Port.with_handler(%{
-        MyApp.ProductCatalog => fn _, :search, [%{category: "electronics"}, 1] ->
+        MyApp.ProductCatalog => fn _, :search, [%{category: "electronics"}] ->
           {:ok, [%Product{name: "Phone"}], 1}
         end
       })
