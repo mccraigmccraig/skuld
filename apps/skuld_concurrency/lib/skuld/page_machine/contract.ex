@@ -15,8 +15,8 @@ defmodule Skuld.PageMachine.Contract do
         use Skuld.PageMachine.Contract
 
         defspindle Products do
-          defevent "search", params: [query: String.t()]
-          defevent "filter"
+          defevent "search", SearchEvent, params: [query: String.t()]
+          defevent "filter", FilterEvent, params: [filters: map()]
           defevent "buy"
 
           defyield :browsing
@@ -24,16 +24,24 @@ defmodule Skuld.PageMachine.Contract do
         end
 
         defspindle Checkout do
-          defevent "submit_shipping", params: [shipping: map()]
-          defevent "submit_payment", params: [payment: map()]
+          defevent "submit_shipping", ShippingEvent, params: [shipping: map()]
+          defevent "submit_payment", PaymentEvent, params: [payment: map()]
 
           defyield :shipping
           defyield :payment
         end
       end
 
+  Events with an explicit struct name generate a typed struct module
+  under the spindle module (`StoreProtocol.Products.SearchEvent`).
+  The auto-generated `handle_event` wraps params into the struct before
+  resuming the spindle, giving typed receive-side pattern matching.
+
+  Events without a struct name pass `{event_name, params}` as the
+  resume value (LiveView convention).
+
   The spindle key is the module atom (`StoreProtocol.Products`) — the
-  same module where typed yield functions are generated:
+  same module where yield functions are generated:
 
       StoreProtocol.Products.results(products: prods, total: n)
       StoreProtocol.Checkout.shipping()
@@ -52,7 +60,14 @@ defmodule Skuld.PageMachine.Contract do
   defmacro __using__(_opts) do
     quote do
       import Skuld.PageMachine.Contract,
-        only: [defspindle: 2, defevent: 1, defevent: 2, defyield: 1, defyield: 2]
+        only: [
+          defspindle: 2,
+          defevent: 1,
+          defevent: 2,
+          defevent: 3,
+          defyield: 1,
+          defyield: 2
+        ]
 
       Module.register_attribute(__MODULE__, :pm_events, accumulate: true)
       Module.register_attribute(__MODULE__, :pm_yields, accumulate: true)
@@ -75,7 +90,7 @@ defmodule Skuld.PageMachine.Contract do
   ## Example
 
       defspindle Products do
-        defevent "search", params: [query: String.t()]
+        defevent "search", SearchEvent, params: [query: String.t()]
         defyield :browsing
         defyield :results, params: [products: [Product.t()], total: integer()]
       end
@@ -101,21 +116,52 @@ defmodule Skuld.PageMachine.Contract do
   @doc """
   Declare a LiveView event routed to the current spindle.
 
-  When called inside a `defspindle` block, the spindle is inferred.
-  When called outside, the `:into` option is required.
+  Without params, the spindle receives `{event_name, params}` (standard
+  LiveView convention).
+
+  With params and a struct name, a typed event struct is generated and
+  the spindle receives it directly — enabling typed receive-side
+  pattern matching.
 
   ## Syntax
 
       defevent "event_name"
-      defevent "event_name", params: [field: type(), ...]
+      defevent "event_name", StructName, params: [field: type(), ...]
   """
-  defmacro defevent(event_name, opts \\ []) when is_binary(event_name) do
+  defmacro defevent(event_name) when is_binary(event_name) do
+    build_defevent(event_name, nil, [], __CALLER__)
+  end
+
+  defmacro defevent(event_name, opts) when is_list(opts) do
     params = Keyword.get(opts, :params)
+    build_defevent(event_name, nil, params || [], __CALLER__)
+  end
+
+  defmacro defevent(event_name, struct_name, opts) when is_list(opts) do
+    params = Keyword.get(opts, :params)
+    struct_atom = resolve_struct_name(struct_name)
+
+    build_defevent(event_name, struct_atom, params || [], __CALLER__)
+  end
+
+  defp resolve_struct_name({:__aliases__, _meta, segments}), do: List.last(segments)
+  defp resolve_struct_name({atom_name, _meta, nil}) when is_atom(atom_name), do: atom_name
+  defp resolve_struct_name(atom) when is_atom(atom), do: atom
+
+  defp build_defevent(event_name, struct_name, params, caller) do
+    spindle = Module.get_attribute(caller.module, :current_spindle)
+
+    unless spindle do
+      raise CompileError,
+        description: "defevent outside a defspindle block",
+        file: caller.file
+    end
 
     event = %{
       event: clean_event_name(event_name),
-      spindle: current_or_explicit_spindle(opts, __CALLER__),
-      params: params || []
+      spindle: spindle,
+      struct_name: struct_name,
+      params: params
     }
 
     escaped = Macro.escape(event)
@@ -128,9 +174,6 @@ defmodule Skuld.PageMachine.Contract do
   @doc """
   Declare a yield from the current spindle to the LiveView.
 
-  When called inside a `defspindle` block, the spindle is inferred.
-  When called outside, the first argument is the spindle key.
-
   ## Syntax
 
       defyield :tag
@@ -140,7 +183,7 @@ defmodule Skuld.PageMachine.Contract do
     params = Keyword.get(opts, :params)
 
     yield = %{
-      spindle: current_or_explicit_spindle(opts, __CALLER__),
+      spindle: get_spindle!(__CALLER__),
       tag: tag,
       params: params || []
     }
@@ -152,11 +195,11 @@ defmodule Skuld.PageMachine.Contract do
     end
   end
 
-  defp current_or_explicit_spindle(_opts, caller) do
+  defp get_spindle!(caller) do
     case Module.get_attribute(caller.module, :current_spindle) do
       nil ->
         raise CompileError,
-          description: "defevent/defyield outside a defspindle block",
+          description: "defyield outside a defspindle block",
           file: caller.file
 
       spindle ->
@@ -173,11 +216,13 @@ defmodule Skuld.PageMachine.Contract do
     validate_yields!(yields, env)
 
     spindle_modules = generate_spindle_modules(env.module, yields)
+    event_struct_modules = generate_event_struct_modules(env.module, events)
     introspection = generate_introspection(events, yields)
     event_list = generate_event_list(env.module, events)
 
     quote do
       unquote_splicing(spindle_modules)
+      unquote_splicing(event_struct_modules)
       unquote(introspection)
       unquote(event_list)
     end
@@ -192,16 +237,10 @@ defmodule Skuld.PageMachine.Contract do
         file: env.file
     end
 
-    Enum.each(events, fn %{event: event, spindle: spindle} ->
+    Enum.each(events, fn %{event: event} ->
       unless is_binary(event) and byte_size(event) > 0 do
         raise CompileError,
           description: "defevent event name must be a non-empty string",
-          file: env.file
-      end
-
-      unless is_atom(spindle) do
-        raise CompileError,
-          description: "defevent spindle must be a module atom, got: #{inspect(spindle)}",
           file: env.file
       end
     end)
@@ -228,7 +267,6 @@ defmodule Skuld.PageMachine.Contract do
     end
 
     tag_pairs = Enum.map(yields, fn %{spindle: s, tag: t} -> {s, t} end)
-
     unique = MapSet.new(tag_pairs) |> MapSet.size()
 
     if unique != length(yields) do
@@ -321,6 +359,30 @@ defmodule Skuld.PageMachine.Contract do
     end
   end
 
+  defp generate_event_struct_modules(_protocol_module, events) do
+    events
+    |> Enum.filter(fn %{struct_name: sn} -> sn != nil end)
+    |> Enum.map(fn %{spindle: spindle, struct_name: struct_name, params: params} ->
+      struct_module = Module.concat(spindle, struct_name)
+
+      fields = Enum.map(params, fn {name, _type} -> name end)
+      field_defaults = Enum.map(fields, &{&1, nil})
+      type_spec = Enum.map(params, fn {name, type} -> {name, type} end)
+
+      quote do
+        defmodule unquote(struct_module) do
+          @moduledoc false
+
+          @type t :: %__MODULE__{
+                  unquote_splicing(type_spec)
+                }
+
+          defstruct unquote(field_defaults)
+        end
+      end
+    end)
+  end
+
   defp generate_introspection(events, yields) do
     escaped_events = Macro.escape(events)
     escaped_yields = Macro.escape(yields)
@@ -342,8 +404,13 @@ defmodule Skuld.PageMachine.Contract do
 
   defp generate_event_list(_protocol_module, events) do
     entries =
-      Enum.map(events, fn %{event: event, spindle: spindle, params: params} ->
-        {event, spindle, params}
+      Enum.map(events, fn %{
+                            event: event,
+                            spindle: spindle,
+                            struct_name: struct_name,
+                            params: params
+                          } ->
+        {event, spindle, struct_name, params}
       end)
 
     escaped = Macro.escape(entries)

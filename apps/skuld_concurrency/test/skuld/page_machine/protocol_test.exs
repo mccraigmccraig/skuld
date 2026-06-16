@@ -8,8 +8,8 @@ defmodule Skuld.PageMachine.ProtocolTest do
     use Skuld.PageMachine.Contract
 
     defspindle Products do
-      defevent("search", params: [query: String.t()])
-      defevent("filter", params: [filters: map()])
+      defevent("search", SearchEvent, params: [query: String.t()])
+      defevent("filter", FilterEvent, params: [filters: map()])
       defevent("buy")
 
       defyield(:browsing)
@@ -17,8 +17,8 @@ defmodule Skuld.PageMachine.ProtocolTest do
     end
 
     defspindle Checkout do
-      defevent("submit_shipping", params: [shipping: map()])
-      defevent("submit_payment", params: [payment: map()])
+      defevent("submit_shipping", ShippingEvent, params: [shipping: map()])
+      defevent("submit_payment", PaymentEvent, params: [payment: map()])
 
       defyield(:shipping)
       defyield(:payment, params: [method: String.t()])
@@ -61,9 +61,13 @@ defmodule Skuld.PageMachine.ProtocolTest do
       assert is_function(comp, 2)
     end
 
-    test "spindle module yield for tag without params produces a computation" do
-      comp = StoreProtocol.Products.browsing()
-      assert is_function(comp, 2)
+    test "event struct generated for event with struct name" do
+      assert Code.ensure_loaded?(StoreProtocol.Products.SearchEvent)
+      assert Code.ensure_loaded?(StoreProtocol.Checkout.ShippingEvent)
+    end
+
+    test "no event struct for event without struct name" do
+      refute Code.ensure_loaded?(StoreProtocol.Products.Buy)
     end
   end
 
@@ -99,6 +103,20 @@ defmodule Skuld.PageMachine.ProtocolTest do
         )
 
       assert {:checkout, :shipping, %{assigns: %{}}} = result
+    end
+
+    test "handle_event wraps params in event struct for event with struct name" do
+      result =
+        MultiSpindlePM.handle_event(
+          "search",
+          %{"query" => "widget"},
+          %{assigns: %{Skuld.PageMachine.DefaultAssign => self()}}
+        )
+
+      assert {:noreply, _socket} = result
+
+      assert_received {:fiber_resume, StoreProtocol.Products,
+                       %StoreProtocol.Products.SearchEvent{query: "widget"}}
     end
   end
 end

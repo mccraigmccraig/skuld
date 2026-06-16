@@ -109,8 +109,8 @@ defmodule MyApp.StoreProtocol do
   use Skuld.PageMachine.Contract
 
   defspindle Products do
-    defevent "search", params: [query: String.t()]
-    defevent "filter", params: [filters: map()]
+    defevent "search", SearchEvent, params: [query: String.t()]
+    defevent "filter", FilterEvent, params: [filters: map()]
     defevent "buy"
 
     defyield :browsing
@@ -118,8 +118,8 @@ defmodule MyApp.StoreProtocol do
   end
 
   defspindle Checkout do
-    defevent "submit_shipping", params: [shipping: map()]
-    defevent "submit_payment", params: [payment: map()]
+    defevent "submit_shipping", ShippingEvent, params: [shipping: map()]
+    defevent "submit_payment", PaymentEvent, params: [payment: map()]
 
     defyield :shipping
     defyield :payment
@@ -153,8 +153,11 @@ defmodule MyApp.ProductBrowserSpindle do
         _handle <- Spindle.fork(StoreProtocol.Checkout, MyApp.CheckoutSpindle.run(product))
         search_loop(filters)
 
-      new_filters ->
-        search_loop(new_filters)
+      %StoreProtocol.Products.FilterEvent{filters: filters} ->
+        search_loop(filters)
+
+      %StoreProtocol.Products.SearchEvent{query: query} ->
+        search_loop(%{query: query})
     end
   end
 end
@@ -171,8 +174,8 @@ defmodule MyApp.CheckoutSpindle do
 
   defcomp run(product) do
     {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
-    %{shipping: shipping} <- StoreProtocol.Checkout.shipping()
-    %{payment: payment} <- StoreProtocol.Checkout.payment()
+    %StoreProtocol.Checkout.ShippingEvent{shipping: shipping} <- StoreProtocol.Checkout.shipping()
+    %StoreProtocol.Checkout.PaymentEvent{payment: payment} <- StoreProtocol.Checkout.payment()
     {:ok, order} <- MyApp.Orders.place(%{product: product}, shipping, payment)
     {:ok, order}
   else

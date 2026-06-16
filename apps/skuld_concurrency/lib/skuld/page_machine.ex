@@ -221,12 +221,29 @@ defmodule Skuld.PageMachine do
         protocol = resolve_protocol(protocol, __CALLER__)
 
         protocol.__protocol_events__()
-        |> Enum.map(fn %{event: event_name, spindle: spindle, params: params} ->
+        |> Enum.map(fn %{
+                         event: event_name,
+                         spindle: spindle,
+                         struct_name: struct_name,
+                         params: params
+                       } ->
           value =
-            if params == [] do
-              quote(do: {unquote(event_name), params})
-            else
-              quote(do: params)
+            cond do
+              struct_name && params != [] ->
+                struct_module = Module.concat(spindle, struct_name)
+
+                quote do
+                  atom_params =
+                    for {key, val} <- params, into: %{}, do: {String.to_existing_atom(key), val}
+
+                  struct(unquote(struct_module), atom_params)
+                end
+
+              params != [] ->
+                quote(do: params)
+
+              true ->
+                quote(do: {unquote(event_name), params})
             end
 
           quote do

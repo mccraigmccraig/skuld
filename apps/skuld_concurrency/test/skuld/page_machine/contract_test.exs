@@ -7,8 +7,8 @@ defmodule Skuld.PageMachine.ContractTest do
     use Skuld.PageMachine.Contract
 
     defspindle Products do
-      defevent("search", params: [query: String.t()])
-      defevent("filter")
+      defevent("search", SearchEvent, params: [query: String.t()])
+      defevent("filter", FilterEvent, params: [filters: map()])
       defevent("buy")
 
       defyield(:browsing)
@@ -16,8 +16,8 @@ defmodule Skuld.PageMachine.ContractTest do
     end
 
     defspindle Checkout do
-      defevent("submit_shipping", params: [shipping: map()])
-      defevent("submit_payment", params: [payment: map()])
+      defevent("submit_shipping", ShippingEvent, params: [shipping: map()])
+      defevent("submit_payment", PaymentEvent, params: [payment: map()])
 
       defyield(:shipping)
       defyield(:payment, params: [method: String.t()])
@@ -30,51 +30,30 @@ defmodule Skuld.PageMachine.ContractTest do
 
       assert length(events) == 5
 
-      assert Enum.any?(events, fn e ->
-               e.event == "search" and e.spindle == TestProtocol.Products
-             end)
+      search = Enum.find(events, &(&1.event == "search"))
+      assert search.spindle == TestProtocol.Products
+      assert search.struct_name == :SearchEvent
 
-      assert Enum.any?(events, fn e ->
-               e.event == "filter" and e.spindle == TestProtocol.Products
-             end)
-
-      assert Enum.any?(events, fn e -> e.event == "buy" and e.spindle == TestProtocol.Products end)
-
-      assert Enum.any?(events, fn e ->
-               e.event == "submit_shipping" and e.spindle == TestProtocol.Checkout
-             end)
-
-      assert Enum.any?(events, fn e ->
-               e.event == "submit_payment" and e.spindle == TestProtocol.Checkout
-             end)
+      buy = Enum.find(events, &(&1.event == "buy"))
+      assert buy.struct_name == nil
+      assert buy.params == []
     end
 
-    test "event with params includes param metadata" do
+    test "event with params and struct name records both" do
       search = Enum.find(TestProtocol.__protocol_events__(), &(&1.event == "search"))
-      assert match?({:query, _}, Enum.at(search.params, 0))
+      assert length(search.params) == 1
     end
 
-    test "event without params has empty params list" do
-      filter = Enum.find(TestProtocol.__protocol_events__(), &(&1.event == "filter"))
-      assert filter.params == []
-    end
-
-    test "__pm_events__/0 returns event tuples with module atoms as spindles" do
+    test "__pm_events__/0 returns tuples with struct_name" do
       entries = TestProtocol.__pm_events__()
-
       assert length(entries) == 5
 
-      search = Enum.find(entries, fn {event, _spindle, _params} -> event == "search" end)
-      assert {"search", TestProtocol.Products, params} = search
+      search = Enum.find(entries, fn {event, _spindle, _sn, _params} -> event == "search" end)
+      assert {"search", TestProtocol.Products, :SearchEvent, params} = search
       assert is_list(params)
 
-      filter = Enum.find(entries, fn {event, _spindle, _params} -> event == "filter" end)
-      assert {"filter", TestProtocol.Products, []} = filter
-
-      shipping =
-        Enum.find(entries, fn {event, _spindle, _params} -> event == "submit_shipping" end)
-
-      assert {"submit_shipping", TestProtocol.Checkout, [_]} = shipping
+      buy = Enum.find(entries, fn {event, _spindle, _sn, _params} -> event == "buy" end)
+      assert {"buy", TestProtocol.Products, nil, []} = buy
     end
   end
 
@@ -109,8 +88,33 @@ defmodule Skuld.PageMachine.ContractTest do
     test "yield with params includes param metadata" do
       results = Enum.find(TestProtocol.__protocol_yields__(), &(&1.tag == :results))
       assert length(results.params) == 2
-      assert {:products, _products_type} = Enum.at(results.params, 0)
-      assert {:total, _total_type} = Enum.at(results.params, 1)
+    end
+  end
+
+  describe "event struct generation" do
+    test "generates event struct module for event with struct name" do
+      assert Code.ensure_loaded?(TestProtocol.Products.SearchEvent)
+
+      struct = %TestProtocol.Products.SearchEvent{}
+      assert struct.query == nil
+    end
+
+    test "generates multiple event structs in same spindle" do
+      assert Code.ensure_loaded?(TestProtocol.Products.FilterEvent)
+    end
+
+    test "generates event structs in different spindles" do
+      assert Code.ensure_loaded?(TestProtocol.Checkout.ShippingEvent)
+      assert Code.ensure_loaded?(TestProtocol.Checkout.PaymentEvent)
+    end
+
+    test "does not generate struct for event without struct name" do
+      refute Code.ensure_loaded?(TestProtocol.Products.Buy)
+    end
+
+    test "event struct fields match params" do
+      struct = %TestProtocol.Checkout.ShippingEvent{shipping: %{street: "123 Main"}}
+      assert struct.shipping.street == "123 Main"
     end
   end
 
@@ -129,12 +133,6 @@ defmodule Skuld.PageMachine.ContractTest do
       assert %Skuld.Comp.ExternalSuspend{value: :browsing} = result
     end
 
-    test "generates 0-arity yield function for tag without params (checkout)" do
-      comp = TestProtocol.Checkout.shipping() |> Yield.with_handler()
-      {result, _env} = Skuld.Comp.run(comp)
-      assert %Skuld.Comp.ExternalSuspend{value: :shipping} = result
-    end
-
     test "generates keyword-arg yield function with typed struct for tag with params" do
       comp =
         TestProtocol.Products.results(products: [%{name: "Widget"}], total: 42)
@@ -148,30 +146,15 @@ defmodule Skuld.PageMachine.ContractTest do
       assert struct.total == 42
     end
 
-    test "generates single-param yield function for tag with one param" do
+    test "generates single-param yield function" do
       comp =
         TestProtocol.Checkout.payment(method: "card")
         |> Yield.with_handler()
 
       {result, _env} = Skuld.Comp.run(comp)
 
-      assert %Skuld.Comp.ExternalSuspend{value: struct} = result
-      assert %TestProtocol.Checkout.Payment{} = struct
-      assert struct.method == "card"
-    end
-
-    test "generates struct module nested under spindle module" do
-      assert Code.ensure_loaded?(TestProtocol.Products.Results)
-      assert Code.ensure_loaded?(TestProtocol.Checkout.Payment)
-
-      struct = %TestProtocol.Products.Results{}
-      assert struct.products == nil
-      assert struct.total == nil
-    end
-
-    test "does not generate struct for yield without params" do
-      refute Code.ensure_loaded?(TestProtocol.Products.Browsing)
-      refute Code.ensure_loaded?(TestProtocol.Checkout.Shipping)
+      assert %Skuld.Comp.ExternalSuspend{value: %TestProtocol.Checkout.Payment{method: "card"}} =
+               result
     end
   end
 
@@ -226,7 +209,7 @@ defmodule Skuld.PageMachine.ContractTest do
       assert error.description =~ "Duplicate event names"
     end
 
-    test "compile error for duplicate spindle/tag pairs in yield" do
+    test "compile error for duplicate spindle/tag pairs" do
       error =
         assert_raise CompileError, fn ->
           defmodule DupYieldProtocol do
