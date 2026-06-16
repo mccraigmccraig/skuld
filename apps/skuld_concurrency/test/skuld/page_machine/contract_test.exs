@@ -77,40 +77,64 @@ defmodule Skuld.PageMachine.ContractTest do
     end
   end
 
-  describe "typed yield structs" do
-    test "generates struct module for yield with params" do
-      assert Code.ensure_loaded?(TestProtocol.ProductsResults)
-
-      struct = %TestProtocol.ProductsResults{}
-      assert struct.products == nil
-      assert struct.total == nil
+  describe "spindle modules" do
+    test "generates Products spindle module" do
+      assert Code.ensure_loaded?(TestProtocol.Products)
     end
 
-    test "does not generate struct module for yield without params" do
-      refute Code.ensure_loaded?(TestProtocol.ProductsBrowsing)
-      refute Code.ensure_loaded?(TestProtocol.CheckoutShipping)
+    test "generates Checkout spindle module" do
+      assert Code.ensure_loaded?(TestProtocol.Checkout)
     end
 
-    test "yield/3 builds typed struct and calls Yield.yield" do
+    test "generates 0-arity yield function for tag without params" do
+      comp = TestProtocol.Products.browsing() |> Yield.with_handler()
+      {result, _env} = Skuld.Comp.run(comp)
+      assert %Skuld.Comp.ExternalSuspend{value: :browsing} = result
+    end
+
+    test "generates 0-arity yield function for tag without params (checkout)" do
+      comp = TestProtocol.Checkout.shipping() |> Yield.with_handler()
+      {result, _env} = Skuld.Comp.run(comp)
+      assert %Skuld.Comp.ExternalSuspend{value: :shipping} = result
+    end
+
+    test "generates keyword-arg yield function with typed struct for tag with params" do
       comp =
-        TestProtocol.yield(:products, :results, %{
-          products: [%{name: "Widget"}],
-          total: 42
-        })
+        TestProtocol.Products.results(products: [%{name: "Widget"}], total: 42)
         |> Yield.with_handler()
 
       {result, _env} = Skuld.Comp.run(comp)
 
       assert %Skuld.Comp.ExternalSuspend{value: struct} = result
-      assert %TestProtocol.ProductsResults{} = struct
+      assert %TestProtocol.Products.Results{} = struct
       assert struct.products == [%{name: "Widget"}]
       assert struct.total == 42
     end
 
-    test "yield/3 raises for yield without params" do
-      assert_raise ArgumentError, fn ->
-        TestProtocol.yield(:products, :browsing, %{})
-      end
+    test "generates single-param yield function for tag with one param" do
+      comp =
+        TestProtocol.Checkout.payment(method: "card")
+        |> Yield.with_handler()
+
+      {result, _env} = Skuld.Comp.run(comp)
+
+      assert %Skuld.Comp.ExternalSuspend{value: struct} = result
+      assert %TestProtocol.Checkout.Payment{} = struct
+      assert struct.method == "card"
+    end
+
+    test "generates struct module nested under spindle module" do
+      assert Code.ensure_loaded?(TestProtocol.Products.Results)
+      assert Code.ensure_loaded?(TestProtocol.Checkout.Payment)
+
+      struct = %TestProtocol.Products.Results{}
+      assert struct.products == nil
+      assert struct.total == nil
+    end
+
+    test "does not generate struct for yield without params" do
+      refute Code.ensure_loaded?(TestProtocol.Products.Browsing)
+      refute Code.ensure_loaded?(TestProtocol.Checkout.Shipping)
     end
   end
 

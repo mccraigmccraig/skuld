@@ -131,14 +131,12 @@ defmodule Skuld.PageMachine.Contract do
     validate_events!(events, env)
     validate_yields!(yields, env)
 
-    struct_modules = Enum.map(yields, &generate_struct_module(env.module, &1))
-    yield_helpers = generate_yield_helpers(env.module, yields)
+    spindle_modules = generate_spindle_modules(env.module, yields)
     introspection = generate_introspection(events, yields)
     event_list = generate_event_list(env.module, events)
 
     quote do
-      unquote_splicing(struct_modules)
-      unquote(yield_helpers)
+      unquote_splicing(spindle_modules)
       unquote(introspection)
       unquote(event_list)
     end
@@ -200,73 +198,88 @@ defmodule Skuld.PageMachine.Contract do
     end
   end
 
-  defp generate_struct_module(protocol_module, %{spindle: spindle, tag: tag, params: params}) do
-    if params == [] do
-      nil
-    else
-      struct_name = combine_atom_names(spindle, tag)
-      struct_module = Module.concat(protocol_module, struct_name)
+  defp generate_spindle_modules(protocol_module, yields) do
+    yields
+    |> Enum.group_by(& &1.spindle)
+    |> Enum.map(fn {spindle, spindle_yields} ->
+      spindle_module = Module.concat(protocol_module, spindle |> to_pascal_case())
 
-      fields = Enum.map(params, fn {name, _type} -> name end)
-      field_defaults = Enum.map(fields, &{&1, nil})
-
-      type_spec =
-        Enum.map(params, fn {name, type} ->
-          {name, type}
+      struct_defs =
+        Enum.flat_map(spindle_yields, fn
+          %{params: []} -> []
+          y -> [generate_yield_struct(spindle_module, y)]
         end)
 
+      yield_fns = Enum.map(spindle_yields, &generate_yield_fn(spindle_module, &1))
+
       quote do
-        defmodule unquote(struct_module) do
+        defmodule unquote(spindle_module) do
           @moduledoc false
 
-          @type t :: %__MODULE__{
-                  unquote_splicing(type_spec)
-                }
+          unquote_splicing(struct_defs)
 
-          defstruct unquote(field_defaults)
+          unquote_splicing(yield_fns)
         end
+      end
+    end)
+  end
+
+  defp generate_yield_struct(spindle_module, %{tag: tag, params: params}) do
+    struct_name = to_pascal_case(tag)
+    struct_module = Module.concat(spindle_module, struct_name)
+
+    fields = Enum.map(params, fn {name, _type} -> name end)
+    field_defaults = Enum.map(fields, &{&1, nil})
+
+    type_spec = Enum.map(params, fn {name, type} -> {name, type} end)
+
+    quote do
+      defmodule unquote(struct_module) do
+        @moduledoc false
+
+        @type t :: %__MODULE__{
+                unquote_splicing(type_spec)
+              }
+
+        defstruct unquote(field_defaults)
       end
     end
   end
 
-  defp generate_yield_helpers(protocol_module, yields) do
-    has_yield_with_params? = Enum.any?(yields, fn %{params: p} -> p != [] end)
+  defp generate_yield_fn(_spindle_module, %{tag: tag, params: []}) do
+    quote do
+      @spec unquote(tag)() :: Skuld.Comp.Types.computation()
+      def unquote(tag)() do
+        Skuld.Effects.Yield.yield(unquote(tag))
+      end
+    end
+  end
 
-    if has_yield_with_params? do
-      clauses =
-        Enum.map(yields, fn %{spindle: spindle, tag: tag, params: params} ->
-          if params != [] do
-            struct_name = combine_atom_names(spindle, tag)
-            struct_module = Module.concat(protocol_module, struct_name)
+  defp generate_yield_fn(spindle_module, %{tag: tag, params: params}) do
+    struct_name = to_pascal_case(tag)
+    struct_module = Module.concat(spindle_module, struct_name)
+    field_names = Enum.map(params, fn {name, _type} -> name end)
 
-            quote do
-              def yield(unquote(spindle), unquote(tag), %{} = fields) do
-                struct = struct(unquote(struct_module), fields)
-                Skuld.Effects.Yield.yield(struct)
-              end
-            end
-          end
-        end)
-        |> Enum.filter(& &1)
+    fetch_bindings =
+      Enum.map(field_names, fn name ->
+        var = Macro.var(name, nil)
 
-      quote do
-        @doc """
-        Yield a typed value from a spindle to the LiveView.
-
-        Builds a typed yield struct from the field map and calls `Yield.yield/1`.
-        Only `defyield` declarations with `params:` get a typed yield helper clause.
-
-        ## Example
-
-            StoreProtocol.yield(:products, :results, %{products: prods, total: n})
-        """
-        @spec yield(atom(), atom(), map()) :: Skuld.Comp.Types.computation()
-        unquote_splicing(clauses)
-
-        def yield(spindle, tag, _fields) do
-          raise ArgumentError,
-                "no defyield with params for #{inspect(spindle)}/#{inspect(tag)} in #{inspect(unquote(protocol_module))}"
+        quote do
+          unquote(var) = Keyword.fetch!(opts, unquote(name))
         end
+      end)
+
+    field_kvs =
+      Enum.map(field_names, fn name ->
+        {name, Macro.var(name, nil)}
+      end)
+
+    quote do
+      @spec unquote(tag)(keyword()) :: Skuld.Comp.Types.computation()
+      def unquote(tag)(opts) do
+        unquote_splicing(fetch_bindings)
+        struct = struct(unquote(struct_module), unquote(field_kvs))
+        Skuld.Effects.Yield.yield(struct)
       end
     end
   end
@@ -305,15 +318,11 @@ defmodule Skuld.PageMachine.Contract do
   end
 
   @doc false
-  def combine_atom_names(a, b) do
-    pascal = fn atom ->
-      atom
-      |> Atom.to_string()
-      |> String.split("_")
-      |> Enum.map_join(fn s -> String.capitalize(s) end)
-    end
-
-    (pascal.(a) <> pascal.(b))
+  def to_pascal_case(atom) when is_atom(atom) do
+    atom
+    |> Atom.to_string()
+    |> String.split("_")
+    |> Enum.map_join(fn s -> String.capitalize(s) end)
     |> String.to_atom()
   end
 

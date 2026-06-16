@@ -43,20 +43,19 @@ defmodule Skuld.PageMachine.ProtocolTest do
     end
 
     test "yield struct matches protocol definition" do
-      struct = %StoreProtocol.ProductsResults{products: [], total: 0}
+      struct = %StoreProtocol.Products.Results{products: [], total: 0}
       assert struct.products == []
       assert struct.total == 0
     end
 
-    test "yield/3 produces a computation" do
-      comp = StoreProtocol.yield(:products, :results, %{products: [], total: 1})
+    test "spindle module yield function produces a computation" do
+      comp = StoreProtocol.Products.results(products: [], total: 1)
       assert is_function(comp, 2)
     end
 
-    test "yield/3 raises for yield without params" do
-      assert_raise ArgumentError, fn ->
-        StoreProtocol.yield(:products, :browsing, %{})
-      end
+    test "spindle module yield for tag without params produces a computation" do
+      comp = StoreProtocol.Products.browsing()
+      assert is_function(comp, 2)
     end
   end
 

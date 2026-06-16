@@ -116,8 +116,8 @@ defmodule MyApp.ProductBrowserSpindle do
 
   defcomp search_loop(filters) do
     {:ok, products, total} <- MyApp.ProductCatalog.search(filters)
-    _ <- StoreProtocol.yield(:products, :results, %{products: products, total: total})
-    event <- Yield.yield(:browsing)
+    _ <- StoreProtocol.Products.results(products: products, total: total)
+    event <- StoreProtocol.Products.browsing()
 
     case event do
       {:buy, product} ->
@@ -133,19 +133,17 @@ end
 
 The checkout spindle is forked dynamically when the user selects a product.
 It receives the product, reserves inventory, collects shipping and payment,
-and places the order. Its yields (`:shipping`, `:payment`) are untagged atoms —
-no typed params, so raw `Yield.yield` is cleanest:
+and places the order. Its yields use the protocol's generated functions —
+`Shipping` (no params, 0-arity) and `Payment` (typed keyword params):
 
 ```elixir
 defmodule MyApp.CheckoutSpindle do
   use Skuld.Syntax
 
-  alias Skuld.Effects.Yield
-
   defcomp run(product) do
     {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
-    {"submit_shipping", shipping} <- Yield.yield(:shipping)
-    {"submit_payment", payment} <- Yield.yield(:payment)
+    %{shipping: shipping} <- StoreProtocol.Checkout.shipping()
+    %{payment: payment} <- StoreProtocol.Checkout.payment()
     {:ok, order} <- MyApp.Orders.place(%{product: product}, shipping, payment)
     {:ok, order}
   else
@@ -218,7 +216,7 @@ defmodule MyApp.StoreLive do
   end
 
   # Multi-spindle callbacks — dispatch by spindle key
-  def handle_yield(:products, %StoreProtocol.ProductsResults{products: products, total: total}, socket) do
+  def handle_yield(:products, %StoreProtocol.Products.Results{products: products, total: total}, socket) do
     {:noreply, assign(socket, products: products, total: total)}
   end
 
@@ -303,19 +301,19 @@ defmodule MyApp.ProductBrowserSpindleTest do
 
   test "first search yields results to the LiveView", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.ProductsResults{}} = fiber
+    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.Products.Results{}} = fiber
   end
 
     test "buy event triggers checkout fork and continues search loop", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
     fiber = Coroutine.run(fiber, {:buy, %Product{name: "Phone"}})
-    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.ProductsResults{}} = fiber
+    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.Products.Results{}} = fiber
   end
 
   test "filter change triggers new search and new results", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
     fiber = Coroutine.run(fiber, %{category: "books"})
-    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.ProductsResults{}} = fiber
+    assert %Coroutine.ExternalSuspended{value: %StoreProtocol.Products.Results{}} = fiber
   end
 end
 ```
