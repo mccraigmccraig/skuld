@@ -1,7 +1,7 @@
 # LiveView Integration
 
 <!-- nav:header:start -->
-[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Durable Computation >](durable-computation.md)
 <!-- nav:header:end -->
 
 LiveView pages are state machines — model, view, and update all living in
@@ -48,9 +48,14 @@ the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
 
 1. Write each page region as an effectful computation using `Yield`
 2. Test each in isolation with `Coroutine` — deterministic, no processes
-3. Wrap the page in a thin LiveView module via `PageMachine` with `/3` callbacks
+3. Wrap the page in a thin LiveView module via `use Skuld.PageMachine` with `/3` callbacks
 4. Use `def_pipe_event` to forward LiveView events to the correct spindle
 5. Computations fork sub-computations as needed; yields update the UI
+
+The `:tag` option on `use` and `run/2` is optional — it defaults to
+`Skuld.PageMachine.Default`. Pass an explicit tag only when a page hosts
+multiple page machines. Every spindle key (in `handle_yield`, `:into`,
+`Spindle.fork`) is always explicit.
 
 ## When to use concurrent spindles
 
@@ -161,8 +166,9 @@ machines.](https://en.wikipedia.org/wiki/Coroutine#Common_uses))
 ### LiveView module
 
 The product browser is the primary spindle — started at mount. The checkout
-spindle is forked on demand. The `/3` callbacks route each yield to the
-right UI region:
+spindle is forked on demand. Since this is a multi-spindle page, an explicit
+`tag: :products` names the primary spindle. (For single-spindle pages, the
+tag is optional — it defaults to `Skuld.PageMachine.Default`.)
 
 ```elixir
 defmodule MyApp.StoreLive do
@@ -407,13 +413,13 @@ the FiberPool.Server process, which cancels all registered fibers.
 
 ## Operation reference
 
-| Operation                         | Purpose                             |
-|-----------------------------------|-------------------------------------|
-| `PageMachine.run/2`               | Start page machine                  |
-| `PageMachine.resume/3`            | Resume a spindle with a value       |
-| `PageMachine.def_pipe_event/2,4`  | Generate `handle_event/3`           |
-| `PageMachine.cancel/1`            | Cancel page machine and spindles    |
-| `Spindle.fork/2`                  | Fork a spindle from a computation   |
+| Operation                              | Purpose                             |
+|----------------------------------------|-------------------------------------|
+| `PageMachine.run/1,2`                  | Start page machine                  |
+| `PageMachine.resume/3`                 | Resume a spindle with a value       |
+| `PageMachine.def_pipe_event/2,4`       | Generate `handle_event/3`           |
+| `PageMachine.cancel/1`                 | Cancel page machine and spindles    |
+| `Spindle.fork/2`                       | Fork a spindle from a computation   |
 
 ## Comparison to a monolithic LiveView
 
@@ -431,5 +437,5 @@ existing spindles don't change.
 
 ---
 
-[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Durable Computation >](durable-computation.md)
 <!-- nav:footer:end -->
