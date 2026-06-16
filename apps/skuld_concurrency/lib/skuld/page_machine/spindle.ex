@@ -29,14 +29,56 @@ defmodule Skuld.PageMachine.Spindle do
 
   @sig __MODULE__
 
-  @ids_by_key_key Module.concat(__MODULE__, IdsByKey)
-  @keys_by_id_key Module.concat(__MODULE__, KeysById)
+  defmodule Mappings do
+    @moduledoc false
 
-  @doc "Every state key for spindle_key -> fiber_id mappings."
-  def ids_by_key_key, do: @ids_by_key_key
+    defstruct fiber_ids_by_spindle_key: %{}, spindle_keys_by_fiber_id: %{}
 
-  @doc "Environment state key for fiber_id -> spindle_key mappings."
-  def keys_by_id_key, do: @keys_by_id_key
+    @typedoc false
+    @type t :: %__MODULE__{
+            fiber_ids_by_spindle_key: %{atom() => reference()},
+            spindle_keys_by_fiber_id: %{reference() => atom()}
+          }
+
+    @doc "Register a spindle key -> fiber_id pair in both maps."
+    @spec register(t(), atom(), reference()) :: t()
+    def register(mappings, spindle_key, fiber_id) do
+      %{
+        mappings
+        | fiber_ids_by_spindle_key:
+            Map.put(mappings.fiber_ids_by_spindle_key, spindle_key, fiber_id),
+          spindle_keys_by_fiber_id:
+            Map.put(mappings.spindle_keys_by_fiber_id, fiber_id, spindle_key)
+      }
+    end
+
+    @doc "Look up the spindle key for a given fiber ID."
+    @spec spindle_key(t(), reference()) :: atom() | nil
+    def spindle_key(mappings, fiber_id) do
+      Map.get(mappings.spindle_keys_by_fiber_id, fiber_id)
+    end
+
+    @doc "Look up the fiber ID for a given spindle key."
+    @spec fiber_id(t(), atom()) :: reference() | nil
+    def fiber_id(mappings, spindle_key) do
+      Map.get(mappings.fiber_ids_by_spindle_key, spindle_key)
+    end
+
+    @doc "Merge another Mappings into this one."
+    @spec merge(t(), t()) :: t()
+    def merge(m1, m2) do
+      %{
+        m1
+        | fiber_ids_by_spindle_key: Map.merge(m1.fiber_ids_by_spindle_key, m2.fiber_ids_by_spindle_key),
+          spindle_keys_by_fiber_id: Map.merge(m1.spindle_keys_by_fiber_id, m2.spindle_keys_by_fiber_id)
+      }
+    end
+  end
+
+  @env_key Module.concat(__MODULE__, Mappings)
+
+  @doc "Environment state key for %Spindle.Mappings{}."
+  def env_key, do: @env_key
 
   #############################################################################
   ## Public API
@@ -68,15 +110,9 @@ defmodule Skuld.PageMachine.Spindle do
   @doc false
   def handle({:fork, key, computation}, env, k) do
     wrapped_k = fn handle, fiber_env ->
-      ids_by_key = Env.get_state(fiber_env, @ids_by_key_key, %{})
-      keys_by_id = Env.get_state(fiber_env, @keys_by_id_key, %{})
-
-      next_env =
-        fiber_env
-        |> Env.put_state(@ids_by_key_key, Map.put(ids_by_key, key, handle.id))
-        |> Env.put_state(@keys_by_id_key, Map.put(keys_by_id, handle.id, key))
-
-      k.(handle, next_env)
+      mappings = Env.get_state(fiber_env, @env_key, %Mappings{})
+      mappings = Mappings.register(mappings, key, handle.id)
+      k.(handle, Env.put_state(fiber_env, @env_key, mappings))
     end
 
     fiber_effect = FiberPool.fiber(computation)
