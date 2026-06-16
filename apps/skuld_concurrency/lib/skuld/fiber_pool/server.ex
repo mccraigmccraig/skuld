@@ -108,8 +108,9 @@ defmodule Skuld.FiberPool.Server do
         new_state = inject_wake(state, key_to_id, fiber_key, value)
         server_loop(caller, id_to_key, key_to_id, new_state, env)
 
-      {:fiber_cancel, _fiber_key} ->
-        server_loop(caller, id_to_key, key_to_id, state, env)
+      {:fiber_cancel, fiber_key} ->
+        new_state = cancel_fiber(caller, id_to_key, state, key_to_id, fiber_key)
+        server_loop(caller, id_to_key, key_to_id, new_state, env)
     after
       0 ->
         if needs_caller_input?(state) do
@@ -126,8 +127,9 @@ defmodule Skuld.FiberPool.Server do
         new_state = inject_wake(state, key_to_id, fiber_key, value)
         server_loop(caller, id_to_key, key_to_id, new_state, env)
 
-      {:fiber_cancel, _fiber_key} ->
-        server_loop(caller, id_to_key, key_to_id, state, env)
+      {:fiber_cancel, fiber_key} ->
+        new_state = cancel_fiber(caller, id_to_key, state, key_to_id, fiber_key)
+        server_loop(caller, id_to_key, key_to_id, new_state, env)
     end
   end
 
@@ -169,6 +171,30 @@ defmodule Skuld.FiberPool.Server do
         wakes = Map.get(state.env_state, :fiber_pool_wakes, [])
         updated = [{fiber_id, value} | wakes]
         FiberPoolState.put_env_state(state, Map.put(state.env_state, :fiber_pool_wakes, updated))
+    end
+  end
+
+  defp cancel_fiber(caller, _id_to_key, state, key_to_id, fiber_key) do
+    case Map.get(key_to_id, fiber_key) do
+      nil ->
+        state
+
+      fiber_id ->
+        case FiberPoolState.get_fiber(state, fiber_id) do
+          nil ->
+            state
+
+          fiber ->
+            _cancelled = Coroutine.cancel(fiber, :cancelled)
+            ipc = %Skuld.Comp.Cancelled{reason: :cancelled}
+            send(caller, {__MODULE__, fiber_key, ipc})
+
+            FiberPoolState.record_completion(
+              state,
+              fiber_id,
+              {:error, %Coroutine.Error{type: :cancelled, error: :cancelled, stacktrace: nil}}
+            )
+        end
     end
   end
 
