@@ -1,10 +1,45 @@
 # Changelog
 
-<!-- last-updated-against: 1e8c9e5a6c152d366b5728da1ae287b4ae740bab -->
+<!-- last-updated-against: a59c3e8ffe59fd11bf98f3644406b6073f0dbf9b -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
 
-## [Unreleased]
+## [0.41.0] — 2026-06-16
+
+### Added
+
+- `Skuld.PageMachine.Spindle` — named concurrent sub-computations that run
+  as FiberPool fibers. `Spindle.fork(:key, computation)` creates a fiber and
+  registers the key for event routing. `Spindle.Mappings` struct maintains
+  bidirectional key↔fiber_id maps.
+- `Skuld.Comp.InternalSuspend.FiberYield` — a new suspension payload for
+  fiber-level yields within a FiberPool. When a fiber calls `Yield.yield`,
+  the FiberYield handler produces an `InternalSuspend` instead of an
+  `ExternalSuspend`, keeping the fiber in the pool while other fibers run.
+- `Skuld.FiberPool.Server` — an always-on process hosting a multi-fiber
+  cooperative scheduler with bidirectional message passing. Starts with
+  named computations as fibers, routes `FiberYield` suspensions to the
+  caller, and accepts resume/cancel messages.
+- `Skuld.FiberPool.Scheduler.RoundResult` — a struct replacing the sum-type
+  return of `Scheduler.run/2`. Captures all concurrent scheduler states
+  simultaneously: suspended yields, completions, all_done, waiting_for_tasks,
+  batch_ready. `run_loop` accumulates yields as it goes and only returns
+  at quiescence.
+- `Skuld.Effects.FiberPool.handler/0` — public handler accessor for
+  installing the FiberPool effect handler without the drain_pending wrapper.
+- Multi-arity `/3` callbacks in `PageMachine.__using__/1`: `(spindle_key,
+  value, socket)`. `/2` callbacks still supported for single-spindle pages.
+- `def_pipe_event` now supports `:into` option for routing events to a
+  specific spindle key.
+
+### Changed
+
+- `Scheduler.run/2` returns `%RoundResult{}` instead of sum-type tuples.
+  All callers (`Main`, `Server`) updated accordingly.
+- Server uses non-blocking `receive` with `after 0` — only blocks on caller
+  input when all fibers are suspended on `FiberYield` with no tasks running.
+- `:fiber_cancel` now cancels the target fiber via `Coroutine.cancel` and
+  sends `%Cancelled{}` to the caller.
 
 ### Removed
 
@@ -17,8 +52,6 @@ All notable changes to `skuld_concurrency` will be documented in this file.
 
 - `Skuld.PageMachine.AsyncPageMachine` renamed to `Skuld.PageMachine`.
   With SyncPageMachine removed, there's only one PageMachine.
-- PageMachine modules reorganized under `Skuld.PageMachine` namespace:
-  `Skuld.AsyncCoroutine.AsyncPageMachine` → `Skuld.PageMachine.AsyncPageMachine`
 
 ## [0.40.0] — 2026-06-14
 
