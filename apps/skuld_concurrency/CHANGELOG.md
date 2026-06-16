@@ -1,8 +1,16 @@
 # Changelog
 
-<!-- last-updated-against: 1b266aea95e55f05887cb7430f63ab7f54a12102 -->
+<!-- last-updated-against: 833cba53e389b36dd76aa9a517eb7470cb79a2f8 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [0.46.0] — 2026-06-16
+
+### Changed
+
+- Renamed "protocol" to "contract" throughout `PageMachine` to avoid
+  confusion with Elixir's `Protocol`. `use Skuld.PageMachine, contract: ...`,
+  `__contract_events__/0`, `__contract_yields__/0`.
 
 ## [0.45.0] — 2026-06-16
 
