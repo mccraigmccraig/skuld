@@ -166,7 +166,6 @@ end
 The checkout spindle is forked dynamically when the user selects a product.
 It receives the product, reserves inventory, collects shipping and payment,
 and places the order. Its yields use the protocol's generated functions —
-`Shipping` (no params, 0-arity) and `Payment` (typed keyword params):
 
 ```elixir
 defmodule MyApp.CheckoutSpindle do
@@ -232,9 +231,9 @@ defmodule MyApp.StoreLive do
     {:noreply, assign(socket, products: products, total: total)}
   end
 
-  def handle_yield(Checkout, step, socket) do
+  def handle_yield(Checkout, %Checkout.Shipping{}, socket) do
     socket = clear_spinner(socket)
-    {:noreply, assign(socket, step: step)}
+    {:noreply, assign(socket, step: :shipping)}
   end
 
   def handle_complete(Products, {:error, reason}, socket) do

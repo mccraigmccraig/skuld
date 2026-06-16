@@ -127,10 +127,11 @@ defmodule Skuld.PageMachine.ContractTest do
       assert Code.ensure_loaded?(TestProtocol.Checkout)
     end
 
-    test "generates 0-arity yield function for tag without params" do
+    test "generates 0-arity yield function that yields empty struct" do
       comp = TestProtocol.Products.browsing() |> Yield.with_handler()
       {result, _env} = Skuld.Comp.run(comp)
-      assert %Skuld.Comp.ExternalSuspend{value: :browsing} = result
+
+      assert %Skuld.Comp.ExternalSuspend{value: %TestProtocol.Products.Browsing{}} = result
     end
 
     test "generates keyword-arg yield function with typed struct for tag with params" do

@@ -294,11 +294,7 @@ defmodule Skuld.PageMachine.Contract do
     yields
     |> Enum.group_by(& &1.spindle)
     |> Enum.map(fn {spindle_module, spindle_yields} ->
-      struct_defs =
-        Enum.flat_map(spindle_yields, fn
-          %{params: []} -> []
-          y -> [generate_yield_struct(spindle_module, y)]
-        end)
+      struct_defs = Enum.map(spindle_yields, &generate_yield_struct(spindle_module, &1))
 
       yield_fns = Enum.map(spindle_yields, &generate_yield_fn(spindle_module, &1))
 
@@ -333,40 +329,41 @@ defmodule Skuld.PageMachine.Contract do
     end
   end
 
-  defp generate_yield_fn(_spindle_module, %{tag: tag, params: []}) do
-    quote do
-      @spec unquote(tag)() :: Skuld.Comp.Types.computation()
-      def unquote(tag)() do
-        Skuld.Effects.Yield.yield(unquote(tag))
-      end
-    end
-  end
-
   defp generate_yield_fn(spindle_module, %{tag: tag, params: params}) do
     struct_name = to_pascal_case(tag)
     struct_module = Module.concat(spindle_module, struct_name)
-    field_names = Enum.map(params, fn {name, _type} -> name end)
 
-    fetch_bindings =
-      Enum.map(field_names, fn name ->
-        var = Macro.var(name, nil)
-
-        quote do
-          unquote(var) = Keyword.fetch!(opts, unquote(name))
+    if params == [] do
+      quote do
+        @spec unquote(tag)() :: unquote(struct_module).t()
+        def unquote(tag)() do
+          Skuld.Effects.Yield.yield(%unquote(struct_module){})
         end
-      end)
+      end
+    else
+      field_names = Enum.map(params, fn {name, _type} -> name end)
 
-    field_kvs =
-      Enum.map(field_names, fn name ->
-        {name, Macro.var(name, nil)}
-      end)
+      fetch_bindings =
+        Enum.map(field_names, fn name ->
+          var = Macro.var(name, nil)
 
-    quote do
-      @spec unquote(tag)(keyword()) :: Skuld.Comp.Types.computation()
-      def unquote(tag)(opts) do
-        unquote_splicing(fetch_bindings)
-        struct = struct(unquote(struct_module), unquote(field_kvs))
-        Skuld.Effects.Yield.yield(struct)
+          quote do
+            unquote(var) = Keyword.fetch!(opts, unquote(name))
+          end
+        end)
+
+      field_kvs =
+        Enum.map(field_names, fn name ->
+          {name, Macro.var(name, nil)}
+        end)
+
+      quote do
+        @spec unquote(tag)(keyword()) :: Skuld.Comp.Types.computation()
+        def unquote(tag)(opts) do
+          unquote_splicing(fetch_bindings)
+          struct = struct(unquote(struct_module), unquote(field_kvs))
+          Skuld.Effects.Yield.yield(struct)
+        end
       end
     end
   end
