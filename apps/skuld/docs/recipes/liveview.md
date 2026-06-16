@@ -60,6 +60,21 @@ waits for the next event.
 
 ### Protocol
 
+The protocol is the single source of truth for the spindle ↔ LiveView
+contract. `defspindle` opens a spindle block; inside, `defevent` declares
+events the LiveView can send to this spindle, and `defyield` declares
+what the spindle sends back.
+
+`defevent` takes an event name, an explicit struct name, and typed
+params. It generates a struct module under the spindle (e.g.
+`Search.SearchEvent`) and tells PageMachine to wrap incoming params
+into that struct before resuming the spindle.
+
+`defyield` uses function-head syntax — `defyield browsing` generates
+a 0-arity function (`Search.browsing()`) that yields an empty struct.
+`defyield results(products: [...], total: integer())` takes keyword args
+and yields a typed struct:
+
 ```elixir
 defmodule MyApp.SearchProtocol do
   use Skuld.PageMachine.Contract
@@ -75,6 +90,12 @@ end
 ```
 
 ### Spindle
+
+The spindle is the computation — a linear flow that fetches data,
+yields to the LiveView, and resumes where it left off. It uses the
+protocol's generated functions (`Search.results(...)`, `Search.browsing()`)
+and pattern-matches on the protocol's generated structs
+(`%Search.SearchEvent{}`, `%Search.FilterEvent{}`):
 
 ```elixir
 defmodule MyApp.SearchSpindle do
