@@ -24,9 +24,9 @@ defmodule Skuld.PageMachine.Spindle do
 
   alias Skuld.Comp
   alias Skuld.Comp.Env
-  alias Skuld.Comp.InternalSuspend
   alias Skuld.Comp.Types
   alias Skuld.Effects.FiberPool
+  alias Skuld.Effects.FiberYield
 
   @sig __MODULE__
 
@@ -115,7 +115,7 @@ defmodule Skuld.PageMachine.Spindle do
   """
   @spec notify(term()) :: Types.computation()
   def notify(value) do
-    Comp.effect(@sig, {:notify, value})
+    FiberYield.notify(value)
   end
 
   @doc """
@@ -130,13 +130,6 @@ defmodule Skuld.PageMachine.Spindle do
   #############################################################################
   ## Handler Implementation
   #############################################################################
-
-  @doc false
-  def handle({:notify, value}, env, k) do
-    resume = fn _input, resume_env -> k.(nil, resume_env) end
-    suspend = InternalSuspend.fiber_notify(value, resume)
-    {suspend, env}
-  end
 
   @doc false
   def handle({:fork, key, computation}, env, k) do

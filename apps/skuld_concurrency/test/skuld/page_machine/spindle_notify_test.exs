@@ -5,6 +5,7 @@ defmodule Skuld.PageMachine.SpindleNotifyTest do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
+  alias Skuld.Effects.FiberYield
   alias Skuld.PageMachine.Spindle
 
   describe "Spindle.notify/1" do
@@ -14,7 +15,7 @@ defmodule Skuld.PageMachine.SpindleNotifyTest do
           _ <- Spindle.notify(:checkpoint)
           :done
         end
-        |> Spindle.with_handler()
+        |> FiberYield.with_handler()
         |> Comp.call(Env.new(), &Comp.identity_k/2)
 
       assert %InternalSuspend{
@@ -28,7 +29,7 @@ defmodule Skuld.PageMachine.SpindleNotifyTest do
           _ <- Spindle.notify(:checkpoint)
           {:ok, 42}
         end
-        |> Spindle.with_handler()
+        |> FiberYield.with_handler()
         |> Comp.call(Env.new(), &Comp.identity_k/2)
 
       {resumed, _final_env} = suspend.resume.(nil, env)
@@ -43,7 +44,7 @@ defmodule Skuld.PageMachine.SpindleNotifyTest do
           _ <- Spindle.notify(:second)
           :done
         end
-        |> Spindle.with_handler()
+        |> FiberYield.with_handler()
         |> Comp.call(Env.new(), &Comp.identity_k/2)
 
       assert %InternalSuspend{
