@@ -528,6 +528,26 @@ The checkout spindle runs its linear flow independently. If the user
 searches while the checkout form is still open, those events go to the
 product spindle — the checkout spindle is unaffected.
 
+## Private and shared state
+
+Each spindle carries its own private state through ordinary function
+arguments — `search_loop(filters)` passes the current filters recursively,
+no global store required. For shared state between spindles, use the
+standard `Skuld.Effects.State` effect:
+
+```elixir
+defcomp search_loop(filters) do
+  count <- State.get(:search_count)
+  _ <- State.put(:search_count, count + 1)
+  ...
+end
+```
+
+Multiple spindles can read and write the same `State` tag within the
+same PageMachine process. Any Skuld effect (`Writer`, `Reader`, etc.)
+works the same way — each spindle is just a computation running inside
+the FiberPool handler stack.
+
 ## Cancellation and cleanup
 
 Cancel on mount to prevent duplicate runners:
