@@ -70,11 +70,10 @@ params. It generates a struct module under the spindle (e.g.
 `Search.SearchEvent`) and tells PageMachine to wrap incoming params
 into that struct before resuming the spindle.
 
-`defyield` uses function-head syntax — `defyield browsing` generates
-a 0-arity function (`Search.browsing()`) that yields an empty struct.
-`defnotify results(products: [...], total: integer())` generates a
-fire-and-forget notification — the spindle surfaces results and continues
-without pausing:
+`defyield` and `defnotify` use function-head syntax — `defyield browsing`
+generates `Search.Yield.browsing()` which pauses the spindle. `defnotify
+results(products: [...], total: integer())` generates `Search.Notify.results(...)`,
+fire-and-forget — the spindle surfaces results and continues without pausing:
 
 ```elixir
 defmodule MyApp.SearchProtocol do
