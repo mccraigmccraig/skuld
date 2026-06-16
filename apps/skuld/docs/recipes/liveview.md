@@ -301,7 +301,7 @@ end
 ```
 
 The checkout spindle is forked with the selected product. It reserves
-inventory, then yields `%Checkout.Shipping{}` and `%Checkout.Payment{}`
+inventory, then yields `%Checkout.Yield.Shipping{}` and `%Checkout.Yield.Payment{}`
 to drive a step-by-step form in the LiveView:
 
 ```elixir
@@ -312,8 +312,8 @@ defmodule MyApp.CheckoutSpindle do
 
   defcomp run(product) do
     {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
-    %Checkout.Yield.ShippingEvent{shipping: shipping} <- Checkout.Yield.shipping()
-    %Checkout.Yield.PaymentEvent{payment: payment} <- Checkout.Yield.payment()
+    %Checkout.ShippingEvent{shipping: shipping} <- Checkout.Yield.shipping()
+    %Checkout.PaymentEvent{payment: payment} <- Checkout.Yield.payment()
     {:ok, order} <- MyApp.Orders.place(%{product: product}, shipping, payment)
     {:ok, order}
   else
