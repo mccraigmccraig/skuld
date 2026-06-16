@@ -1,19 +1,27 @@
 # Changelog
 
-<!-- last-updated-against: e13a589edf4885e66bd1df1c4a27be5864b985ca -->
+<!-- last-updated-against: 9424302f0e6c99781a086bede50b6d2950666b9e -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
 
-## [Unreleased]
+## [0.44.0] — 2026-06-16
 
 ### Added
 
 - `Spindle.notify/1` — fire-and-forget notification to the PageMachine
   caller. Surfaces a value to the caller (e.g. LiveView) without pausing
   the spindle — the fiber continues immediately on the next scheduler
-  round. Uses a new `InternalSuspend.FiberYield` with `notify: true`.
-  The scheduler auto-resumes notifying fibers; the server forwards
-  notifications without entering `wait_for_caller`.
+  round. Uses `InternalSuspend.FiberYield` with `notify: true`.
+  The scheduler auto-resumes notifying fibers via a new `{:notify, ...}`
+  step result; the server forwards notifications without entering
+  `wait_for_caller`.
+- `FiberYield.notify/1` — effect operation (via `def_op`) that produces
+  `InternalSuspend.fiber_notify/2`. Installed alongside the Yield
+  handler in `FiberYield.with_handler/1`.
+- `defnotify` in `Skuld.PageMachine.Contract` — declares fire-and-forget
+  notifications in `defspindle` blocks. Same function-head syntax as
+  `defyield`, generates typed structs and functions that call
+  `FiberYield.notify/1` instead of `Yield.yield/1`.
 
 ## [0.43.0] — 2026-06-16
 
