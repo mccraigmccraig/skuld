@@ -69,8 +69,10 @@ defmodule Skuld.PageMachine.Spindle do
     def merge(m1, m2) do
       %{
         m1
-        | fiber_ids_by_spindle_key: Map.merge(m1.fiber_ids_by_spindle_key, m2.fiber_ids_by_spindle_key),
-          spindle_keys_by_fiber_id: Map.merge(m1.spindle_keys_by_fiber_id, m2.spindle_keys_by_fiber_id)
+        | fiber_ids_by_spindle_key:
+            Map.merge(m1.fiber_ids_by_spindle_key, m2.fiber_ids_by_spindle_key),
+          spindle_keys_by_fiber_id:
+            Map.merge(m1.spindle_keys_by_fiber_id, m2.spindle_keys_by_fiber_id)
       }
     end
   end
