@@ -121,7 +121,6 @@ defmodule MyApp.ProductBrowserSpindle do
     case event do
       {:buy, product} ->
         _handle <- Spindle.fork(:checkout, MyApp.CheckoutSpindle.run(product))
-        Yield.yield({:buy, product})
         search_loop(filters)
 
       new_filters ->
@@ -191,10 +190,6 @@ defmodule MyApp.StoreLive do
   # Multi-spindle callbacks — dispatch by spindle key
   defp handle_yield(:products, {:results, products, total}, socket) do
     {:noreply, assign(socket, products: products, total: total)}
-  end
-
-  defp handle_yield(:products, {:buy, product}, socket) do
-    {:noreply, assign(socket, step: :shipping)}
   end
 
   defp handle_yield(:checkout, step, socket) do
@@ -290,10 +285,10 @@ defmodule MyApp.ProductBrowserSpindleTest do
     assert %Coroutine.ExternalSuspended{value: :browsing} = fiber
   end
 
-  test "buy event triggers checkout fork and yields product", %{comp: comp} do
+    test "buy event triggers checkout fork and continues search loop", %{comp: comp} do
     fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
     fiber = Coroutine.run(fiber, {:buy, %Product{name: "Phone"}})
-    assert %Coroutine.ExternalSuspended{value: {:buy, %Product{name: "Phone"}}} = fiber
+    assert %Coroutine.ExternalSuspended{value: :browsing} = fiber
   end
 
   test "filter change triggers new search", %{comp: comp} do
