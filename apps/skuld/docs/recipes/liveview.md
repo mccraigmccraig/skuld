@@ -69,9 +69,9 @@ in isolation.
 
 Two spindles running in the same page machine:
 
-| Spindle | Role | Event source |
-|---------|------|-------------|
-| `:products` | Forever loop: search products, select one to buy | `"search"`, `"filter"` events |
+| Spindle     | Role                                                  | Event source                                   |
+|-------------|-------------------------------------------------------|------------------------------------------------|
+| `:products` | Forever loop: search products, select one to buy      | `"search"`, `"filter"` events                  |
 | `:checkout` | Forked on buy: collect shipping, payment, place order | `"submit_shipping"`, `"submit_payment"` events |
 
 ### Boundary contracts
@@ -126,6 +126,29 @@ defmodule MyApp.ProductBrowserSpindle do
       new_filters ->
         search_loop(new_filters)
     end
+  end
+end
+```
+
+The checkout spindle is forked dynamically when the user selects a product.
+It receives the product, reserves inventory, collects shipping and payment,
+and places the order:
+
+```elixir
+defmodule MyApp.CheckoutSpindle do
+  use Skuld.Syntax
+
+  alias Skuld.Effects.Yield
+
+  defcomp run(product) do
+    {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
+    {"submit_shipping", shipping} <- Yield.yield(:shipping)
+    {"submit_payment", payment} <- Yield.yield(:payment)
+    {:ok, order} <- MyApp.Orders.place(%{product: product}, shipping, payment)
+    {:ok, order}
+  else
+    {:error, :sold_out} -> {:error, :sold_out}
+    {:error, reason} -> {:error, reason}
   end
 end
 ```
