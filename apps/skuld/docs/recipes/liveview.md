@@ -12,37 +12,40 @@ single function.
 
 PageMachine separates these concerns, Elixir-style. Like Elm, Redux,
 or re-frame, it enforces a Model-View-Update architecture. But instead of pure
-reducers, PageMachine uses coroutines: each state machine is a sequential
-computation that can *suspend* mid-execution, *notify* the view without
-pausing, and resume where it left off.
+reducers, PageMachine uses coroutines: each coroutine is a state machine
+computation that reads like normal code, but can *suspend* mid-execution,
+*notify* the view without pausing, and resume where it left off.
 
 A PageMachine runs one or more concurrent **spindles** — named coroutine
-fibers, each an independent state machine with its own event stream and its
-own yields and notifications to the LiveView. A single-spindle page is just
-a page machine with one spindle. A multi-spindle page runs a product browser
-*and* a checkout form, a chat panel *and* a document editor — each region its
-own computation, its own testable module. The LiveView routes events to the
-right spindle and forwards yields from each to the right UI region.
+fibers, each an independent state machine computation with its own event
+stream and its own yields and notifications to the LiveView.
+A simple page might have just one spindle. A more complex multi-spindle
+page can run a product browser *and* a checkout form, a chat panel *and*
+a document editor — each region its own computation, its own testable
+module. The LiveView routes events to the right spindle and forwards
+yields from each to the right UI region.
 
 ## Why extract page state machines
 
-LiveView tests are slow. Even with DoubleDown replacing the database
-sandbox (often a 250× speedup for tests whose main bottleneck was Ecto sandbox
-DB I/O), the process mechanics dominate — mount, render,
-socket assigns, DOM diffs. The test time floor is set by the LiveView
-process itself.
+LiveView modules mix three concerns: state transitions, business logic,
+and DOM updates. When `handle_event` calls APIs, manipulates assigns,
+and pushes UI state all in one function, the result is hard to test,
+hard to change, and hard to reason about.
 
-But a LiveView page *is* a state machine. The Moore model maps directly:
+Extracting the state machine into a pure module — one that receives
+events and returns new state, with no LiveView dependency — separates
+these concerns. The spindle handles state and effects; the LiveView
+bridges events and renders. This has two big payoffs:
 
-| Moore concept | LiveView                         |
-|---------------|----------------------------------|
-| State         | `socket.assigns`                 |
-| Transition    | `handle_event(event, _, socket)` |
-| Output (UI)   | `render(socket.assigns)`         |
-
-If you extract the state machine into a pure module — one that receives
-events and returns new state, with no LiveView dependency — you can test
-the page logic with plain `assert`. No process. No LiveViewTest. No DOM.
+- **Fast, deterministic tests** — test the page logic with plain
+  `assert`. No process. No LiveViewTest. No DOM. Even with DoubleDown
+  replacing the database sandbox (often a 250× speedup for tests whose
+  main bottleneck was Ecto sandbox DB I/O), the LiveView process itself
+  sets a floor on test time. Pure state transitions have no such floor.
+- **Decomplected code** — the spindle knows nothing about LiveView.
+  It doesn't import `Phoenix.LiveView`, touch sockets, or manipulate
+  assigns. Adding a UI region means adding a spindle, not threading
+  more conditional logic through a monolithic `handle_event`.
 
 ## Pattern
 
