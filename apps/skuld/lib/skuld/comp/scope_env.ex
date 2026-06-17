@@ -2,13 +2,14 @@ defmodule Skuld.Comp.ScopeEnv do
   @moduledoc """
   Scope machinery carried through a computation.
 
-  Groups the three elements that define what scope a computation is running in:
+  Groups the elements that define what scope a computation is running in:
 
   - `evidence` — installed effect handlers
   - `leave_scope` — cleanup chain for scoped effects
   - `transform_suspend` — suspend decoration chain, also scoped
+  - `current_fiber_id` — set when executing inside a FiberPool fiber, nil otherwise
 
-  These three are installed together via `scoped/2`, inherited together at fiber
+  These are installed together via `scoped/2`, inherited together at fiber
   spawn, and survive suspend/resume cycles together. They are the computation's
   "scope structure" — the runtime context that determines how effects are handled.
 

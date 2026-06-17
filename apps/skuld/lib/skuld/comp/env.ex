@@ -2,8 +2,8 @@ defmodule Skuld.Comp.Env do
   @moduledoc """
   Environment construction and manipulation.
 
-  The Env struct carries scope (handlers, leave-scope, transform-suspend)
-  and effect state. Scope is embedded as a `ScopeEnv` sub-struct — mutate
+  The Env struct carries scope (handlers, leave-scope, transform-suspend,
+  current-fiber-id) and effect state. Scope is embedded as a `ScopeEnv` sub-struct — mutate
   through `Env.*` functions rather than reaching into `env.scope` directly.
 
   ## Effect State
