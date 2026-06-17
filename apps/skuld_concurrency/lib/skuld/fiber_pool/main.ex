@@ -254,6 +254,7 @@ defmodule Skuld.FiberPool.Main do
 
     # Clean pending work from env before resuming to avoid stale entries.
     # Copy Cell keys from shared fiber state so they're visible after await.
+    # (A full state.env_state replacement causes hangs — targeted merge is safe.)
     clean_env =
       %{env | state: Map.put(env.state, PendingWork.env_key(), PendingWork.new())}
 
