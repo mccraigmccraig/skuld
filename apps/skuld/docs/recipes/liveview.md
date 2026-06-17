@@ -1,4 +1,4 @@
-# LiveView Integration
+# PageMachine
 
 <!-- nav:header:start -->
 [< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
