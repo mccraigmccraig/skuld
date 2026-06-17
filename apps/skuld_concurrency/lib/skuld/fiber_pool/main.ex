@@ -109,10 +109,12 @@ defmodule Skuld.FiberPool.Main do
         {result, %{env | state: FiberPoolState.get_env_state(state)}}
 
       round_result.batch_ready ->
-        {state, env} = Batching.execute_pending_batches(state, env)
+        batch_env = %{env | state: FiberPoolState.get_env_state(state)}
+        {state, batch_env} = Batching.execute_pending_batches(state, batch_env)
+        state = FiberPoolState.put_env_state(state, batch_env.state)
 
         if FiberPoolState.progressed?(snapshot, FiberPoolState.progress_snapshot(state)) do
-          run_fibers_to_completion(state, env, result)
+          run_fibers_to_completion(state, batch_env, result)
         else
           {{:error, {:deadlock, deadlock_diagnostic(state)}}, env}
         end
@@ -212,8 +214,10 @@ defmodule Skuld.FiberPool.Main do
         {{:error, :external_suspension}, env}
 
       {:batch_ready, state} ->
-        {state, env} = Batching.execute_pending_batches(state, env)
-        run_until_await_satisfied(state, env, awaiter_id, resume, mode)
+        batch_env = %{env | state: FiberPoolState.get_env_state(state)}
+        {state, batch_env} = Batching.execute_pending_batches(state, batch_env)
+        state = FiberPoolState.put_env_state(state, batch_env.state)
+        run_until_await_satisfied(state, batch_env, awaiter_id, resume, mode)
     end
   end
 

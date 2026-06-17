@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 2fe5d14d8aaa8a6ff105708853e121511cb0d976 -->
+<!-- last-updated-against: 91829e2519438467a36c8f663507be12e88600e6 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
 
@@ -17,6 +17,10 @@ All notable changes to `skuld_concurrency` will be documented in this file.
   single source of truth for the resume env, and writes the main computation's
   updated state back to `state.env_state` after resume. Removed the
   now-unnecessary `Cell.merge_after_await` workaround.
+- Fixed same stale `env` bug in batch execution: `execute_pending_batches`
+  was called with the main computation's stale `env` instead of building
+  from `state.env_state`. This caused query cache entries written during
+  batch execution to be lost on the next `handle_await_result` resume.
 
 ## [0.46.0] — 2026-06-16
 
