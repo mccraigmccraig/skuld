@@ -49,11 +49,11 @@ bridges events and renders. This has two big payoffs:
 
 ## Pattern
 
-1. Define a typed contract with `use Skuld.PageMachine.Contract` and `defspindle` blocks
-2. Write each page region as an effectful computation using the contract's yield functions
-3. Test each in isolation with `Coroutine` — deterministic, no processes
+1. Define a typed contract for the LiveView <-> PageMachine interaction with `use Skuld.PageMachine.Contract` and `defspindle` blocks
+2. Write each page region as an effectful computation - a spindle - using the contract's yield functions to request information from the LiveView
+3. Test each spindle in isolation with `Coroutine` — deterministic, no processes
 4. Wrap the page in a thin LiveView module via `use Skuld.PageMachine, contract: ...` with `/3` callbacks
-5. Computations fork sub-computations with `Spindle.fork`; yields update the UI
+5. Computations can fork sub-computations with `Spindle.fork`; yields send data back to the LiveView UI
 
 ## Example: single-spindle product browser
 
@@ -63,20 +63,33 @@ waits for the next event.
 
 ### Contract
 
-The contract is the single source of truth at the spindle ↔ LiveView
-boundary. `defspindle` opens a spindle block; inside, `defevent` declares
-events the LiveView can send to this spindle, `defyield` declares
-blocking yields, and `defnotify` declares fire-and-forget notifications.
+The contract is the single source of truth at the spindle <-> LiveView
+boundary. It defines events which will be forwarded from the LiveView to a
+spindle and the yield and notify operations which return data from a
+spindle back to the LiveView.
+
+When the LiveView calls `use Skuld.PageMachine`, it will use the provided
+contract to automatically generate the `handle_event` and `handle_info`
+clauses implied by the contract, so forwarding data back and forth
+between the LiveView and PageMachine is automatic.
+
+`defspindle` opens a spindle block; then, inside the spindle block, `defevent`
+declares events the LiveView can send to this spindle, `defyield` declares
+blocking yields (the spindle sends data to the LiveView and pauses,
+waiting for a response), and `defnotify` declares fire-and-forget
+notifications (the spindle sends data to the LiveView and continues).
 
 `defevent` takes an event name, an explicit struct name, and typed
 params. It generates a struct module under the spindle (e.g.
-`Search.SearchEvent`) and tells PageMachine to wrap incoming params
-into that struct before resuming the spindle.
+`Search.SearchEvent`) and tells PageMachine to wrap params
+into that struct before sending to the spindle.
 
-`defyield` and `defnotify` use function-head syntax — `defyield browsing`
-generates `Search.Yield.browsing()` which pauses the spindle. `defnotify
-results(products: [...], total: integer())` generates `Search.Notify.results(...)`,
-fire-and-forget — the spindle surfaces results and continues without pausing:
+`defyield` and `defnotify` use function-head syntax — `defnotify browsing`
+generates `Search.Yield.browsing()` which pauses the spindle and waits
+for a response. `defnotify results(products: [...], total: integer())`
+generates `Search.Notify.results(...)`, which sends the results to the
+LiveView in fire-and-forget fashion — the LiveView gets the results
+and continues without pausing:
 
 ```elixir
 defmodule MyApp.SearchContract do
@@ -92,8 +105,25 @@ defmodule MyApp.SearchContract do
 end
 ```
 
+### Boundary contract
+
+The spindle calls `MyApp.ProductCatalog.search(filters)` — an effectful
+boundary defined with `EffectfulFacade`. This is a typed function call,
+not a dispatched action: the types are visible, the flow is linear, and
+the implementation is swapped for a fake in tests:
+
+```elixir
+defmodule MyApp.ProductCatalog do
+  use Skuld.Effects.Port.EffectfulFacade
+
+  defcallback search(filters :: map()) ::
+              {:ok, [Product.t()], total :: integer()} | {:error, term()}
+end
+```
+
 ### Spindle
-The spindle is the computation — a function that fetches data,
+The spindle is the coroutine state-machine computation — 
+a function that fetches data,
 surfaces results via `Search.Notify.results(...)`, and suspends on
 `Search.Yield.browsing()` to wait for the next event. It uses the
 contract's generated functions and pattern-matches on the contract's
@@ -181,8 +211,9 @@ A few things to note:
   second spindle — just add another clause.
 - **`defevent` + struct name** — `defevent "search", SearchEvent, params: [...]`
   generates `Search.SearchEvent`. The auto-generated `handle_event` wraps
-  the incoming params into the struct before resuming the spindle. This is
-  why the `case event` in the spindle pattern-matches on `%Search.SearchEvent{}`.
+  the incoming params into the struct before sending to the PageMachine. 
+  This is  why the `case event` in the spindle pattern-matches on
+  `%Search.SearchEvent{}`.
 - **`defyield` generates both a struct and a function** — `defyield browsing`
   produces `%Search.Yield.Browsing{}` and `Search.Yield.browsing()`.
   `defnotify results(...)` produces `%Search.Notify.Results{}` and
@@ -211,16 +242,12 @@ checkout form alongside the product browser — add a second spindle.
 The contract gains a `Checkout` block, the LiveView switches to `/3`
 callbacks, and the product spindle forks the checkout spindle on demand.
 
-### Boundary contracts
+### Additional boundary contracts
+
+The checkout spindle needs two new boundaries — `Orders` and `Inventory`.
+`ProductCatalog` was defined above:
 
 ```elixir
-defmodule MyApp.ProductCatalog do
-  use Skuld.Effects.Port.EffectfulFacade
-
-  defcallback search(filters :: map()) ::
-              {:ok, [Product.t()], total :: integer()} | {:error, term()}
-end
-
 defmodule MyApp.Orders do
   use Skuld.Effects.Port.EffectfulFacade
 
