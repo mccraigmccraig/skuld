@@ -300,9 +300,7 @@ defmodule Skuld.FiberPool.Scheduler do
 
   defp run_pending_fiber(state, fiber, _env) do
     fiber_env = %{fiber.env | state: state.env_state}
-
     fiber_env = Env.put_current_fiber_id(fiber_env, fiber.id)
-
     fiber = %{fiber | env: fiber_env}
 
     fiber
@@ -311,12 +309,8 @@ defmodule Skuld.FiberPool.Scheduler do
   end
 
   defp resume_fiber(state, fiber, result) do
-    # Inject shared env_state before resuming
-    # Also set the current fiber ID (env_state may have the previous fiber's ID)
     fiber_env = %{fiber.env | state: state.env_state}
-
     fiber_env = Env.put_current_fiber_id(fiber_env, fiber.id)
-
     fiber = %{fiber | env: fiber_env}
 
     fiber

@@ -1,8 +1,22 @@
 # Changelog
 
-<!-- last-updated-against: 833cba53e389b36dd76aa9a517eb7470cb79a2f8 -->
+<!-- last-updated-against: 2fe5d14d8aaa8a6ff105708853e121511cb0d976 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [Unreleased]
+
+### Fixed
+
+- Fixed stale `env.state` bug in `handle_await_result`: the main computation
+  was resuming with its own stale copy of `env.state` instead of the shared
+  `state.env_state` that fibers write back to. This caused
+  `ChannelCoordinationState` divergence — the main computation and fibers
+  operated on different copies of channel state, leading to duplicate takes
+  and hangs on rendezvous channels. The fix uses `state.env_state` as the
+  single source of truth for the resume env, and writes the main computation's
+  updated state back to `state.env_state` after resume. Removed the
+  now-unnecessary `Cell.merge_after_await` workaround.
 
 ## [0.46.0] — 2026-06-16
 
