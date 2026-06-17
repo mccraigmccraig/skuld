@@ -109,12 +109,14 @@ defmodule Skuld.FiberPool.Main do
         {result, %{env | state: FiberPoolState.get_env_state(state)}}
 
       round_result.batch_ready ->
-        batch_env = %{env | state: FiberPoolState.get_env_state(state)}
-        {state, batch_env} = Batching.execute_pending_batches(state, batch_env)
-        state = FiberPoolState.put_env_state(state, batch_env.state)
+        {state, _, env} =
+          with_shared_env(state, env, fn state, env ->
+            {state, env} = Batching.execute_pending_batches(state, env)
+            {state, :ok, env}
+          end)
 
         if FiberPoolState.progressed?(snapshot, FiberPoolState.progress_snapshot(state)) do
-          run_fibers_to_completion(state, batch_env, result)
+          run_fibers_to_completion(state, env, result)
         else
           {{:error, {:deadlock, deadlock_diagnostic(state)}}, env}
         end
@@ -214,10 +216,13 @@ defmodule Skuld.FiberPool.Main do
         {{:error, :external_suspension}, env}
 
       {:batch_ready, state} ->
-        batch_env = %{env | state: FiberPoolState.get_env_state(state)}
-        {state, batch_env} = Batching.execute_pending_batches(state, batch_env)
-        state = FiberPoolState.put_env_state(state, batch_env.state)
-        run_until_await_satisfied(state, batch_env, awaiter_id, resume, mode)
+        {state, _, env} =
+          with_shared_env(state, env, fn state, env ->
+            {state, env} = Batching.execute_pending_batches(state, env)
+            {state, :ok, env}
+          end)
+
+        run_until_await_satisfied(state, env, awaiter_id, resume, mode)
     end
   end
 
@@ -256,33 +261,29 @@ defmodule Skuld.FiberPool.Main do
           result
       end
 
-    # Use state.env_state (the shared, fiber-updated copy) as the base for
-    # the resume env. This is the single source of truth — fibers write back
-    # to it after every step, and the main computation writes back after
-    # every resume. Clean pending work to avoid stale entries.
-    shared_state = FiberPoolState.get_env_state(state)
+    {state, new_result, new_env} =
+      with_shared_env(state, env, fn state, fresh_env ->
+        clean_env =
+          %{fresh_env | state: Map.put(fresh_env.state, PendingWork.env_key(), PendingWork.new())}
 
-    clean_env =
-      %{env | state: Map.put(shared_state, PendingWork.env_key(), PendingWork.new())}
+        {new_result, new_env} = resume.(unwrapped, clean_env)
 
-    {new_result, new_env} = resume.(unwrapped, clean_env)
+        pending_work = Env.get_state(new_env, PendingWork.env_key(), PendingWork.new())
+        {pending_fibers, pending_tasks, _} = PendingWork.take_all(pending_work)
 
-    # Collect any new pending work spawned during the continuation
-    pending_work = Env.get_state(new_env, PendingWork.env_key(), PendingWork.new())
-    {pending_fibers, pending_tasks, _} = PendingWork.take_all(pending_work)
+        state =
+          Enum.reduce(pending_fibers, state, fn {_id, fiber}, acc ->
+            {_id, acc} = FiberPoolState.add_fiber(acc, fiber)
+            acc
+          end)
 
-    state =
-      Enum.reduce(pending_fibers, state, fn {_id, fiber}, acc ->
-        {_id, acc} = FiberPoolState.add_fiber(acc, fiber)
-        acc
+        state = Tasks.spawn_pending(state, pending_tasks)
+
+        clean_env_state = Map.put(new_env.state, PendingWork.env_key(), PendingWork.new())
+        new_env = %{new_env | state: clean_env_state}
+
+        {state, new_result, new_env}
       end)
-
-    state = Tasks.spawn_pending(state, pending_tasks)
-
-    clean_env_state = Map.put(new_env.state, PendingWork.env_key(), PendingWork.new())
-    new_env = %{new_env | state: clean_env_state}
-
-    state = FiberPoolState.put_env_state(state, new_env.state)
 
     case new_result do
       %InternalSuspend{payload: %InternalSuspend.Await{}} = suspend ->
@@ -309,30 +310,34 @@ defmodule Skuld.FiberPool.Main do
       for {_fiber_id, %ForeignSuspended{suspend: s}} <- state.foreign_suspends, do: s
 
     resume = build_foreign_resume(state, env)
+    fresh_env = %{env | state: FiberPoolState.get_env_state(state)}
 
-    {%ForeignSuspensions{id: state.id, suspensions: suspends, env: env, resume: resume}, env}
+    {%ForeignSuspensions{id: state.id, suspensions: suspends, env: fresh_env, resume: resume},
+     fresh_env}
   end
 
-  # Build the resume closure that batch-wakes resolved fibers.
-  # Takes `%{ForeignSuspend.id => resolved_value}` and re-enters the scheduler.
   defp build_foreign_resume(state, env) do
     fn resolved ->
       state = apply_foreign_resolutions(state, resolved)
-      run_fibers_to_completion(state, env, :foreign_resume)
+      fresh_env = %{env | state: FiberPoolState.get_env_state(state)}
+      run_fibers_to_completion(state, fresh_env, :foreign_resume)
     end
   end
 
-  # Await-aware variant — re-enters the main fiber's await loop after resolving.
   defp bundle_foreign_suspensions(state, env, _awaiter_id, await_resume, mode) do
     suspends =
       for {_fiber_id, %ForeignSuspended{suspend: s}} <- state.foreign_suspends, do: s
 
     resume = fn resolved ->
       state = apply_foreign_resolutions(state, resolved)
-      run_until_await_satisfied(state, env, :main, await_resume, mode)
+      fresh_env = %{env | state: FiberPoolState.get_env_state(state)}
+      run_until_await_satisfied(state, fresh_env, :main, await_resume, mode)
     end
 
-    {%ForeignSuspensions{id: state.id, suspensions: suspends, env: env, resume: resume}, env}
+    fresh_env = %{env | state: FiberPoolState.get_env_state(state)}
+
+    {%ForeignSuspensions{id: state.id, suspensions: suspends, env: fresh_env, resume: resume},
+     fresh_env}
   end
 
   # Resolve foreign suspends and re-enqueue resolved fibers.
@@ -366,4 +371,15 @@ defmodule Skuld.FiberPool.Main do
   # Check if a result is an await suspension
   defp await_suspend?(%InternalSuspend{payload: %InternalSuspend.Await{}}), do: true
   defp await_suspend?(_), do: false
+
+  # Within the scheduling loop, state.env_state is the single source of truth
+  # for effect state. This helper freshens env.state from state.env_state
+  # before invoking a computation, and writes the result back afterward.
+  # Callback must return {state, result, env}.
+  defp with_shared_env(state, env, fun) do
+    fresh_env = %{env | state: FiberPoolState.get_env_state(state)}
+    {state, result, new_env} = fun.(state, fresh_env)
+    state = FiberPoolState.put_env_state(state, new_env.state)
+    {state, result, new_env}
+  end
 end

@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- last-updated-against: 91829e2519438467a36c8f663507be12e88600e6 -->
+<!-- last-updated-against: cbdcffd073ca17ac26ddbc7cc70eec8bcc613e44 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
 
@@ -8,19 +8,15 @@ All notable changes to `skuld_concurrency` will be documented in this file.
 
 ### Fixed
 
-- Fixed stale `env.state` bug in `handle_await_result`: the main computation
-  was resuming with its own stale copy of `env.state` instead of the shared
-  `state.env_state` that fibers write back to. This caused
-  `ChannelCoordinationState` divergence — the main computation and fibers
-  operated on different copies of channel state, leading to duplicate takes
-  and hangs on rendezvous channels. The fix uses `state.env_state` as the
-  single source of truth for the resume env, and writes the main computation's
-  updated state back to `state.env_state` after resume. Removed the
+- Fixed stale `env.state` bug in the FiberPool scheduling loop. Within the
+  loop, `state.env_state` is the single source of truth for effect state,
+  but several sites were using the main computation's stale `env.state`
+  instead — causing divergence between the main computation and fibers.
+  Affected sites: `handle_await_result` (resume env), batch execution, and
+  foreign suspension closures. Extracted `with_shared_env/3` helper that
+  enforces the invariant: freshen `env.state` from `state.env_state` before
+  invoking any computation, write back afterward. Removed the
   now-unnecessary `Cell.merge_after_await` workaround.
-- Fixed same stale `env` bug in batch execution: `execute_pending_batches`
-  was called with the main computation's stale `env` instead of building
-  from `state.env_state`. This caused query cache entries written during
-  batch execution to be lost on the next `handle_await_result` resume.
 
 ## [0.46.0] — 2026-06-16
 
