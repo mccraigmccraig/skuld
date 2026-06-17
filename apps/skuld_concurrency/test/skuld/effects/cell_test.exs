@@ -4,6 +4,7 @@ defmodule Skuld.Effects.CellTest do
 
   alias Skuld.Comp
   alias Skuld.Effects.Cell
+  alias Skuld.Effects.Channel
   alias Skuld.Effects.FiberPool
   alias Skuld.Effects.FiberYield
   alias Skuld.Effects.State
@@ -11,6 +12,14 @@ defmodule Skuld.Effects.CellTest do
   defp wrap(comp) do
     comp
     |> Cell.with_handler()
+    |> FiberYield.with_handler()
+    |> FiberPool.with_handler()
+  end
+
+  defp wrap_with_channels(comp) do
+    comp
+    |> Cell.with_handler()
+    |> Channel.with_handler()
     |> FiberYield.with_handler()
     |> FiberPool.with_handler()
   end
@@ -152,6 +161,129 @@ defmodule Skuld.Effects.CellTest do
         |> Comp.run()
 
       assert result == 99
+    end
+  end
+
+  describe "watch" do
+    test "watch on existing value delivers immediately via channel" do
+      {result, _env} =
+        comp do
+          _ <- Cell.put(:results, [1, 2, 3])
+          ch <- Cell.watch(:results)
+          Channel.take(ch)
+        end
+        |> wrap_with_channels()
+        |> Comp.run()
+
+      assert {:ok, [1, 2, 3]} = result
+    end
+
+    test "watch before put suspends until value is written" do
+      {result, _env} =
+        comp do
+          watcher <-
+            FiberPool.fiber(
+              comp do
+                ch <- Cell.watch(:data)
+                Channel.take(ch)
+              end
+            )
+
+          writer <-
+            FiberPool.fiber(
+              comp do
+                _ <- Cell.put(:data, 42)
+                :written
+              end
+            )
+
+          _ <- FiberPool.await!(writer)
+          FiberPool.await!(watcher)
+        end
+        |> wrap_with_channels()
+        |> Comp.run()
+
+      assert {:ok, 42} = result
+    end
+
+    test "multiple watchers all receive the value" do
+      {result, _env} =
+        comp do
+          w1 <-
+            FiberPool.fiber(
+              comp do
+                ch <- Cell.watch(:shared)
+                Channel.take(ch)
+              end
+            )
+
+          w2 <-
+            FiberPool.fiber(
+              comp do
+                ch <- Cell.watch(:shared)
+                Channel.take(ch)
+              end
+            )
+
+          writer <-
+            FiberPool.fiber(
+              comp do
+                _ <- Cell.put(:shared, :hello)
+                :written
+              end
+            )
+
+          _ <- FiberPool.await!(writer)
+          r1 <- FiberPool.await!(w1)
+          r2 <- FiberPool.await!(w2)
+          {r1, r2}
+        end
+        |> wrap_with_channels()
+        |> Comp.run()
+
+      assert {{:ok, :hello}, {:ok, :hello}} = result
+    end
+
+    test "watch channel is closed after delivery" do
+      {result, _env} =
+        comp do
+          _ <- Cell.put(:val, 10)
+          ch <- Cell.watch(:val)
+          first <- Channel.take(ch)
+          second <- Channel.take(ch)
+          {first, second}
+        end
+        |> wrap_with_channels()
+        |> Comp.run()
+
+      assert {{:ok, 10}, :closed} = result
+    end
+
+    test "watch composes with await_any for multi-source await" do
+      {result, _env} =
+        comp do
+          watch_fiber <-
+            FiberPool.fiber(
+              comp do
+                ch <- Cell.watch(:state_change)
+                Channel.take(ch)
+              end
+            )
+
+          compute_fiber <-
+            FiberPool.fiber(
+              comp do
+                _ <- Cell.put(:state_change, :updated)
+                :computed
+              end
+            )
+
+          FiberPool.await_any([watch_fiber, compute_fiber])
+        end
+        |> wrap_with_channels()
+        |> Comp.run()
+
+      assert {_handle, _value} = result
     end
   end
 end

@@ -1,10 +1,20 @@
 # Changelog
 
-<!-- last-updated-against: f180b0ac3cf60c9feb187473bdc1036e07452b73 -->
+<!-- last-updated-against: be7e5cf19f8bdfa83096ed3c1e3a35f470418e47 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
 
 ## [Unreleased]
+
+### Added
+
+- `Cell.watch(tag)` — returns a capacity-1 Channel that delivers the Cell's
+  value. If the Cell has already been written to, the value is in the channel
+  immediately (closed). If not, the channel is empty until `Cell.put` writes
+  to the tag, at which point all watcher channels receive the value and close.
+  Composes with `FiberPool.await_any` for multi-source await patterns.
+- `Channel.Ops` — shared helpers (`create/2`, `put_and_close/3`) for
+  cross-effect channel operations without coupling to Channel internals.
 
 ### Fixed
 

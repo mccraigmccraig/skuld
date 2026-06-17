@@ -34,10 +34,12 @@ defmodule Skuld.Effects.Cell do
   alias Skuld.Comp
   alias Skuld.Comp.Env
   alias Skuld.Comp.Types
+  alias Skuld.Effects.Channel
   alias Skuld.Effects.FiberPool
 
   @cell_prefix :cell
   @owner_prefix :cell_owner
+  @watcher_prefix :cell_watcher
 
   def_op get(tag)
   def_op put(tag, value)
@@ -55,6 +57,59 @@ defmodule Skuld.Effects.Cell do
   @spec with_handler(Types.computation()) :: Types.computation()
   def with_handler(computation) do
     Comp.with_handler(computation, __MODULE__, &handle/3)
+  end
+
+  @doc """
+  Watch a Cell tag, returning a Channel that will deliver the value.
+
+  Returns a `Channel.Handle` for a capacity-1 channel:
+  - If the Cell has already been written to, the channel contains the
+    current value and is closed.
+  - If the Cell has not been written to, the channel is empty. When
+    `Cell.put/2` writes to the tag, the value is delivered to all
+    watcher channels and each channel is closed.
+
+  The returned channel never blocks the writer — capacity 1 with
+  immediate close means `Cell.put` always succeeds without suspension.
+
+  Requires `Channel.with_handler/1` to be installed.
+
+  ## Example
+
+      comp do
+        watch_fiber <- FiberPool.fiber(comp do
+          ch <- Cell.watch(:results)
+          Channel.take(ch)
+        end)
+
+        writer <- FiberPool.fiber(comp do
+          _ <- Cell.put(:results, [1, 2, 3])
+          :ok
+        end)
+
+        result <- FiberPool.await!(watch_fiber)
+        # result == {:ok, [1, 2, 3]}
+      end
+      |> Cell.with_handler()
+      |> Channel.with_handler()
+      |> FiberPool.with_handler()
+      |> Comp.run()
+  """
+  @spec watch(term()) :: Types.computation()
+  def watch(tag) do
+    fn env, k ->
+      {handle, env} = Channel.Ops.create(env, 1)
+
+      if Map.has_key?(env.state, {@cell_prefix, tag}) do
+        value = Env.get_state(env, {@cell_prefix, tag})
+        env = Channel.Ops.put_and_close(env, handle, value)
+        k.(handle, env)
+      else
+        watchers = Env.get_state(env, {@watcher_prefix, tag}, [])
+        env = Env.put_state(env, {@watcher_prefix, tag}, [handle | watchers])
+        k.(handle, env)
+      end
+    end
   end
 
   @impl Skuld.Comp.ITotalLinearHandler
@@ -82,13 +137,29 @@ defmodule Skuld.Effects.Cell do
       end
 
     old = Env.get_state(env, {@cell_prefix, tag})
-    new_env = Env.put_state(env, {@cell_prefix, tag}, value)
+    env = Env.put_state(env, {@cell_prefix, tag}, value)
+    env = wake_watchers(env, tag, value)
     change = Skuld.Effects.State.Change.new(old, value)
-    {change, new_env}
+    {change, env}
   end
 
   defp handle(args, env, k) do
     {value, env2} = handle(args, env)
     k.(value, env2)
+  end
+
+  defp wake_watchers(env, tag, value) do
+    watchers = Env.get_state(env, {@watcher_prefix, tag}, [])
+
+    if watchers == [] do
+      env
+    else
+      env =
+        Enum.reduce(watchers, env, fn handle, acc_env ->
+          Channel.Ops.put_and_close(acc_env, handle, value)
+        end)
+
+      Env.put_state(env, {@watcher_prefix, tag}, [])
+    end
   end
 end
