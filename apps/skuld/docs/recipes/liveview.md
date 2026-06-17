@@ -61,9 +61,9 @@ A product search page — one spindle, one event loop. The user types a
 query, the spindle fetches results, sends them to the LiveView, then
 waits for the next event.
 
-### Contract
+### PageMachine Contract
 
-The contract is the single source of truth at the spindle <-> LiveView
+The contract is the single source of truth at the PageMachine <-> LiveView
 boundary. It defines events which will be forwarded from the LiveView to a
 spindle and the yield and notify operations which return data from a
 spindle back to the LiveView.
@@ -262,9 +262,9 @@ defmodule MyApp.Inventory do
 end
 ```
 
-### Contract
+### PageMachine Contract
 
-The contract extends to include `Checkout` alongside `Search`. The
+The contract extends to include a `Checkout` spindle alongside `Search`. The
 `Checkout` spindle declares events for form submissions — when the
 user fills the shipping and payment forms, the LiveView routes those
 events back to the checkout spindle as typed structs:
