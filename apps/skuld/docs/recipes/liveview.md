@@ -309,20 +309,20 @@ test "checkout flow: reserve → shipping → payment → order" do
 end
 ```
 
-No LiveView, no process, no DOM — just state transitions in microseconds.
+No LiveView, process, or DOM — just state transitions in microseconds.
 
 ## Comparison to Elm / Redux / MVU
 
 This architecture is an Elixir-based answer to the Model-View-Update
 pattern that Elm enforces and Redux aspires to:
 
-| Concept      | Elm/Redux/re-frame       | PageMachine                       |
-|--------------|--------------------------|-----------------------------------|
-| Model        | Store / app-db           | Scoped effects + fiber            |
-| Update       | Reducer / event handler  | Computation (`defcomp`)           |
-| View         | Pure render              | `render(assigns)`                 |
-| Event        | Action / dispatch        | `handle_event` / contract `defspindle` `defevent` |
-| State update | `:db` effect             | `Yield.yield(tag)`                |
+| Concept      | Elm/Redux/re-frame      | PageMachine                                       |
+|--------------|-------------------------|---------------------------------------------------|
+| Model        | Store / app-db          | Scoped effects + fiber                            |
+| Update       | Reducer / event handler | Computation (`defcomp`)                           |
+| View         | Pure render             | `render(assigns)`                                 |
+| Event        | Action / dispatch       | `handle_event` / contract `defspindle` `defevent` |
+| State update | `:db` effect            | `Yield.yield(tag)`                                |
 
 In Elm and Redux, the reducer is a pure `(state, event) -> state` function —
 it must return the new state immediately, without blocking. PageMachine
