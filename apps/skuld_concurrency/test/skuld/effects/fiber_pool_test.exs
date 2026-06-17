@@ -53,16 +53,16 @@ defmodule Skuld.Effects.FiberPoolTest do
       assert result == 42
     end
 
-    test "fiber can use effects with installed handlers" do
+    test "per-fiber scoped state raises clear error" do
       fiber_comp =
         comp do
           x <- State.get()
           _ <- State.put(x + 10)
-          State.get()
+          x
         end
         |> State.with_handler(32)
 
-      result =
+      try do
         comp do
           h <- FiberPool.fiber(fiber_comp)
           FiberPool.await!(h)
@@ -70,7 +70,11 @@ defmodule Skuld.Effects.FiberPoolTest do
         |> FiberPool.with_handler()
         |> Comp.run!()
 
-      assert result == 42
+        flunk("Expected error")
+      rescue
+        e in Skuld.Comp.ThrowError ->
+          assert Exception.message(e) =~ "Cannot use scoped state"
+      end
     end
   end
 

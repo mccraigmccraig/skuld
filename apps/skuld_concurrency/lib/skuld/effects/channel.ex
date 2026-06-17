@@ -679,7 +679,7 @@ defmodule Skuld.Effects.Channel do
 
   # Get the current fiber ID from the environment
   defp get_fiber_id(env) do
-    Skuld.Effects.FiberPool.current_fiber_id(env)
+    Env.current_fiber_id(env)
   end
 
   # Add a channel wake request to env.state via the generic FiberPool wake list.

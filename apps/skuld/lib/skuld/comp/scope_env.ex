@@ -24,17 +24,31 @@ defmodule Skuld.Comp.ScopeEnv do
   @type t :: %__MODULE__{
           evidence: %{Types.sig() => Types.handler()},
           leave_scope: Types.leave_scope() | nil,
-          transform_suspend: Types.transform_suspend() | nil
+          transform_suspend: Types.transform_suspend() | nil,
+          current_fiber_id: term() | nil
         }
 
   defstruct evidence: %{},
             leave_scope: nil,
-            transform_suspend: nil
+            transform_suspend: nil,
+            current_fiber_id: nil
 
   @doc "Create a fresh scope env with identity leave_scope and transform_suspend"
   @spec new() :: t()
   def new do
     %__MODULE__{}
+  end
+
+  @doc "Set the current fiber ID in scope"
+  @spec put_current_fiber_id(t(), term()) :: t()
+  def put_current_fiber_id(scope, id) do
+    %{scope | current_fiber_id: id}
+  end
+
+  @doc "Get the current fiber ID from scope, or nil"
+  @spec current_fiber_id(t()) :: term() | nil
+  def current_fiber_id(scope) do
+    scope.current_fiber_id
   end
 
   @doc "Install a handler for an effect signature"

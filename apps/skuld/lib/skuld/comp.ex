@@ -585,6 +585,13 @@ defmodule Skuld.Comp do
     scoped(
       comp,
       fn env ->
+        if Env.inside_fiber?(env) do
+          raise "Cannot use scoped state (#{inspect(state_key)}) inside a FiberPool fiber. " <>
+                  "Scoped state lives in env.state, which is globally threaded across all fibers. " <>
+                  "Installing it per-fiber would corrupt sibling fibers. " <>
+                  "Install the handler at the pool level (before FiberPool.with_handler/1) instead."
+        end
+
         previous_state = Env.get_state(env, state_key)
         env_with_state = Env.put_state(env, state_key, initial)
 

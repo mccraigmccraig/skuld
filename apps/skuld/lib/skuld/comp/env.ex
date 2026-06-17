@@ -147,6 +147,24 @@ defmodule Skuld.Comp.Env do
     end
   end
 
+  @doc "Set the current fiber ID in the env's scope"
+  @spec put_current_fiber_id(Skuld.Comp.Types.env(), term()) :: Skuld.Comp.Types.env()
+  def put_current_fiber_id(env, id) do
+    %{env | scope: ScopeEnv.put_current_fiber_id(env.scope, id)}
+  end
+
+  @doc "Get the current fiber ID from the env's scope, or nil if not in a fiber"
+  @spec current_fiber_id(Skuld.Comp.Types.env()) :: term() | nil
+  def current_fiber_id(env) do
+    ScopeEnv.current_fiber_id(env.scope)
+  end
+
+  @doc "Returns true if currently executing inside a fiber"
+  @spec inside_fiber?(Skuld.Comp.Types.env()) :: boolean()
+  def inside_fiber?(env) do
+    current_fiber_id(env) != nil
+  end
+
   @doc "Install a new leave-scope handler"
   @spec with_leave_scope(Skuld.Comp.Types.env(), Skuld.Comp.Types.leave_scope()) ::
           Skuld.Comp.Types.env()

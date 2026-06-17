@@ -56,19 +56,17 @@ defmodule Skuld.Effects.FiberPool do
 
   @sig __MODULE__
 
-  @current_fiber_id_key Module.concat(__MODULE__, CurrentFiberId)
-
   @doc """
   Returns the current fiber ID for the fiber running in this env, or `nil`
   if called outside a FiberPool context.
   """
   @spec current_fiber_id(Comp.Types.env()) :: term() | nil
   def current_fiber_id(env) do
-    Env.get_state(env, @current_fiber_id_key)
+    Env.current_fiber_id(env)
   end
 
   @doc false
-  def __current_fiber_id_key__, do: @current_fiber_id_key
+  def inside_fiber?(env), do: Env.inside_fiber?(env)
 
   #############################################################################
   ## Operations
