@@ -110,7 +110,7 @@ defmodule Skuld.FiberPool.Main do
 
       round_result.batch_ready ->
         {state, _, env} =
-          FiberPoolState.with_shared_env(state, env, fn state, env ->
+          with_shared_env(state, env, fn state, env ->
             {state, env} = Batching.execute_pending_batches(state, env)
             {state, :ok, env}
           end)
@@ -217,7 +217,7 @@ defmodule Skuld.FiberPool.Main do
 
       {:batch_ready, state} ->
         {state, _, env} =
-          FiberPoolState.with_shared_env(state, env, fn state, env ->
+          with_shared_env(state, env, fn state, env ->
             {state, env} = Batching.execute_pending_batches(state, env)
             {state, :ok, env}
           end)
@@ -262,7 +262,7 @@ defmodule Skuld.FiberPool.Main do
       end
 
     {state, new_result, new_env} =
-      FiberPoolState.with_shared_env(state, env, fn state, fresh_env ->
+      with_shared_env(state, env, fn state, fresh_env ->
         clean_env =
           %{fresh_env | state: Map.put(fresh_env.state, PendingWork.env_key(), PendingWork.new())}
 
@@ -371,4 +371,14 @@ defmodule Skuld.FiberPool.Main do
   # Check if a result is an await suspension
   defp await_suspend?(%InternalSuspend{payload: %InternalSuspend.Await{}}), do: true
   defp await_suspend?(_), do: false
+
+  # Within the scheduling loop, state.env_state is the single source of truth
+  # for effect state. Freshens env.state from state.env_state before invoking
+  # a computation, and writes the result back afterward.
+  defp with_shared_env(state, env, fun) do
+    fresh_env = %{env | state: FiberPoolState.get_env_state(state)}
+    {state, result, new_env} = fun.(state, fresh_env)
+    state = FiberPoolState.put_env_state(state, new_env.state)
+    {state, result, new_env}
+  end
 end

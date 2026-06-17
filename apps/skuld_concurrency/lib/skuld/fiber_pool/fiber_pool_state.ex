@@ -20,7 +20,6 @@ defmodule Skuld.FiberPool.FiberPoolState do
   @moduledoc false
 
   alias Skuld.Coroutine
-  alias Skuld.Comp.Env
   alias Skuld.Comp.InternalSuspend
 
   @type fiber_id :: term()
@@ -689,23 +688,5 @@ defmodule Skuld.FiberPool.FiberPoolState do
   def put_env_state(state, nil) do
     # Guard against nil - keep existing env_state
     state
-  end
-
-  @doc """
-  Run a computation with a freshened env and write back the result.
-
-  Within the scheduling loop, `env_state` is the single source of truth for
-  effect state. This helper freshens `env.state` from `env_state` before
-  invoking the callback, and writes the result env's state back afterward.
-
-  Callback must return `{state, result, env}`.
-  """
-  @spec with_shared_env(t(), Env.t(), (t(), Env.t() -> {t(), term(), Env.t()})) ::
-          {t(), term(), Env.t()}
-  def with_shared_env(%__MODULE__{} = state, %Env{} = env, fun) do
-    fresh_env = %{env | state: state.env_state}
-    {state, result, new_env} = fun.(state, fresh_env)
-    state = put_env_state(state, new_env.state)
-    {state, result, new_env}
   end
 end
