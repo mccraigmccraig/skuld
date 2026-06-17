@@ -532,21 +532,69 @@ product spindle — the checkout spindle is unaffected.
 
 Each spindle carries its own private state through ordinary function
 arguments — `search_loop(filters)` passes the current filters recursively,
-no global store required. For shared state between spindles, use the
-standard `Skuld.Effects.State` effect:
+no global store required.
+
+For shared state between spindles, use `Skuld.Effects.Cell` — a
+single-writer, multi-reader mutable cell. The first fiber to write to a
+tag claims ownership; any fiber can read. This prevents accidental
+cross-spindle writes while allowing safe concurrent reads:
 
 ```elixir
 defcomp search_loop(filters) do
-  count <- State.get(:search_count)
-  _ <- State.put(:search_count, count + 1)
+  {:ok, products, total} <- MyApp.ProductCatalog.search(filters)
+  _ <- Cell.put(:search_results, products)
   ...
 end
 ```
 
-Multiple spindles can read and write the same `State` tag within the
-same PageMachine process. Any Skuld effect (`Writer`, `Reader`, etc.)
-works the same way — each spindle is just a computation running inside
-the FiberPool handler stack.
+Other spindles read the current value directly:
+
+```elixir
+defcomp recommendation_loop() do
+  products <- Cell.get(:search_results)
+  recommendations <- MyApp.Recommendations.for(products)
+  ...
+end
+```
+
+### Watching for changes
+
+When a spindle needs to react to another spindle's state change,
+`Cell.watch(tag)` returns a capacity-1 Channel that delivers the value
+when it's written. If the Cell already has a value, the channel
+contains it immediately (closed). If not, the channel is empty until
+`Cell.put` writes to the tag — at which point all watcher channels
+receive the value and close.
+
+This composes naturally with `FiberPool.await_any` for multi-source await —
+"wake me when state changes, OR an event arrives, OR a network response
+comes back":
+
+```elixir
+defcomp dashboard_loop() do
+  watch_fiber <- FiberPool.fiber(comp do
+    ch <- Cell.watch(:search_results)
+    Channel.take(ch)
+  end)
+
+  event_fiber <- FiberPool.fiber(Yield.yield(:dashboard))
+
+  {_handle, result} <- FiberPool.await_any([watch_fiber, event_fiber])
+
+  case result do
+    {:ok, {:ok, products}} ->
+      _ <- Dashboard.Notify.results_updated(products: products)
+      dashboard_loop()
+
+    {:ok, %Dashboard.RefreshEvent{}} ->
+      dashboard_loop()
+  end
+end
+```
+
+The watcher channel never blocks the writer — capacity 1 with
+immediate close means `Cell.put` always succeeds without suspension,
+regardless of how many watchers are registered.
 
 ## Cancellation and cleanup
 
