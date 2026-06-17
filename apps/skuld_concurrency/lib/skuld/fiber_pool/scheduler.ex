@@ -299,23 +299,18 @@ defmodule Skuld.FiberPool.Scheduler do
   end
 
   defp run_pending_fiber(state, fiber, _env) do
-    fiber_env = %{fiber.env | state: state.env_state}
-    fiber_env = Env.put_current_fiber_id(fiber_env, fiber.id)
-    fiber = %{fiber | env: fiber_env}
-
-    fiber
-    |> Coroutine.call()
-    |> handle_fiber_result(state)
+    invoke_fiber(state, fiber, &Coroutine.call/1)
   end
 
   defp resume_fiber(state, fiber, result) do
+    invoke_fiber(state, fiber, fn f -> Coroutine.call(f, result) end)
+  end
+
+  defp invoke_fiber(state, fiber, call_fn) do
     fiber_env = %{fiber.env | state: state.env_state}
     fiber_env = Env.put_current_fiber_id(fiber_env, fiber.id)
     fiber = %{fiber | env: fiber_env}
-
-    fiber
-    |> Coroutine.call(result)
-    |> handle_fiber_result(state)
+    call_fn.(fiber) |> handle_fiber_result(state)
   end
 
   # Handle the result of running or resuming a fiber.
