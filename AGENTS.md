@@ -54,6 +54,22 @@ defp decorate(suspend, env) do
 end
 ```
 
+### 1.g — Root Cause Over Workaround
+
+When a change exposes a bug or causes a regression in a complex subsystem
+(scheduling, state threading, concurrency), do NOT paper over it with a
+targeted workaround. Stop and investigate the root cause. Fibers, scheduling,
+and shared state are complex — a workaround today is a production outage
+tomorrow. If you find yourself adding code whose only purpose is to avoid
+triggering a deeper issue, you are on the wrong path.
+
+This applies especially to state threading across fiber boundaries: if a
+full state replacement causes hangs or corruption, the answer is NOT a
+targeted key-merge. The answer is to understand why the full replacement
+fails and fix the underlying inconsistency.
+
+When in doubt, stop and discuss before proceeding.
+
 ## 2. Code Hygiene
 
 Before a piece of work is considered complete, all of the following must be
