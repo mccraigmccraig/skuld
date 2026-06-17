@@ -91,4 +91,23 @@ defmodule Skuld.Effects.Cell do
     {value, env2} = handle(args, env)
     k.(value, env2)
   end
+
+  @doc false
+  @spec merge_after_await(Env.t(), map()) :: Env.t()
+  def merge_after_await(env, shared_state) do
+    cell_keys =
+      for {key, val} <- shared_state,
+          match?({@cell_prefix, _tag}, key),
+          into: %{},
+          do: {key, val}
+
+    owner_keys =
+      for {key, val} <- shared_state,
+          match?({@owner_prefix, _tag}, key),
+          into: %{},
+          do: {key, val}
+
+    env_state = Map.merge(env.state, Map.merge(cell_keys, owner_keys))
+    %{env | state: env_state}
+  end
 end

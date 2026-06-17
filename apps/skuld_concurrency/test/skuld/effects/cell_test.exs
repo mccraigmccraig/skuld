@@ -5,7 +5,15 @@ defmodule Skuld.Effects.CellTest do
   alias Skuld.Comp
   alias Skuld.Effects.Cell
   alias Skuld.Effects.FiberPool
+  alias Skuld.Effects.FiberYield
   alias Skuld.Effects.State
+
+  defp wrap(comp) do
+    comp
+    |> Cell.with_handler()
+    |> FiberYield.with_handler()
+    |> FiberPool.with_handler()
+  end
 
   describe "get/put" do
     test "get returns nil for unset tag" do
@@ -75,32 +83,75 @@ defmodule Skuld.Effects.CellTest do
     end
   end
 
-  describe "ownership" do
-    test "non-owner write raises outside FiberPool" do
-      comp =
-        comp do
-          _ <- Cell.put(:results, [1])
-          :ok
-        end
-        |> Cell.with_handler()
-
-      {_result, env} = Comp.run(comp)
-
-      refute FiberPool.current_fiber_id(env)
-    end
-
-    test "re-write from same fiber works (no ownership check without FiberPool)" do
+  describe "fiber integration" do
+    test "writer fiber sets cell, main computation reads it after await" do
       {result, _env} =
         comp do
-          _ <- Cell.put(:x, 1)
-          _ <- Cell.put(:x, 2)
-          value <- Cell.get(:x)
+          h_w <-
+            FiberPool.fiber(
+              comp do
+                _ <- Cell.put(:shared, 42)
+                :written
+              end
+            )
+
+          _ <- FiberPool.await!(h_w)
+          value <- Cell.get(:shared)
           value
         end
-        |> Cell.with_handler()
+        |> wrap()
         |> Comp.run()
 
-      assert result == 2
+      assert 42 = result
+    end
+
+    test "non-owner write raises inside FiberPool" do
+      {result, _env} =
+        comp do
+          h_a <-
+            FiberPool.fiber(
+              comp do
+                _ <- Cell.put(:owned, "A")
+                :ok
+              end
+            )
+
+          h_b <-
+            FiberPool.fiber(
+              comp do
+                _ <- FiberPool.await!(h_a)
+                Cell.put(:owned, "B")
+              end
+            )
+
+          FiberPool.await_all([h_a, h_b])
+        end
+        |> wrap()
+        |> Comp.run()
+
+      assert [{:ok, :ok}, {:error, error}] = result
+      assert %Skuld.Coroutine.Error{type: :exception} = error
+      assert error.error.message =~ "Cell tag :owned is owned by fiber 0"
+    end
+
+    test "owner fiber can re-read its own writes" do
+      {result, _env} =
+        comp do
+          h <-
+            FiberPool.fiber(
+              comp do
+                _ <- Cell.put(:val, 99)
+                v <- Cell.get(:val)
+                v
+              end
+            )
+
+          FiberPool.await!(h)
+        end
+        |> wrap()
+        |> Comp.run()
+
+      assert result == 99
     end
   end
 end

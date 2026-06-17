@@ -329,14 +329,16 @@ defmodule Skuld.FiberPool.Scheduler do
 
   # Handle the result of running or resuming a fiber.
   # Switch on the fiber's struct type.
+  # Before writing to shared state, strip the fiber-local CurrentFiberId key
+  # so the main computation doesn't see a stale fiber ID on resume.
   defp handle_fiber_result(%Completed{result: result, env: env} = fiber, state) do
-    state = FiberPoolState.put_env_state(state, env.state)
+    state = put_shared_env_state(state, env.state)
     state = collect_pending_fibers(state, env)
     handle_completion(state, fiber.id, {:ok, result})
   end
 
   defp handle_fiber_result(%ExternalSuspended{env: env} = fiber, state) do
-    state = FiberPoolState.put_env_state(state, env.state)
+    state = put_shared_env_state(state, env.state)
     {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
     handle_suspension(state, fiber)
   end
@@ -348,20 +350,20 @@ defmodule Skuld.FiberPool.Scheduler do
          } = fiber,
          state
        ) do
-    state = FiberPoolState.put_env_state(state, env.state)
+    state = put_shared_env_state(state, env.state)
     {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
     handle_internal_suspension(state, fiber, internal_suspend, payload)
   end
 
   defp handle_fiber_result(%ForeignSuspended{env: env} = fiber, state) do
-    state = FiberPoolState.put_env_state(state, env.state)
+    state = put_shared_env_state(state, env.state)
     {state, fiber} = collect_and_clear_pending_fibers(state, fiber)
     foreign_suspends = Map.put(state.foreign_suspends, fiber.id, fiber)
     {:continue, %{state | foreign_suspends: foreign_suspends}}
   end
 
   defp handle_fiber_result(%Errored{error: error, env: env} = fiber, state) do
-    state = FiberPoolState.put_env_state(state, env.state)
+    state = put_shared_env_state(state, env.state)
     state = collect_pending_fibers(state, env)
     handle_completion(state, fiber.id, {:error, error})
   end
@@ -503,6 +505,15 @@ defmodule Skuld.FiberPool.Scheduler do
   #############################################################################
   ## PendingWork Helpers
   #############################################################################
+
+  # Write fiber state to shared pool state, stripping the fiber-local
+  # CurrentFiberId key so it doesn't leak into the main computation on resume.
+  defp put_shared_env_state(state, env_state) do
+    FiberPoolState.put_env_state(
+      state,
+      Map.delete(env_state, @current_fiber_id)
+    )
+  end
 
   # Get the PendingWork from an env, defaulting to empty
   defp get_pending_work(env) do

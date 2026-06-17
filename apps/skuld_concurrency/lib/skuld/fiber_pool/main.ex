@@ -252,8 +252,16 @@ defmodule Skuld.FiberPool.Main do
           result
       end
 
-    # Clean pending work from env before resuming to avoid stale entries
-    clean_env = %{env | state: Map.put(env.state, PendingWork.env_key(), PendingWork.new())}
+    # Clean pending work from env before resuming to avoid stale entries.
+    # Copy Cell keys from shared fiber state so they're visible after await.
+    clean_env =
+      %{env | state: Map.put(env.state, PendingWork.env_key(), PendingWork.new())}
+
+    clean_env =
+      Skuld.Effects.Cell.merge_after_await(
+        clean_env,
+        FiberPoolState.get_env_state(state)
+      )
 
     {new_result, new_env} = resume.(unwrapped, clean_env)
 
