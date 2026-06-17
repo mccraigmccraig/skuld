@@ -4,136 +4,148 @@
 [< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
 <!-- nav:header:end -->
 
-LiveView pages are state machines — model, view, and update all living in
-the same module. But these concerns are tangled: business logic, effect calls,
-and socket manipulation mingle in `handle_event` and `handle_info` callbacks.
-It's the equivalent of putting reducer logic, API calls, and DOM updates in a
-single function.
+PageMachine removes the state machines from a LiveView, and moves them into
+Spindles — each Spindle is a single coroutine-based state machine which
+manages state and effects for a thread of control in a page.
 
-PageMachine separates these concerns, Elixir-style. Like Elm, Redux,
-or re-frame, it enforces a Model-View-Update architecture. But instead of pure
-reducers, PageMachine uses coroutines: each coroutine is a state machine
-computation that reads like normal code, but can *suspend* mid-execution,
-*notify* the view without pausing, and resume where it left off.
-
-A PageMachine runs one or more concurrent **spindles** — named coroutine
-fibers, each an independent state machine computation with its own event
-stream and its own yields and notifications to the LiveView.
-A simple page might have just one spindle. A more complex multi-spindle
-page can run a product browser *and* a checkout form, a chat panel *and*
-a document editor — each region its own computation, its own testable
-module. The LiveView routes events to the right spindle and forwards
-yields from each to the right UI region.
-
-## Why extract page state machines
-
-LiveView modules mix three concerns: state transitions, business logic,
-and DOM updates. When `handle_event` calls APIs, manipulates assigns,
-and pushes UI state all in one function, the result is hard to test,
-change, and reason about.
-
-Extracting the state machine into a pure module — one that receives
-events and returns new state, with no LiveView dependency — separates
-these concerns. The spindle handles state and effects; the LiveView
-bridges events and renders. This has two big payoffs:
-
-- **Fast, deterministic tests** — test the page logic with plain
-  `assert`. No process, LiveViewTest, or DOM. Even with DoubleDown
-  replacing the database sandbox (often a 250× speedup for tests whose
-  main bottleneck was Ecto sandbox DB I/O), the LiveView process itself
-  sets a floor on test time. Pure state transitions have no such floor.
-- **Decomplected code** — the spindle knows nothing about LiveView.
-  It doesn't import `Phoenix.LiveView`, touch sockets, or manipulate
-  assigns. Adding a UI region means adding a spindle, not threading
-  more conditional logic through a monolithic `handle_event`.
-
-## Pattern
-
-1. Define a typed contract for the LiveView <-> PageMachine interaction with `use Skuld.PageMachine.Contract` and `defspindle` blocks
-2. Write each page region as an effectful computation - a spindle - using the contract's yield functions to request information from the LiveView
-3. Test each spindle in isolation with `Coroutine` — deterministic, no processes
-4. Wrap the page in a thin LiveView module via `use Skuld.PageMachine, contract: ...` with `/3` callbacks
-5. Computations can fork sub-computations with `Spindle.fork`; yields send data back to the LiveView UI
-
-## Example: single-spindle product browser
-
-A product search page — one spindle, one event loop. The user types a
-query, the spindle fetches results, sends them to the LiveView, then
-waits for the next event.
-
-### PageMachine Contract
-
-The contract is the single source of truth at the PageMachine <-> LiveView
-boundary. It defines events which will be forwarded from the LiveView to a
-spindle and the yield and notify operations which return data from a
-spindle back to the LiveView.
-
-When the LiveView calls `use Skuld.PageMachine`, it will use the provided
-contract to automatically generate the `handle_event` and `handle_info`
-clauses implied by the contract, so forwarding data back and forth
-between the LiveView and PageMachine is automatic.
-
-`defspindle` opens a spindle block; then, inside the spindle block, `defevent`
-declares events the LiveView can send to this spindle, `defyield` declares
-blocking yields (the spindle sends data to the LiveView and pauses,
-waiting for a response), and `defnotify` declares fire-and-forget
-notifications (the spindle sends data to the LiveView and continues).
-
-`defevent` takes an event name, an explicit struct name, and typed
-params. It generates a struct module under the spindle (e.g.
-`Search.SearchEvent`) and tells PageMachine to wrap params
-into that struct before sending to the spindle.
-
-`defyield` and `defnotify` use function-head syntax — `defnotify browsing`
-generates `Search.Yield.browsing()` which pauses the spindle and waits
-for a response. `defnotify results(products: [...], total: integer())`
-generates `Search.Notify.results(...)`, which sends the results to the
-LiveView in fire-and-forget fashion — the LiveView gets the results
-and continues without pausing:
+Let's start with a simple Spindle — a checkout flow:
 
 ```elixir
-defmodule MyApp.SearchContract do
-  use Skuld.PageMachine.Contract
+defmodule MyApp.CheckoutSpindle do
+  use Skuld.Syntax
+  alias MyApp.StoreContract.Checkout
 
-  defspindle Search do
-    defevent "search", SearchEvent, params: [query: String.t()]
-    defevent "filter", FilterEvent, params: [filters: map()]
-
-    defyield browsing
-    defnotify results(products: [Product.t()], total: integer())
+  defcomp run(product) do
+    {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
+    %Checkout.ShippingEvent{shipping: shipping} <- Checkout.Yield.shipping()
+    %Checkout.PaymentEvent{payment: payment} <- Checkout.Yield.payment()
+    {:ok, order} <- MyApp.Orders.place(%{product: product}, shipping, payment)
+    {:ok, order}
+  else
+    {:error, :sold_out} -> {:error, :sold_out}
+    {:error, reason} -> {:error, reason}
   end
 end
 ```
 
-### Boundary contract
+That's the entire checkout state machine. Read it top to bottom:
 
-The spindle calls `MyApp.ProductCatalog.search(filters)` — an effectful
-boundary defined with `EffectfulFacade`. This is a typed function call,
-not a dispatched action: the types are visible, the flow is linear, and
-the implementation is swapped for a fake in tests:
+1. Reserve inventory (an effect — calls the backend)
+2. Yield to the LiveView to collect shipping info (the spindle **suspends** here, the LiveView renders a shipping form, the user submits, the spindle resumes with the event)
+3. Yield again for payment info (same pattern)
+4. Place the order (another effect)
+5. Error handling at the bottom — `sold_out` or any other failure
+
+There's no `handle_event`, `handle_info`, or socket assigns here. The spindle
+is a pure computation — it doesn't know the LiveView exists.
+Each `<-` is either an effect call (to the backend) or a yield
+(to the LiveView). The coroutine suspends at each yield and resumes
+when the LiveView sends the next event.
+
+## Driving a LiveView
+
+To connect a Spindle to a LiveView we need a PageMachine Contract —
+the Contract defines the events that the LiveView can send to the
+PageMachine, and the yields that the PageMachine's Spindles can return
+to the LiveView:
 
 ```elixir
-defmodule MyApp.ProductCatalog do
-  use Skuld.Effects.Port.EffectfulFacade
+defmodule MyApp.StoreContract do
+  use Skuld.PageMachine.Contract
 
-  defcallback search(filters :: map()) ::
-              {:ok, [Product.t()], total :: integer()} | {:error, term()}
+  defspindle Checkout do
+    defevent "submit_shipping", ShippingEvent, params: [shipping: map()]
+    defevent "submit_payment", PaymentEvent, params: [payment: map()]
+
+    defyield shipping
+    defyield payment
+  end
 end
 ```
 
-### Spindle
-The spindle is the coroutine state-machine computation — 
-a function that fetches data,
-surfaces results via `Search.Notify.results(...)`, and suspends on
-`Search.Yield.browsing()` to wait for the next event. It uses the
-contract's generated functions and pattern-matches on the contract's
-generated structs (`%Search.SearchEvent{}`, `%Search.FilterEvent{}`):
+`defevent` declares an event the LiveView can send — it generates a
+typed struct (`Checkout.ShippingEvent`, `Checkout.PaymentEvent`) and
+auto-generates the `handle_event` clause in the LiveView.
+
+`defyield` declares a suspension point — it generates a function
+(`Checkout.Yield.shipping()`) that pauses the Spindle and sends a
+struct (`%Checkout.Yield.Shipping{}`) to the LiveView.
+
+## The LiveView is reduced
+
+The LiveView uses the contract, to auto-generate the `handle_event`
+and `handle_info` clauses required to wire up the PageMachine's Spindles:
+
+```elixir
+defmodule MyApp.CheckoutLive do
+  use MyAppWeb, :live_view
+  use Skuld.PageMachine,
+    contract: MyApp.StoreContract,
+    on_yield: &handle_yield/3,
+    on_complete: &handle_complete/3,
+    on_error: &handle_error/3
+
+  alias MyApp.StoreContract.Checkout
+
+  @impl true
+  def mount(%{"product_id" => product_id}, _session, socket) do
+    product = MyApp.Products.get!(product_id)
+
+    socket =
+      PageMachine.run(socket, Checkout => MyApp.CheckoutSpindle.run(product))
+      |> assign(step: :loading, product: product)
+
+    {:ok, socket}
+  end
+
+  defp handle_yield(Checkout, %Checkout.Yield.Shipping{}, socket) do
+    {:noreply, assign(socket, step: :shipping)}
+  end
+
+  defp handle_yield(Checkout, %Checkout.Yield.Payment{}, socket) do
+    {:noreply, assign(socket, step: :payment)}
+  end
+
+  defp handle_complete(Checkout, {:ok, order}, socket) do
+    {:noreply, assign(socket, step: :done, order: order)}
+  end
+
+  defp handle_error(Checkout, reason, socket) do
+    {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <div>
+      <%= case @step do %>
+        <% :loading -> %> <p>Reserving inventory…</p>
+        <% :shipping -> %> <.shipping_form />
+        <% :payment -> %> <.payment_form />
+        <% :done -> %> <.order_summary order={@order} />
+      <% end %>
+    </div>
+    """
+  end
+end
+```
+
+The LiveView has no business logic. It receives yield structs, updates
+assigns, and renders. The contract's auto-generated `handle_event`
+clauses route form submissions (`"submit_shipping"`, `"submit_payment"`)
+back to the Spindle as typed event structs — no manual wiring required.
+
+## Another Spindle
+
+If you've been paying attention you might have noticed that the Checkout
+Spindle pauses for a response at its yield points — this makes the logic
+compact and easy to read, but it's not appropriate for all situations.
+Let's add another Spindle to the PageMachine, to browse products:
 
 ```elixir
 defmodule MyApp.SearchSpindle do
   use Skuld.Syntax
-
-  alias MyApp.SearchContract.Search
+  alias MyApp.StoreContract.Search
 
   defcomp run(initial_filters) do
     search_loop(initial_filters)
@@ -150,124 +162,28 @@ defmodule MyApp.SearchSpindle do
 
       %Search.FilterEvent{filters: filters} ->
         search_loop(filters)
+
+      %Search.BuyEvent{product: product} ->
+        _handle <- Spindle.fork(Checkout, MyApp.CheckoutSpindle.run(product))
+        search_loop(filters)
     end
   end
 end
 ```
 
-### LiveView
+This Spindle introduces two new concepts:
 
-```elixir
-defmodule MyApp.SearchLive do
-  use MyAppWeb, :live_view
-  use Skuld.PageMachine,
-    contract: MyApp.SearchContract,
-    on_yield: &handle_yield/3,
-    on_complete: &handle_complete/3,
-    on_error: &handle_error/3
+- **`Notify`** — `Search.Notify.results(...)` sends data to the LiveView
+  *without pausing*. The Spindle fires off the results and immediately
+  continues to `Search.Yield.browsing()` where it waits for the next
+  event. Compare with Checkout's `Yield`, which pauses until the
+  LiveView responds.
+- **`Spindle.fork`** — when the user clicks "buy", the Search Spindle
+  forks a Checkout Spindle and continues its own loop. The two Spindles
+  now run concurrently in the same PageMachine — searching doesn't
+  block checkout, and vice versa.
 
-  alias MyApp.SearchContract.Search
-
-  @impl true
-  def mount(_params, _session, socket) do
-    socket =
-      PageMachine.run(socket, Search => MyApp.SearchSpindle.run(%{}))
-      |> assign(products: [], total: 0)
-
-    {:ok, socket}
-  end
-
-  def handle_yield(_spindle, %Search.Notify.Results{products: products, total: total}, socket) do
-    {:noreply, assign(socket, products: products, total: total)}
-  end
-
-  def handle_yield(_spindle, %Search.Yield.Browsing{}, socket), do: {:noreply, socket}
-
-  def handle_complete(_spindle, {:error, reason}, socket) do
-    {:noreply, put_flash(socket, :error, "Search failed: #{inspect(reason)}")}
-  end
-
-  def handle_error(_spindle, reason, socket) do
-    {:noreply, put_flash(socket, :error, "Error: #{inspect(reason)}")}
-  end
-
-  @impl true
-  def render(assigns) do
-    ~H"""
-    <div>
-      <.search_form myself={@myself} />
-      <.product_list products={@products} total={@total} myself={@myself} />
-    </div>
-    """
-  end
-end
-```
-
-A few things to note:
-
-- **`/3` callbacks from the start** — the spindle module atom is the
-  first argument. With a single spindle it's unused (`_spindle`), but
-  using `/3` from the beginning means no refactoring when you add a
-  second spindle — just add another clause.
-- **`defevent` + struct name** — `defevent "search", SearchEvent, params: [...]`
-  generates `Search.SearchEvent`. The auto-generated `handle_event` wraps
-  the incoming params into the struct before sending to the PageMachine. 
-  This is  why the `case event` in the spindle pattern-matches on
-  `%Search.SearchEvent{}`.
-- **`defyield` generates both a struct and a function** — `defyield browsing`
-  produces `%Search.Yield.Browsing{}` and `Search.Yield.browsing()`.
-  `defnotify results(...)` produces `%Search.Notify.Results{}` and
-  `Search.Notify.results(products: ..., total: ...)` — same pattern, but
-  `defnotify` is fire-and-forget: the spindle doesn't pause.
-
-### Test
-
-```elixir
-  test "search yields results", %{comp: comp} do
-    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    assert %Coroutine.ExternalSuspended{value: %Search.Notify.Results{}} = fiber
-  end
-
-  test "filter event triggers new search", %{comp: comp} do
-    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    fiber = Coroutine.run(fiber, %Search.FilterEvent{filters: %{category: "books"}})
-    assert %Coroutine.ExternalSuspended{value: %Search.Notify.Results{}} = fiber
-  end
-```
-
-## Adding a second spindle: checkout
-
-When you need an independent region with its own event loop — say a
-checkout form alongside the product browser — add a second spindle.
-The contract gains a `Checkout` block, the LiveView switches to `/3`
-callbacks, and the product spindle forks the checkout spindle on demand.
-
-### Additional boundary contracts
-
-The checkout spindle needs two new boundaries — `Orders` and `Inventory`.
-`ProductCatalog` was defined above:
-
-```elixir
-defmodule MyApp.Orders do
-  use Skuld.Effects.Port.EffectfulFacade
-
-  defcallback place(cart :: map(), shipping :: map(), payment :: map()) ::
-              {:ok, Order.t()} | {:error, term()}
-end
-
-defmodule MyApp.Inventory do
-  use Skuld.Effects.Port.EffectfulFacade
-
-  defcallback reserve(cart :: map()) :: {:ok, term()} | {:error, term()}
-end
-```
-
-### PageMachine Contract
-
-The contract extends to include a `Checkout` spindle alongside `Search`. The
-`Checkout` spindle declares events for form submissions — when the
-user fills the shipping and payment forms, the LiveView routes those
-events back to the checkout spindle as typed structs:
+The contract gains a `Search` block for the new Spindle:
 
 ```elixir
 defmodule MyApp.StoreContract do
@@ -292,69 +208,9 @@ defmodule MyApp.StoreContract do
 end
 ```
 
-### Spindle computations
-
-The search spindle is extended with a `%Search.BuyEvent{}` branch that
-forks the checkout spindle and continues its own loop:
-
-```elixir
-defmodule MyApp.SearchSpindle do
-  use Skuld.Syntax
-
-  alias MyApp.StoreContract.{Search, Checkout}
-
-  defcomp run(initial_filters) do
-    search_loop(initial_filters)
-  end
-
-  defcomp search_loop(filters) do
-    {:ok, products, total} <- MyApp.ProductCatalog.search(filters)
-    _ <- Search.Notify.results(products: products, total: total)
-    event <- Search.Yield.browsing()
-
-    case event do
-      %Search.BuyEvent{product: product} ->
-        _handle <- Spindle.fork(Checkout, MyApp.CheckoutSpindle.run(product))
-        search_loop(filters)
-
-      %Search.FilterEvent{filters: filters} ->
-        search_loop(filters)
-
-      %Search.SearchEvent{query: query} ->
-        search_loop(%{query: query})
-    end
-  end
-end
-```
-
-The checkout spindle is forked with the selected product. It reserves
-inventory, then yields `%Checkout.Yield.Shipping{}` and `%Checkout.Yield.Payment{}`
-to drive a step-by-step form in the LiveView:
-
-```elixir
-defmodule MyApp.CheckoutSpindle do
-  use Skuld.Syntax
-
-  alias MyApp.StoreContract.Checkout
-
-  defcomp run(product) do
-    {:ok, _} <- MyApp.Inventory.reserve(%{product: product})
-    %Checkout.ShippingEvent{shipping: shipping} <- Checkout.Yield.shipping()
-    %Checkout.PaymentEvent{payment: payment} <- Checkout.Yield.payment()
-    {:ok, order} <- MyApp.Orders.place(%{product: product}, shipping, payment)
-    {:ok, order}
-  else
-    {:error, :sold_out} -> {:error, :sold_out}
-    {:error, reason} -> {:error, reason}
-  end
-end
-```
-
-### LiveView
-
-With two spindles, the LiveView switches to `/3` callbacks — the first
-argument is the spindle module atom. The `:contract` option auto-generates
-`handle_event/3` from the contract's `defevent` declarations:
+The LiveView has to deal with more data from the Search Spindle, but
+all the `handle_event` and `handle_info` clauses are still auto-generated
+from the expanded Contract:
 
 ```elixir
 defmodule MyApp.StoreLive do
@@ -365,156 +221,100 @@ defmodule MyApp.StoreLive do
     on_complete: &handle_complete/3,
     on_error: &handle_error/3
 
-  alias MyApp.{SearchSpindle, CheckoutSpindle}
   alias MyApp.StoreContract.{Search, Checkout}
 
   @impl true
   def mount(_params, _session, socket) do
     socket =
-      PageMachine.run(socket, Search => SearchSpindle.run(%{}))
+      PageMachine.run(socket, Search => MyApp.SearchSpindle.run(%{}))
       |> assign(products: [], total: 0)
 
     {:ok, socket}
   end
 
-  def handle_yield(Search, %Search.Notify.Results{products: products, total: total}, socket) do
+  defp handle_yield(Search, %Search.Notify.Results{products: products, total: total}, socket) do
     {:noreply, assign(socket, products: products, total: total)}
   end
 
-  def handle_yield(Search, %Search.Yield.Browsing{}, socket), do: {:noreply, socket}
+  defp handle_yield(Search, %Search.Yield.Browsing{}, socket), do: {:noreply, socket}
 
-  def handle_yield(Checkout, %Checkout.Yield.Shipping{}, socket) do
-    socket = clear_spinner(socket)
+  defp handle_yield(Checkout, %Checkout.Yield.Shipping{}, socket) do
     {:noreply, assign(socket, step: :shipping)}
   end
 
-  def handle_yield(Checkout, %Checkout.Yield.Payment{}, socket) do
-    socket = clear_spinner(socket)
+  defp handle_yield(Checkout, %Checkout.Yield.Payment{}, socket) do
     {:noreply, assign(socket, step: :payment)}
   end
 
-  def handle_complete(Search, {:error, reason}, socket) do
-    {:noreply, put_flash(socket, :error, "Search failed: #{inspect(reason)}")}
+  defp handle_complete(Checkout, {:ok, order}, socket) do
+    {:noreply, assign(socket, step: :done, order: order)}
   end
 
-  def handle_complete(Checkout, {:ok, order}, socket) do
-    socket = clear_spinner(socket)
-    {:noreply, assign(socket, order: order, step: :done)}
+  defp handle_error(_spindle, reason, socket) do
+    {:noreply, put_flash(socket, :error, inspect(reason))}
   end
-
-  def handle_error(Checkout, :sold_out, socket) do
-    socket = clear_spinner(socket)
-    {:noreply, put_flash(socket, :error, "Sorry, this item is no longer available")}
-  end
-
-  def handle_error(Checkout, reason, socket) do
-    socket = clear_spinner(socket)
-    {:noreply, put_flash(socket, :error, "Checkout failed: #{inspect(reason)}")}
-  end
-
-  defp start_spinner(socket), do: assign(socket, :loading, true)
-  defp clear_spinner(socket), do: assign(socket, :loading, false)
 
   @impl true
   def render(assigns) do
     ~H"""
     <div class="store-layout">
       <div class="product-browser">
-        <.search_form myself={@myself} loading={@loading} />
-        <.product_list products={@products} total={@total} myself={@myself} />
+        <.search_form />
+        <.product_list products={@products} total={@total} />
       </div>
-      <div class="checkout-panel">
-        <%= case assigns[:step] do %>
-          <% :shipping -> %>
-            <.shipping_form loading={@loading} myself={@myself} />
-          <% :payment -> %>
-            <.payment_form loading={@loading} myself={@myself} />
-          <% :done -> %>
-            <.order_summary order={@order} />
-          <% _ -> %>
-            <p>Select a product to start checkout</p>
-        <% end %>
-      </div>
+      <%= if assigns[:step] do %>
+        <div class="checkout-panel">
+          <%= case @step do %>
+            <% :shipping -> %> <.shipping_form />
+            <% :payment -> %> <.payment_form />
+            <% :done -> %> <.order_summary order={@order} />
+          <% end %>
+        </div>
+      <% end %>
     </div>
     """
   end
 end
 ```
 
-The key differences from the single-spindle version:
+The first argument to each callback is the Spindle module — `Search` or
+`Checkout` — so the LiveView dispatches by pattern match. Only the Search
+Spindle is started in `mount`; the Checkout Spindle appears when
+`Spindle.fork` fires from the Search Spindle's `BuyEvent` handler.
 
-- **Additional clauses** — `handle_yield(Search, ...)` and
-  `handle_yield(Checkout, ...)` dispatch by spindle module atom.
-  The single-spindle used `_spindle`; here each clause names its spindle.
-- **`Spindle.fork`** — the search spindle forks a checkout spindle
-  rather than handling the buy event itself. The fork returns a
-  `Handle` (ignored with `_handle`); the parent continues running.
-  Completion and errors from the child are delivered via the LiveView.
-- **`mount` starts only the primary spindle** — the checkout spindle
-  doesn't exist until a `BuyEvent` arrives.
+## Rounding up
 
-## Testing in isolation
-
-Each spindle is tested independently with `Coroutine` — deterministic, no
-processes, no stubs. Here's the search spindle from the single-spindle example:
+That covers the core of the PageMachine concept: replace the implied
+state machines inside every LiveView with explicit coroutine-based state
+machines outside the LiveView. The LiveView becomes just a view, and the
+coroutine-based state machines can be tested without any LiveView
+machinery — so the tests run fast enough for property-based testing!
 
 ```elixir
-defmodule MyApp.SearchSpindleTest do
-  use ExUnit.Case, async: true
+test "checkout flow: reserve → shipping → payment → order" do
+  fiber =
+    MyApp.CheckoutSpindle.run(product)
+    |> Port.with_handler(test_handlers)
+    |> Yield.with_handler()
+    |> Coroutine.new(Env.new())
+    |> Coroutine.run()
 
-  alias Skuld.Comp.Env
-  alias Skuld.Coroutine
-  alias Skuld.Effects.Yield
-  alias MyApp.SearchContract.Search
+  assert %ExternalSuspended{value: %Checkout.Yield.Shipping{}} = fiber
 
-  setup do
-    comp =
-      MyApp.SearchSpindle.run(%{category: "electronics"})
-      |> Port.with_handler(%{
-        MyApp.ProductCatalog => fn _, :search, [%{category: "electronics"}] ->
-          {:ok, [%Product{name: "Phone"}], 1}
-        end
-      })
-      |> Yield.with_handler()
+  fiber = Coroutine.run(fiber, %Checkout.ShippingEvent{shipping: shipping})
+  assert %ExternalSuspended{value: %Checkout.Yield.Payment{}} = fiber
 
-    {:ok, comp: comp}
-  end
-
-  test "first search yields results to the LiveView", %{comp: comp} do
-    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    assert %Coroutine.ExternalSuspended{value: %Search.Notify.Results{}} = fiber
-  end
-
-  test "filter event triggers new search and new results", %{comp: comp} do
-    fiber = comp |> Coroutine.new(Env.new()) |> Coroutine.run()
-    fiber = Coroutine.run(fiber, %Search.FilterEvent{filters: %{category: "books"}})
-    assert %Coroutine.ExternalSuspended{value: %Search.Notify.Results{}} = fiber
-  end
+  fiber = Coroutine.run(fiber, %Checkout.PaymentEvent{payment: payment})
+  assert %Completed{result: {:ok, %Order{}}} = fiber
 end
 ```
 
-These tests run in microseconds. There's no need for a LiveView process —
-just pure state transitions.
-
-## Why this works
-
-Each spindle knows nothing about LiveView. It doesn't import
-`Phoenix.LiveView`. It doesn't touch sockets, assigns, or DOM. It's a
-pure function: `(state, event) -> new_state`. `Yield` marks the points
-where the machine pauses for external input; `if` and `case` branch the flow.
-
-This means:
-
-- **Tests are fast**: no LiveView process, no DOM rendering.
-- **Tests are deterministic**: same input → same path, every time.
-- **Tests are property-testable**: generate inputs, assert paths.
-- **The LiveView module is thin**: it only bridges events and renders
-  based on the current step.
+No LiveView, no process, no DOM — just state transitions in microseconds.
 
 ## Comparison to Elm / Redux / MVU
 
 This architecture is an Elixir-based answer to the Model-View-Update
-pattern that Elm enforces and Redux patterns towards:
+pattern that Elm enforces and Redux aspires to:
 
 | Concept      | Elm/Redux/re-frame       | PageMachine                       |
 |--------------|--------------------------|-----------------------------------|
@@ -525,45 +325,20 @@ pattern that Elm enforces and Redux patterns towards:
 | State update | `:db` effect             | `Yield.yield(tag)`                |
 
 In Elm and Redux, the reducer is a pure `(state, event) -> state` function —
-it must return the new state immediately, without blocking.
-
-PageMachine lifts this constraint with spindles — named coroutines that can
-*suspend* mid-execution, surface state to the view via `Yield.yield`, and
-resume where they left off when the next event arrives. Multiple spindles run
-concurrently in the same server process: a product search doesn't block
-checkout form submission, and UI regions update independently because each
-yield carries the spindle key.
-
-In re-frame terms, `Yield.yield(tag)` is analogous to returning a `:db`
-effect: it updates the store (assigns), making new state visible to the
-view's data subscriptions. The `/3` callback signature maps naturally to
-re-frame's event handler receiving the event name as the first argument.
-
-In standard LiveView, business logic, effect calls, and socket manipulation
-mingle in `handle_event` / `handle_info` callbacks — the equivalent of putting
-reducer logic, API calls, and DOM updates in a single function. PageMachine
-separates them: the computation is the update function, the LiveView is the
-view bridge. Effects are inline (`MyApp.ProductCatalog.search(filters, page)`
-is a typed function call, not a dispatched action intercepted by middleware),
-keeping the types visible and the flow linear.
-
-## How the spindles collaborate
-
-When the user clicks "buy," the product spindle receives the event, forks
-a checkout spindle via `Spindle.fork`, and continues its search loop.
-The checkout spindle runs its linear flow independently. If the user
-searches while the checkout form is still open, those events go to the
-product spindle — the checkout spindle is unaffected.
+it must return the new state immediately, without blocking. PageMachine
+lifts this constraint: Spindles are coroutines that can suspend mid-execution,
+call effects, and resume where they left off. Multiple Spindles run
+concurrently in the same server process, updating the LiveView independently.
 
 ## Private and shared state
 
 Each spindle carries its own private state through ordinary function
 arguments — `search_loop(filters)` passes the current filters recursively,
-no global store required.
+so no global store is required.
 
-For shared state between spindles, use `Skuld.Effects.Cell` — a
-single-writer, multi-reader mutable cell. The first fiber to write to a
-tag claims ownership; any fiber can read. This prevents accidental
+If you need shared state between spindles, you can use `Skuld.Effects.Cell`
+— a single-writer, multi-reader mutable cell. The first Spindle to write to a
+tag claims ownership; any Spindle can read. This prevents accidental
 cross-spindle writes while allowing safe concurrent reads:
 
 ```elixir
@@ -586,7 +361,7 @@ end
 
 ### Watching for changes
 
-When a spindle needs to react to another spindle's state change,
+When a Spindle needs to react to another Spindle's state change,
 `Cell.watch(tag)` returns a capacity-1 Channel that delivers the value
 when it's written. If the Cell already has a value, the channel
 contains it immediately (closed). If not, the channel is empty until
@@ -595,7 +370,8 @@ receive the value and close.
 
 This composes naturally with `FiberPool.await_any` for multi-source await —
 "wake me when state changes, OR an event arrives, OR a network response
-comes back":
+comes back." Here a dashboard Spindle watches for search results while
+simultaneously waiting for its own events:
 
 ```elixir
 defcomp dashboard_loop() do
@@ -637,7 +413,7 @@ end
 ```
 
 Cancellation cascades to all spindles — `PageMachine.cancel/1` exits
-the FiberPool.Server process, which cancels all registered fibers.
+the FiberPool.Server process, which cancels all registered Spindles.
 
 ## Operation reference
 
@@ -650,17 +426,6 @@ the FiberPool.Server process, which cancels all registered fibers.
 | `use Skuld.PageMachine, contract: ...` | Typed contract with auto-generated events and compile-time validation |
 | `use Skuld.PageMachine.Contract`       | Define a typed event/yield contract |
 
-## Comparison to a monolithic LiveView
-
-Without spindles, the product browser and checkout form would share a single
-`handle_event`. Filter changes, pagination, shipping collection, and payment
-collection would all live in the same callback function, tangled with
-socket-assign manipulation. Adding a third region (say, a recommendations
-carousel) would require more conditional logic in the same flat handler.
-
-With spindles, each region is a self-contained computation. Adding a
-recommendations carousel is a new spindle and a `/3` callback clause. The
-existing spindles don't change.
 
 <!-- nav:footer:start -->
 
