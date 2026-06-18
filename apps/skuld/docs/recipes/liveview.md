@@ -1,7 +1,7 @@
 # PageMachine
 
 <!-- nav:header:start -->
-[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Durable Computation >](durable-computation.md)
 <!-- nav:header:end -->
 
 PageMachine removes the state machines from a LiveView, and moves them into
@@ -426,10 +426,9 @@ the FiberPool.Server process, which cancels all registered Spindles.
 | `use Skuld.PageMachine, contract: ...` | Typed contract with auto-generated events and compile-time validation |
 | `use Skuld.PageMachine.Contract`       | Define a typed event/yield contract |
 
-
 <!-- nav:footer:start -->
 
 ---
 
-[< AsyncCoroutine](../../../../docs/effects/async-coroutine.md) | [Index](../../../../README.md) | [Batch Loading >](batch-loading.md) | [Umbrella →](https://hexdocs.pm/skuld/architecture.html)
+[< Handler Stacks](handler-stacks.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [Durable Computation >](durable-computation.md)
 <!-- nav:footer:end -->

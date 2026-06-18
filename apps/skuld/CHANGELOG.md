@@ -1,8 +1,17 @@
 # Changelog
 
-<!-- last-updated-against: 957e6541f8399f8818a2adb9f60c17b22649676c -->
+<!-- last-updated-against: b9d96570f5f3c2afaa6014bedac61e9116b7aa62 -->
 
 All notable changes to Skuld will be documented in this file.
+
+## [0.33.1] — 2026-06-18
+
+### Fixed
+
+- `mix.exs` VERSION path: read from `Path.join(__DIR__, "VERSION")` instead of
+  `../../VERSION`. The old path resolved correctly inside the monorepo but
+  caused a `File.Error` when skuld was consumed as a hex dependency, making
+  0.33.0 uninstallable.
 
 ## [0.32.1] — 2026-06-10
 

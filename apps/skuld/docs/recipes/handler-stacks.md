@@ -1,7 +1,7 @@
 # Handler Stacks
 
 <!-- nav:header:start -->
-[< Property-Based Testing](property-testing.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [LiveView Integration >](liveview.md)
+[< Property-Based Testing](property-testing.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [PageMachine >](liveview.md)
 <!-- nav:header:end -->
 
 Handlers compose by piping the computation through `with_handler`.
@@ -61,5 +61,5 @@ to record every effect invocation:
 
 ---
 
-[< Property-Based Testing](property-testing.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [LiveView Integration >](liveview.md)
+[< Property-Based Testing](property-testing.md) | [Up: Recipes](hexagonal-architecture.md) | [Index](../../README.md) | [PageMachine >](liveview.md)
 <!-- nav:footer:end -->
