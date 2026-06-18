@@ -174,6 +174,7 @@ defmodule Skuld.FiberPool.Main do
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_until_await_satisfied(state, env, awaiter_id, resume, mode) do
     state = Scheduler.process_external_wakes(state)
+    state = Scheduler.process_cancellations(state)
     snapshot = FiberPoolState.progress_snapshot(state)
 
     case Scheduler.step(state, env) do

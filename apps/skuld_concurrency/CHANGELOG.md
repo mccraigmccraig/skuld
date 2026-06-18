@@ -1,8 +1,22 @@
 # Changelog
 
-<!-- last-updated-against: ecb9458b00d9295fa3fb81fce324314c09d02868 -->
+<!-- last-updated-against: e943334 -->
 
 All notable changes to `skuld_concurrency` will be documented in this file.
+
+## [Unreleased]
+
+### Added
+
+- In-process FiberPool scheduler now acts on `FiberPool.cancel/1` requests.
+  Previously the Cancel effect handler recorded cancelled fiber IDs in env
+  state but the scheduler never read them. Now `Scheduler.process_cancellations/1`
+  drains the cancelled list each scheduling round: suspended fibers are
+  cancelled immediately (with leave_scope cleanup via `Coroutine.cancel/2`),
+  fibers in the run queue are marked for deferred cancellation and cancelled
+  when next dequeued. Cancellation is uniform across all suspension types
+  (Batch, Channel, Await, FiberYield). Added `pending_cancellations` field to
+  `FiberPoolState`.
 
 ## [0.47.0] — 2026-06-17
 

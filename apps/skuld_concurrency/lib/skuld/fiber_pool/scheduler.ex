@@ -22,6 +22,7 @@ defmodule Skuld.FiberPool.Scheduler do
 
   alias Skuld.Coroutine
   alias Skuld.Coroutine.Completed
+  alias Skuld.Coroutine.Error
   alias Skuld.Coroutine.Errored
   alias Skuld.Coroutine.ExternalSuspended
   alias Skuld.Coroutine.ForeignSuspended
@@ -162,14 +163,53 @@ defmodule Skuld.FiberPool.Scheduler do
     end
   end
 
+  @doc """
+  Process pending cancellation requests from env_state.
+
+  The FiberPool.cancel effect records cancelled fiber IDs in env_state
+  under `{Skuld.Effects.FiberPool, :cancelled}`. This function drains
+  that list and cancels each targeted fiber.
+
+  Suspended fibers are cancelled immediately. Fibers in the run queue
+  (not yet suspended) are added to `pending_cancellations` and cancelled
+  when next dequeued by `run_one_fiber/3`.
+  """
+  @spec process_cancellations(FiberPoolState.t()) :: FiberPoolState.t()
+  def process_cancellations(state) do
+    cancelled_key = {Skuld.Effects.FiberPool, :cancelled}
+    cancelled_ids = Map.get(state.env_state, cancelled_key, [])
+
+    if cancelled_ids == [] do
+      state
+    else
+      state = FiberPoolState.put_env_state(state, Map.delete(state.env_state, cancelled_key))
+
+      Enum.reduce(cancelled_ids, state, fn fiber_id, acc_state ->
+        cond do
+          FiberPoolState.suspended?(acc_state, fiber_id) ->
+            cancel_suspended_fiber(acc_state, fiber_id)
+
+          Map.has_key?(acc_state.fibers, fiber_id) ->
+            %{
+              acc_state
+              | pending_cancellations: Map.put(acc_state.pending_cancellations, fiber_id, true)
+            }
+
+          true ->
+            acc_state
+        end
+      end)
+    end
+  end
+
   #############################################################################
   ## Internal
   #############################################################################
 
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp run_loop(state, env, round_result) do
-    # Process any pending channel wakes before each step
     state = process_external_wakes(state)
+    state = process_cancellations(state)
 
     case step(state, env) do
       {:continue, state} ->
@@ -189,8 +229,8 @@ defmodule Skuld.FiberPool.Scheduler do
         )
 
       {:done, state} ->
-        # Process any final channel wakes
         state = process_external_wakes(state)
+        state = process_cancellations(state)
 
         # Check if we now have work to do
         if FiberPoolState.queue_empty?(state) do
@@ -267,6 +307,14 @@ defmodule Skuld.FiberPool.Scheduler do
   defp yield_value(_), do: nil
 
   defp run_one_fiber(state, fiber_id, env) do
+    if is_map_key(state.pending_cancellations, fiber_id) do
+      cancel_deferred_fiber(state, fiber_id)
+    else
+      run_or_resume_fiber(state, fiber_id, env)
+    end
+  end
+
+  defp run_or_resume_fiber(state, fiber_id, env) do
     case FiberPoolState.get_fiber(state, fiber_id) do
       nil ->
         # Fiber was removed (cancelled?) - continue
@@ -393,6 +441,46 @@ defmodule Skuld.FiberPool.Scheduler do
     state = FiberPoolState.remove_fiber(state, fiber_id)
     state = FiberPoolState.record_completion(state, fiber_id, result)
     {:continue, state}
+  end
+
+  defp cancel_suspended_fiber(state, fiber_id) do
+    case FiberPoolState.get_fiber(state, fiber_id) do
+      nil ->
+        FiberPoolState.remove_suspension(state, fiber_id)
+
+      fiber ->
+        _cancelled = Coroutine.cancel(fiber, :cancelled)
+
+        state
+        |> FiberPoolState.remove_suspension(fiber_id)
+        |> FiberPoolState.remove_fiber(fiber_id)
+        |> FiberPoolState.record_completion(
+          fiber_id,
+          {:error, %Error{type: :cancelled, error: :cancelled, stacktrace: nil}}
+        )
+    end
+  end
+
+  defp cancel_deferred_fiber(state, fiber_id) do
+    state = %{state | pending_cancellations: Map.delete(state.pending_cancellations, fiber_id)}
+
+    case FiberPoolState.get_fiber(state, fiber_id) do
+      nil ->
+        {:continue, state}
+
+      fiber ->
+        _cancelled = Coroutine.cancel(fiber, :cancelled)
+
+        state =
+          state
+          |> FiberPoolState.remove_fiber(fiber_id)
+          |> FiberPoolState.record_completion(
+            fiber_id,
+            {:error, %Error{type: :cancelled, error: :cancelled, stacktrace: nil}}
+          )
+
+        {:continue, state}
+    end
   end
 
   defp handle_suspension(state, fiber) do

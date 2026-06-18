@@ -3,6 +3,8 @@ defmodule Skuld.Effects.FiberPoolTest do
   use Skuld.Syntax
 
   alias Skuld.Comp
+  alias Skuld.Coroutine.Error
+  alias Skuld.Effects.Channel
   alias Skuld.Effects.FiberPool
   alias Skuld.Effects.Task
   alias Skuld.Effects.State
@@ -150,6 +152,87 @@ defmodule Skuld.Effects.FiberPoolTest do
         |> Comp.run!()
 
       assert result == :ok
+    end
+
+    test "cancel a fiber before it runs (deferred cancellation)" do
+      result =
+        comp do
+          h <- FiberPool.fiber(42)
+          _ <- FiberPool.cancel(h)
+          FiberPool.await(h)
+        end
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert {:error, %Error{type: :cancelled, error: :cancelled}} = result
+    end
+
+    test "cancel a fiber suspended on channel take" do
+      result =
+        comp do
+          ch <- Channel.new(1)
+
+          h_target <-
+            FiberPool.fiber(
+              comp do
+                Channel.take(ch)
+              end
+            )
+
+          h_quick <- FiberPool.fiber(42)
+          _ <- FiberPool.await!(h_quick)
+          _ <- FiberPool.cancel(h_target)
+          FiberPool.await(h_target)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert {:error, %Error{type: :cancelled, error: :cancelled}} = result
+    end
+
+    test "cancel a fiber suspended on await" do
+      result =
+        comp do
+          h_blocker <-
+            FiberPool.fiber(
+              comp do
+                ch <- Channel.new(1)
+                Channel.take(ch)
+              end
+            )
+
+          h_target <-
+            FiberPool.fiber(
+              comp do
+                FiberPool.await!(h_blocker)
+              end
+            )
+
+          h_quick <- FiberPool.fiber(42)
+          _ <- FiberPool.await!(h_quick)
+          _ <- FiberPool.cancel(h_target)
+          FiberPool.await(h_target)
+        end
+        |> Channel.with_handler()
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert {:error, %Error{type: :cancelled, error: :cancelled}} = result
+    end
+
+    test "cancel does not affect other fibers" do
+      result =
+        comp do
+          h_cancel <- FiberPool.fiber(10)
+          h_keep <- FiberPool.fiber(20)
+          _ <- FiberPool.cancel(h_cancel)
+          FiberPool.await!(h_keep)
+        end
+        |> FiberPool.with_handler()
+        |> Comp.run!()
+
+      assert result == 20
     end
   end
 

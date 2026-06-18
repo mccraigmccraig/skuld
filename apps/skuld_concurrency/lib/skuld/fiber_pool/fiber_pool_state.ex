@@ -16,6 +16,7 @@
 # - `tasks` - Map of task_ref => handle_id for running BEAM tasks
 # - `task_supervisor` - Task.Supervisor pid for spawning tasks
 # - `opts` - Configuration options
+# - `pending_cancellations` - Set of fiber_ids to cancel when next dequeued
 defmodule Skuld.FiberPool.FiberPoolState do
   @moduledoc false
 
@@ -85,6 +86,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
           tasks: %{task_ref() => fiber_id()},
           task_supervisor: pid() | nil,
           env_state: %{term() => term()},
+          pending_cancellations: %{fiber_id() => true},
           opts: keyword()
         }
 
@@ -101,6 +103,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
     :tasks,
     :task_supervisor,
     :env_state,
+    :pending_cancellations,
     :opts
   ]
 
@@ -129,6 +132,7 @@ defmodule Skuld.FiberPool.FiberPoolState do
       tasks: %{},
       task_supervisor: Keyword.get(opts, :task_supervisor),
       env_state: Keyword.get(opts, :env_state, %{}),
+      pending_cancellations: %{},
       opts: opts
     }
   end
