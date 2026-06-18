@@ -1,12 +1,10 @@
 defmodule Skuld.MixProject do
   use Mix.Project
 
-  @version File.read!(Path.join(__DIR__, "../../VERSION")) |> String.trim()
-
   def project do
     [
       app: :skuld,
-      version: @version,
+      version: File.read!(Path.join(__DIR__, "VERSION")) |> String.trim(),
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
